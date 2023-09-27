@@ -1,7 +1,7 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.0.50",
-  "description": "The HotMesh Process Database",
+  "version": "0.0.1",
+  "description": "Durable Workflows",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "repository": {

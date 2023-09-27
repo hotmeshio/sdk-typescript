@@ -1,10 +1,7 @@
 # HotMesh FAQ
 
 ## What is HotMesh?
-HotMesh is a wrapper for Redis that exposes a higher level set of domain constructs like ‘activities’, ‘workflows’, 'jobs', etc. Behind the scenes, it uses *Redis Data* (Hash, ZSet, and List); *Redis Streams* (XReadGroup, XAdd, XLen); and *Redis Publish/Subscribe*. The ultimate goal is to resurface Redis as a *Reentrant Process Database*.
-
-## What is a Reentrant Process Database?
-Similar to how a relational database provides tools for modeling *tables* and  *relationships*, a process database provides tools for modeling *activities* and *transitions*. Constructs like "reading" and "writing" data still remain; however, instead of reading and writing to *tables*, the targets are *jobs* and *flows*. Importantly, the act of reading and writing data drives the perpetual behavior of the system, delivering process orchestration through the simple act of journaling state.
+HotMesh is a wrapper for Redis that exposes a higher level set of domain constructs like ‘activities’, ‘workflows’, 'jobs', etc. Behind the scenes, it uses *Redis Data* (Hash, ZSet, and List); *Redis Streams* (XReadGroup, XAdd, XLen); and *Redis Publish/Subscribe*. The ultimate goal is to resurface Redis as a *Reentrant Process Engine*.
 
 ## Are there Advantages to a Reentrant Process Architecture?
 A key component of Reentrant Processes is an understanding of retries, idempotency, and the ability to handle failures. HotMesh provides a simple, yet powerful, mechanism for handling retries and idempotency through the use of Redis Streams. If the execution fails, the engine will retry (xclaim) the activity until the retry limit is reached. If the job succeeds, the engine will transition to the next activity.
