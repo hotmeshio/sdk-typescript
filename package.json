@@ -6,9 +6,9 @@
   "types": "build/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hotmesh/hotmesh.git"
+    "url": "https://github.com/hotmeshio/hotmesh.git"
   },
-  "homepage": "https://github.com/hotmesh/hotmesh#readme",
+  "homepage": "https://github.com/hotmeshio/hotmesh#readme",
   "publishConfig": {
     "access": "public"
   },
