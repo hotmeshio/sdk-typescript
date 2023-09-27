@@ -4,7 +4,7 @@
 Build sophisticated, durable workflows without the overhead of a dedicated server cluster. With HotMesh, your code remains front and center using [infrastructure](./docs/faq.md#what-is-hotmesh) you already own.
 
 ## Install
-[![npm version](https://badge.fury.io/js/%40hotmesh%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmesh%2Fhotmesh)
+[![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
 
 ```sh
 npm install @hotmeshio/hotmesh
