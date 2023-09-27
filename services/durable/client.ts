@@ -1,8 +1,8 @@
-import { WorkflowHandleService } from "./handle";
-import { HotMeshService as HotMesh } from "../hotmesh";
-import { ClientConfig, Connection, WorkflowOptions } from "../../types/durable";
-import { getWorkflowYAML } from "./factory";
-import { JobState } from "../../types/job";
+import { WorkflowHandleService } from './handle';
+import { HotMeshService as HotMesh } from '../hotmesh';
+import { ClientConfig, Connection, WorkflowOptions } from '../../types/durable';
+import { getWorkflowYAML } from './factory';
+import { JobState } from '../../types/job';
 
 /*
 Here is an example of how the methods in this file are used:
@@ -101,7 +101,14 @@ export class ClientService {
         await hotMesh.deploy(getWorkflowYAML(workflowTopic, version));
         await hotMesh.activate(version);
       } catch (err) {
-        hotMesh.engine.logger.error('durable-client-workflow-activation-err', err);
+        hotMesh.engine.logger.error('durable-client-deploy-activate-err', err);
+        throw err;
+      }
+    } else if(app && !app.active) {
+      try {
+        await hotMesh.activate(version);
+      } catch (err) {
+        hotMesh.engine.logger.error('durable-client-activate-err', err);
         throw err;
       }
     }

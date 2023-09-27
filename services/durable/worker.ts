@@ -67,7 +67,14 @@ export class WorkerService {
         await hotMesh.deploy(factory(topic, version));
         await hotMesh.activate(version);
       } catch (err) {
-        hotMesh.engine.logger.error('durable-worker-workflow-activation-error', err);
+        hotMesh.engine.logger.error('durable-worker-deploy-activate-err', err);
+        throw err;
+      }
+    } else if(app && !app.active) {
+      try {
+        await hotMesh.activate(version);
+      } catch (err) {
+        hotMesh.engine.logger.error('durable-worker-activate-err', err);
         throw err;
       }
     }
@@ -176,7 +183,14 @@ export class WorkerService {
         await hotMesh.deploy(getActivityYAML(activityTopic, version));
         await hotMesh.activate(version);
       } catch (err) {
-        console.log('durable-worker-activity-workflow-activation-error', err);
+        console.log('durable-worker-activity-deploy-activate-error', err);
+        throw err;
+      }
+    } else if(app && !app.active) {
+      try {
+        await hotMesh.activate(version);
+      } catch (err) {
+        hotMesh.engine.logger.error('durable-worker-activity-activate-err', err);
         throw err;
       }
     }

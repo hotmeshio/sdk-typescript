@@ -1,14 +1,14 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Durable Workflows",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hotmeshio/hotmesh.git"
+    "url": "https://github.com/hotmeshio/sdk-typescript.git"
   },
-  "homepage": "https://github.com/hotmeshio/hotmesh#readme",
+  "homepage": "https://github.com/hotmeshio/sdk-typescript#readme",
   "publishConfig": {
     "access": "public"
   },

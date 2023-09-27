@@ -1,8 +1,8 @@
-import { ILogger } from "../services/logger";
-import { HotMeshService } from "../services/hotmesh";
-import { HookRules } from "./hook";
-import { RedisClass, RedisClient, RedisOptions } from "./redis";
-import { StreamData, StreamDataResponse } from "./stream";
+import { ILogger } from '../services/logger';
+import { HotMeshService } from '../services/hotmesh';
+import { HookRules } from './hook';
+import { RedisClass, RedisClient, RedisOptions } from './redis';
+import { StreamData, StreamDataResponse } from './stream';
 
 type HotMesh = typeof HotMeshService;
 

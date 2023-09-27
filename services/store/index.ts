@@ -310,7 +310,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       app = {};
       for (const field in sApp) {
         try {
-          app[field] = sApp[field];
+          if (field === 'active') {
+            app[field] = sApp[field] === 'true';
+          } else {
+            app[field] = sApp[field];
+          }
         } catch (e) {
           app[field] = sApp[field];
         }
