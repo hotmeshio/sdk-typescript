@@ -210,9 +210,6 @@ const hotMesh = await HotMesh.init({
 ### Observability
 Workflows and activities are run according to the rules you define, offering [Graph-Oriented](./docs/system_lifecycle.md#telemetry) telemetry insights into your legacy function executions.
 
-<img src="./docs/img/open_telemetry.png" alt="Open Telemetry" style="width:600px;max-width:600px;">
-
-
 ## FAQ
 Refer to the [FAQ](./docs/faq.md) for terminology, definitions, and an exploration of how HotMesh facilitates orchestration use cases.
 
