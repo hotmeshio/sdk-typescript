@@ -1,0 +1,59 @@
+order:
+  type: object
+  properties:
+    id:
+      type: string
+      description: The unique identifier for the order.
+    size:
+      type: string
+      description: The size of the order.
+      enum:
+        - sm
+        - md
+        - lg
+    primacy:
+      type: string
+      description: The importance of the order.
+      enum:
+        - primary
+        - secondary
+        - tertiary
+    color:
+      type: string
+      description: The color of the order.
+      enum:
+        - red
+        - yellow
+        - blue
+    send_date:
+      type: string
+      description: The date when the order was scheduled.
+    must_release_series:
+      type: string
+      description: The time series slice the scheduled order must be released.
+    actual_release_series:
+      type: string
+      description: The actual time series slice when the order was released.
+    facility:
+      type: string
+      description: The facility name.
+      enum:
+        - acme
+        - spacely
+        - cogswell
+route:
+  hook:
+    type: object
+    properties:
+      facility:
+        description: The facility name.
+        enum:
+          - acme
+          - spacely
+          - cogswell
+      id:
+        type: string
+        description: The unique identifier for the order.
+      actual_release_series:
+        type: string
+        description: The actual time series slice when the order was released.

@@ -1,0 +1,155 @@
+app:
+  id: tree
+  version: '5'
+  graphs:
+    - subscribes: spring
+      publishes: fall
+
+      input:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+      output:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+            height:
+              type: number
+            shine:
+              type: string
+            graft:
+              type: string
+            water:
+              type: string
+            fertilize:
+              type: string
+            prune:
+              type: string
+
+      activities:
+        tree:
+          type: trigger
+          job:
+            maps:
+              seed: '{$self.output.data.seed}'
+              speed: '{$self.output.data.speed}'
+              height:
+                '@pipe':
+                  - ['{$self.output.data.seed}', '{$self.output.data.speed}']
+                  - ['{@number.multiply}']
+        shine:
+          type: worker
+          topic: summer
+          input:
+            schema:
+              type: object
+              properties:
+                height:
+                  type: number
+            maps:
+              height: '{$job.data.height}'
+          output:
+            schema:
+              type: object
+              properties:
+                result:
+                  type: string
+          job:
+            maps:
+              shine: '{$self.output.data.result}'
+        graft:
+          type: worker
+          topic: summer
+          input:
+            schema:
+              type: object
+              properties:
+                height:
+                  type: number
+            maps:
+              height: '{$job.data.height}'
+          output:
+            schema:
+              type: object
+              properties:
+                result:
+                  type: string
+          job:
+            maps:
+              graft: '{$self.output.data.result}'
+        water:
+          type: worker
+          topic: summer
+          input:
+            schema:
+              type: object
+              properties:
+                height:
+                  type: number
+            maps:
+              height: '{$job.data.height}'
+          output:
+            schema:
+              type: object
+              properties:
+                result:
+                  type: string
+          job:
+            maps:
+              water: '{$self.output.data.result}'
+        fertilize:
+          type: worker
+          topic: summer
+          input:
+            schema:
+              type: object
+              properties:
+                height:
+                  type: number
+            maps:
+              height: '{$job.data.height}'
+          output:
+            schema:
+              type: object
+              properties:
+                result:
+                  type: string
+          job:
+            maps:
+              fertilize: '{$self.output.data.result}'
+        prune:
+          type: worker
+          topic: summer
+          input:
+            schema:
+              type: object
+              properties:
+                height:
+                  type: number
+            maps:
+              height: '{$job.data.height}'
+          output:
+            schema:
+              type: object
+              properties:
+                result:
+                  type: string
+          job:
+            maps:
+              prune: '{$self.output.data.result}'
+
+      transitions:
+        tree:
+          - to: shine
+          - to: graft
+          - to: prune
+          - to: water
+          - to: fertilize

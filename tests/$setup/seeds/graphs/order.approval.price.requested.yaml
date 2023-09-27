@@ -1,0 +1,62 @@
+subscribes: order.approval.price.requested
+publishes: order.approval.price.responded
+
+expire: 120
+
+input:
+  schema:
+    $ref: '../schemas/order.approval.price.requested.yaml#/input'
+output:
+  schema:
+    $ref: '../schemas/order.approval.price.requested.yaml#/output'
+
+activities:
+  a5:
+    title: Get Price Approval
+    type: trigger
+    job:
+      maps:
+        $ref: '../maps/order.approval.price.requested.yaml#/a5/job'
+    stats:
+      key: "{a5.input.data.object_type}"
+      id: "{a5.input.data.id}"
+      measures:
+        - measure: sum
+          target: "{a5.input.data.price}"
+        - measure: avg
+          target: "{a5.input.data.price}"
+        - measure: index
+          target: "{a5.input.data.object_type}"
+        - measure: count
+          target: "{a5.input.data.object_type}"
+  a6:
+    title: Return True
+    type: activity
+    job:
+      maps:
+        $ref: '../maps/order.approval.price.requested.yaml#/a6/job'
+  a7:
+    title: Return False
+    type: activity
+    job:
+      maps:
+        $ref: '../maps/order.approval.price.requested.yaml#/a7/job'
+
+transitions:
+  a5:
+    - to: a6
+      conditions:
+        match:
+          - expected: true
+            actual: 
+              "@pipe":
+                - ["{a5.output.data.price}", 100]
+                - ["{@number.lt}"]
+    - to: a7
+      conditions:
+        match:
+          - expected: true
+            actual: 
+              "@pipe":
+                - ["{a5.output.data.price}", 100]
+                - ["{@number.gte}"]

@@ -1,0 +1,37 @@
+subscribes: sleep.do
+
+expire: 120
+
+inputs:
+  schema:
+    type: object
+    properties:
+      duration:
+        type: number
+outputs:
+  schema:
+    type: object
+    properties:
+      duration:
+        type: number
+      done:
+        type: boolean
+
+activities:
+  mytrigger:
+    title: Trigger Activity
+    type: trigger
+    job:
+      maps:
+        duration: "{$self.input.data.duration}"
+  mysleeper:
+    title: Sleeper Activity
+    type: activity
+    sleep: "{$job.data.duration}"
+    job:
+      maps:
+        done: true
+
+transitions:
+  mytrigger:
+    - to: mysleeper

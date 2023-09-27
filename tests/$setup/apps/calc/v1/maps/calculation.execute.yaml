@@ -1,0 +1,10 @@
+receiver:
+  output:
+    operation: '{receiver.input.data.operation}'
+    values: '{receiver.input.data.values}'
+executor:
+  input:
+    operation: '{receiver.output.data.operation}'
+    values: '{receiver.output.data.values}'
+  job:
+    result: '{executor.output.data.result}'

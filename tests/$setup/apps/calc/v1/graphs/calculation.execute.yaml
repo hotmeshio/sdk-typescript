@@ -1,0 +1,37 @@
+subscribes: calculation.execute
+publishes: calculation.executed
+
+expire: 120
+
+input:
+  schema:
+    $ref: '../schemas/calculate.yaml#/input'
+output:
+  schema:
+    $ref: '../schemas/calculate.yaml#/output'
+
+activities:
+
+  receiver:
+    title: Receive Values
+    type: trigger
+
+  executor:
+    title: Execute Calculation
+    type: worker
+    topic: calculation.execute
+    retry: 
+      '404': [2]
+      '500': [3]
+    input:
+      schema:
+        $ref: '../schemas/calculate.yaml#/input'
+      maps:
+        $ref: '../maps/calculation.execute.yaml#/executor/input'
+    job:
+      maps:
+        $ref: '../maps/calculation.execute.yaml#/executor/job'
+
+transitions:
+  receiver:
+    - to: executor

@@ -1,0 +1,137 @@
+app:
+  id: def
+  version: '3'
+  graphs:
+    - subscribes: def.test
+      expire: 120
+      input:
+        schema:
+          type: object
+          properties:
+            code:
+              type: number
+
+      output:
+        schema:
+          type: object
+          properties:
+            code:
+              type: number
+            message:
+              type: string
+              default: success
+        202:
+          schema:
+            type: object
+            properties:
+              percentage:
+                type: number
+        422:
+          schema:
+            type: object
+            properties:
+              code:
+                type: number
+                examples: [422]
+              message:
+                type: string
+                examples: ['invalid input']
+              reason: 
+                type: string
+                examples: ['account_id is required']
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.do
+          input:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: number
+            maps:
+              code: '{t1.output.data.code}'
+          output:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: number
+            202:
+              schema:
+                type: object
+                properties:
+                  percentage:
+                    type: number
+            422:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: number
+                  message:
+                    type: string
+                  reason: 
+                    type: string
+          job:
+            maps:
+              code: '{$self.output.data.code}'
+              message: success
+            202:
+              maps:
+                percentage: '{$self.output.data.percentage}'
+            422:
+              maps:
+                code: '{$self.output.data.code}'
+                message: '{$self.output.data.message}'
+                reason: '{$self.output.data.reason}'
+
+        a200:
+          type: activity
+          job:
+            maps:
+              message: '{a1.output.data.message}'
+        a202:
+          type: activity
+          job:
+            maps:
+              percentage: '{a1.output.data.percentage}'
+        a422:
+          type: activity
+          job:
+            maps:
+              message: '{a1.output.data.message}'
+              reason: '{a1.output.data.reason}'
+      transitions:
+        t1:
+          - to: a1
+        a1:
+          - to: a200
+            conditions:
+              match:
+                - expected: true
+                  actual: 
+                    '@pipe':
+                      - ['{t1.output.data.code}', 200]
+                      - ['{@conditional.equality}']
+          - to: a202
+            code: 202
+            conditions:
+              match:
+                - expected: true
+                  actual: 
+                    '@pipe':
+                      - ['{t1.output.data.code}', 202]
+                      - ['{@conditional.equality}']
+          - to: a422
+            code: 422
+            conditions:
+              match:
+                - expected: true
+                  actual: 
+                    '@pipe':
+                      - ['{t1.output.data.code}', 422]
+                      - ['{@conditional.equality}']

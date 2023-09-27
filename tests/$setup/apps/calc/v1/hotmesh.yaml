@@ -1,0 +1,12 @@
+app:
+  id: calc
+  version: '1'
+  settings:
+    some_boolean: true
+    some:
+      nested:
+        string: hello
+        integer: 55
+  graphs:
+    - $ref: ./graphs/calculate.yaml
+    - $ref: ./graphs/calculation.execute.yaml

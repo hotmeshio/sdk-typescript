@@ -1,0 +1,40 @@
+flowchart LR
+    subgraph Flow A    
+      A_Review_Order("Review Order")
+      A_Get_Approval("Get Approval")
+      A_Return_Review("Return Review")
+    end
+
+    subgraph Flow B
+      B_Get_Approval("Get Approval")
+      B_Exec_Asana_Task("Exec Asana Task")
+      B_Return_True("Return True")
+      B_Return_False("Return False")
+    end
+
+    subgraph Asana   
+     direction RL 
+     Asana_createTask("createTask-API")
+     Asana_taskCompleted("taskCompleted-HOOK")
+    end
+
+    Asana_createTask --> Asana_taskCompleted
+
+    Start(("Start")) -.-> A_Review_Order
+    A_Review_Order --> A_Get_Approval
+    A_Get_Approval --> A_Return_Review
+    A_Return_Review -.-> End(("End"))
+
+    A_Get_Approval -.->|Request| B_Get_Approval
+    B_Get_Approval -.->|Await Response| A_Get_Approval
+
+    B_Exec_Asana_Task -.->|Request| Asana_createTask
+    Asana_taskCompleted -.->|WebHook Response| B_Exec_Asana_Task
+
+
+    B_Get_Approval --> B_Exec_Asana_Task
+    B_Exec_Asana_Task --> B_Return_True
+    B_Exec_Asana_Task --> B_Return_False
+
+    style Start fill:green
+    style End fill:red

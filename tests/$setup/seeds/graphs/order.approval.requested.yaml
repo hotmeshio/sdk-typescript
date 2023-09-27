@@ -1,0 +1,73 @@
+subscribes: order.approval.requested
+publishes: order.approval.responded
+
+expire: 120
+
+input:
+  schema:
+    $ref: '../schemas/order.approval.requested.yaml#/input'
+output:
+  schema:
+    $ref: '../schemas/order.approval.requested.yaml#/output'
+
+activities:
+  a1:
+    title: Get Approval
+    type: trigger
+    stats:
+      id:
+        "@pipe":
+          - ['{a1.input.data.id}', '_caller']
+          - ['{@string.concat}']
+
+  a2:
+    title: Get Price Approval
+    type: await
+    topic: order.approval.price.requested
+    input:
+      schema:
+        $ref: '../schemas/order.approval.requested.yaml#/a2/input'
+      maps:
+        $ref: '../maps/order.approval.requested.yaml#/a2/input'
+    output:
+      schema:
+        $ref: '../schemas/order.approval.requested.yaml#/a2/output'
+
+  a3:
+    title: Return True
+    type: activity
+    telemetry:
+      approved:
+        "@pipe":
+          - ['{a2.output.data.approved}', 'yes', 'no']
+          - ['{@conditional.ternary}']
+    job:
+      maps:
+        $ref: '../maps/order.approval.requested.yaml#/a3/job'
+
+  a4:
+    title: Return False
+    type: activity
+    telemetry:
+      approved:
+        "@pipe":
+          - ['{a2.output.data.approved}', 'ja', 'nein']
+          - ['{@conditional.ternary}']
+    job:
+      maps:
+        $ref: '../maps/order.approval.requested.yaml#/a4/job'
+
+transitions:
+  a1:
+    - to: a2
+  a2:
+    - to: a3
+      conditions:
+        match:
+          - expected: true
+            actual: "{a2.output.data.approved}"
+    - to: a4
+      conditions:
+        match:
+          - expected: false
+            actual: "{a2.output.data.approved}"

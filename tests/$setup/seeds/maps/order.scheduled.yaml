@@ -1,0 +1,15 @@
+schedule:
+  job:
+    id: "{schedule.input.data.id}"
+    color: "{schedule.input.data.color}"
+    primacy: "{schedule.input.data.primacy}"
+    size: "{schedule.input.data.size}"
+    send_date: "{schedule.input.data.send_date}"
+    must_release_series: "{schedule.input.data.must_release_series}"
+route:
+  job:
+    facility: "{route.hook.data.facility}"
+    actual_release_series: "{route.hook.data.actual_release_series}"
+fulfill:
+  job:
+    actual_release_series: "{route.hook.data.actual_release_series}"

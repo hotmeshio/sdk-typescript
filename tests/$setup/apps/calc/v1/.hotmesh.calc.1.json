@@ -1,0 +1,245 @@
+{
+  "app": {
+    "id": "calc",
+    "version": "1",
+    "settings": {
+      "some_boolean": true,
+      "some": {
+        "nested": {
+          "string": "hello",
+          "integer": 55
+        }
+      }
+    },
+    "graphs": [
+      {
+        "subscribes": "calculate",
+        "publishes": "calculated",
+        "expire": 120,
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "examples": [
+                  "calculation.execute",
+                  "executor",
+                  "receiver",
+                  "operate",
+                  "trigger",
+                  "calculate"
+                ],
+                "type": "string",
+                "enum": [
+                  "add",
+                  "subtract",
+                  "multiply",
+                  "divide"
+                ]
+              },
+              "values": {
+                "type": "string",
+                "examples": [
+                  "[100,4,5]",
+                  "[5,4,3,2,1]",
+                  "[1,2,3,4,5]",
+                  "[10,10,10]"
+                ],
+                "description": "stringified JSON array of numbers"
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "activities": {
+          "calculate": {
+            "title": "Calculate",
+            "type": "trigger"
+          },
+          "operate": {
+            "title": "Operate",
+            "type": "await",
+            "topic": "calculation.execute",
+            "input": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "examples": [
+                      "calculation.execute",
+                      "executor",
+                      "receiver",
+                      "operate",
+                      "trigger",
+                      "calculate"
+                    ],
+                    "type": "string",
+                    "enum": [
+                      "add",
+                      "subtract",
+                      "multiply",
+                      "divide"
+                    ]
+                  },
+                  "values": {
+                    "type": "string",
+                    "examples": [
+                      "[100,4,5]",
+                      "[5,4,3,2,1]",
+                      "[1,2,3,4,5]",
+                      "[10,10,10]"
+                    ],
+                    "description": "stringified JSON array of numbers"
+                  }
+                }
+              },
+              "maps": {
+                "operation": "{calculate.output.data.operation}",
+                "values": "{calculate.output.data.values}"
+              }
+            },
+            "job": {
+              "maps": {
+                "result": "{operate.output.data.result}"
+              }
+            }
+          }
+        },
+        "transitions": {
+          "calculate": [
+            {
+              "to": "operate"
+            }
+          ]
+        }
+      },
+      {
+        "subscribes": "calculation.execute",
+        "publishes": "calculation.executed",
+        "expire": 120,
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "operation": {
+                "examples": [
+                  "calculation.execute",
+                  "executor",
+                  "receiver",
+                  "operate",
+                  "trigger",
+                  "calculate"
+                ],
+                "type": "string",
+                "enum": [
+                  "add",
+                  "subtract",
+                  "multiply",
+                  "divide"
+                ]
+              },
+              "values": {
+                "type": "string",
+                "examples": [
+                  "[100,4,5]",
+                  "[5,4,3,2,1]",
+                  "[1,2,3,4,5]",
+                  "[10,10,10]"
+                ],
+                "description": "stringified JSON array of numbers"
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "activities": {
+          "receiver": {
+            "title": "Receive Values",
+            "type": "trigger"
+          },
+          "executor": {
+            "title": "Execute Calculation",
+            "type": "worker",
+            "topic": "calculation.execute",
+            "retry": {
+              "404": [
+                2
+              ],
+              "500": [
+                3
+              ]
+            },
+            "input": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "examples": [
+                      "calculation.execute",
+                      "executor",
+                      "receiver",
+                      "operate",
+                      "trigger",
+                      "calculate"
+                    ],
+                    "type": "string",
+                    "enum": [
+                      "add",
+                      "subtract",
+                      "multiply",
+                      "divide"
+                    ]
+                  },
+                  "values": {
+                    "type": "string",
+                    "examples": [
+                      "[100,4,5]",
+                      "[5,4,3,2,1]",
+                      "[1,2,3,4,5]",
+                      "[10,10,10]"
+                    ],
+                    "description": "stringified JSON array of numbers"
+                  }
+                }
+              },
+              "maps": {
+                "operation": "{receiver.output.data.operation}",
+                "values": "{receiver.output.data.values}"
+              }
+            },
+            "job": {
+              "maps": {
+                "result": "{executor.output.data.result}"
+              }
+            }
+          }
+        },
+        "transitions": {
+          "receiver": [
+            {
+              "to": "executor"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

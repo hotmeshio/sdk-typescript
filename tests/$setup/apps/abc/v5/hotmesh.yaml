@@ -1,0 +1,46 @@
+app:
+  id: abc
+  version: '5'
+  graphs:
+    - subscribes: abc.test
+
+      input:
+        schema:
+          type: object
+          properties:
+            a:
+              type: string
+
+      output:
+        schema:
+          type: object
+          properties:
+            b:
+              type: string
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.do
+          input:
+            schema:
+              type: object
+              properties:
+                x:
+                  type: string
+            maps:
+              x: '{t1.output.data.a}'
+          output:
+            schema:
+              type: object
+              properties:
+                y:
+                  type: string
+          job:
+            maps:
+              b: '{$self.output.data.y}'
+      transitions:
+        t1:
+          - to: a1

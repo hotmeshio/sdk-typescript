@@ -1,0 +1,60 @@
+input:
+  type: object
+  properties:
+    id:
+      type: string
+      description: The unique identifier for the object.
+    price:
+      type: number
+      description: The price of the item.
+      minimum: 0
+    object_type:
+      type: string
+      description: The type of the order (e.g, widgetA, widgetB)
+output:
+  type: object
+  properties:
+    id:
+      type: string
+      description: The unique identifier for the object.
+    price:
+      type: number
+      description: The price of the item.
+      minimum: 0
+    approvals:
+      type: object
+      description: A hash of all approval facets and their status (price, etc)
+      properties:
+        price:
+          type: boolean
+          description: Price approval status; true if approved on this facet.
+    approved:
+      type: boolean
+      description: Overall approval status of the item.
+a2:
+  input:
+    type: object
+    properties:
+      id:
+        type: string
+        description: The unique identifier for the object.
+      price:
+        type: number
+        description: The price of the item.
+        minimum: 0
+      object_type:
+        type: string
+        description: The type of the order (e.g, widgetA, widgetB)
+  output:
+    type: object
+    properties:
+      id:
+        type: string
+        description: The unique identifier for the object.
+      price:
+        type: number
+        description: The price of the item.
+        minimum: 0
+      approved:
+        type: boolean
+        description: Approval status of the object.

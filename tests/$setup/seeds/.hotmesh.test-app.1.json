@@ -1,0 +1,835 @@
+{
+  "app": {
+    "id": "test-app",
+    "version": "1",
+    "settings": {
+      "some_boolean": true,
+      "some": {
+        "nested": {
+          "string": "hello",
+          "integer": 2
+        }
+      }
+    },
+    "graphs": [
+      {
+        "subscribes": "order.scheduled",
+        "publishes": "order.fulfilled",
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The unique identifier for the order."
+              },
+              "size": {
+                "type": "string",
+                "description": "The size of the order.",
+                "enum": [
+                  "sm",
+                  "md",
+                  "lg"
+                ]
+              },
+              "primacy": {
+                "type": "string",
+                "description": "The importance of the order.",
+                "enum": [
+                  "primary",
+                  "secondary",
+                  "tertiary"
+                ]
+              },
+              "color": {
+                "type": "string",
+                "description": "The color of the order.",
+                "enum": [
+                  "red",
+                  "yellow",
+                  "blue"
+                ]
+              },
+              "send_date": {
+                "type": "string",
+                "description": "The date when the order was scheduled."
+              },
+              "must_release_series": {
+                "type": "string",
+                "description": "The time series slice the scheduled order must be released."
+              },
+              "actual_release_series": {
+                "type": "string",
+                "description": "The actual time series slice when the order was released."
+              },
+              "facility": {
+                "type": "string",
+                "description": "The facility name.",
+                "enum": [
+                  "acme",
+                  "spacely",
+                  "cogswell"
+                ]
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The unique identifier for the order."
+              },
+              "size": {
+                "type": "string",
+                "description": "The size of the order.",
+                "enum": [
+                  "sm",
+                  "md",
+                  "lg"
+                ]
+              },
+              "primacy": {
+                "type": "string",
+                "description": "The importance of the order.",
+                "enum": [
+                  "primary",
+                  "secondary",
+                  "tertiary"
+                ]
+              },
+              "color": {
+                "type": "string",
+                "description": "The color of the order.",
+                "enum": [
+                  "red",
+                  "yellow",
+                  "blue"
+                ]
+              },
+              "send_date": {
+                "type": "string",
+                "description": "The date when the order was scheduled."
+              },
+              "must_release_series": {
+                "type": "string",
+                "description": "The time series slice the scheduled order must be released."
+              },
+              "actual_release_series": {
+                "type": "string",
+                "description": "The actual time series slice when the order was released."
+              },
+              "facility": {
+                "type": "string",
+                "description": "The facility name.",
+                "enum": [
+                  "acme",
+                  "spacely",
+                  "cogswell"
+                ]
+              }
+            }
+          }
+        },
+        "activities": {
+          "schedule": {
+            "title": "Schedule Order",
+            "type": "trigger",
+            "job": {
+              "maps": {
+                "id": "{schedule.input.data.id}",
+                "color": "{schedule.input.data.color}",
+                "primacy": "{schedule.input.data.primacy}",
+                "size": "{schedule.input.data.size}",
+                "send_date": "{schedule.input.data.send_date}",
+                "must_release_series": "{schedule.input.data.must_release_series}"
+              }
+            },
+            "stats": {
+              "id": "{schedule.input.data.id}",
+              "key": {
+                "@pipe": [
+                  [
+                    "{schedule.input.data.color}",
+                    "{schedule.input.data.primacy}",
+                    "{schedule.input.data.size}"
+                  ],
+                  [
+                    "{@string.concat}"
+                  ]
+                ]
+              },
+              "measures": [
+                {
+                  "measure": "index",
+                  "target": "{schedule.input.data.color}"
+                },
+                {
+                  "measure": "count",
+                  "target": "{schedule.input.data.color}"
+                },
+                {
+                  "measure": "index",
+                  "target": "{schedule.input.data.primacy}"
+                },
+                {
+                  "measure": "count",
+                  "target": "{schedule.input.data.primacy}"
+                }
+              ]
+            }
+          },
+          "route": {
+            "title": "Route Order",
+            "type": "activity",
+            "hook": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "facility": {
+                    "description": "The facility name.",
+                    "enum": [
+                      "acme",
+                      "spacely",
+                      "cogswell"
+                    ]
+                  },
+                  "id": {
+                    "type": "string",
+                    "description": "The unique identifier for the order."
+                  },
+                  "actual_release_series": {
+                    "type": "string",
+                    "description": "The actual time series slice when the order was released."
+                  }
+                }
+              }
+            },
+            "job": {
+              "maps": {
+                "facility": "{route.hook.data.facility}",
+                "actual_release_series": "{route.hook.data.actual_release_series}"
+              }
+            }
+          },
+          "fulfill": {
+            "title": "Fulfill Order",
+            "type": "activity",
+            "job": {
+              "maps": {
+                "actual_release_series": "{route.hook.data.actual_release_series}"
+              }
+            }
+          }
+        },
+        "transitions": {
+          "schedule": [
+            {
+              "to": "route"
+            }
+          ],
+          "route": [
+            {
+              "to": "fulfill"
+            }
+          ]
+        },
+        "hooks": {
+          "order.routed": [
+            {
+              "to": "route",
+              "conditions": {
+                "match": [
+                  {
+                    "expected": "{schedule.output.data.id}",
+                    "actual": "{$self.hook.data.id}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "subscribes": "order.finalize",
+        "publishes": "order.finalized",
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The unique identifier for the order."
+              },
+              "size": {
+                "type": "string",
+                "description": "The size of the order.",
+                "enum": [
+                  "sm",
+                  "md",
+                  "lg"
+                ]
+              },
+              "primacy": {
+                "type": "string",
+                "description": "The importance of the order.",
+                "enum": [
+                  "primary",
+                  "secondary",
+                  "tertiary"
+                ]
+              },
+              "color": {
+                "type": "string",
+                "description": "The color of the order.",
+                "enum": [
+                  "red",
+                  "yellow",
+                  "blue"
+                ]
+              },
+              "send_date": {
+                "type": "string",
+                "description": "The date when the order was scheduled."
+              },
+              "must_release_series": {
+                "type": "string",
+                "description": "The time series slice the scheduled order must be released."
+              },
+              "actual_release_series": {
+                "type": "string",
+                "description": "The actual time series slice when the order was released."
+              },
+              "facility": {
+                "type": "string",
+                "description": "The facility name.",
+                "enum": [
+                  "acme",
+                  "spacely",
+                  "cogswell"
+                ]
+              }
+            }
+          }
+        },
+        "activities": {
+          "finalizer": {
+            "title": "Finalize Routed Order",
+            "type": "trigger",
+            "stats": {
+              "id": "{$self.input.data.id}",
+              "key": "static"
+            }
+          },
+          "bundler": {
+            "title": "Bundle Routed Order",
+            "type": "worker",
+            "topic": "order.bundle",
+            "input": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "The unique identifier for the order."
+                  },
+                  "size": {
+                    "type": "string",
+                    "description": "The size of the order.",
+                    "enum": [
+                      "sm",
+                      "md",
+                      "lg"
+                    ]
+                  },
+                  "primacy": {
+                    "type": "string",
+                    "description": "The importance of the order.",
+                    "enum": [
+                      "primary",
+                      "secondary",
+                      "tertiary"
+                    ]
+                  },
+                  "color": {
+                    "type": "string",
+                    "description": "The color of the order.",
+                    "enum": [
+                      "red",
+                      "yellow",
+                      "blue"
+                    ]
+                  },
+                  "send_date": {
+                    "type": "string",
+                    "description": "The date when the order was scheduled."
+                  },
+                  "must_release_series": {
+                    "type": "string",
+                    "description": "The time series slice the scheduled order must be released."
+                  },
+                  "actual_release_series": {
+                    "type": "string",
+                    "description": "The actual time series slice when the order was released."
+                  },
+                  "facility": {
+                    "type": "string",
+                    "description": "The facility name.",
+                    "enum": [
+                      "acme",
+                      "spacely",
+                      "cogswell"
+                    ]
+                  }
+                }
+              },
+              "maps": {
+                "id": "{finalizer.output.data.id}",
+                "color": "{finalizer.output.data.color}",
+                "primacy": "{finalizer.output.data.primacy}",
+                "size": "{finalizer.output.data.size}",
+                "send_date": "{finalizer.output.data.send_date}",
+                "must_release_series": "{finalizer.output.data.must_release_series}"
+              }
+            }
+          }
+        },
+        "transitions": {
+          "finalizer": [
+            {
+              "to": "bundler"
+            }
+          ]
+        }
+      },
+      {
+        "subscribes": "order.approval.requested",
+        "publishes": "order.approval.responded",
+        "expire": 120,
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The unique identifier for the object."
+              },
+              "price": {
+                "type": "number",
+                "description": "The price of the item.",
+                "minimum": 0
+              },
+              "object_type": {
+                "type": "string",
+                "description": "The type of the order (e.g, widgetA, widgetB)"
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The unique identifier for the object."
+              },
+              "price": {
+                "type": "number",
+                "description": "The price of the item.",
+                "minimum": 0
+              },
+              "approvals": {
+                "type": "object",
+                "description": "A hash of all approval facets and their status (price, etc)",
+                "properties": {
+                  "price": {
+                    "type": "boolean",
+                    "description": "Price approval status; true if approved on this facet."
+                  }
+                }
+              },
+              "approved": {
+                "type": "boolean",
+                "description": "Overall approval status of the item."
+              }
+            }
+          }
+        },
+        "activities": {
+          "a1": {
+            "title": "Get Approval",
+            "type": "trigger",
+            "stats": {
+              "id": {
+                "@pipe": [
+                  [
+                    "{a1.input.data.id}",
+                    "_caller"
+                  ],
+                  [
+                    "{@string.concat}"
+                  ]
+                ]
+              }
+            }
+          },
+          "a2": {
+            "title": "Get Price Approval",
+            "type": "await",
+            "topic": "order.approval.price.requested",
+            "input": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "The unique identifier for the object."
+                  },
+                  "price": {
+                    "type": "number",
+                    "description": "The price of the item.",
+                    "minimum": 0
+                  },
+                  "object_type": {
+                    "type": "string",
+                    "description": "The type of the order (e.g, widgetA, widgetB)"
+                  }
+                }
+              },
+              "maps": {
+                "id": "{a1.output.data.id}",
+                "price": "{a1.output.data.price}",
+                "object_type": "{a1.output.data.object_type}"
+              }
+            },
+            "output": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "The unique identifier for the object."
+                  },
+                  "price": {
+                    "type": "number",
+                    "description": "The price of the item.",
+                    "minimum": 0
+                  },
+                  "approved": {
+                    "type": "boolean",
+                    "description": "Approval status of the object."
+                  }
+                }
+              }
+            }
+          },
+          "a3": {
+            "title": "Return True",
+            "type": "activity",
+            "telemetry": {
+              "approved": {
+                "@pipe": [
+                  [
+                    "{a2.output.data.approved}",
+                    "yes",
+                    "no"
+                  ],
+                  [
+                    "{@conditional.ternary}"
+                  ]
+                ]
+              }
+            },
+            "job": {
+              "maps": {
+                "id": "{a1.output.data.id}",
+                "price": "{a1.output.data.price}",
+                "pricier": "{a2.output.data.approved}",
+                "priciest": 555.55,
+                "approvals": {
+                  "price": "{a2.output.data.approved}"
+                },
+                "approved": true
+              }
+            }
+          },
+          "a4": {
+            "title": "Return False",
+            "type": "activity",
+            "telemetry": {
+              "approved": {
+                "@pipe": [
+                  [
+                    "{a2.output.data.approved}",
+                    "ja",
+                    "nein"
+                  ],
+                  [
+                    "{@conditional.ternary}"
+                  ]
+                ]
+              }
+            },
+            "job": {
+              "maps": {
+                "id": "{a1.output.data.id}",
+                "price": "{a1.output.data.price}",
+                "approvals": {
+                  "price": "{a2.output.data.approved}"
+                },
+                "approved": false
+              }
+            }
+          }
+        },
+        "transitions": {
+          "a1": [
+            {
+              "to": "a2"
+            }
+          ],
+          "a2": [
+            {
+              "to": "a3",
+              "conditions": {
+                "match": [
+                  {
+                    "expected": true,
+                    "actual": "{a2.output.data.approved}"
+                  }
+                ]
+              }
+            },
+            {
+              "to": "a4",
+              "conditions": {
+                "match": [
+                  {
+                    "expected": false,
+                    "actual": "{a2.output.data.approved}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "subscribes": "order.approval.price.requested",
+        "publishes": "order.approval.price.responded",
+        "expire": 120,
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The unique identifier for the object."
+              },
+              "price": {
+                "type": "number",
+                "description": "The price of the item.",
+                "minimum": 0
+              },
+              "object_type": {
+                "type": "string",
+                "description": "The type of the order (e.g., widgetA, widgetB)",
+                "enum": [
+                  "widgetA",
+                  "widgetB"
+                ]
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "The unique identifier for the object."
+              },
+              "price": {
+                "type": "number",
+                "description": "The price of the item.",
+                "minimum": 0
+              },
+              "object_type": {
+                "type": "string",
+                "description": "The type of the order (e.g., widgetA, widgetB)",
+                "enum": [
+                  "widgetA",
+                  "widgetB",
+                  "widget",
+                  "order"
+                ]
+              },
+              "approved": {
+                "type": "boolean",
+                "description": "Approval status of the object."
+              }
+            }
+          }
+        },
+        "activities": {
+          "a5": {
+            "title": "Get Price Approval",
+            "type": "trigger",
+            "job": {
+              "maps": {
+                "id": "{a5.input.data.id}",
+                "price": "{a5.input.data.price}",
+                "object_type": "{a5.input.data.object_type}"
+              }
+            },
+            "stats": {
+              "key": "{a5.input.data.object_type}",
+              "id": "{a5.input.data.id}",
+              "measures": [
+                {
+                  "measure": "sum",
+                  "target": "{a5.input.data.price}"
+                },
+                {
+                  "measure": "avg",
+                  "target": "{a5.input.data.price}"
+                },
+                {
+                  "measure": "index",
+                  "target": "{a5.input.data.object_type}"
+                },
+                {
+                  "measure": "count",
+                  "target": "{a5.input.data.object_type}"
+                }
+              ]
+            }
+          },
+          "a6": {
+            "title": "Return True",
+            "type": "activity",
+            "job": {
+              "maps": {
+                "approved": true
+              }
+            }
+          },
+          "a7": {
+            "title": "Return False",
+            "type": "activity",
+            "job": {
+              "maps": {
+                "approved": false
+              }
+            }
+          }
+        },
+        "transitions": {
+          "a5": [
+            {
+              "to": "a6",
+              "conditions": {
+                "match": [
+                  {
+                    "expected": true,
+                    "actual": {
+                      "@pipe": [
+                        [
+                          "{a5.output.data.price}",
+                          100
+                        ],
+                        [
+                          "{@number.lt}"
+                        ]
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "to": "a7",
+              "conditions": {
+                "match": [
+                  {
+                    "expected": true,
+                    "actual": {
+                      "@pipe": [
+                        [
+                          "{a5.output.data.price}",
+                          100
+                        ],
+                        [
+                          "{@number.gte}"
+                        ]
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "subscribes": "sleep.do",
+        "expire": 120,
+        "inputs": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "duration": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "outputs": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "duration": {
+                "type": "number"
+              },
+              "done": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "activities": {
+          "mytrigger": {
+            "title": "Trigger Activity",
+            "type": "trigger",
+            "job": {
+              "maps": {
+                "duration": "{$self.input.data.duration}"
+              }
+            }
+          },
+          "mysleeper": {
+            "title": "Sleeper Activity",
+            "type": "activity",
+            "sleep": "{$job.data.duration}",
+            "job": {
+              "maps": {
+                "done": true
+              }
+            }
+          }
+        },
+        "transitions": {
+          "mytrigger": [
+            {
+              "to": "mysleeper"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

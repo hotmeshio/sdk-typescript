@@ -1,0 +1,16 @@
+finalizer:
+  output:
+    id: "{finalizer.input.data.id}"
+    color: "{finalizer.input.data.color}"
+    primacy: "{finalizer.input.data.primacy}"
+    size: "{finalizer.input.data.size}"
+    send_date: "{finalizer.input.data.send_date}"
+    must_release_series: "{finalizer.input.data.must_release_series}"
+bundler:
+  input:
+    id: "{finalizer.output.data.id}"
+    color: "{finalizer.output.data.color}"
+    primacy: "{finalizer.output.data.primacy}"
+    size: "{finalizer.output.data.size}"
+    send_date: "{finalizer.output.data.send_date}"
+    must_release_series: "{finalizer.output.data.must_release_series}"

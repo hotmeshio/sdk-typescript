@@ -1,0 +1,20 @@
+input:
+  type: object
+  properties:
+    operation:
+      examples: ['calculation.execute','executor','receiver','operate','trigger','calculate']
+      type: string
+      enum:
+        - add
+        - subtract
+        - multiply
+        - divide
+    values:
+      type: string
+      examples: ["[100,4,5]", "[5,4,3,2,1]", "[1,2,3,4,5]", "[10,10,10]"]
+      description: stringified JSON array of numbers
+output:
+  type: object
+  properties:
+    result:
+      type: number

@@ -1,0 +1,14 @@
+app:
+  id: abc
+  version: '4'
+  graphs:
+    - subscribes: abc.test
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.do
+      transitions:
+        t1:
+          - to: a1

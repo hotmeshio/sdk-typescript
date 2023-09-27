@@ -1,0 +1,11 @@
+a5:
+  job:
+    id: "{a5.input.data.id}"
+    price: "{a5.input.data.price}"
+    object_type: "{a5.input.data.object_type}"
+a6:
+  job:
+    approved: true
+a7:
+  job:
+    approved: false

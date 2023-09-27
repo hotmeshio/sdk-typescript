@@ -1,0 +1,10 @@
+calculate:
+  output:
+    operation: '{calculate.input.data.operation}'
+    values: '{calculate.input.data.values}'
+operate:
+  input:
+    operation: '{calculate.output.data.operation}'
+    values: '{calculate.output.data.values}'
+  job:
+    result: '{operate.output.data.result}'

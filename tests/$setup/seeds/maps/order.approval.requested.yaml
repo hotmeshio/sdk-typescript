@@ -1,0 +1,22 @@
+a2:
+  input:
+    id: "{a1.output.data.id}"
+    price: "{a1.output.data.price}"
+    object_type: "{a1.output.data.object_type}"
+a3:
+  job:
+    id: "{a1.output.data.id}"
+    price: "{a1.output.data.price}"
+    pricier: "{a2.output.data.approved}"
+    priciest: 555.55
+    approvals:
+      price: "{a2.output.data.approved}"
+    approved: true
+a4:
+  job:
+    id: "{a1.output.data.id}"
+    price: "{a1.output.data.price}"
+    approvals:
+      price: "{a2.output.data.approved}"
+    approved: false
+

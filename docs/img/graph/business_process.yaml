@@ -1,0 +1,27 @@
+flowchart LR
+
+    subgraph "Flow: APPROVE ORDER PRICE"
+      B_Get_Price_Approval("Get Price Approval")
+      B_Return_True("Return True")
+      B_Return_False("Return False")
+    end
+
+    subgraph "Flow: APPROVE ORDER"
+      A_Get_Approval("Get Approval")
+      A_Get_Price_Approval("Get Price Approval")
+      A_Return_True("Return True")
+      A_Return_False("Return False")
+    end
+
+    Start(("Start")) -.-> A_Get_Approval
+    A_Get_Approval --> A_Get_Price_Approval
+    A_Get_Price_Approval --->|status = approved| A_Return_True
+    A_Get_Price_Approval --->|status = rejected| A_Return_False
+
+    A_Get_Price_Approval -.->|Request| B_Get_Price_Approval
+    B_Get_Price_Approval -.->|Await Response| A_Get_Price_Approval
+
+    B_Get_Price_Approval ---->|price < $100| B_Return_True
+    B_Get_Price_Approval ---->|price >= $100| B_Return_False
+
+    style Start fill:green

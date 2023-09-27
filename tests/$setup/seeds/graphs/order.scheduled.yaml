@@ -1,0 +1,63 @@
+subscribes: order.scheduled
+publishes: order.fulfilled
+
+input:
+  schema:
+    $ref: '../schemas/order.scheduled.yaml#/order'
+output:
+  schema:
+    $ref: '../schemas/order.scheduled.yaml#/order'
+
+activities:
+  schedule:
+    title: Schedule Order
+    type: trigger
+    job:
+      maps:
+        $ref: '../maps/order.scheduled.yaml#/schedule/job'
+    stats:
+      id: "{schedule.input.data.id}"
+      key:
+        "@pipe":
+          - ["{schedule.input.data.color}", "{schedule.input.data.primacy}", "{schedule.input.data.size}"]
+          - ["{@string.concat}"]
+      measures:
+        - measure: index
+          target: "{schedule.input.data.color}"
+        - measure: count
+          target: "{schedule.input.data.color}"
+        - measure: index
+          target: "{schedule.input.data.primacy}"
+        - measure: count
+          target: "{schedule.input.data.primacy}"
+
+  route:
+    title: Route Order
+    type: activity
+    hook:
+      schema:
+        $ref: '../schemas/order.scheduled.yaml#/route/hook'
+    job:
+      maps:
+        $ref: '../maps/order.scheduled.yaml#/route/job'
+
+  fulfill:
+    title: Fulfill Order
+    type: activity
+    job:
+      maps:
+        $ref: '../maps/order.scheduled.yaml#/fulfill/job'
+
+transitions:
+  schedule:
+    - to: route
+  route:
+    - to: fulfill
+
+hooks:
+  order.routed:
+    - to: route
+      conditions:
+        match:
+          - expected: "{schedule.output.data.id}"
+            actual: "{$self.hook.data.id}"

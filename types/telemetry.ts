@@ -1,0 +1,15 @@
+export {
+  context,
+  Context,
+  Counter,
+  Meter,
+  metrics,
+  propagation,
+  SpanContext,
+  Span,
+  SpanStatus,
+  SpanStatusCode,
+  SpanKind,
+  trace,
+  Tracer,
+  ValueType } from '@opentelemetry/api';

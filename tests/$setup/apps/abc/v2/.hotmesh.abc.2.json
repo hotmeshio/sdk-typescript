@@ -1,0 +1,26 @@
+{
+  "app": {
+    "id": "abc",
+    "version": "2",
+    "graphs": [
+      {
+        "subscribes": "abc.test",
+        "activities": {
+          "t1": {
+            "type": "trigger"
+          },
+          "a1": {
+            "type": "activity"
+          }
+        },
+        "transitions": {
+          "t1": [
+            {
+              "to": "a1"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

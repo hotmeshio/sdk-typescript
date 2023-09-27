@@ -1,0 +1,26 @@
+{
+  "app": {
+    "id": "tree",
+    "version": "7",
+    "graphs": [
+      {
+        "subscribes": "spring",
+        "activities": {
+          "t1": {
+            "type": "trigger"
+          },
+          "a1": {
+            "type": "activity"
+          }
+        },
+        "transitions": {
+          "t1": [
+            {
+              "to": "a1"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+subscribes: order.finalize
+publishes: order.finalized
+
+input:
+  schema:
+    $ref: '../schemas/order.finalize.yaml#/order'
+
+activities:
+
+  finalizer:
+    title: Finalize Routed Order
+    type: trigger
+    stats:
+      id: '{$self.input.data.id}'
+      key: static
+
+  bundler:
+    title: Bundle Routed Order
+    type: worker
+    topic: order.bundle
+    input:
+      schema:
+        $ref: '../schemas/order.finalize.yaml#/order'
+      maps:
+        $ref: '../maps/order.finalize.yaml#/bundler/input'
+
+transitions:
+  finalizer:
+    - to: bundler

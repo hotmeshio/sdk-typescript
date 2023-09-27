@@ -1,0 +1,74 @@
+app:
+  id: tree
+  version: '4'
+  graphs:
+    - subscribes: spring
+      publishes: fall
+
+      input:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+      output:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+            height:
+              type: number
+            shine:
+              type: string
+            graft:
+              type: string
+            water:
+              type: string
+            fertilize:
+              type: string
+            pollinate:
+              type: string
+            prune:
+              type: string
+
+      activities:
+        tree:
+          type: trigger
+          job:
+            maps:
+              seed: '{$self.output.data.seed}'
+              speed: '{$self.output.data.speed}'
+              height:
+                '@pipe':
+                  - ['{$self.output.data.seed}', '{$self.output.data.speed}']
+                  - ['{@number.multiply}']
+              shine:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+              graft:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+              water:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+              fertilize:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+              pollinate:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+              prune:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+    

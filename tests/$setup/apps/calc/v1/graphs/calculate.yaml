@@ -1,0 +1,33 @@
+subscribes: calculate
+publishes: calculated
+
+expire: 120
+
+input:
+  schema:
+    $ref: '../schemas/calculate.yaml#/input'
+output:
+  schema:
+    $ref: '../schemas/calculate.yaml#/output'
+
+activities:
+  calculate:
+    title: Calculate
+    type: trigger
+
+  operate:
+    title: Operate
+    type: await
+    topic: calculation.execute
+    input:
+      schema:
+        $ref: '../schemas/calculate.yaml#/input'
+      maps:
+        $ref: '../maps/calculate.yaml#/operate/input'
+    job:
+      maps:
+        $ref: '../maps/calculate.yaml#/operate/job'
+
+transitions:
+  calculate:
+    - to: operate

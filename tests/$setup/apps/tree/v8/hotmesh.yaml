@@ -1,0 +1,18 @@
+app:
+  id: tree
+  version: '8'
+  graphs:
+    - subscribes: spring
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: await
+          topic: fall
+      transitions:
+        t1:
+          - to: a1
+    - subscribes: fall
+      activities:
+        t2:
+          type: trigger

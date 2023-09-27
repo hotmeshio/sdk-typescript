@@ -1,0 +1,15 @@
+app:
+  id: test-app
+  version: '1'
+  settings:
+    some_boolean: true
+    some:
+      nested:
+        string: hello
+        integer: 2
+  graphs:
+    - $ref: ./graphs/order.scheduled.yaml
+    - $ref: ./graphs/order.finalize.yaml
+    - $ref: ./graphs/order.approval.requested.yaml
+    - $ref: ./graphs/order.approval.price.requested.yaml
+    - $ref: ./graphs/sleep.do.yaml

@@ -1,0 +1,14 @@
+flowchart LR
+    subgraph Flow A    
+      A_Review_Order("Review Order")
+      A_Get_Approval("Get Approval")
+      A_Return_Review("Return Review")
+    end
+
+    B_Get_Approval("Get Approval")
+
+    A_Review_Order ---> A_Get_Approval
+    A_Get_Approval ---> A_Return_Review
+
+    A_Get_Approval -.->|Request| B_Get_Approval
+    B_Get_Approval -.->|Await Response| A_Get_Approval
