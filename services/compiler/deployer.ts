@@ -1,13 +1,13 @@
-import { KeyStoreParams, KeyType } from "../../modules/key";
-import { getSymKey } from "../../modules/utils";
-import { CollatorService } from "../collator";
-import { SerializerService } from "../serializer";
+import { KeyStoreParams, KeyType } from '../../modules/key';
+import { getSymKey } from '../../modules/utils';
+import { CollatorService } from '../collator';
+import { SerializerService } from '../serializer';
 import { StoreService } from '../store';
-import { ActivityType } from "../../types/activity";
-import { HookRule } from "../../types/hook";
-import { HotMeshGraph, HotMeshManifest } from "../../types/hotmesh";
-import { RedisClient, RedisMulti } from "../../types/redis";
-import { StringAnyType, Symbols } from "../../types/serializer";
+import { ActivityType } from '../../types/activity';
+import { HookRule } from '../../types/hook';
+import { HotMeshGraph, HotMeshManifest } from '../../types/hotmesh';
+import { RedisClient, RedisMulti } from '../../types/redis';
+import { StringAnyType, Symbols } from '../../types/serializer';
 
 const DEFAULT_METADATA_RANGE_SIZE = 26; //metadata is 26 slots ([a-z] * 1)
 const DEFAULT_DATA_RANGE_SIZE = 260; //data is 260 slots ([a-zA-Z] * 5)
@@ -63,9 +63,24 @@ class Deployer {
       for (const [activityId, activity] of Object.entries(graph.activities)) {
         const [lower, upper, symbols] = await this.store.reserveSymbolRange(activityId, DEFAULT_RANGE_SIZE, 'ACTIVITY');
         const prefix = `${activityId}/`; //activity meta/data is namespaced
+        this.bindSelf(activity.consumes, activity.produces, activityId);
         const newSymbols = this.bindSymbols(lower, upper, symbols, prefix, activity.produces);
         if (Object.keys(newSymbols).length) {
           await this.store.addSymbols(activityId, newSymbols);
+        }
+      }
+    }
+  }
+
+  bindSelf(consumes: Record<string, string[]>, produces: string[], activityId: string) {
+    //bind self-referential mappings
+    for (const selfId of [activityId, '$self']) {
+      const selfConsumes = consumes[selfId];
+      if (selfConsumes) {
+        for (const path of selfConsumes) {
+          if (!produces.includes(path)) {
+            produces.push(path);
+          }
         }
       }
     }

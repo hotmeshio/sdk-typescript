@@ -1,5 +1,5 @@
-import { JobOutput } from "../../types/job";
-import { HotMeshService as HotMesh } from "../hotmesh";
+import { JobOutput } from '../../types/job';
+import { HotMeshService as HotMesh } from '../hotmesh';
 
 export class WorkflowHandleService {
   hotMesh: HotMesh;

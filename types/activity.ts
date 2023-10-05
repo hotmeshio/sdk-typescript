@@ -26,6 +26,7 @@ interface BaseActivity {
   subscribes?: string;                 //compiler
   trigger?: string;                    //compiler
   parent?: string;                     //compiler
+  ancestors?: string[];                //compiler
 }
 
 interface Measure {

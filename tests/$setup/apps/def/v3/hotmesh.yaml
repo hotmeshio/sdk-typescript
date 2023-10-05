@@ -60,10 +60,14 @@ app:
               properties:
                 code:
                   type: number
+                percentage:
+                  type: number
             202:
               schema:
                 type: object
                 properties:
+                  code:
+                    type: number
                   percentage:
                     type: number
             422:
@@ -94,6 +98,7 @@ app:
           job:
             maps:
               message: '{a1.output.data.message}'
+              percentage: '{a1.output.data.percentage}'
         a202:
           type: activity
           job:
@@ -113,22 +118,16 @@ app:
             conditions:
               match:
                 - expected: true
-                  actual: 
-                    '@pipe':
-                      - ['{t1.output.data.code}', 200]
-                      - ['{@conditional.equality}']
+                  actual: true
           - to: a202
-            code: 202
             conditions:
+              code: 202
               match:
                 - expected: true
-                  actual: 
-                    '@pipe':
-                      - ['{t1.output.data.code}', 202]
-                      - ['{@conditional.equality}']
+                  actual: true
           - to: a422
-            code: 422
             conditions:
+              code: 422
               match:
                 - expected: true
                   actual: 

@@ -5,7 +5,7 @@ import { ActivityType, Consumes } from '../../../../types/activity';
 import { HookSignal } from '../../../../types/hook';
 import { StatsType } from '../../../../types/stats';
 import { RedisConnection, RedisClientType } from '../../../$setup/cache/ioredis';
-import { StringAnyType, Symbols } from '../../../../types/serializer';
+import { StringAnyType, StringStringType, Symbols } from '../../../../types/serializer';
 import { MDATA_SYMBOLS } from '../../../../services/serializer';
 import { getSymKey } from '../../../../modules/utils';
 
@@ -111,7 +111,6 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       const jobId = 'jid';
       const topic = '$job.topic';
       const activityId = 'a1';
-      const appId = appConfig.id;
       const size = 286;
       let [lowerLimit] = await redisStoreService.reserveSymbolRange(activityId, size, 'ACTIVITY');
       let symbols: Symbols = {
@@ -140,7 +139,10 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         'metadata/jid': jobId,
         'metadata/js': jobStatus,
       };
-      const result = await redisStoreService.setState(jobState, jobStatus, jobId, appId, [activityId, topic]);
+      const dIds: StringStringType = {
+        'a1': ',0,0'
+      };
+      const result = await redisStoreService.setState(jobState, jobStatus, jobId, [activityId, topic], dIds);
       expect(result).toEqual(jobId);
       
       //4) get job state
@@ -157,7 +159,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
           'metadata/jid',
         ]
       };
-      const response = await redisStoreService.getState(jobId, consumes);
+      const response = await redisStoreService.getState(jobId, consumes, dIds);
       if (response) {
         const [resolvedJobState, resolvedJobStatus] = response;
         expect(resolvedJobState).toEqual(jobState);

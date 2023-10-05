@@ -452,12 +452,12 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return Number(status);
   }
 
-  async setState({ ...state }: StringAnyType, status: number | null, jobId: string, appId: string, symbolNames: string[], multi? : U): Promise<string> {
+  async setState({ ...state }: StringAnyType, status: number | null, jobId: string, symbolNames: string[], dIds: StringStringType, multi? : U): Promise<string> {
     delete state['metadata/js'];
-    const hashKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
+    const hashKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
     const symKeys = await this.getSymbolKeys(symbolNames);
     const symVals = await this.getSymbolValues();
-    this.serializer.resetSymbols(symKeys, symVals);
+    this.serializer.resetSymbols(symKeys, symVals, dIds);
 
     const hashData = this.serializer.package(state, symbolNames);
     if (status !== null) {
@@ -469,26 +469,14 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return jobId;
   }
 
-  async getState(jobId: string, consumes: Consumes): Promise<[StringAnyType, number] | undefined> {
-    //todo: refactor into semantic submethods
+  async getState(jobId: string, consumes: Consumes, dIds: StringStringType): Promise<[StringAnyType, number] | undefined> {
+    //get abbreviated field list (the symbols for the paths)
     const key = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
     const symbolNames = Object.keys(consumes);
     const symKeys = await this.getSymbolKeys(symbolNames);
+    this.serializer.resetSymbols(symKeys, {}, dIds);
+    const fields = this.serializer.abbreviate(consumes, symbolNames, [':']);
 
-    //always fetch the job status (':') when fetching state
-    const fields = [':'];
-    for (const symbolName of symbolNames) {
-      const symbolSet = symKeys[symbolName];
-      const symbolPaths = consumes[symbolName];
-      for (const symbolPath of symbolPaths) {
-        const abbreviation = symbolSet[symbolPath];
-        if (abbreviation) {
-          fields.push(abbreviation);
-        } else {
-          fields.push(symbolPath);
-        }
-      }
-    }
     const jobDataArray = await this.redisClient[this.commands.hmget](key, fields);
     const jobData: StringAnyType = {};
     let atLeast1 = false; //if status field (':') isn't present assume 404
@@ -500,7 +488,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     });
     if (atLeast1) {
       const symVals = await this.getSymbolValues();
-      this.serializer.resetSymbols(symKeys, symVals);
+      this.serializer.resetSymbols(symKeys, symVals, dIds);
       const state = this.serializer.unpackage(jobData, symbolNames);
       let status = 0;
       if (state[':']) {
@@ -512,13 +500,13 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     }
   }
 
-  async collate(jobId: string, activityId: string, amount: number, multi? : U): Promise<number> {
+  async collate(jobId: string, activityId: string, amount: number, dIds: StringStringType, multi? : U): Promise<number> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
     const collationKey = `${activityId}/output/metadata/as`; //activity state
     const symbolNames = [activityId];
     const symKeys = await this.getSymbolKeys(symbolNames);
     const symVals = await this.getSymbolValues();
-    this.serializer.resetSymbols(symKeys, symVals);
+    this.serializer.resetSymbols(symKeys, symVals, dIds);
 
     const payload = { [collationKey]: amount.toString() }
     const hashData = this.serializer.package(payload, symbolNames);

@@ -1,4 +1,4 @@
-import { HotMeshGraph } from "../../types/hotmesh";
+import { HotMeshGraph } from '../../types/hotmesh';
 
 class DimensionService {
 

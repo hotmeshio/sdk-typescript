@@ -45,7 +45,7 @@ describe('FUNCTIONAL | Status Codes', () => {
               code: streamData.data.code as number
             };
             if (streamData.data.code == 202) {
-              data.percentage = 50;
+              data.percentage = 49;
               status = StreamStatus.PENDING;
 
               //send a second message on a delay;
@@ -56,7 +56,7 @@ describe('FUNCTIONAL | Status Codes', () => {
                   code: 200,
                   status: StreamStatus.SUCCESS,
                   metadata: { ...streamData.metadata },
-                  data: { code: 200, percentage: 100 }
+                  data: { code: 200, percentage: 99 }
                 });
               }, 250);
             } else if (streamData.data.code == 422) {
@@ -115,7 +115,7 @@ describe('FUNCTIONAL | Status Codes', () => {
         expect(data.message).toBe('invalid input');
         expect(data.job_id).not.toBeUndefined();
 
-        const state = await hotMesh.getState('def.test', data.job_id);
+        await hotMesh.getState('def.test', data.job_id);
       }
     });
   });
@@ -150,9 +150,11 @@ describe('FUNCTIONAL | Status Codes', () => {
       const data = result?.data as {
         code: number;
         percentage: number;
+        message: string;
       };
       expect(data.code).toBe(200);
-      expect(data.percentage).toBe(100);
+      expect(data.percentage).toBe(99);
+      expect(data.message).toBe('success');
     });
   });
 });
