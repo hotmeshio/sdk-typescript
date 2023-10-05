@@ -1,4 +1,5 @@
 import { getSymVal } from '../../modules/utils';
+import { Consumes } from '../../types/activity';
 import {
   StringStringType,
   StringAnyType,
@@ -26,16 +27,53 @@ export const MDATA_SYMBOLS = {
 };
 
 export class SerializerService {
+  dIds: StringStringType;
   symKeys: SymbolMaps;
   symReverseKeys: SymbolMaps;
   symValMaps: SymbolMap;
   symValReverseMaps: SymbolMap;
 
   constructor() {
-    this.resetSymbols({}, {});
+    this.resetSymbols({}, {}, {});
   }
 
-  resetSymbols(symKeys: SymbolSets, symVals: Symbols): void {
+  abbreviate(consumes: Consumes, symbolNames: string[], fields: string[] = []): string[] {
+    for (const symbolName of symbolNames) {
+      const symbolSet = this.symKeys.get(symbolName);
+      const symbolPaths = consumes[symbolName];
+      for (const symbolPath of symbolPaths) {
+        const abbreviation = symbolSet.get(symbolPath);
+        if (abbreviation) {
+          const dimensionalIndex = this.resolveDimensionalIndex(symbolPath);
+          fields.push(`${abbreviation}${dimensionalIndex}`);
+        } else {
+          fields.push(symbolPath);
+        }
+      }
+    }
+    return fields;
+  }
+
+  resolveDimensionalIndex(path: string): string {
+    if (this.isJobPath(path)) {
+      return '';
+    } else {
+      const [activityId] = path.split('/');
+      if (activityId in this.dIds) {
+        return this.dIds[activityId];
+      } else if ('$ADJACENT' in this.dIds) {
+        //else=> pre-authorizing adjacent activity entry
+        return this.dIds['$ADJACENT'];
+      }
+      return ',0';
+    }
+  }
+
+  isJobPath(path: string): boolean {
+    return path.startsWith('data/') || path.startsWith('metadata/');
+  }
+
+  resetSymbols(symKeys: SymbolSets, symVals: Symbols, dIds: StringStringType): void {
     this.symKeys = new Map();
     this.symReverseKeys = new Map();
     for (const id in symKeys) {
@@ -43,6 +81,7 @@ export class SerializerService {
     }
     this.symValMaps = new Map(Object.entries(symVals));
     this.symValReverseMaps = this.getReverseValueMap(this.symValMaps);
+    this.dIds = dIds;
   }
 
   getReverseKeyMap(keyMap: SymbolMap, id?: string): SymbolMap {
@@ -87,25 +126,23 @@ export class SerializerService {
     if (this.symKeys.size === 0) {
       return document;
     }
-    let result: StringStringType = { ...document };
+    let source: StringStringType = { ...document };
+    let result: StringStringType = { };
 
-    const compressWithMap = (abbreviationMap: SymbolMap) => {
-      for (let key in result) {
-        let safeKey = abbreviationMap.get(key) || key;
-        let value = result[key];
-        let safeValue = abbreviationMap.get(value) || value;
-        if (safeKey !== key || safeValue !== value) {
-          result[safeKey] = safeValue;
-          if (safeKey !== key) {
-            delete result[key];
+    const compressWithMap = (abbreviationMap: SymbolMap, id: string) => {
+      for (let key in source) {
+        if (key.startsWith(`${id}/`) || (id.startsWith('$') && ['data', 'metadata'].includes(key.split('/')[0]))) {
+          const dimensionalIndex = this.resolveDimensionalIndex(key);
+          let shortKey = abbreviationMap.get(key) || key;
+          const shortDimensionalKey = `${shortKey}${dimensionalIndex}`;
+          result[shortDimensionalKey] = source[key];
           }
-        }
       }
     };
     for (let id of ids) {
       const abbreviationMap = this.symKeys.get(id);
       if (abbreviationMap) {
-        compressWithMap(abbreviationMap);
+        compressWithMap(abbreviationMap, id);
       }
     }
     return result;
@@ -120,14 +157,12 @@ export class SerializerService {
     const inflateWithMap = (abbreviationMap: SymbolMap, id: string) => {
       const reversedAbbreviationMap = this.getReverseKeyMap(abbreviationMap, id);
       for (let key in result) {
-        let safeKey = reversedAbbreviationMap.get(key) || key;
-        let value = result[key];
-        let safeValue = reversedAbbreviationMap.get(value) || value;
-        if (safeKey !== key || safeValue !== value) {
-          result[safeKey] = safeValue;
-          if (safeKey !== key) {
-            delete result[key];
-          }
+        //strip dimensional index from key
+        const shortKey = key.split(',')[0];
+        let longKey = reversedAbbreviationMap.get(shortKey);
+        if (longKey) {
+          result[longKey] = result[key];
+          delete result[key];
         }
       }
     };

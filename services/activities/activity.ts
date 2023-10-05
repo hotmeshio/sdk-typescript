@@ -142,7 +142,8 @@ class Activity {
       const durationInSeconds = Pipe.resolve(this.config.sleep, this.context);
       const jobId = this.context.metadata.jid;
       const activityId = this.metadata.aid;
-      await this.engine.task.registerTimeHook(jobId, activityId, 'sleep', durationInSeconds);
+      const dId = this.metadata.dad;
+      await this.engine.task.registerTimeHook(jobId, `${activityId}${dId||''}`, 'sleep', durationInSeconds);
       return jobId;
     }
   }
@@ -206,6 +207,7 @@ class Activity {
       telemetry.setActivityAttributes(attrs);
       return jobStatus as number;
     } catch (error) {
+      console.error('this error?', error);
       this.logger.error('engine-process-hook-event-error', error);
       telemetry.setActivityError(error.message);
       throw error;
@@ -278,12 +280,11 @@ class Activity {
   }
 
   bindDimensionalAddress(state: StringAnyType) {
-    const { aid, dad } = this.metadata;
-    state[`${aid}/output/metadata/dad`] = dad;
+    const dad = this.resolveDad();
+    state[`${this.metadata.aid}/output/metadata/dad`] = dad;
   }
 
   async setState(multi?: RedisMulti): Promise<string> {
-    const { id: appId } = await this.engine.getVID();
     const jobId = this.context.metadata.jid;
     this.bindJobMetadata();
     this.bindActivityMetadata();
@@ -298,7 +299,8 @@ class Activity {
       this.metadata.aid,
       ...presets
     ];
-    return await this.store.setState(state, this.getJobStatus(), jobId, appId, symbolNames, multi);
+    const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], this.resolveDad());
+    return await this.store.setState(state, this.getJobStatus(), jobId, symbolNames, dIds, multi);
   }
 
   bindJobMetadata(): void {
@@ -314,6 +316,7 @@ class Activity {
     if (this.status === StreamStatus.ERROR) {
       self.output.metadata.err = JSON.stringify(this.data);
     }
+    //todo: verify leg2 never overwrites leg1 `ac`
     self.output.metadata.ac = 
       self.output.metadata.au = formatISODate(new Date());
     self.output.metadata.atp = this.config.type;
@@ -386,10 +389,11 @@ class Activity {
       }
     }
     TelemetryService.addTargetTelemetryPaths(consumes, this.config, this.metadata, this.leg);
-    const { dad, jid } = this.context.metadata;
+    let { dad, jid } = this.context.metadata;
     jobId = jobId || jid;
     //`state` is a flat hash
-    const [state, status] = await this.store.getState(jobId, consumes);
+    const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], dad);
+    const [state, status] = await this.store.getState(jobId, consumes, dIds);
     //`context` is a tree
     this.context = restoreHierarchy(state) as JobState;
     this.initDimensionalAddress(dad);
@@ -429,11 +433,26 @@ class Activity {
     this.context[this.metadata.aid][type].data = this.data;
   }
 
+  resolveDad(): string {
+    let dad = this.metadata.dad;
+    if (this.adjacentIndex > 0) {
+      //if adjacent index > 0 the activity is cycling; replace last index with cycle index
+      dad = `${dad.substring(0, dad.lastIndexOf(','))},${this.adjacentIndex}`
+    }
+    return dad;
+  }
+
+  resolveAdjacentDad(): string {
+    //concat self and child dimension (all children (leg 1) begin life at 0)
+    return `${this.resolveDad()}${DimensionService.getSeed(0)}`;
+  };
+
   async filterAdjacent(): Promise<StreamData[]> {
     const adjacencyList: StreamData[] = [];
     const transitions = await this.store.getTransitions(await this.engine.getVID());
     const transition = transitions[`.${this.metadata.aid}`];
-    const adjacentSuffix = DimensionService.getSeed(this.adjacentIndex);
+    //resolve the dimensional address for adjacent children
+    const adjacentDad = this.resolveAdjacentDad();
     if (transition) {
       for (const toActivityId in transition) {
         const transitionRule: boolean | TransitionRule = transition[toActivityId];
@@ -441,7 +460,7 @@ class Activity {
           adjacencyList.push({
             metadata: {
               jid: this.context.metadata.jid,
-              dad: `${this.metadata.dad}${adjacentSuffix}`,
+              dad: adjacentDad,
               aid: toActivityId,
               spn: this.context['$self'].output.metadata?.l2s,
               trc: this.context.metadata.trc,

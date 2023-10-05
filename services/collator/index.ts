@@ -1,18 +1,28 @@
-import { CollationError } from "../../modules/errors";
-import { RedisMulti } from "../../types/redis";
-import { CollationFaultType, CollationStage } from "../../types/collator";
-import { ActivityDuplex } from "../../types/activity";
-import { HotMeshGraph } from "../../types/hotmesh";
-import { Activity } from "../activities/activity";
+import { CollationError } from '../../modules/errors';
+import { RedisMulti } from '../../types/redis';
+import { CollationFaultType, CollationStage } from '../../types/collator';
+import { ActivityDuplex } from '../../types/activity';
+import { HotMeshGraph } from '../../types/hotmesh';
+import { Activity } from '../activities/activity';
 
 class CollatorService {
 
   //max int digit count that supports `hincrby`
-  static targetLength = 15; 
+  static targetLength = 15;
+
+  static getDimensionalAddress(activity: Activity): Record<string, string> {
+    let dad = activity.context.metadata.dad || activity.metadata.dad;
+    //todo: unsure about this reset
+    // if (dad && activity.leg === 2) {
+    //   console.log('setting dad index back to 0=>', dad);
+    //   dad = `${dad.substring(0, dad.lastIndexOf(','))},0`;
+    // }
+    return CollatorService.getDimensionsById([...activity.config.ancestors, activity.metadata.aid], dad);
+  }
 
   static async notarizeEntry(activity: Activity, multi?: RedisMulti): Promise<number> {
     //decrement by -100_000_000_000_000
-    const amount = await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, -100_000_000_000_000, multi);
+    const amount = await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, -100_000_000_000_000, this.getDimensionalAddress(activity), multi);
     this.verifyInteger(amount, 1, 'enter');
     return amount;
   };
@@ -20,31 +30,31 @@ class CollatorService {
   static async authorizeReentry(activity: Activity, multi?: RedisMulti): Promise<number> {
     //set second digit to 8, allowing for re-entry
     //decrement by -10_000_000_000_000
-    const amount = await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, -10_000_000_000_000, multi);
+    const amount = await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, -10_000_000_000_000, this.getDimensionalAddress(activity), multi);
     //this.verifyInteger(amount, 1, 'exit');
     return amount;
   }
 
   static async notarizeEarlyCompletion(activity: Activity, multi?: RedisMulti): Promise<number> {
     //initialize both `possible` (1m) and `actualized` (1) zero dimension, while decrementing the 2nd and 3rd digits to deactivate the activity
-    return await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1_000_001 - 11_000_000_000_000, multi);
+    return await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1_000_001 - 11_000_000_000_000, this.getDimensionalAddress(activity), multi);
   };
 
   static async notarizeReentry(activity: Activity, multi?: RedisMulti): Promise<number> {
     //increment by 1_000_000 (indicates re-entry and is used to drive the 'dimensional address' for adjacent activities (minus 1))
-    const amount = await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1_000_000, multi);
+    const amount = await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1_000_000, this.getDimensionalAddress(activity), multi);
     this.verifyInteger(amount, 2, 'enter');
     return amount;
   };
 
   static async notarizeContinuation(activity: Activity, multi?: RedisMulti): Promise<number> {
     //keep open; actualize the leg2 dimension (+1)
-    return await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1, multi);
+    return await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1, this.getDimensionalAddress(activity), multi);
   };
 
   static async notarizeCompletion(activity: Activity, multi?: RedisMulti): Promise<number> {
     //close out; actualize leg2 dimension (+1) and decrement the 3rd digit (-1_000_000_000_000)
-    return await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1 - 1_000_000_000_000, multi);
+    return await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1 - 1_000_000_000_000, this.getDimensionalAddress(activity), multi);
   };
 
   static getDigitAtIndex(num: number, targetDigitIndex: number): number | null {
@@ -110,6 +120,21 @@ class CollatorService {
     if (faultType) {
       throw new CollationError(amount, leg, stage, faultType);
     }
+  }
+
+  static getDimensionsById(ancestors: string[], dad: string): Record<string, string> {
+    //ancestors is an ordered list of all ancestors, starting with the trigger (['t1', 'a1', 'a2'])
+    //dad is the dimensional address of the ancestors list (',0,5,3')
+    //loop through the ancestors list and create a map of the ancestor to the dimensional address.
+    //return { 't1': ',0', 'a1': ',0,5', 'a1': ',0,5,3', $ADJACENT: ',0,5,3,0' };
+    // `adjacent` is a special key that is used to track the dimensional address of adjacent activities
+    const map: Record<string, string> = { '$ADJACENT': `${dad},0` };
+    let dadStr = dad;
+    ancestors.reverse().forEach((ancestor) => {
+      map[ancestor] = dadStr;
+      dadStr = dadStr.substring(0, dadStr.lastIndexOf(','));
+    });
+    return map;
   }
 
   /**

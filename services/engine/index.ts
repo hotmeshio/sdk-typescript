@@ -63,6 +63,7 @@ import {
   StreamError,
   StreamRole,
   StreamStatus } from '../../types/stream';
+import { StringStringType } from '../../types';
 
 //wait time to see if a job is complete
 const OTT_WAIT_TIME = 1000;
@@ -408,21 +409,37 @@ class EngineService {
   }
 
   // ****************** `HOOK` ACTIVITY RE-ENTRY POINT *****************
-  async hook(topic: string, data: JobData): Promise<JobStatus | void> {
+  async hook(topic: string, data: JobData, dad?: string): Promise<JobStatus | void> {
     const hookRule = await this.storeSignaler.getHookRule(topic);
+    const [aid, schema] = await this.getSchema(`.${hookRule.to}`);
+    if (!dad) {
+      //assume dimensional address is singular (0)
+      // for ancestors and self if not provided
+      // todo: register
+      dad = ',0'.repeat(schema.ancestors.length + 1);
+    }
     const streamData: StreamData = {
       type: StreamDataType.WEBHOOK,
-      metadata: { aid: `${hookRule.to}`, topic },
+      metadata: {
+        //jid is unknown at this point; will be resolved using the data
+        aid,
+        dad,
+        topic
+      },
       data,
     };
     await this.streamSignaler.publishMessage(null, streamData);
   }
   async hookTime(jobId: string, activityId: string): Promise<JobStatus | void> {
+    //the activityid is concatenated with its dimensional address (dad); split to resolve
+    const [aid, ...dimensions] = activityId.split(',');
+    const dad = `,${dimensions.join(',')}`;
     const streamData: StreamData = {
       type: StreamDataType.TIMEHOOK,
       metadata: {
         jid: jobId,
-        aid: activityId,
+        aid,
+        dad,
       },
       data: { timestamp: Date.now() },
     };
@@ -586,12 +603,13 @@ class EngineService {
   //      (e.g, if {dimensions:true}, use hscan to deliver
   //      the full set of dimensional job data)
   async getState(topic: string, jobId: string): Promise<JobOutput> {
-    const { id: appId } = await this.getVID();
     const jobSymbols = await this.store.getSymbols(`$${topic}`);
     const consumes: Consumes = {
       [`$${topic}`]: Object.keys(jobSymbols)
     }
-    const output = await this.store.getState(jobId, consumes);
+    //job data exists at the 'zero' dimension; pass an empty object
+    const dIds = {} as StringStringType;
+    const output = await this.store.getState(jobId, consumes, dIds);
     if (!output) {
       throw new Error(`not found ${jobId}`);
     }

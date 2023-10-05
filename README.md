@@ -98,7 +98,7 @@ run().catch((err) => {
 });
 ```
 
->HotMesh delivers durable function execution using a swarm of [distributed engines](./docs/distributed_orchestration.md). The design  consumes leftover CPU on your microservices to execute workflows without the cost and complexity of a central server.
+>HotMesh delivers durable function execution using a [distributed service mesh](./docs/distributed_orchestration.md). The design consumes leftover CPU on your microservices to execute workflows without the cost and complexity of a central server/control plane.
 
 ## Advanced Design
 HotMesh's TypeScript SDK is the easiest way to make your functions durable. But if you need full control over your function lifecycles (including high-volume, high-speed use cases), you can use HotMesh's underlying YAML models to optimize your durable workflows. The following model depicts a sequence of activities orchestrated by HotMesh. Any function you associate with a `topic` in your YAML definition is guaranteed to be durable.

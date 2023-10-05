@@ -62,6 +62,7 @@ class Worker extends Activity {
       if (error instanceof GetStateError) {
         this.logger.error('worker-get-state-error', error);
       } else {
+        console.error(error);
         this.logger.error('worker-process-error', error);
       }
       telemetry.setActivityError(error.message);
