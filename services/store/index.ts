@@ -175,9 +175,9 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     if (settings) {
       return settings;
     } else {
-    if (bCreate) {
-    const packageJson = await import('../../package.json');
-        const version: string = packageJson.version;
+      if (bCreate) {
+        const packageJson = await import('../../package.json');
+        const version: string = packageJson['version'] || '0.0.0';
         settings = { namespace: PSNS, version } as HotMeshSettings;
         await this.setSettings(settings);
         return settings;

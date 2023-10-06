@@ -1,4 +1,4 @@
-import { nanoid } from 'nanoid';
+import { v4 as uuidv4 } from 'uuid';
 
 import { identifyRedisTypeFromClass } from '../../modules/utils';
 import { RedisConnection as IORedisConnection } from '../connector/clients/ioredis';
@@ -23,14 +23,14 @@ export class ConnectorService {
       if (identifyRedisTypeFromClass(Redis) === 'redis') {
         for (let i = 1; i <= 3; i++) {
           instances.push(RedisConnection.connect(
-            nanoid(),
+            uuidv4(),
             Redis as RedisClassType,
             options as RedisClientOptions));
         }
       } else {
         for (let i = 1; i <= 3; i++) {
           instances.push(IORedisConnection.connect(
-            nanoid(),
+            uuidv4(),
             Redis as IORedisClassType,
             options as IORedisClientOptions));
         }
