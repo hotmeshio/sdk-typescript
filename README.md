@@ -66,7 +66,7 @@ run().catch((err) => {
 ```javascript
 import { Durable } from '@hotmeshio/hotmesh';
 import Redis from 'ioredis';
-import { nanoid } from 'nanoid';
+import { v4 as uuidv4 } from 'uuid';
 
 async function run() {
   const connection = await Durable.Connection.connect({
@@ -85,7 +85,7 @@ async function run() {
     args: ['HotMesh'],
     taskQueue: 'hello-world',
     workflowName: 'example',
-    workflowId: 'workflow-' + nanoid(),
+    workflowId: 'workflow-' + uuidv4(),
   });
 
   console.log(`Started workflow ${handle.workflowId}`);

@@ -1,4 +1,4 @@
-import { nanoid } from 'nanoid';
+import { v4 as uuidv4 } from 'uuid';
 import { DuplicateJobError } from '../../modules/errors';
 import { formatISODate, getTimeSeries } from '../../modules/utils';
 import { Activity } from './activity';
@@ -161,7 +161,7 @@ class Trigger extends Activity {
 
   resolveJobId(context: Partial<JobState>): string {
     const jobId = this.config.stats?.id;
-    return jobId ? Pipe.resolve(jobId, context) : nanoid();
+    return jobId ? Pipe.resolve(jobId, context) : uuidv4();
   }
 
   resolveJobKey(context: Partial<JobState>): string {

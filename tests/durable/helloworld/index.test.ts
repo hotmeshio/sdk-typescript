@@ -3,7 +3,7 @@ import * as Redis from 'redis';
 import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
 import * as activities from './src/activities';
-import { nanoid } from 'nanoid';
+import { v4 as uuidv4 } from 'uuid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/redis';
 import { StreamSignaler } from '../../../services/signaler/stream';
@@ -25,7 +25,7 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(uuidv4(), Redis, options);
     redisConnection.getClient().flushDb();
   });
 
@@ -66,7 +66,7 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
           args: ['HotMesh'],
           taskQueue: 'hello-world',
           workflowName: 'example',
-          workflowId: 'workflow-' + nanoid(),
+          workflowId: 'workflow-' + uuidv4(),
         });
         expect(handle.workflowId).toBeDefined();
       });
