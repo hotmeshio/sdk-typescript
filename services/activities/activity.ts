@@ -391,8 +391,8 @@ class Activity {
     TelemetryService.addTargetTelemetryPaths(consumes, this.config, this.metadata, this.leg);
     let { dad, jid } = this.context.metadata;
     jobId = jobId || jid;
-    //`state` is a flat hash
     const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], dad);
+    //`state` is a flat hash
     const [state, status] = await this.store.getState(jobId, consumes, dIds);
     //`context` is a tree
     this.context = restoreHierarchy(state) as JobState;

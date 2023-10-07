@@ -104,9 +104,7 @@ export class WorkerService {
     WorkerService.registerActivities<typeof config.activities>(config.activities);
     //import the user's workflow file (triggers activity functions to be wrapped)
     const workflow = await import(config.workflowsPath);
-    const workflowFunctionNames = Object.keys(workflow);
-    const workflowFunctionName = workflowFunctionNames[workflowFunctionNames.length - 1];
-    const workflowFunction = workflow[workflowFunctionName];
+    const [workflowFunctionName, workflowFunction] = WorkerService.resolveWorkflowTarget(workflow);
     const baseTopic = `${config.taskQueue}-${workflowFunctionName}`;
     const activityTopic = `${baseTopic}-activity`;
     const workflowTopic = `${baseTopic}`;
@@ -119,6 +117,18 @@ export class WorkerService {
     worker.workflowRunner = await worker.initWorkerWorkflow(config, workflowTopic, workflowFunction);
     await WorkerService.activateWorkflow(worker.workflowRunner, workflowTopic, getWorkflowYAML);
     return worker;
+  }
+
+  static resolveWorkflowTarget(workflow: object | Function): [string, Function] {
+    let workflowFunction: Function;
+    if (typeof workflow === 'function') {
+      workflowFunction = workflow;
+    } else {
+      const workflowFunctionNames = Object.keys(workflow);
+      workflowFunction = workflow[workflowFunctionNames[workflowFunctionNames.length - 1]];
+      return WorkerService.resolveWorkflowTarget(workflowFunction);
+    }
+    return [workflowFunction.name, workflowFunction];
   }
 
   async run() {
