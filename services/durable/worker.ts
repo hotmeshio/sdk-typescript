@@ -92,17 +92,20 @@ export class WorkerService {
    * allowing proxyActivities to succeed.
    */
   static registerActivities<ACT>(activities: ACT): Registry  {
-    Object.keys(activities).forEach(key => {
-      WorkerService.activityRegistry[key] = (activities as any)[key];
-    });
+    if (typeof activities === 'function') {
+      WorkerService.activityRegistry[activities.name] = activities as Function;
+    } else {
+      Object.keys(activities).forEach(key => {
+        WorkerService.activityRegistry[activities[key].name] = (activities as any)[key] as Function;
+      });
+    }
     return WorkerService.activityRegistry;
   }
 
   static async create(config: WorkerConfig) {
+    //always call `registerActivities` before `import`
     WorkerService.connection = config.connection;
-    //pre-cache user activity functions
     WorkerService.registerActivities<typeof config.activities>(config.activities);
-    //import the user's workflow file (triggers activity functions to be wrapped)
     const workflow = await import(config.workflowsPath);
     const [workflowFunctionName, workflowFunction] = WorkerService.resolveWorkflowTarget(workflow);
     const baseTopic = `${config.taskQueue}-${workflowFunctionName}`;
@@ -111,7 +114,6 @@ export class WorkerService {
 
     //initialize supporting workflows
     const worker = new WorkerService();
-
     const activityRunner = await worker.initActivityWorkflow(config, activityTopic);
     await WorkerService.activateWorkflow(activityRunner, activityTopic, getActivityYAML);
     worker.workflowRunner = await worker.initWorkerWorkflow(config, workflowTopic, workflowFunction);
