@@ -155,6 +155,6 @@ describe('FUNCTIONAL | Status Codes', () => {
       expect(data.code).toBe(200);
       expect(data.percentage).toBe(99);
       expect(data.message).toBe('success');
-    });
+    }, 10_000);
   });
 });

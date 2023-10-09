@@ -110,6 +110,7 @@ class Worker extends Activity {
 
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       let isComplete = CollatorService.isActivityComplete(this.context.metadata.js);
+
       if (isComplete) {
         this.logger.warn('worker-process-event-duplicate', { jid, aid });
         this.logger.debug('worker-process-event-duplicate-resolution', { resolution: 'Increase HotMesh config `reclaimDelay` timeout.' });
@@ -141,11 +142,9 @@ class Worker extends Activity {
     await this.setState(multi);
     await CollatorService.notarizeContinuation(this, multi);
 
-    await this.setStatus(0, multi);
+    await this.setStatus(this.adjacencyList.length, multi);
     const multiResponse = await multi.exec() as MultiResponseFlags;
-    telemetry.mapActivityAttributes();
-    const jobStatus = this.resolveStatus(multiResponse);
-    telemetry.setActivityAttributes({ 'app.job.jss': jobStatus });
+    this.transitionAdjacent(multiResponse, telemetry);
   }
 
   async processSuccess(telemetry: TelemetryService): Promise<void> {
@@ -158,14 +157,7 @@ class Worker extends Activity {
 
     await this.setStatus(this.adjacencyList.length - 1, multi);
     const multiResponse = await multi.exec() as MultiResponseFlags;
-    telemetry.mapActivityAttributes();
-    const jobStatus = this.resolveStatus(multiResponse);
-    const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-    const messageIds = await this.transition(this.adjacencyList, jobStatus);
-    if (messageIds.length) {
-      attrs['app.activity.mids'] = messageIds.join(',')
-    }
-    telemetry.setActivityAttributes(attrs);
+    this.transitionAdjacent(multiResponse, telemetry);
   }
 
   async processError(telemetry: TelemetryService): Promise<void> {
@@ -177,6 +169,10 @@ class Worker extends Activity {
 
     await this.setStatus(this.adjacencyList.length - 1, multi);
     const multiResponse = await multi.exec() as MultiResponseFlags;
+    this.transitionAdjacent(multiResponse, telemetry);
+  }
+
+  async transitionAdjacent(multiResponse: MultiResponseFlags, telemetry: TelemetryService): Promise<void> {
     telemetry.mapActivityAttributes();
     const jobStatus = this.resolveStatus(multiResponse);
     const attrs: StringScalarType = { 'app.job.jss': jobStatus };

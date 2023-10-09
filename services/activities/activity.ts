@@ -392,9 +392,8 @@ class Activity {
     let { dad, jid } = this.context.metadata;
     jobId = jobId || jid;
     const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], dad);
-    //`state` is a flat hash
+    //`state` is a flat hash; context is a tree
     const [state, status] = await this.store.getState(jobId, consumes, dIds);
-    //`context` is a tree
     this.context = restoreHierarchy(state) as JobState;
     this.initDimensionalAddress(dad);
     this.initSelf(this.context);
