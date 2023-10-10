@@ -1,7 +1,7 @@
 # HotMesh
 ![alpha release](https://img.shields.io/badge/release-alpha-yellow)
 
-Build sophisticated, durable workflows without the overhead of a dedicated server cluster. With HotMesh, your code remains front and center using [infrastructure](./docs/faq.md#what-is-hotmesh) you already own.
+Elevate Redis from an in-memory data store to a game-changing **service mesh**, delivering *durable* workflows without the overhead of a dedicated control plane. With HotMesh, you can keep your code at the forefront, utilizing [Redis infrastructure](./docs/faq.md#what-is-hotmesh) you already trust and own.
 
 ## Install
 [![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
@@ -11,7 +11,9 @@ npm install @hotmeshio/hotmesh
 ```
 
 ## Design
-HotMesh's TypeScript SDK is modeled after [Temporal IO's](https://github.com/temporalio) developer-friendly approach. Design and deploy durable workflows using familiar paradigms that keep your code delightful to maintain. Deploying Temporal's [hello-world tutorial](https://github.com/temporalio/samples-typescript/tree/main/hello-world/src), for example, requires few changes beyond using the HotMesh SDK and saving to Redis.
+HotMesh's TypeScript SDK is modeled after Temporal IO's developer-friendly approach. Design and deploy durable workflows using your preferred coding style. Write your functions as you normally would, then use the HotMesh to make them durable. Temporal's [hello-world tutorial](https://github.com/temporalio/samples-typescript/tree/main/hello-world/src), for example, requires few changes beyond importing the HotMesh SDK.
+
+>Start by defining activities. These are the functions that will be invoked by your workflow. They can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise.
 
 **./activities.ts**
 ```javascript
@@ -19,6 +21,8 @@ export async function greet(name: string): Promise<string> {
   return `Hello, ${name}!`;
 }
 ```
+
+>Next, define your workflow. This function will invoke your activities. Include conditional logic, loops, etc. There's nothing special here--it's still just vanilla code written in your own coding style.
 
 **./workflows.ts**
 ```javascript
@@ -32,6 +36,8 @@ export async function example(name: string): Promise<string> {
 }
 ```
 
+>Finally, create a worker and client. The *client* triggers workflows, while the *worker* runs them, retrying as necessary until the workflow succeeds--all without the need for complicated retry logic.
+
 **./worker.ts**
 ```javascript
 import { Durable } from '@hotmeshio/hotmesh';
@@ -41,10 +47,7 @@ import * as activities from './activities';
 async function run() {
   const connection = await Durable.NativeConnection.connect({
     class: Redis,
-    options: {
-      host: 'localhost',
-      port: 6379,
-    },
+    options: { host: 'localhost', port: 6379 },
   });
   const worker = await Durable.Worker.create({
     connection,
@@ -55,11 +58,6 @@ async function run() {
   });
   await worker.run();
 }
-
-run().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
 ```
 
 **./client.ts**
@@ -71,10 +69,7 @@ import { v4 as uuidv4 } from 'uuid';
 async function run() {
   const connection = await Durable.Connection.connect({
     class: Redis,
-    options: {
-      host: 'localhost',
-      port: 6379,
-    },
+    options: { host: 'localhost', port: 6379 },
   });
 
   const client = new Durable.Client({
@@ -88,17 +83,11 @@ async function run() {
     workflowId: 'workflow-' + uuidv4(),
   });
 
-  console.log(`Started workflow ${handle.workflowId}`);
   console.log(await handle.result());
 }
-
-run().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
 ```
 
->HotMesh delivers durable function execution using a [distributed service mesh](./docs/distributed_orchestration.md). The design consumes leftover CPU on your microservices to execute workflows without the cost and complexity of a central server/control plane.
+>HotMesh delivers durable function execution using a [distributed service mesh](./docs/distributed_orchestration.md). The design delivers durable workflows without the cost and complexity of a centralized service mesh/control plane. Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) Git Repo for a range of examples, including nested workflows.
 
 ## Advanced Design
 HotMesh's TypeScript SDK is the easiest way to make your functions durable. But if you need full control over your function lifecycles (including high-volume, high-speed use cases), you can use HotMesh's underlying YAML models to optimize your durable workflows. The following model depicts a sequence of activities orchestrated by HotMesh. Any function you associate with a `topic` in your YAML definition is guaranteed to be durable.
