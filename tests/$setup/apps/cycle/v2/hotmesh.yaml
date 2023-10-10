@@ -1,0 +1,56 @@
+app:
+  id: cycle
+  version: '2'
+  graphs:
+    - subscribes: cycle.test
+      expire: 120
+
+      output:
+        schema:
+          type: object
+          properties:
+            counter:
+              type: number
+
+      activities:
+        t1:
+          type: trigger
+
+        a1:
+          type: activity
+          cycle: true
+
+        w2:
+          type: worker
+          topic: cycle.err
+
+          output:
+            schema:
+              type: object
+              properties:
+                counter:
+                  type: number
+            500:
+              schema:
+                type: object
+                properties:
+                  counter:
+                    type: number
+
+          job:
+            maps:
+              counter: '{$self.output.data.counter}'
+
+        c1:
+          type: cycle
+          ancestor: a1
+
+      transitions:
+        t1:
+          - to: a1
+        a1:
+          - to: w2
+        w2:
+          - to: c1
+            conditions:
+              code: 500

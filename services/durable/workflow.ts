@@ -103,7 +103,10 @@ export class WorkflowService {
       try {
         const hmshInstance = await WorkerService.getHotMesh(activityTopic);
         activityState = await hmshInstance.getState(activityTopic, activityJobId);
-        if (activityState.metadata.js == 1) {
+        if (activityState.metadata.err) {
+          await hmshInstance.scrub(activityJobId);
+          throw new Error(activityState.metadata.err);
+        } else if (activityState.metadata.js === 0) {
           //return immediately
           return activityState.data?.response as T;
         }

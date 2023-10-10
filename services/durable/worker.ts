@@ -44,6 +44,7 @@ export class WorkerService {
   static connection: Connection;
   static instances = new Map<string, HotMesh | Promise<HotMesh>>();
   workflowRunner: HotMesh;
+  activityRunner: HotMesh;
 
   static getHotMesh = async (worflowTopic: string) => {
     if (WorkerService.instances.has(worflowTopic)) {
@@ -114,8 +115,8 @@ export class WorkerService {
 
     //initialize supporting workflows
     const worker = new WorkerService();
-    const activityRunner = await worker.initActivityWorkflow(config, activityTopic);
-    await WorkerService.activateWorkflow(activityRunner, activityTopic, getActivityYAML);
+    worker.activityRunner = await worker.initActivityWorkflow(config, activityTopic);
+    await WorkerService.activateWorkflow(worker.activityRunner, activityTopic, getActivityYAML);
     worker.workflowRunner = await worker.initWorkerWorkflow(config, workflowTopic, workflowFunction);
     await WorkerService.activateWorkflow(worker.workflowRunner, workflowTopic, getWorkflowYAML);
     return worker;
@@ -134,11 +135,7 @@ export class WorkerService {
   }
 
   async run() {
-    if (this.workflowRunner) {
-      this.workflowRunner.engine.logger.info('WorkerService is running');
-    } else {
-      console.log('WorkerService is running');
-    }
+    this.workflowRunner.engine.logger.info('WorkerService is running');
   }
 
   async initActivityWorkflow(config: WorkerConfig, activityTopic: string): Promise<HotMesh> {
@@ -175,10 +172,11 @@ export class WorkerService {
           data: { response: pojoResponse }
         };
       } catch (err) {
-        console.error(err);
-        //todo (make retry configurable)
+        this.activityRunner.engine.logger.error('durable-worker-activity-err', err);
         return {
-          status: StreamStatus.PENDING,
+          status: StreamStatus.ERROR,
+          code: 500,
+          message: err.message,
           metadata: { ...data.metadata },
           data: { error: err }
         } as StreamDataResponse;
@@ -195,7 +193,7 @@ export class WorkerService {
         await hotMesh.deploy(getActivityYAML(activityTopic, version));
         await hotMesh.activate(version);
       } catch (err) {
-        console.log('durable-worker-activity-deploy-activate-error', err);
+        hotMesh.engine.logger.error('durable-worker-activity-deploy-activate-error', err);
         throw err;
       }
     } else if(app && !app.active) {
@@ -260,10 +258,9 @@ export class WorkerService {
           data: { response: workflowResponse }
         };
       } catch (err) {
-        //todo: (retryable error types)
         return {
+          status: StreamStatus.ERROR,
           code: 500,
-          status: StreamStatus.PENDING,
           metadata: { ...data.metadata },
           data: { error: err }
         } as StreamDataResponse;

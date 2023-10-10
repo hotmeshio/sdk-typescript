@@ -60,6 +60,9 @@ class MapperService {
       return transitionRule;
     }
     if (code.toString() === (transitionRule.code || 200).toString()) {
+      if (!transitionRule.match) {
+        return true;
+      }
       const orGate = transitionRule.gate === 'or';
       let allAreTrue = true;
       let someAreTrue = false;

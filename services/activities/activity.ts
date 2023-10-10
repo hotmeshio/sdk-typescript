@@ -129,7 +129,7 @@ class Activity {
     this.leg = leg;
   }
 
-  //********  SIGNALER RE-ENTRY POINT (B)  ********//
+  //********  SIGNAL RE-ENTRY POINT  ********//
   doesHook(): boolean {
     return !!(this.config.hook?.topic || this.config.sleep);
   }
@@ -170,11 +170,6 @@ class Activity {
     return await this.processHookEvent(jobId);
   }
 
-  //todo: hooks are currently singletons. but they can support
-  //      dimensional threads like `await` and `worker` do.
-  //      Copy code from those activities to support cyclical
-  //      timehook and eventhook inputs by adding a 'pending'
-  //      flag to hooks that allows for repeated signals
   async processHookEvent(jobId: string): Promise<JobStatus | void> {
     this.logger.debug('activity-process-hook-event', { jobId });
     let telemetry: TelemetryService;
@@ -207,13 +202,101 @@ class Activity {
       telemetry.setActivityAttributes(attrs);
       return jobStatus as number;
     } catch (error) {
-      console.error('this error?', error);
       this.logger.error('engine-process-hook-event-error', error);
       telemetry.setActivityError(error.message);
       throw error;
     } finally {
       telemetry.endActivitySpan();
     }
+  }
+
+  //********  DUPLEX RE-ENTRY POINT  ********//
+  async processEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200): Promise<void> {
+    this.setLeg(2);
+    const jid = this.context.metadata.jid;
+    const aid = this.metadata.aid;
+    this.status = status;
+    this.code = code;
+    this.logger.debug('activity-process-event', { topic: this.config.subtype, jid, aid, status, code });
+    let telemetry: TelemetryService;
+    try {
+      await this.getState();
+      const aState = await CollatorService.notarizeReentry(this);
+      this.adjacentIndex = CollatorService.getDimensionalIndex(aState);
+
+      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
+      let isComplete = CollatorService.isActivityComplete(this.context.metadata.js);
+
+      if (isComplete) {
+        this.logger.warn('activity-process-event-duplicate', { jid, aid });
+        this.logger.debug('activity-process-event-duplicate-resolution', { resolution: 'Increase HotMesh config `reclaimDelay` timeout.' });
+        return;
+      }
+
+      telemetry.startActivitySpan(this.leg);
+      let multiResponse: MultiResponseFlags;
+      if (status === StreamStatus.PENDING) {
+        multiResponse = await this.processPending(telemetry);
+      } else if (status === StreamStatus.SUCCESS) {
+        multiResponse = await this.processSuccess(telemetry);
+      } else {
+        multiResponse = await this.processError(telemetry);
+      }
+      this.transitionAdjacent(multiResponse, telemetry);
+    } catch (error) {
+      this.logger.error('activity-process-event-error', error);
+      telemetry.setActivityError(error.message);
+      throw error;
+    } finally {
+      telemetry.endActivitySpan();
+      this.logger.debug('activity-process-event-end', { jid, aid });
+    }
+  }
+
+  async processPending(telemetry: TelemetryService): Promise<MultiResponseFlags> {
+    this.bindActivityData('output');
+    this.adjacencyList = await this.filterAdjacent();
+    this.mapJobData();
+    const multi = this.store.getMulti();
+    await this.setState(multi);
+    await CollatorService.notarizeContinuation(this, multi);
+
+    await this.setStatus(this.adjacencyList.length, multi);
+    return await multi.exec() as MultiResponseFlags;
+  }
+
+  async processSuccess(telemetry: TelemetryService): Promise<MultiResponseFlags> {
+    this.bindActivityData('output');
+    this.adjacencyList = await this.filterAdjacent();
+    this.mapJobData();
+    const multi = this.store.getMulti();
+    await this.setState(multi);
+    await CollatorService.notarizeCompletion(this, multi);
+
+    await this.setStatus(this.adjacencyList.length - 1, multi);
+    return await multi.exec() as MultiResponseFlags;
+  }
+
+  async processError(telemetry: TelemetryService): Promise<MultiResponseFlags> {
+    this.bindActivityError(this.data);
+    this.adjacencyList = await this.filterAdjacent();
+    const multi = this.store.getMulti();
+    await this.setState(multi);
+    await CollatorService.notarizeCompletion(this, multi);
+
+    await this.setStatus(this.adjacencyList.length - 1, multi);
+    return await multi.exec() as MultiResponseFlags;
+  }
+
+  async transitionAdjacent(multiResponse: MultiResponseFlags, telemetry: TelemetryService): Promise<void> {
+    telemetry.mapActivityAttributes();
+    const jobStatus = this.resolveStatus(multiResponse);
+    const attrs: StringScalarType = { 'app.job.jss': jobStatus };
+    const messageIds = await this.transition(this.adjacencyList, jobStatus);
+    if (messageIds.length) {
+      attrs['app.activity.mids'] = messageIds.join(',')
+    }
+    telemetry.setActivityAttributes(attrs);
   }
 
   resolveStatus(multiResponse: MultiResponseFlags): number {

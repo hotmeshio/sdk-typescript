@@ -1,0 +1,54 @@
+app:
+  id: cycle
+  version: '1'
+  graphs:
+    - subscribes: cycle.test
+      expire: 120
+
+      output:
+        schema:
+          type: object
+          properties:
+            counter:
+              type: number
+
+      activities:
+        t1:
+          type: trigger
+
+        a1:
+          type: activity
+          cycle: true
+
+        w1:
+          type: worker
+          topic: cycle.count
+
+          output:
+            schema:
+              type: object
+              properties:
+                counter:
+                  type: number
+          job:
+            maps:
+              counter: '{$self.output.data.counter}'
+
+        c1:
+          type: cycle
+          ancestor: a1
+
+      transitions:
+        t1:
+          - to: a1
+        a1:
+          - to: w1
+        w1:
+          - to: c1
+            conditions:
+              match:
+                - expected: true
+                  actual: 
+                    '@pipe':
+                      - ['{w1.output.data.counter}', 5]
+                      - ['{@conditional.less_than}']
