@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Durable Workflows",
   "main": "build/cjs/index.js",
   "module": "build/esm/index.js",
@@ -29,6 +29,7 @@
     "test": "NODE_ENV=test jest --detectOpenHandles --forceExit --verbose",
     "test:hmsh": "NODE_ENV=test jest ./tests/functional/index.test.ts --detectOpenHandles --verbose",
     "test:compile": "NODE_ENV=test jest ./tests/functional/compile/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:cycle": "NODE_ENV=test jest ./tests/functional/cycle/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:connect": "NODE_ENV=test jest ./tests/unit/services/connector/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:connect:redis": "NODE_ENV=test jest ./tests/unit/services/connector/clients/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:connect:ioredis": "NODE_ENV=test jest ./tests/unit/services/connector/clients/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
@@ -48,6 +49,7 @@
     "test:durable": "NODE_ENV=test jest ./tests/durable/*/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:hello": "NODE_ENV=test jest ./tests/durable/helloworld/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:goodbye": "NODE_ENV=test jest ./tests/durable/goodbye/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:durable:retry": "NODE_ENV=test jest ./tests/durable/retry/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:loopactivity": "NODE_ENV=test jest ./tests/durable/loopactivity/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:nested": "NODE_ENV=test jest ./tests/durable/nested/index.test.ts --detectOpenHandles --forceExit --verbose"
   },

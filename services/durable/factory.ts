@@ -26,7 +26,12 @@ const getWorkflowYAML = (topic: string, version = '1') => {
           type: trigger
           stats:
             id: '{$self.input.data.workflowId}'
+
         a1:
+          type: activity
+          cycle: true
+  
+        w1:
           type: worker
           topic: ${topic}
           input:
@@ -49,9 +54,20 @@ const getWorkflowYAML = (topic: string, version = '1') => {
           job:
             maps:
               response: '{$self.output.data.response}'
+
+        c1:
+          type: cycle
+          ancestor: a1
       transitions:
         t1:
-          - to: a1`;
+          - to: a1
+        a1:
+          - to: w1
+        w1:
+          - to: c1
+            conditions:
+              code: 500
+`;
 }
 
 const getActivityYAML = (topic: string, version = '1') => {

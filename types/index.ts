@@ -9,6 +9,7 @@ export {
   Consumes,
   AwaitActivity,
   BaseActivity,
+  CycleActivity,
   EmitActivity,
   WorkerActivity,
   IterateActivity,

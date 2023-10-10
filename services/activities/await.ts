@@ -44,7 +44,7 @@ class Await extends Activity {
       this.mapInputData();
 
       const multi = this.store.getMulti();
-      //await this.registerTimeout();
+      //todo: await this.registerTimeout();
       await CollatorService.authorizeReentry(this, multi);
       await this.setState(multi);
       await this.setStatus(0, multi);
@@ -121,11 +121,11 @@ class Await extends Activity {
       if (status === StreamStatus.SUCCESS) {
         this.bindActivityData('output');
         this.adjacencyList = await this.filterAdjacent();
-        multiResponse = await this.processSuccess(this.adjacencyList);
+        multiResponse = await this.processSuccessResponse(this.adjacencyList);
       } else {
         this.bindActivityError(this.data);
         this.adjacencyList = await this.filterAdjacent();
-        multiResponse = await this.processError(this.adjacencyList);
+        multiResponse = await this.processErrorResponse(this.adjacencyList);
       }
 
       telemetry.mapActivityAttributes();
@@ -146,7 +146,7 @@ class Await extends Activity {
     }
   }
 
-  async processSuccess(adjacencyList: StreamData[]): Promise<MultiResponseFlags> {
+  async processSuccessResponse(adjacencyList: StreamData[]): Promise<MultiResponseFlags> {
     this.mapJobData();
     const multi = this.store.getMulti();
     await this.setState(multi);
@@ -156,7 +156,7 @@ class Await extends Activity {
     return await multi.exec() as MultiResponseFlags;
   }
 
-  async processError(adjacencyList: StreamData[]): Promise<MultiResponseFlags> {
+  async processErrorResponse(adjacencyList: StreamData[]): Promise<MultiResponseFlags> {
     //todo: if adjacencyList.length == 0, then map to the job output
     //      this method would be added to Base activity class 
     //this.mapJobData();

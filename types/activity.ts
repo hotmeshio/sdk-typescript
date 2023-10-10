@@ -1,7 +1,7 @@
 import { MetricTypes } from "./stats";
 import { StreamRetryPolicy } from "./stream";
 
-type ActivityExecutionType = 'trigger' | 'await' | 'worker' | 'activity' | 'emit' | 'iterate';
+type ActivityExecutionType = 'trigger' | 'await' | 'worker' | 'activity' | 'emit' | 'iterate' | 'cycle';
 
 type Consumes = Record<string, string[]>;
 
@@ -18,6 +18,7 @@ interface BaseActivity {
   sleep?: number;                      //@pipe /in seconds
   expire?: number;                     //-1 forever (15 seconds default); todo: make globally configurable
   retry?: StreamRetryPolicy
+  cycle?: boolean;                     //if true, the `notary` will leave leg 2 open, so it can be re/cycled
   collationInt?: number;               //compiler
   consumes?: Consumes;                 //compiler
   PRODUCES?: string[];                 //compiler
@@ -59,6 +60,11 @@ interface WorkerActivity extends BaseActivity {
 
 interface EmitActivity extends BaseActivity {
   type: 'emit';
+}
+
+interface CycleActivity extends BaseActivity {
+  type: 'cycle';
+  ancestor: string; //ancestor activity id
 }
 
 interface IterateActivity extends BaseActivity {
@@ -108,6 +114,7 @@ export {
   Consumes,
   TriggerActivityStats,
   AwaitActivity,
+  CycleActivity,
   BaseActivity,
   EmitActivity,
   IterateActivity,
