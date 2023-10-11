@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 
 import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
-import * as activities from './src/activities';
+import * as workflows from './src/workflows';
 import { v4 as uuidv4 } from 'uuid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
@@ -82,8 +82,7 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
           connection,
           namespace: 'default',
           taskQueue: 'goodbye-world',
-          workflowsPath: require.resolve('./src/workflows'),
-          activities,
+          workflow: workflows.example,
         });
         await worker.run();
         expect(worker).toBeDefined();

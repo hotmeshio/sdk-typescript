@@ -41,8 +41,7 @@ type WorkerConfig = {
   connection: Connection;
   namespace: string; //`appid` in the YAML (e.g, 'default')
   taskQueue: string; //`subscribes` in the YAML (e.g, 'hello-world')
-  workflowsPath: string; //resolved abs path to dyn import()
-  activities: { [key: string]: Function }; //vanilla activity exports
+  workflow: Function //target function to run
 }
 
 type ContextType = {
@@ -56,8 +55,9 @@ type ProxyType<ACT> = {
 };
 
 type ActivityConfig = {
-  startToCloseTimeout: string;
-  retryPolicy: {
+  startToCloseTimeout?: string;
+  activities?: any;
+  retryPolicy?: {
     initialInterval: string;
     maximumAttempts: number;
     backoffCoefficient: number;

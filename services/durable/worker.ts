@@ -13,7 +13,7 @@ Here is an example of how the methods in this file are used:
 import { Durable: { NativeConnection, Worker } } from '@hotmeshio/hotmesh';
 import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
 
-import * as activities from './activities';
+import * as workflows from './workflows';
 
 async function run() {
   const connection = await NativeConnection.connect({
@@ -27,7 +27,7 @@ async function run() {
     connection,
     namespace: 'default',
     taskQueue: 'hello-world',
-    workflowsPath: require.resolve('./workflows'),
+    workflow: workflows.example,
     activities,
   });
   await worker.run();
@@ -86,18 +86,18 @@ export class WorkerService {
    * dynamically importing the user's workflow module. That file
    * contains a call, `proxyActivities`, which needs this info.
    * 
-   * NOTE: The `worker` and `client` both call `proxyActivities`,
-   * as a natural result of importing worflows.ts. However,
-   * because the worker imports the workflows dynamically AFTER
+   * NOTE: Because the worker imports the workflows dynamically AFTER
    * the activities are loaded, there will be items in the registry,
    * allowing proxyActivities to succeed.
    */
   static registerActivities<ACT>(activities: ACT): Registry  {
-    if (typeof activities === 'function') {
+    if (typeof activities === 'function' && typeof WorkerService.activityRegistry[activities.name] !== 'function') {
       WorkerService.activityRegistry[activities.name] = activities as Function;
     } else {
       Object.keys(activities).forEach(key => {
-        WorkerService.activityRegistry[activities[key].name] = (activities as any)[key] as Function;
+        if (activities[key].name && typeof WorkerService.activityRegistry[activities[key].name] !== 'function') {
+          WorkerService.activityRegistry[activities[key].name] = (activities as any)[key] as Function;
+        }
       });
     }
     return WorkerService.activityRegistry;
@@ -106,8 +106,8 @@ export class WorkerService {
   static async create(config: WorkerConfig) {
     //always call `registerActivities` before `import`
     WorkerService.connection = config.connection;
-    WorkerService.registerActivities<typeof config.activities>(config.activities);
-    const workflow = await import(config.workflowsPath);
+    //user can provide the workflow file directly
+    const workflow = config.workflow;
     const [workflowFunctionName, workflowFunction] = WorkerService.resolveWorkflowTarget(workflow);
     const baseTopic = `${config.taskQueue}-${workflowFunctionName}`;
     const activityTopic = `${baseTopic}-activity`;

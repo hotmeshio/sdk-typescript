@@ -22,14 +22,17 @@ export async function greet(name: string): Promise<string> {
 }
 ```
 
->Next, define your workflow. This function will invoke your activities. Include conditional logic, loops, etc. There's nothing special here--it's still just vanilla code written in your own coding style.
+>Next, define your workflow. Include conditional logic, loops, etc. It's vanilla code written in your own coding style--just make sure to call `proxyActivities` to run your activities durably.
 
 **./workflows.ts**
 ```javascript
 import { Durable } from '@hotmeshio/hotmesh';
-import type * as activities from './activities';
+import * as activities from './activities';
 
-const { greet } = Durable.workflow.proxyActivities<typeof activities>();
+const { greet } = Durable.workflow
+  .proxyActivities<typeof activities>({
+    activities
+  });
 
 export async function example(name: string): Promise<string> {
   return await greet(name);
@@ -38,11 +41,38 @@ export async function example(name: string): Promise<string> {
 
 >Finally, create a worker and client. The *client* triggers workflows, while the *worker* runs them, retrying as necessary until the workflow succeeds--all without the need for complicated retry logic.
 
-**./worker.ts**
+**./client.ts**
 ```javascript
 import { Durable } from '@hotmeshio/hotmesh';
 import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
-import * as activities from './activities';
+import { v4 as uuidv4 } from 'uuid';
+
+async function run() {
+  const connection = await Durable.Connection.connect({
+    class: Redis,
+    options: { host: 'localhost', port: 6379 }
+  });
+
+  const client = new Durable.Client({
+    connection
+  });
+
+  const handle = await client.workflow.start({
+    args: ['HotMesh'],
+    taskQueue: 'hello-world',
+    workflowName: 'example',
+    workflowId: 'workflow-' + uuidv4()
+  });
+
+  console.log(await handle.result());
+}
+```
+
+**./worker.ts**
+```javascript
+import { Durable } from '@hotmeshio/hotmesh';
+import Redis from 'ioredis';
+import * as workflows from './workflows';
 
 async function run() {
   const connection = await Durable.NativeConnection.connect({
@@ -53,37 +83,9 @@ async function run() {
     connection,
     namespace: 'default',
     taskQueue: 'hello-world',
-    workflowsPath: require.resolve('./workflows'),
-    activities,
+    workflow: workflows.example,
   });
   await worker.run();
-}
-```
-
-**./client.ts**
-```javascript
-import { Durable } from '@hotmeshio/hotmesh';
-import Redis from 'ioredis';
-import { v4 as uuidv4 } from 'uuid';
-
-async function run() {
-  const connection = await Durable.Connection.connect({
-    class: Redis,
-    options: { host: 'localhost', port: 6379 },
-  });
-
-  const client = new Durable.Client({
-    connection,
-  });
-
-  const handle = await client.workflow.start({
-    args: ['HotMesh'],
-    taskQueue: 'hello-world',
-    workflowName: 'example',
-    workflowId: 'workflow-' + uuidv4(),
-  });
-
-  console.log(await handle.result());
 }
 ```
 

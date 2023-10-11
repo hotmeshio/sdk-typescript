@@ -4,20 +4,7 @@
     "module": "commonjs",
     "outDir": "./build",
     "declaration": true,
-    // Uncomment the following lines to enable strict null checks
-    // "strictNullChecks": true,
-    // "strictBindCallValidation": true,
-    // "strictFunctionTypes": true,
-    // "noImplicitThis": true,
-    // "alwaysStrict": true,
     "esModuleInterop": true,
-    // Uncomment the following line to emit source maps
-    // "sourceMap": true,
-    // Uncomment the following line to enable experimental decorators
-    // "experimentalDecorators": true,
-    // Uncomment the following line to allow compilation of JavaScript files
-    // "allowJs": true,
-    // Uncomment the following line to allow importing modules with the .json extension
      "resolveJsonModule": true
   },
   "include": [

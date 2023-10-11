@@ -1,11 +1,10 @@
 import { Durable } from '../../../../services/durable';
-import type * as activities from './activities';
+import * as activities from './activities';
 
-const { greet, bye } = Durable.workflow.proxyActivities<typeof activities>();
+const { greet, bye } = Durable.workflow
+  .proxyActivities<typeof activities>({ activities });
 
-async function example(name: string): Promise<string> {
+export async function example(name: string): Promise<string> {
   const [hello, goodbye] = await Promise.all([greet(name), bye(name)]);
   return `${hello} - ${goodbye}`;
 }
-
-export default { example };

@@ -31,8 +31,10 @@ Here is an example of how the methods in this file are used:
 ./workflows.ts
 
 import { Durable } from '@hotmeshio/hotmesh';
-import type * as activities from './activities';
+import * as activities from './activities';
+
 const { greet } = Durable.workflow.proxyActivities<typeof activities>({
+  activities: activities,
   startToCloseTimeout: '1 minute',
   retryPolicy: {
     initialInterval: '5 seconds',  // Initial delay between retries
@@ -72,6 +74,10 @@ export class WorkflowService {
   }
 
   static proxyActivities<ACT>(options?: ActivityConfig): ProxyType<ACT> {
+    if (options.activities) {
+      WorkerService.registerActivities(options.activities)
+    }
+
     const proxy: any = {};
     const keys = Object.keys(WorkerService.activityRegistry);
     if (keys.length) {
