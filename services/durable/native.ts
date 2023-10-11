@@ -9,7 +9,7 @@ Here is an example of how the methods in this file are used:
 import { Durable: { NativeConnection, Worker } } from '@hotmeshio/hotmesh';
 import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
 
-import * as activities from './activities';
+import * as workflows from './workflows';
 
 async function run() {
   const connection = await NativeConnection.connect({
@@ -23,7 +23,7 @@ async function run() {
     connection,
     namespace: 'default',
     taskQueue: 'hello-world',
-    workflowsPath: require.resolve('./workflows'),
+    workflow: workflows.example,
     activities,
   });
   await worker.run();

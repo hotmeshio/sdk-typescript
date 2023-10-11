@@ -1,7 +1,11 @@
 import { Durable } from '../../../../services/durable';
-import type * as activities from './activities';
+import * as activities from './activities';
+import type * as activityTypes from './activities';
 
-const { parentActivity } = Durable.workflow.proxyActivities<typeof activities>();
+const { parentActivity } = Durable.workflow
+  .proxyActivities<typeof activityTypes>({
+    activities
+  });
 
 export async function parentExample(name: string): Promise<Record<string, string>> {
   const activityOutput = await parentActivity(name);

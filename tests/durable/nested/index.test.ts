@@ -2,8 +2,8 @@ import Redis from 'ioredis';
 
 import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
-import * as parentActivities from './parent/activities';
-import * as childActivities from './child/activities';
+import * as parentWorkflows from './parent/workflows';
+import * as childWorkflows from './child/workflows';
 import { v4 as uuidv4 } from 'uuid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
@@ -81,8 +81,7 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
           connection,
           namespace: 'default',
           taskQueue: 'parent-world',
-          workflowsPath: require.resolve('./parent/workflows'),
-          activities: parentActivities,
+          workflow: parentWorkflows.parentExample,
         });
         await worker.run();
         expect(worker).toBeDefined();
@@ -99,8 +98,7 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
           connection,
           namespace: 'default',
           taskQueue: 'child-world',
-          workflowsPath: require.resolve('./child/workflows'),
-          activities: childActivities,
+          workflow: childWorkflows.childExample,
         });
         await worker.run();
         expect(worker).toBeDefined();

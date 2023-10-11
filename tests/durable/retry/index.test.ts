@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 
 import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
-import * as activities from './src/activities';
+import * as workflows from './src/workflows';
 import { v4 as uuidv4 } from 'uuid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
@@ -12,6 +12,7 @@ const { Connection, Client, NativeConnection, Worker } = Durable;
 
 describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
   let handle: WorkflowHandleService;
+  const errorCycles = 5;
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -59,7 +60,7 @@ describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
         //`handle` is a global variable.
         //start a workflow execution (it will remain in the queue until a worker starts up)
         handle = await client.workflow.start({
-          args: [{}],
+          args: [{ amount: errorCycles }],
           taskQueue: 'retry-world',
           workflowName: 'example',
           workflowId: uuidv4(),
@@ -82,8 +83,7 @@ describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
           connection,
           namespace: 'default',
           taskQueue: 'retry-world',
-          workflowsPath: require.resolve('./src/workflows'),
-          activities,
+          workflow: workflows.default.example,
         });
         await worker.run();
         expect(worker).toBeDefined();
@@ -95,7 +95,7 @@ describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
         const result = await handle.result();
-        expect(result).toEqual(5);
+        expect(result).toEqual(errorCycles);
       }, 10_000);
     });
   });
