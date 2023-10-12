@@ -205,34 +205,34 @@ const hotMesh = await HotMesh.init({
 ```
 
 ### Observability
-Workflows and activities are run according to the rules you define, offering [Graph-Oriented](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/system_lifecycle.md#telemetry) telemetry insights into your legacy function executions.
+Workflows and activities are run according to the rules you define, offering [Graph-Oriented](./docs/system_lifecycle.md#telemetry) telemetry insights into your legacy function executions.
 
 ## FAQ
-Refer to the [FAQ](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/faq.md) for terminology, definitions, and an exploration of how HotMesh facilitates orchestration use cases.
+Refer to the [FAQ](./docs/faq.md) for terminology, definitions, and an exploration of how HotMesh facilitates orchestration use cases.
 
 ## Quick Start
-Refer to the [Quick Start](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/quickstart.md) for sample flows you can easily copy, paste, and modify to get started.
+Refer to the [Quick Start](./docs/quickstart.md) for sample flows you can easily copy, paste, and modify to get started.
 
 ## Developer Guide
-For more details on the complete development process, including information about schemas, APIs, and deployment, consult the [Developer Guide](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/developer_guide.md).
+For more details on the complete development process, including information about schemas, APIs, and deployment, consult the [Developer Guide](./docs/developer_guide.md).
 
 ## Model Driven Development
-[Model Driven Development](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/model_driven_development.md) is an established strategy for managing process-oriented tasks. Check out this guide to understand its foundational principles.
+[Model Driven Development](./docs/model_driven_development.md) is an established strategy for managing process-oriented tasks. Check out this guide to understand its foundational principles.
 
 ## Data Mapping
-Exchanging data between activities is central to HotMesh. For detailed information on supported functions and the functional mapping syntax (@pipes), see the [Data Mapping Overview](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/data_mapping.md).
+Exchanging data between activities is central to HotMesh. For detailed information on supported functions and the functional mapping syntax (@pipes), see the [Data Mapping Overview](./docs/data_mapping.md).
 
 ## Composition
-While the simplest graphs are linear, detailing a consistent sequence of non-cyclical activities, graphs can be layered to represent intricate business scenarios. Some can even be designed to accommodate long-lasting workflows that span months. For more details, check out the [Composable Workflow Guide](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/composable_workflow.md).
+While the simplest graphs are linear, detailing a consistent sequence of non-cyclical activities, graphs can be layered to represent intricate business scenarios. Some can even be designed to accommodate long-lasting workflows that span months. For more details, check out the [Composable Workflow Guide](./docs/composable_workflow.md).
 
 ## Architectural First Principles
-For a deep dive into HotMesh's distributed orchestration philosophy, refer to the [Architectural First Principles Overview](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/architecture.md).
+For a deep dive into HotMesh's distributed orchestration philosophy, refer to the [Architectural First Principles Overview](./docs/architecture.md).
 
 ## Distributed Orchestration
-HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/distributed_orchestration.md) for a detailed breakdown of the approach.
+HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](./docs/distributed_orchestration.md) for a detailed breakdown of the approach.
 
 ## System Lifecycle
-Gain insight into the HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/system_lifecycle.md).
+Gain insight into the HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](./docs/system_lifecycle.md).
 
 ## Alpha Release
-So what exacty is an [alpha release](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/alpha.md)?!
+So what exacty is an [alpha release](./docs/alpha.md)?!
