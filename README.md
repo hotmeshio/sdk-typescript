@@ -13,7 +13,7 @@ npm install @hotmeshio/hotmesh
 ## Design
 The HotMesh SDK is designed to keep your code front-and-center. Write functions as you normally would, then use the HotMesh to make them durable.
 
-1. Start by defining **activities**. Activities are those functions that will be invoked by your workflow. They are commonly used to read and write to databases and invoke external services. They can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise.
+1. Start by defining **activities**. Activities are those functions that will be invoked by your workflow. They are commonly used to read and write to databases and invoke external services. They can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise. *Note how the `saludar` example throws an error 50% of the time. It doesn't matter how unpredictable your functions are, HotMesh will retry as necessary until they succeed.*
     ```javascript
     //activities.ts
 
@@ -22,6 +22,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write functions 
     }
 
     export async function saludar(nombre: string): Promise<string> {
+      Math.random() > 0.5 && throw new Error('Random error');
       return `¡Hola, ${nombre}!`;
     }
     ```
