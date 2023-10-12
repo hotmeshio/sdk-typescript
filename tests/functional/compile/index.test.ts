@@ -1,4 +1,4 @@
-import { PSNS } from '../../../modules/key';
+import { HMNS } from '../../../modules/key';
 import { IORedisStoreService as IORedisStore } from '../../../services/store/clients/ioredis';
 import { CompilerService } from '../../../services/compiler';
 import { LoggerService } from '../../../services/logger';
@@ -34,7 +34,7 @@ describe('FUNCTIONAL | Compile', () => {
     redisClient.flushdb();
     redisStore = new IORedisStore(redisClient);
     //the store must be initialized before the compiler service can use it (engine typically does this)
-    await redisStore.init(PSNS, appConfig.id, new LoggerService());
+    await redisStore.init(HMNS, appConfig.id, new LoggerService());
   });
 
   afterAll(async () => {

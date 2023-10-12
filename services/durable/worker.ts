@@ -25,7 +25,6 @@ async function run() {
   });
   const worker = await Worker.create({
     connection,
-    namespace: 'default',
     taskQueue: 'hello-world',
     workflow: workflows.example,
     activities,

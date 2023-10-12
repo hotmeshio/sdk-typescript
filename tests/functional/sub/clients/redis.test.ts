@@ -1,4 +1,4 @@
-import { KeyType, PSNS } from '../../../../modules/key';
+import { KeyType, HMNS } from '../../../../modules/key';
 import { LoggerService } from '../../../../services/logger';
 import { RedisStoreService } from '../../../../services/store/clients/redis';
 import { RedisSubService } from '../../../../services/sub/clients/redis';
@@ -27,7 +27,7 @@ describe('FUNCTIONAL | RedisSubService', () => {
     redisPublisherClient = await redisPublisherConnection.getClient();
     await redisPublisherClient.flushDb();
     redisPubService = new RedisStoreService(redisPublisherClient);
-    await redisPubService.init(PSNS, appConfig.id, new LoggerService());
+    await redisPubService.init(HMNS, appConfig.id, new LoggerService());
   });
 
   afterAll(async () => {
@@ -41,7 +41,7 @@ describe('FUNCTIONAL | RedisSubService', () => {
         expect(topic).toEqual(topicKey);
         expect(message).toEqual(payload);
       };
-      await redisSubService.init(PSNS, appConfig.id, engineId, new LoggerService());
+      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
       const payload = { 'any': 'data' };
       await redisSubService.subscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id);
       await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id);
@@ -53,7 +53,7 @@ describe('FUNCTIONAL | RedisSubService', () => {
         expect(topic).toEqual(topicKey);
         expect(message).toEqual(payload);
       };
-      await redisSubService.init(PSNS, appConfig.id, engineId, new LoggerService());
+      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
       const payload = { 'any': 'data' };
       await redisSubService.subscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id);
       const pub = await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id);
@@ -74,7 +74,7 @@ describe('FUNCTIONAL | RedisSubService', () => {
         expect(message).toEqual(payload);
         responded = true;
       };
-      await redisSubService.init(PSNS, appConfig.id, engineId, new LoggerService());
+      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
       await redisSubService.psubscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id, wild);
       await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id, word );
       sleepFor(250); //give time to run

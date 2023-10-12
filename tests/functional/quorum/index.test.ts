@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Redis from 'ioredis';
 
 import config from '../../$setup/config';
-import { PSNS } from '../../../modules/key';
+import { HMNS } from '../../../modules/key';
 import { sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { NumberHandler } from '../../../services/pipe/functions/number';
@@ -34,7 +34,7 @@ describe('FUNCTIONAL | Quorum', () => {
     //init/activate HotMesh (test both `engine` and `worker` roles)
     const config: HotMeshConfig = {
       appId: appConfig.id,
-      namespace: PSNS,
+      namespace: HMNS,
       logLevel: 'debug',
       engine: {
         redis: { class: Redis, options }

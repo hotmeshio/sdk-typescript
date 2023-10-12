@@ -49,14 +49,7 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
-        //connect the client to Redis
-        const connection = await Connection.connect({
-          class: Redis,
-          options,
-        });
-        const client = new Client({
-          connection,
-        });
+        const client = new Client({ connection: { class: Redis, options }});
         handle = await client.workflow.start({
           args: ['PARENT'],
           taskQueue: 'parent-world',
@@ -71,15 +64,8 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
   describe('Worker', () => {
     describe('create', () => {
       it('should create and run the PARENT workflow worker', async () => {
-        //connect to redis
-        const connection = await NativeConnection.connect({
-          class: Redis,
-          options,
-        });
-        //create a worker (drains items added by the client)
         const worker = await Worker.create({
-          connection,
-          namespace: 'default',
+          connection: { class: Redis, options },
           taskQueue: 'parent-world',
           workflow: parentWorkflows.parentExample,
         });
@@ -88,15 +74,8 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
       });
 
       it('should create and run the CHILD workflow worker', async () => {
-        //connect to redis
-        const connection = await NativeConnection.connect({
-          class: Redis,
-          options,
-        });
-        //create a worker (drains items added by the client)
         const worker = await Worker.create({
-          connection,
-          namespace: 'default',
+          connection: { class: Redis, options },
           taskQueue: 'child-world',
           workflow: childWorkflows.childExample,
         });

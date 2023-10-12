@@ -9,7 +9,7 @@ import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
 
 
-const { Connection, Client, NativeConnection, Worker } = Durable;
+const { Connection, Client, Worker } = Durable;
 
 describe('DURABLE | loopactivity | `Iterate Same Activity`', () => {
   let handle: WorkflowHandleService;
@@ -49,16 +49,8 @@ describe('DURABLE | loopactivity | `Iterate Same Activity`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        //connect the client to Redis
-        const connection = await Connection.connect({
-          class: Redis,
-          options,
-        });
-        const client = new Client({
-          connection,
-        });
-        //`handle` is a global variable.
-        //start the workflow (it will be executed by the worker...see below)
+        const client = new Client({ connection: { class: Redis, options }});
+        //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
           args: ['HotMesh'],
           taskQueue: 'loop-world',
@@ -73,15 +65,8 @@ describe('DURABLE | loopactivity | `Iterate Same Activity`', () => {
   describe('Worker', () => {
     describe('create', () => {
       it('should create and run a worker', async () => {
-        //connect to redis
-        const connection = await NativeConnection.connect({
-          class: Redis,
-          options,
-        });
-        //create a worker (drains items from the queue/stream)
         const worker = await Worker.create({
-          connection,
-          namespace: 'default',
+          connection: { class: Redis, options },
           taskQueue: 'loop-world',
           workflow: workflows.example,
         });

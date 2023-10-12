@@ -1,4 +1,4 @@
-import { PSNS } from '../../../../modules/key';
+import { HMNS } from '../../../../modules/key';
 import { LoggerService } from '../../../../services/logger';
 import { IORedisStreamService } from '../../../../services/stream/clients/ioredis';
 import { RedisConnection, RedisClientType } from '../../../$setup/cache/ioredis';
@@ -13,7 +13,7 @@ describe('FUNCTIONAL | IORedisStreamService', () => {
     await redisClient.flushdb();
     redisStreamService = new IORedisStreamService(redisClient);
     const appConfig = { id: 'APP_ID', version: 'APP_VERSION' };
-    await redisStreamService.init(PSNS, appConfig.id, new LoggerService());
+    await redisStreamService.init(HMNS, appConfig.id, new LoggerService());
   });
 
   beforeAll(async () => {

@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { PSNS } from '../../modules/key';
+import { HMNS } from '../../modules/key';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
 import { StreamSignaler } from '../signaler/stream';
@@ -33,7 +33,7 @@ class HotMeshService {
 
   verifyAndSetNamespace(namespace?: string) {
     if (!namespace) {
-      this.namespace = PSNS;
+      this.namespace = HMNS;
     } else if (!namespace.match(/^[A-Za-z0-9-]+$/)) {
       throw new Error(`config.namespace [${namespace}] is invalid`);
     } else {

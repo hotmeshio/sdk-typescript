@@ -1,4 +1,4 @@
-import { KeyType, PSNS } from '../../../../modules/key';
+import { KeyType, HMNS } from '../../../../modules/key';
 import { LoggerService } from '../../../../services/logger';
 import { IORedisStoreService } from '../../../../services/store/clients/ioredis';
 import { IORedisSubService } from '../../../../services/sub/clients/ioredis';
@@ -27,7 +27,7 @@ describe('FUNCTIONAL | IORedisSubService', () => {
     redisPublisherClient = await redisPublisherConnection.getClient();
     await redisPublisherClient.flushdb();
     redisPubService = new IORedisStoreService(redisPublisherClient);
-    await redisPubService.init(PSNS, appConfig.id, new LoggerService());
+    await redisPubService.init(HMNS, appConfig.id, new LoggerService());
   });
 
   afterAll(async () => {
@@ -43,7 +43,7 @@ describe('FUNCTIONAL | IORedisSubService', () => {
         expect(message).toEqual(payload);
         responded = true;
       };
-      await redisSubService.init(PSNS, appConfig.id, engineId, new LoggerService());
+      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
       const payload = { 'any': 'data' };
       await redisSubService.subscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id);
       await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id);
@@ -61,7 +61,7 @@ describe('FUNCTIONAL | IORedisSubService', () => {
         expect(message).toEqual(payload);
         responded = true;
       };
-      await redisSubService.init(PSNS, appConfig.id, engineId, new LoggerService());
+      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
       const payload = { 'any': 'data' };
       await redisSubService.subscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id, engineId);
       await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id, engineId);
@@ -83,7 +83,7 @@ describe('FUNCTIONAL | IORedisSubService', () => {
         expect(message).toEqual(payload);
         responded = true;
       };
-      await redisSubService.init(PSNS, appConfig.id, engineId, new LoggerService());
+      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
       await redisSubService.psubscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id, wild);
       await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id, word );
       sleepFor(250); //give time to run
