@@ -27,7 +27,7 @@
  */
 
 //default namespace for hotmesh
-const PSNS = "hmsh";
+const HMNS = "hmsh";
 
 //these are the entity types that are stored in the key/value store
 enum KeyType {
@@ -126,4 +126,4 @@ class KeyService {
   }
 }
 
-export { KeyService, KeyType, KeyStoreParams, PSNS };
+export { KeyService, KeyType, KeyStoreParams, HMNS };

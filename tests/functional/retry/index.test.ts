@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Redis from 'ioredis';
 
 import config from '../../$setup/config';
-import { PSNS } from '../../../modules/key';
+import { HMNS } from '../../../modules/key';
 import { sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
@@ -73,7 +73,7 @@ describe('FUNCTIONAL | Retry', () => {
 
     const config: HotMeshConfig = {
       appId: appConfig.id,
-      namespace: PSNS,
+      namespace: HMNS,
       logLevel: 'debug',
 
       engine: {

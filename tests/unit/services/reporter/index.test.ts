@@ -1,4 +1,4 @@
-import { PSNS } from '../../../../modules/key';
+import { HMNS } from '../../../../modules/key';
 import { ILogger } from '../../../../services/logger';
 import { ReporterService } from '../../../../services/reporter';
 import { IORedisStoreService as IORedisStore } from '../../../../services/store/clients/ioredis';
@@ -71,7 +71,7 @@ describe('ReporterService', () => {
         end: 'NOW',
       };
       const sampleRedisData: JobStatsRange = {
-        [`${PSNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity, 10)}`]: {
+        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity, 10)}`]: {
           'count': 25,
           'count:color:12315': 5,
           'count:size:12145': 5,
@@ -84,7 +84,7 @@ describe('ReporterService', () => {
           'count:color:12395': 5,
           'count:size:12945': 5,
         },
-        [`${PSNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity)}`]: {
+        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity)}`]: {
           'count': 15,
           'count:color:12315': 5,
           'count:size:12145': 4,
@@ -116,7 +116,7 @@ describe('ReporterService', () => {
         sparse: true,
       };
       const sampleRedisData: JobStatsRange = {
-        [`${PSNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity, 10)}`]: {
+        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity, 10)}`]: {
           'count': 25,
           'count:color:12315': 5,
           'count:size:12145': 5,
@@ -129,7 +129,7 @@ describe('ReporterService', () => {
           'count:color:12395': 5,
           'count:size:12945': 5,
         },
-        [`${PSNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity)}`]: {
+        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity)}`]: {
           'count': 15,
           'count:color:12315': 5,
           'count:size:12145': 4,

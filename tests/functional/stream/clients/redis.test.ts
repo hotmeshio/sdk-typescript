@@ -1,4 +1,4 @@
-import { PSNS } from '../../../../modules/key';
+import { HMNS } from '../../../../modules/key';
 import { LoggerService } from '../../../../services/logger';
 import { RedisStreamService } from '../../../../services/stream/clients/redis';
 import { RedisConnection, RedisClientType } from '../../../$setup/cache/redis';
@@ -13,7 +13,7 @@ describe('FUNCTIONAL | RedisStreamService', () => {
     await redisClient.flushDb();
     redisStreamService = new RedisStreamService(redisClient);
     const appConfig = { id: 'APP_ID', version: 'APP_VERSION' };
-    await redisStreamService.init(PSNS, appConfig.id, new LoggerService());
+    await redisStreamService.init(HMNS, appConfig.id, new LoggerService());
   });
 
   beforeAll(async () => {

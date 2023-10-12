@@ -39,7 +39,7 @@ type Registry  = {
 
 type WorkerConfig = {
   connection: Connection;
-  namespace: string; //`appid` in the YAML (e.g, 'default')
+  namespace?: string; //`appid` in the YAML (e.g, 'default')
   taskQueue: string; //`subscribes` in the YAML (e.g, 'hello-world')
   workflow: Function //target function to run
 }

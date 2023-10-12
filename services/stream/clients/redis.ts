@@ -1,4 +1,4 @@
-import { KeyService, KeyStoreParams, KeyType, PSNS } from '../../../modules/key';
+import { KeyService, KeyStoreParams, KeyType, HMNS } from '../../../modules/key';
 import { ILogger } from '../../logger';
 import { StreamService } from '../index';
 import { RedisClientType, RedisMultiType } from '../../../types/redisclient';
@@ -14,7 +14,7 @@ class RedisStreamService extends StreamService<RedisClientType, RedisMultiType> 
     super(redisClient);
   }
 
-  async init(namespace = PSNS, appId: string, logger: ILogger): Promise<void> {
+  async init(namespace = HMNS, appId: string, logger: ILogger): Promise<void> {
     this.namespace = namespace;
     this.logger = logger;
     this.appId = appId;

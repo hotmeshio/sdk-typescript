@@ -2,7 +2,7 @@ import {
   KeyService,
   KeyStoreParams,
   KeyType, 
-  PSNS} from '../../modules/key';
+  HMNS} from '../../modules/key';
 import { ILogger } from '../logger';
 import { MDATA_SYMBOLS, SerializerService as Serializer } from '../serializer';
 import { Cache } from './cache';
@@ -119,7 +119,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     this.redisClient = redisClient;
   }
 
-  async init(namespace = PSNS, appId: string, logger: ILogger): Promise<HotMeshApps> {
+  async init(namespace = HMNS, appId: string, logger: ILogger): Promise<HotMeshApps> {
     this.namespace = namespace;
     this.appId = appId;
     this.logger = logger;
@@ -178,7 +178,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       if (bCreate) {
         const packageJson = await import('../../package.json');
         const version: string = packageJson['version'] || '0.0.0';
-        settings = { namespace: PSNS, version } as HotMeshSettings;
+        settings = { namespace: HMNS, version } as HotMeshSettings;
         await this.setSettings(settings);
         return settings;
       }

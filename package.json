@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "Durable Workflows",
   "main": "build/index.js",
   "types": "build/index.d.ts",

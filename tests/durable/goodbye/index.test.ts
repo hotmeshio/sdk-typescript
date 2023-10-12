@@ -8,7 +8,7 @@ import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
 
-const { Connection, Client, NativeConnection, Worker } = Durable;
+const { Connection, Client, Worker } = Durable;
 
 describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
   let handle: WorkflowHandleService;
@@ -48,16 +48,8 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        //connect the client to Redis
-        const connection = await Connection.connect({
-          class: Redis,
-          options,
-        });
-        const client = new Client({
-          connection,
-        });
-        //`handle` is a global variable.
-        //start a workflow execution (it will remain in the queue until a worker starts up)
+        const client = new Client({ connection: { class: Redis, options }});
+        //NOTE: `handle` is a global variable and will be used in a later test
         handle = await client.workflow.start({
           args: ['HotMesh'],
           taskQueue: 'goodbye-world',
@@ -72,15 +64,8 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
   describe('Worker', () => {
     describe('create', () => {
       it('should create and run a worker', async () => {
-        //connect to redis
-        const connection = await NativeConnection.connect({
-          class: Redis,
-          options,
-        });
-        //create a worker (drains items from the queue/stream)
         const worker = await Worker.create({
-          connection,
-          namespace: 'default',
+          connection: { class: Redis, options },
           taskQueue: 'goodbye-world',
           workflow: workflows.example,
         });

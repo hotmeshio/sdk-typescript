@@ -1,4 +1,4 @@
-import { KeyType, PSNS } from '../../../../modules/key';
+import { KeyType, HMNS } from '../../../../modules/key';
 import { LoggerService } from '../../../../services/logger';
 import { MDATA_SYMBOLS } from '../../../../services/serializer';
 import { RedisStoreService } from '../../../../services/store/clients/redis';
@@ -19,7 +19,7 @@ describe('FUNCTIONAL | RedisStoreService', () => {
   beforeEach(async () => {
     await redisClient.flushDb();
     redisStoreService = new RedisStoreService(redisClient);
-    await redisStoreService.init(PSNS, appConfig.id, new LoggerService());
+    await redisStoreService.init(HMNS, appConfig.id, new LoggerService());
   });
 
   beforeAll(async () => {
@@ -34,12 +34,12 @@ describe('FUNCTIONAL | RedisStoreService', () => {
   describe('mintKey', () => {
     it('should mint the key to access hotmesh global settings', () => {
       const result = redisStoreService.mintKey(KeyType.HOTMESH, {});
-      expect(result).toEqual(PSNS); 
+      expect(result).toEqual(HMNS); 
     });
 
     it('should mint the key to access hotmesh apps', () => {
       const result = redisStoreService.mintKey(KeyType.APP, cacheConfig);
-      expect(result).toEqual(`${PSNS}:a:${cacheConfig.appId}`); 
+      expect(result).toEqual(`${HMNS}:a:${cacheConfig.appId}`); 
     });
   });
 
