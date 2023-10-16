@@ -27,6 +27,21 @@ export {
   CollationFaultType,
   CollationStage } from './collator';
 export {
+    ActivityConfig,
+    ActivityWorkflowDataType,
+    ClientConfig,
+    ContextType,
+    ConnectionConfig,
+    Connection,
+    NativeConnection,
+    ProxyType,
+    Registry,
+    WorkerConfig,
+    WorkerOptions,
+    WorkflowDataType,
+    WorkflowOptions,
+  }from './durable'
+export {
   HookCondition,
   HookConditions,
   HookGate,

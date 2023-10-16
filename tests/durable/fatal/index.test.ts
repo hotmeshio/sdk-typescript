@@ -7,12 +7,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
+import { DurableFatalError } from '../../../modules/errors';
 
 const { Connection, Client, Worker } = Durable;
 
-describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
+describe('DURABLE | fatal | `Workflow Promise.all proxyActivities`', () => {
+  const NAME = 'hot-mess';
   let handle: WorkflowHandleService;
-  const errorCycles = 5;
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -52,8 +53,8 @@ describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
         const client = new Client({ connection: { class: Redis, options }});
         //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
-          args: [{ amount: errorCycles }],
-          taskQueue: 'retry-world',
+          args: [{ name: NAME }],
+          taskQueue: 'fatal-world',
           workflowName: 'example',
           workflowId: uuidv4(),
         });
@@ -70,12 +71,8 @@ describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
             class: Redis,
             options,
           },
-          taskQueue: 'retry-world',
+          taskQueue: 'fatal-world',
           workflow: workflows.default.example,
-          options: {
-            maxSystemRetries: 2,
-            backoffExponent: 5,
-          },
         });
         await worker.run();
         expect(worker).toBeDefined();
@@ -85,10 +82,15 @@ describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
 
   describe('WorkflowHandle', () => {
     describe('result', () => {
-      it('should return the workflow execution result', async () => {
-        const result = await handle.result();
-        expect(result).toEqual(errorCycles);
-      }, 20_000);
+      it('should throw the fatal error with `code` and `message`', async () => {
+        try {
+          //the activity will throw `DurableFatalError`
+          await handle.result();
+        } catch (err) {
+          expect(err.message).toEqual(`stop-retrying-please-${NAME}`);
+          expect(err.code).toEqual(new DurableFatalError('').code);
+        }
+      });
     });
   });
 });

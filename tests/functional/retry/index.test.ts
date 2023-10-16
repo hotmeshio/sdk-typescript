@@ -6,7 +6,7 @@ import { HMNS } from '../../../modules/key';
 import { sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
-import { NumberHandler } from '../../../services/pipe/functions/number';
+import { MathHandler } from '../../../services/pipe/functions/math';
 import { StreamSignaler } from '../../../services/signaler/stream';
 import { JobOutput } from '../../../types/job';
 import {
@@ -34,7 +34,7 @@ describe('FUNCTIONAL | Retry', () => {
   const callback =  async (streamData: StreamData): Promise<StreamDataResponse> => {
     const values = JSON.parse(streamData.data.values as string) as number[];
     const operation = streamData.data.operation as 'add'|'subtract'|'multiply'|'divide';
-    const result = new NumberHandler()[operation](values);
+    const result = new MathHandler()[operation](values);
 
     if (simulateUnrecoverableError) {
       simulateUnrecoverableError = false;

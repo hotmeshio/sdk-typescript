@@ -9,7 +9,7 @@ type WorkflowOptions = {
   workflowSpan?: string;
 }
 
-type ActivityDataType = {
+type ActivityWorkflowDataType = {
   activityName: string;
   arguments: any[];
   workflowId: string;
@@ -41,7 +41,13 @@ type WorkerConfig = {
   connection: Connection;
   namespace?: string; //`appid` in the YAML (e.g, 'default')
   taskQueue: string; //`subscribes` in the YAML (e.g, 'hello-world')
-  workflow: Function //target function to run
+  workflow: Function; //target function to run
+  options?: WorkerOptions;
+}
+
+type WorkerOptions = {
+  maxSystemRetries?: number; //1-3 (10ms, 100ms, 1_000ms)
+  backoffExponent?: number; //2-10ish
 }
 
 type ContextType = {
@@ -67,7 +73,7 @@ type ActivityConfig = {
 
 export {
   ActivityConfig,
-  ActivityDataType,
+  ActivityWorkflowDataType,
   ClientConfig,
   ContextType,
   ConnectionConfig,
@@ -76,6 +82,7 @@ export {
   ProxyType,
   Registry,
   WorkerConfig,
+  WorkerOptions,
   WorkflowDataType,
   WorkflowOptions,
 };

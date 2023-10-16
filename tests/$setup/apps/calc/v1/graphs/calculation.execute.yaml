@@ -20,7 +20,7 @@ activities:
     title: Execute Calculation
     type: worker
     topic: calculation.execute
-    retry: 
+    retry:
       '404': [2]
       '500': [3]
     input:

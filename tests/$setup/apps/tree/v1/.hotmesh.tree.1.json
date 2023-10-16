@@ -65,7 +65,7 @@
                       "{$self.output.data.speed}"
                     ],
                     [
-                      "{@number.multiply}"
+                      "{@math.multiply}"
                     ]
                   ]
                 }

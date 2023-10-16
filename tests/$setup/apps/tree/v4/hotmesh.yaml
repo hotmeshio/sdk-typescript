@@ -46,7 +46,7 @@ app:
               height:
                 '@pipe':
                   - ['{$self.output.data.seed}', '{$self.output.data.speed}']
-                  - ['{@number.multiply}']
+                  - ['{@math.multiply}']
               shine:
                 '@pipe':
                   - ['{@date.now}', 'en-US']
