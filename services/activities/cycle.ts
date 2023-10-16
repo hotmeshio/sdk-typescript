@@ -81,13 +81,18 @@ class Cycle extends Activity {
    * pattern allows for retries without violating the DAG.
    */
   async cycleAncestorActivity(multi: RedisMulti): Promise<string> {
+    //Cycle activity L1 is a standin for the target ancestor L1.
+    //Input data mapping (mapInputData) allows for the 
+    //next dimensonal thread to execute with different
+    //input data than the current dimensional thread
+    this.mapInputData();
     const streamData: StreamData = {
       metadata: {
         dad: CollatorService.resolveReentryDimension(this),
         jid: this.context.metadata.jid,
         aid: this.config.ancestor,
       },
-      data: {} //todo: verify immutability, before enabling: `this.context.data`
+      data: this.context.data
     };
     return (await this.engine.streamSignaler?.publishMessage(null, streamData, multi)) as string;
   }

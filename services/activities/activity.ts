@@ -4,7 +4,6 @@ import {
   getValueByPath,
   restoreHierarchy } from '../../modules/utils';
 import { CollatorService } from '../collator';
-import { DimensionService } from '../dimension';
 import { EngineService } from '../engine';
 import { ILogger } from '../logger';
 import { MapperService } from '../mapper';
@@ -84,6 +83,7 @@ class Activity {
       if (this.doesHook()) {
         //sleep and wait to awaken upon a signal
         await this.registerHook(multi);
+        this.mapOutputData();
         this.mapJobData();
         await this.setState(multi);
         await CollatorService.authorizeReentry(this, multi);
@@ -94,6 +94,7 @@ class Activity {
       } else {
         //end the activity and transition to its children
         this.adjacencyList = await this.filterAdjacent();
+        this.mapOutputData();
         this.mapJobData();
         await this.setState(multi);
         await CollatorService.notarizeEarlyCompletion(this, multi);
@@ -322,6 +323,17 @@ class Activity {
     }
   }
 
+  mapOutputData(): void {
+    //activity YAML may include output map data that produces/extends activity output data.
+    if(this.config.output?.maps) {
+      const mapper = new MapperService(this.config.output.maps, this.context);
+      const actOutData = mapper.mapRules();
+      const activityId = this.metadata.aid;
+      const data = { ...this.context[activityId].output, ...actOutData };
+      this.context[activityId].output.data = data;
+    }
+  }
+
   async registerTimeout(): Promise<void> {
     //set timeout in support of hook and/or duplex
   }
@@ -526,7 +538,7 @@ class Activity {
 
   resolveAdjacentDad(): string {
     //concat self and child dimension (all children (leg 1) begin life at 0)
-    return `${this.resolveDad()}${DimensionService.getSeed(0)}`;
+    return `${this.resolveDad()}${CollatorService.getDimensionalSeed(0)}`;
   };
 
   async filterAdjacent(): Promise<StreamData[]> {

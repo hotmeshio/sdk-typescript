@@ -12,6 +12,35 @@ class SetStateError extends Error {
   }
 }
 
+class DurableTimeoutError extends Error {
+  code: number;
+  constructor(message: string) {
+    super(message);
+    this.code = 596;
+  }
+}
+class DurableMaxedError extends Error {
+  code: number;
+  constructor(message: string) {
+    super(message);
+    this.code = 597;
+  }
+}
+class DurableFatalError extends Error {
+  code: number;
+  constructor(message: string) {
+    super(message);
+    this.code = 598;
+  }
+}
+class DurableRetryError extends Error {
+  code: number;
+  constructor(message: string) {
+    super(message);
+    this.code = 599;
+  }
+}
+
 class MapDataError extends Error {
   constructor() {
     super("Error occurred while mapping data");
@@ -52,4 +81,16 @@ class CollationError extends Error {
   }
 }
 
-export { CollationError, DuplicateJobError, GetStateError, SetStateError, MapDataError, RegisterTimeoutError, ExecActivityError };
+export {
+  CollationError,
+  DurableTimeoutError,
+  DurableMaxedError,
+  DurableFatalError,
+  DurableRetryError,
+  DuplicateJobError,
+  GetStateError,
+  SetStateError,
+  MapDataError,
+  RegisterTimeoutError,
+  ExecActivityError
+};

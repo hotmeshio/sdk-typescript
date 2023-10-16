@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "Durable Workflows",
   "main": "build/index.js",
   "types": "build/index.d.ts",
@@ -43,6 +43,7 @@
     "test:durable:hello": "NODE_ENV=test jest ./tests/durable/helloworld/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:goodbye": "NODE_ENV=test jest ./tests/durable/goodbye/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:retry": "NODE_ENV=test jest ./tests/durable/retry/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:durable:fatal": "NODE_ENV=test jest ./tests/durable/fatal/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:loopactivity": "NODE_ENV=test jest ./tests/durable/loopactivity/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:nested": "NODE_ENV=test jest ./tests/durable/nested/index.test.ts --detectOpenHandles --forceExit --verbose"
   },

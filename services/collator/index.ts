@@ -85,7 +85,7 @@ class CollatorService {
   static async notarizeCompletion(activity: Activity, multi?: RedisMulti): Promise<number> {
     //1) ALWAYS actualize leg2 dimension (+1)
     //2) IF the activity is used in a cycle, don't close leg 2!
-    const decrement = activity.config.cycle ? 0 : -1_000_000_000_000;
+    const decrement = activity.config.cycle ? 0 : 1_000_000_000_000;
     return await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1 - decrement, this.getDimensionalAddress(activity), multi);
   };
 
@@ -233,6 +233,17 @@ class CollatorService {
 
   static isActivityComplete(status: number): boolean {
     return (status - 0) <= 0;
+  }
+
+  /**
+   * All activities exist on a dimensional plane. Zero
+   * is the default. A value of 
+   * `AxY,0,0,0,0,1,0,0` would reflect that
+   * an ancestor activity was dimensionalized beyond
+   * the default.
+   */
+  static getDimensionalSeed(index = 0): string {
+    return `,${index}`;
   }
 }
 

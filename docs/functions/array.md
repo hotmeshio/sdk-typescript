@@ -439,7 +439,7 @@ sum:
     - ["{a.output.data.numbers}"]
     - ["{@array.reduce}",
         "@pipe":
-          - ["{@number.add}"]
+          - ["{@math.add}"]
       ]
 ```
 

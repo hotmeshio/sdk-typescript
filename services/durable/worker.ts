@@ -2,8 +2,18 @@ import { asyncLocalStorage } from './asyncLocalStorage';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import { RedisClass, RedisOptions } from '../../types/redis';
 import { StreamData, StreamDataResponse, StreamStatus } from '../../types/stream';
-import { ActivityDataType, Connection, Registry, WorkerConfig, WorkflowDataType } from "../../types/durable";
+import { ActivityWorkflowDataType,
+  Connection,
+  Registry,
+  WorkerConfig,
+  WorkerOptions,
+  WorkflowDataType } from "../../types/durable";
 import { getWorkflowYAML, getActivityYAML } from './factory';
+import {
+  DurableFatalError,
+  DurableMaxedError,
+  DurableRetryError,
+  DurableTimeoutError } from '../../modules/errors';
 
 /*
 Here is an example of how the methods in this file are used:
@@ -45,7 +55,7 @@ export class WorkerService {
   workflowRunner: HotMesh;
   activityRunner: HotMesh;
 
-  static getHotMesh = async (worflowTopic: string) => {
+  static getHotMesh = async (worflowTopic: string, options?: WorkerOptions) => {
     if (WorkerService.instances.has(worflowTopic)) {
       return await WorkerService.instances.get(worflowTopic);
     }
@@ -54,17 +64,17 @@ export class WorkerService {
       engine: { redis: { ...WorkerService.connection } }
     });
     WorkerService.instances.set(worflowTopic, hotMesh);
-    await WorkerService.activateWorkflow(await hotMesh, worflowTopic, getWorkflowYAML);
+    await WorkerService.activateWorkflow(await hotMesh, worflowTopic, getWorkflowYAML, options);
     return hotMesh;
   }
 
-  static async activateWorkflow(hotMesh: HotMesh, topic: string, factory: Function) {
+  static async activateWorkflow(hotMesh: HotMesh, topic: string, dagFactory: Function, options: WorkerOptions = {}) {
     const version = '1';
     const app = await hotMesh.engine.store.getApp(topic);
     const appVersion = app?.version;
     if(!appVersion) {
       try {
-        await hotMesh.deploy(factory(topic, version));
+        await hotMesh.deploy(dagFactory(topic, version, options.maxSystemRetries, options.backoffExponent));
         await hotMesh.activate(version);
       } catch (err) {
         hotMesh.engine.logger.error('durable-worker-deploy-activate-err', err);
@@ -117,7 +127,7 @@ export class WorkerService {
     worker.activityRunner = await worker.initActivityWorkflow(config, activityTopic);
     await WorkerService.activateWorkflow(worker.activityRunner, activityTopic, getActivityYAML);
     worker.workflowRunner = await worker.initWorkerWorkflow(config, workflowTopic, workflowFunction);
-    await WorkerService.activateWorkflow(worker.workflowRunner, workflowTopic, getWorkflowYAML);
+    await WorkerService.activateWorkflow(worker.workflowRunner, workflowTopic, getWorkflowYAML, config.options);
     return worker;
   }
 
@@ -160,7 +170,7 @@ export class WorkerService {
     return async (data: StreamData): Promise<StreamDataResponse> => {
       try {
         //always run the activity function when instructed; return the response
-        const activityInput = data.data as unknown as ActivityDataType;
+        const activityInput = data.data as unknown as ActivityWorkflowDataType;
         const activityName = activityInput.activityName;
         const activityFunction = WorkerService.activityRegistry[activityName];
         const pojoResponse = await activityFunction.apply(this, activityInput.arguments);
@@ -172,12 +182,16 @@ export class WorkerService {
         };
       } catch (err) {
         this.activityRunner.engine.logger.error('durable-worker-activity-err', err);
+        if (!(err instanceof DurableTimeoutError) &&
+          !(err instanceof DurableMaxedError) &&
+          !(err instanceof DurableFatalError)) {
+          err = new DurableRetryError(err.message); 
+        }
         return {
           status: StreamStatus.ERROR,
-          code: 500,
-          message: err.message,
+          code: err.code,
           metadata: { ...data.metadata },
-          data: { error: err }
+          data: { message: err.message }
         } as StreamDataResponse;
       }
     }
@@ -257,11 +271,12 @@ export class WorkerService {
           data: { response: workflowResponse }
         };
       } catch (err) {
+        // 59* - Durable*Error
         return {
           status: StreamStatus.ERROR,
-          code: 500,
+          code: err.code || new DurableRetryError(err.message).code,
           metadata: { ...data.metadata },
-          data: { error: err }
+          data: { message: err.message, type: err.name }
         } as StreamDataResponse;
       }
     }

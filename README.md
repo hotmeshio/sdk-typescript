@@ -11,7 +11,7 @@ npm install @hotmeshio/hotmesh
 ```
 
 ## Design
-The HotMesh SDK is designed to keep your code front-and-center. Write functions as you normally would, then use the HotMesh to make them durable.
+The HotMesh SDK is designed to keep your code front-and-center. Write functions as you normally would, then use HotMesh to make them durable.
 
 1. Start by defining **activities**. Activities are those functions that will be invoked by your workflow. They are commonly used to read and write to databases and invoke external services. They can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise. *Note how the `saludar` example throws an error 50% of the time. It doesn't matter how unpredictable your functions are, HotMesh will retry as necessary until they succeed.*
     ```javascript
@@ -75,7 +75,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write functions 
     }
     ```
 
-4. The last step is to create a **worker** that executes the workflow. Workers listen for tasks on their assigned channel, executing their assigned workflow function until it succeeds.
+4. The last step is to create a **worker** and link it to your workflow function. Workers listen for tasks on their assigned channel, executing the linked workflow function until it succeeds.
     ```javascript
     //worker.ts
 
@@ -233,7 +233,7 @@ For a deep dive into HotMesh's distributed orchestration philosophy, refer to th
 HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](./docs/distributed_orchestration.md) for a detailed breakdown of the approach.
 
 ## System Lifecycle
-Gain insight into the HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](./docs/system_lifecycle.md).
+Gain insight into HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](./docs/system_lifecycle.md).
 
 ## Alpha Release
 So what exacty is an [alpha release](./docs/alpha.md)?!

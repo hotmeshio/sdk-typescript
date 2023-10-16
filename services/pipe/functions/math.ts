@@ -1,4 +1,78 @@
 class MathHandler {
+  add(...operands: (number | number[])[]): number {
+    // @ts-ignore
+    return operands.reduce((a: number, b: number | number[]) => {
+      if (Array.isArray(b)) {
+        return a + this.add(...b);
+      } else {
+        return a + b;
+      }
+    }, 0);
+  }
+
+  subtract(...operands: (number | number[])[]): number {
+    if (operands.length === 0) {
+      throw new Error('At least one operand is required.');
+    }
+    let flatOperands: number[] = [];
+    operands.forEach((op: number | number[]) => {
+      if (Array.isArray(op)) {
+        flatOperands = [...flatOperands, ...op];
+      } else {
+        flatOperands.push(op);
+      }
+    });
+    if (flatOperands.length === 0) {
+      throw new Error('At least one operand is required after flattening.');
+    }
+    const result = flatOperands.reduce((a: number, b: number, i: number) => {
+      return i === 0 ? a : a - b;
+    });
+    return result;
+  }
+
+  multiply(...operands: (number | number[])[]): number {
+    if (operands.length === 0) {
+      throw new Error('At least one operand is required.');
+    }
+  
+    // @ts-ignore
+    return operands.reduce((a: number, b: number | number[]) => {
+      if (Array.isArray(b)) {
+        return a * this.multiply(...b);
+      } else {
+        return a * b;
+      }
+    }, 1);
+  }
+  
+  divide(...operands: (number | number[])[]): number {
+    if (operands.length === 0) {
+      throw new Error('At least one operand is required.');
+    }
+    let flatOperands: number[] = [];
+    operands.forEach((op: number | number[]) => {
+      if (Array.isArray(op)) {
+        flatOperands = [...flatOperands, ...op];
+      } else {
+        flatOperands.push(op);
+      }
+    });
+    if (flatOperands.length === 0) {
+      throw new Error('At least one operand is required after flattening.');
+    }
+    const result = flatOperands.reduce((a: number, b: number, i: number) => {
+      if (b === 0) {
+        return NaN;
+      }
+      return i === 0 ? a : a / b;
+    });
+    if (isNaN(result)) {
+      return NaN;
+    }
+    return result;
+  }
+
   abs(x: number): number {
     return Math.abs(x);
   }

@@ -3,7 +3,6 @@ import { DuplicateJobError } from '../../modules/errors';
 import { formatISODate, getTimeSeries } from '../../modules/utils';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
-import { DimensionService } from '../dimension';
 import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
 import { ReporterService } from '../reporter';
@@ -99,7 +98,7 @@ class Trigger extends Activity {
 
     const utc = formatISODate(new Date());
     const { id, version } = await this.engine.getVID();
-    this.initDimensionalAddress(DimensionService.getSeed());
+    this.initDimensionalAddress(CollatorService.getDimensionalSeed());
     const activityMetadata = {
       ...this.metadata,
       jid: jobId,
@@ -119,7 +118,7 @@ class Trigger extends Activity {
         trc: this.context.metadata.trc,
         spn: this.context.metadata.spn,
         jid: jobId,
-        dad: DimensionService.getSeed(), //top-level job implicitly uses `,0`
+        dad: CollatorService.getDimensionalSeed(), //top-level job implicitly uses `,0`
         key: jobKey,
         jc: utc,
         ju: utc,

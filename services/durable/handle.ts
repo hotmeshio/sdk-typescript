@@ -16,22 +16,37 @@ export class WorkflowHandleService {
     let status = await this.hotMesh.getStatus(this.workflowId);
     const topic = `${this.workflowTopic}.${this.workflowId}`;
   
-    if (status == 0) {
-      return (await this.hotMesh.getState(this.workflowTopic, this.workflowId)).data?.response;
-    }
-  
     return new Promise((resolve, reject) => {
       let isResolved = false;
       //common fulfill/unsubscribe
-      const complete = async (response?: any) => {
+      const complete = async (response?: any, err?: string) => {
         if (isResolved) return;
         isResolved = true;
         this.hotMesh.unsub(topic);
-        resolve(response || (await this.hotMesh.getState(this.workflowTopic, this.workflowId)).data?.response);
+        if (err) {
+          return reject(JSON.parse(err));
+        } else if (!response) {
+          const state = await this.hotMesh.getState(this.workflowTopic, this.workflowId);
+          if (!state.data && state.metadata.err) {
+            return reject(JSON.parse(state.metadata.err));
+          }
+          response = state.data?.response;
+        }
+        resolve(response);
       };
-      this.hotMesh.sub(topic, async (topic: string, message: JobOutput) => {
-        await complete(message.data?.response);
+      //check for done
+      if (status == 0) {
+        return complete();
+      }
+      //subscribe to topic
+      this.hotMesh.sub(topic, async (topic: string, state: JobOutput) => {
+        if (!state.data && state.metadata.err) {
+          await complete(null, state.metadata.err);
+        } else {
+          await complete(state.data?.response);
+        }
       });
+      //resolve for race condition
       setTimeout(async () => {
         status = await this.hotMesh.getStatus(this.workflowId);
         if (status == 0) {

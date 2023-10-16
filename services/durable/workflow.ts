@@ -62,7 +62,7 @@ export class WorkflowService {
     const client = new Client({
       connection: await Connection.connect(WorkerService.connection),
     });
-    //todo: should I allow-cross/app callback (pj:'@DURABLE@hello-world@<pjid>'/pa: <paid>/pd: <pdad>)
+    //todo: allow cross/app callback (pj:'@DURABLE@hello-world@<pjid>'/pa: <paid>/pd: <pdad>)
     const handle = await client.workflow.start({
       ...options,
       workflowId: `${workflowId}${options.workflowId}`, //concat

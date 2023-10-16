@@ -44,7 +44,7 @@ app:
               height:
                 '@pipe':
                   - ['{$self.output.data.seed}', '{$self.output.data.speed}']
-                  - ['{@number.multiply}']
+                  - ['{@math.multiply}']
         shine:
           type: worker
           topic: summer

@@ -16,7 +16,7 @@ import {
   StreamStatus
 } from '../../types/stream';
 
-const MAX_RETRIES = 4; //max delay (10s using exponential backoff);
+const MAX_RETRIES = 3; //local retry; 10, 100, 1000ms
 const MAX_TIMEOUT_MS = 60000;
 const GRADUATED_INTERVAL_MS = 5000;
 const BLOCK_DURATION = 15000; //Set to `15` so SIGINT/SIGTERM can interrupt; set to `0` to BLOCK indefinitely
@@ -189,8 +189,11 @@ class StreamSignaler {
     const policy = policies?.[errorCode];
     const maxRetries = policy?.[0];
     const tryCount = Math.min(input.metadata.try || 0,  MAX_RETRIES);
-    if (maxRetries >= tryCount) {
-      return[true, Math.pow(10, tryCount)];
+    //only possible values for maxRetries are 1, 2, 3
+    //only possible values for tryCount are 0, 1, 2
+    if (maxRetries > tryCount) {
+      // 10ms, 100ms, or 1000ms delays between system retries
+      return[true, Math.pow(10, tryCount + 1)];
     }
     return [false, 0];
   }

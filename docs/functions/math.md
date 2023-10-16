@@ -3,6 +3,10 @@
 In this section, various Math functions provided by the MathHandler class will be explored, which are available for use in HotMesh mapping rules. The functions are designed to facilitate mathematical operations and transformations during the mapping process. The MathHandler class consists of numerous functions that cover a wide range of mathematical operations, all of which can be utilized through the @pipe system for a functional approach.
 
 **Table of Contents**
+- [math.add](#mathadd)
+- [math.subtract](#mathsubtract)
+- [math.multiply](#mathmultiply)
+- [math.divide](#mathdivide)
 - [math.abs](#mathabs)
 - [math.acos](#mathacos)
 - [math.acosh](#mathacosh)
@@ -38,6 +42,142 @@ In this section, various Math functions provided by the MathHandler class will b
 - [math.tan](#mathtan)
 - [math.tanh](#mathtanh)
 - [math.trunc](#mathtrunc)
+
+## math.add
+The `math.add` function sums all the numbers passed as arguments. It can take any number of arguments, and all arguments should be numbers.
+
+### Example
+Suppose there are the following input JSON objects:
+
+**Object A:**
+```json
+{
+  "output": {
+    "data": {
+      "values": [1, 2, 3, 4, 5]
+    }
+  }
+}
+```
+
+The goal is to create a new object with the `sum` field calculated by summing all the numbers in the `values` array. The `math.add` function can be used in the mapping rules as follows:
+
+```yaml
+sum: 
+  "@pipe":
+    - ["{a.output.data.values}"]
+    - ["{@math.add}"]
+```
+
+After executing the mapping rules, the resulting JSON object will be:
+
+```json
+{
+  "sum": 15
+}
+```
+
+## math.subtract
+The `math.subtract` function subtracts all the numbers passed as arguments in the order they are given. It can take any number of arguments, and all arguments should be numbers. If only one argument is provided, it will return the negative of that number.
+
+### Example
+Suppose there are the following input JSON objects:
+
+**Object A:**
+```json
+{
+  "output": {
+    "data": {
+      "values": [20, 5, 3]
+    }
+  }
+}
+```
+
+The goal is to create a new object with the `difference` field calculated by subtracting all the numbers in the `values` array in the order they are given. The `math.subtract` function can be used in the mapping rules as follows:
+
+```yaml
+difference: 
+  "@pipe":
+    - ["{a.output.data.values}"]
+    - ["{@math.subtract}"]
+```
+
+After executing the mapping rules, the resulting JSON object will be:
+
+```json
+{
+  "difference": 12
+}
+```
+
+## math.multiply
+The `math.multiply` function multiplies all the numbers passed as arguments. It can take any number of arguments, and all arguments should be numbers.
+
+### Example
+Suppose there are the following input JSON objects:
+
+**Object A:**
+```json
+{
+  "output": {
+    "data": {
+      "values": [2, 3, 4]
+    }
+  }
+}
+```
+
+The goal is to create a new object with the `product` field calculated by multiplying all the numbers in the `values` array and then multiplying by `5`. The `math.multiply` function can be used in the mapping rules as follows:
+
+```yaml
+product: 
+  "@pipe":
+    - ["{a.output.data.values}", 5]
+    - ["{@math.multiply}"]
+```
+
+After executing the mapping rules, the resulting JSON object will be:
+
+```json
+{
+  "product": 120
+}
+```
+
+## math.divide
+The `math.divide` function divides all the numbers passed as arguments in the order they are given. It can take any number of arguments, and all arguments should be numbers. Division by zero is not allowed.
+
+### Example
+Suppose there are the following input JSON objects:
+
+**Object A:**
+```json
+{
+  "output": {
+    "data": {
+      "values": [20, 5, 2]
+    }
+  }
+}
+```
+
+The goal is to create a new object with the `quotient` field calculated by dividing all the numbers in the `values` array in the order they are given. The `math.divide` function can be used in the mapping rules as follows:
+
+```yaml
+quotient: 
+  "@pipe":
+    - ["{a.output.data.values}"]
+    - ["{@math.divide}"]
+```
+
+After executing the mapping rules, the resulting JSON object will be:
+
+```json
+{
+  "quotient": 2
+}
+```
 
 ## math.abs
 
