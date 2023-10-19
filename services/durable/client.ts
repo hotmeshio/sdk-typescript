@@ -12,7 +12,7 @@ Here is an example of how the methods in this file are used:
 import { Durable } from '@hotmeshio/hotmesh';
 import Redis from 'ioredis';
 import { example } from './workflows';
-import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
 
 async function run() {
   const connection = await Durable.Connection.connect({
@@ -31,7 +31,7 @@ async function run() {
     args: ['HotMesh'],
     taskQueue: 'hello-world',
     workflowName: 'example',
-    workflowId: 'workflow-' + uuidv4(),
+    workflowId: 'workflow-' + nanoid(),
   });
 
   console.log(`Started workflow ${handle.workflowId}`);

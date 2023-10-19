@@ -91,6 +91,8 @@ class Cycle extends Activity {
         dad: CollatorService.resolveReentryDimension(this),
         jid: this.context.metadata.jid,
         aid: this.config.ancestor,
+        spn: this.context['$self'].output.metadata?.l1s,
+        trc: this.context.metadata.trc,
       },
       data: this.context.data
     };

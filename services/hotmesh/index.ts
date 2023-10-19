@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
 import { HMNS } from '../../modules/key';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
@@ -53,7 +53,7 @@ class HotMeshService {
 
   static async init(config: HotMeshConfig) {
     const instance = new HotMeshService();
-    instance.guid = uuidv4();
+    instance.guid = nanoid();
     instance.verifyAndSetNamespace(config.namespace);
     instance.verifyAndSetAppId(config.appId);
     instance.logger = new LoggerService(config.appId, instance.guid, config.name || '', config.logLevel);

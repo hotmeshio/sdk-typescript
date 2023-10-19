@@ -47,13 +47,13 @@ The HotMesh SDK is designed to keep your code front-and-center. Write functions 
     }
     ```
 
-3. Although you could call your workflow directly (it's just a vanilla function), it's only durable when invoked and orchestrated via HotMesh. By using a HotMesh **client** to send the request, the function is guaranteed to return a result.
+3. Although you could call your workflow directly (it's just a vanilla function), it's only durable when invoked and orchestrated via HotMesh. By using a HotMesh **client** to trigger the function, it's guaranteed to return a result.
     ```javascript
     //client.ts
 
     import { Durable } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
-    import { v4 as uuidv4 } from 'uuid';
+    import { nanoid } from 'nanoid';
 
     async function run(): Promise<string> {
       const client = new Durable.Client({
@@ -67,7 +67,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write functions 
         args: ['HotMesh', 'es'],
         taskQueue: 'hello-world',
         workflowName: 'example',
-        workflowId: uuidv4()
+        workflowId: nanoid()
       });
 
       return await handle.result();
@@ -75,7 +75,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write functions 
     }
     ```
 
-4. The last step is to create a **worker** and link it to your workflow function. Workers listen for tasks on their assigned channel, executing the linked workflow function until it succeeds.
+4. The last step is to create a **worker** and link it to your workflow function. Workers listen for tasks on their assigned channel, executing the targeted workflow function until it succeeds.
     ```javascript
     //worker.ts
 
