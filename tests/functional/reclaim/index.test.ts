@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
 import Redis from 'ioredis';
 
 import config from '../../$setup/config';
@@ -54,7 +54,7 @@ describe('FUNCTIONAL | Reclaim', () => {
 
     const hmshFactory = async (version: string, first = false) => {
       if (first) {
-        const redisConnection = await RedisConnection.connect(uuidv4(), Redis, options);
+        const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
         redisConnection.getClient().flushdb();    
       }
  

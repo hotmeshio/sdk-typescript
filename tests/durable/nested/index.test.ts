@@ -4,7 +4,7 @@ import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
 import * as parentWorkflows from './parent/workflows';
 import * as childWorkflows from './child/workflows';
-import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
@@ -22,7 +22,7 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(uuidv4(), Redis, options);
+    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
     redisConnection.getClient().flushdb();
   });
 
@@ -54,7 +54,7 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
           args: ['PARENT'],
           taskQueue: 'parent-world',
           workflowName: 'parentExample',
-          workflowId: uuidv4(),
+          workflowId: nanoid(),
         });
         expect(handle.workflowId).toBeDefined();
       });
