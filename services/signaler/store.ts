@@ -3,6 +3,7 @@ import { StoreService } from '../store';
 import { HookRule, HookSignal } from '../../types/hook';
 import { JobState } from '../../types/job';
 import { RedisClient, RedisMulti } from '../../types/redis';
+import { Pipe } from '../pipe';
 
 class StoreSignaler {
   store: StoreService<RedisClient, RedisMulti>;
@@ -21,10 +22,12 @@ class StoreSignaler {
   async registerWebHook(topic: string, context: JobState, multi?: RedisMulti): Promise<string> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
+      const mapExpression = hookRule.conditions.match[0].expected;
+      const resolved = Pipe.resolve(mapExpression, context);
       const jobId = context.metadata.jid;
       const hook: HookSignal = {
         topic,
-        resolved: jobId,
+        resolved,
         jobId,
       }
       await this.store.setHookSignal(hook, multi);
@@ -37,8 +40,10 @@ class StoreSignaler {
   async processWebHookSignal(topic: string, data: Record<string, unknown>): Promise<string> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
-      //todo: use the rule to generate `resolved`
-      const resolved = (data as { id: string}).id;
+      //NOTE: both formats are supported: $self.hook.data OR $hook.data
+      const context = { $self: { hook: { data }}, $hook: { data }};
+      const mapExpression = hookRule.conditions.match[0].actual;
+      const resolved = Pipe.resolve(mapExpression, context);
       const jobId = await this.store.getHookSignal(topic, resolved);
       return jobId;
     } else {

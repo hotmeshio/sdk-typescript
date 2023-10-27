@@ -39,6 +39,7 @@ interface JobStatsInput {
   start?: string;
   end?: string;
   sparse?: boolean;
+  scrub?: boolean; //remove all indexes upon completion
 }
 
 interface GetStatsOptions {

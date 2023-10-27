@@ -1,7 +1,7 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.0.12",
-  "description": "Durable Workflows",
+  "version": "0.0.13",
+  "description": "Unbreakable Workflows",
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "repository": {
@@ -26,6 +26,9 @@
     "test:connect": "NODE_ENV=test jest ./tests/unit/services/connector/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:connect:redis": "NODE_ENV=test jest ./tests/unit/services/connector/clients/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:connect:ioredis": "NODE_ENV=test jest ./tests/unit/services/connector/clients/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:emit": "NODE_ENV=test jest ./tests/functional/emit/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:hook": "NODE_ENV=test jest ./tests/functional/hook/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:signal": "NODE_ENV=test jest ./tests/functional/signal/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:parallel": "NODE_ENV=test jest ./tests/functional/parallel/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sequence": "NODE_ENV=test jest ./tests/functional/sequence/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:quorum": "NODE_ENV=test jest ./tests/functional/quorum/index.test.ts --detectOpenHandles --forceExit --verbose",
@@ -44,6 +47,8 @@
     "test:durable:goodbye": "NODE_ENV=test jest ./tests/durable/goodbye/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:retry": "NODE_ENV=test jest ./tests/durable/retry/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:fatal": "NODE_ENV=test jest ./tests/durable/fatal/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:durable:sleep": "NODE_ENV=test jest ./tests/durable/sleep/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:durable:signal": "NODE_ENV=test jest ./tests/durable/signal/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:loopactivity": "NODE_ENV=test jest ./tests/durable/loopactivity/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:nested": "NODE_ENV=test jest ./tests/durable/nested/index.test.ts --detectOpenHandles --forceExit --verbose"
   },

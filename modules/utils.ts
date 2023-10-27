@@ -86,9 +86,13 @@ export async function getSubscriptionTopic(activityId: string, store: StoreServi
 }
 
 /**
- * returns the 12-digit format of the iso timestamp (e.g, 202101010000)
+ * returns the 12-digit format of the iso timestamp (e.g, 202101010000); returns
+ * an empty string if overridden by the user to not segment by time (infinity).
  */
 export function getTimeSeries(granularity: string): string {
+  if (granularity.toString() === 'infinity') {
+    return '0';
+  }
   const now = new Date();
   const granularityUnit = granularity.slice(-1);
   const granularityValue = parseInt(granularity.slice(0, -1), 10);

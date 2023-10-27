@@ -3,6 +3,10 @@ class ArrayHandler {
     return array[index];
   }
 
+  length(array: any[]): any {
+    return array?.length;
+  }
+
   concat(array1: any[], array2: any[]): any[] {
     return array1.concat(array2);
   }

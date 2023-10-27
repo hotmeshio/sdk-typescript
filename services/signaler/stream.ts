@@ -149,9 +149,9 @@ class StreamSignaler {
     let output: StreamDataResponse | void;
     try {
       output = await callback(input);
-    } catch (err) {
-      this.logger.error(`stream-call-function-error`, { stream, id, err });
-      output = this.structureUnhandledError(input, err);
+    } catch (error) {
+      this.logger.error(`stream-call-function-error`, { error });
+      output = this.structureUnhandledError(input, error);
     }
     return output as StreamDataResponse;
   }

@@ -210,7 +210,8 @@
             "job": {
               "maps": {
                 "facility": "{route.hook.data.facility}",
-                "actual_release_series": "{route.hook.data.actual_release_series}"
+                "actual_release_series": "{route.hook.data.actual_release_series}",
+                "id": "{schedule.output.data.id}"
               }
             }
           },

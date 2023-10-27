@@ -1,5 +1,6 @@
 import { JobOutput } from '../../types/job';
 import { HotMeshService as HotMesh } from '../hotmesh';
+import { PUBLISHES_TOPIC } from './factory';
 
 export class WorkflowHandleService {
   hotMesh: HotMesh;
@@ -12,9 +13,13 @@ export class WorkflowHandleService {
     this.hotMesh = hotMesh;
   }
 
+  async signal(signalId: string, data: Record<any, any>): Promise<void> {
+    await this.hotMesh.hook('durable.wfs.signal', { id: signalId, data });
+  }
+
   async result(): Promise<any> {
     let status = await this.hotMesh.getStatus(this.workflowId);
-    const topic = `${this.workflowTopic}.${this.workflowId}`;
+    const topic = `${PUBLISHES_TOPIC}.${this.workflowId}`;
   
     return new Promise((resolve, reject) => {
       let isResolved = false;

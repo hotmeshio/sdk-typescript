@@ -1,5 +1,12 @@
 import { RedisClass, RedisOptions } from './redis';
 
+type WorkflowConfig = {
+  backoffCoefficient?: number; //default 10
+  maximumAttempts?: number; //default 2
+  maximumInterval?: string; //default 30s
+  initialInterval?: string; //default 1s
+}
+
 type WorkflowOptions = {
   taskQueue: string;
   args: any[];          //input arguments to pass in
@@ -7,6 +14,14 @@ type WorkflowOptions = {
   workflowName?: string; //the name of the user's workflow function
   workflowTrace?: string;
   workflowSpan?: string;
+  config?: WorkflowConfig;
+}
+
+type SignalOptions = {
+  taskQueue: string;
+  data: Record<string, any>; //input data (any serializable object)
+  workflowId: string;   //execution id (the job id)
+  workflowName?: string; //the name of the user's workflow function
 }
 
 type ActivityWorkflowDataType = {
@@ -47,7 +62,7 @@ type WorkerConfig = {
 
 type WorkerOptions = {
   maxSystemRetries?: number; //1-3 (10ms, 100ms, 1_000ms)
-  backoffExponent?: number; //2-10ish
+  backoffCoefficient?: number; //2-10ish
 }
 
 type ContextType = {
@@ -81,6 +96,7 @@ export {
   NativeConnection,
   ProxyType,
   Registry,
+  SignalOptions,
   WorkerConfig,
   WorkerOptions,
   WorkflowDataType,

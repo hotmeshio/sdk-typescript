@@ -25,15 +25,15 @@ class TaskService {
   async processWebHooks(hookEventCallback: HookInterface): Promise<void> {
     const workItemKey = await this.store.getActiveTaskQueue();
     if (workItemKey) {
-      const [topic, sourceKey, ...sdata] = workItemKey.split('::');
+      const [topic, sourceKey, scrub, ...sdata] = workItemKey.split('::');
       const data = JSON.parse(sdata.join('::'));
       const destinationKey = `${sourceKey}:processed`;
       const jobId = await this.store.processTaskQueue(sourceKey, destinationKey);
       if (jobId) {
+        //todo: don't use 'id', make configurable using hook rule
         await hookEventCallback(topic, { ...data, id: jobId });
-        //todo: do final checksum count (values are tracked in the stats hash)
       } else {
-        await this.store.deleteProcessedTaskQueue(workItemKey, sourceKey, destinationKey);
+        await this.store.deleteProcessedTaskQueue(workItemKey, sourceKey, destinationKey, scrub === 'true');
       }
       setImmediate(() => this.processWebHooks(hookEventCallback));
     }

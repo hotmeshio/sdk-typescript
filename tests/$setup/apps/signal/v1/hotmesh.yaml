@@ -1,0 +1,145 @@
+app:
+  id: signal
+  version: '1'
+  graphs:
+    - subscribes: signal.test
+      publishes: signal.tested
+
+      expire: 180
+
+      activities:
+        trigger:
+          title: Entry Point
+          type: trigger
+
+        sleeper:
+          title: Sleep for 5s
+          type: activity
+          sleep: 5
+
+        awaiter:
+          title: Invoke another flow
+          type: await
+          topic: hook.test
+          input:
+            schema:
+              type: object
+              properties:
+                parent_job_id:
+                  type: string
+            maps:
+              parent_job_id: '{$job.metadata.jid}'
+
+        signaler:
+          title: Signal other flow to resume
+          type: signal
+          subtype: all
+          key_name: parent_job_id
+          key_value: '{$job.metadata.jid}'
+          topic: hook.resume
+          resolver:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: object
+                  properties:
+                    parent_job_id:
+                      type: string
+                scrub:
+                  type: boolean
+            maps:
+              data:
+                parent_job_id: '{$job.metadata.jid}'
+              scrub: true
+          signal:
+            schema:
+              type: object
+              properties:
+                done:
+                  type: boolean
+            maps:
+              done: true
+
+        pender:
+          title: Runs when awaiter returns 202
+          type: activity
+
+        ender:
+          title: Runs when awaiter returns 200
+          type: activity
+
+      transitions:
+        trigger:
+          - to: sleeper
+          - to: awaiter
+        sleeper:
+          - to: signaler
+        awaiter:
+          - to: ender
+          - to: pender
+            conditions:
+              code: 202
+
+    - subscribes: hook.test
+      publishes: hook.tested
+
+      expire: 180
+
+      input:
+        schema:
+          type: object
+          properties:
+            parent_job_id:
+              type: string
+            id:
+              type: string
+      output:
+        schema:
+          type: object
+          properties:
+            done:
+              type: boolean
+
+      activities:
+        t1:
+          type: trigger
+          emit: true
+          job:
+            maps:
+              id: "{$job.metadata.jid}"
+              parent_job_id: "{$self.output.data.parent_job_id}"
+              done: false
+          stats:
+            key: "{$self.input.data.parent_job_id}"
+            granularity: infinity
+            measures:
+              - measure: index
+                target: "{$self.input.data.parent_job_id}"
+        a1:
+          type: activity
+          hook:
+            type: object
+            properties:
+              done:
+                type: boolean
+          job:
+            maps:
+              done: "{$self.hook.data.done}"
+
+        a2:
+          type: activity
+
+      transitions:
+        t1:
+          - to: a1
+        a1:
+          - to: a2
+
+      hooks:
+        hook.resume:
+          - to: a1
+            conditions:
+              match:
+                - expected: "{$job.metadata.jid}"
+                  actual: "{$self.hook.data.id}"

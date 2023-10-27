@@ -10,7 +10,7 @@ import { StreamSignaler } from '../../../services/signaler/stream';
 
 const { Connection, Client, Worker } = Durable;
 
-describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
+describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
   let handle: WorkflowHandleService;
   const errorCycles = 5;
   const options = {
@@ -53,7 +53,7 @@ describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
         //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
           args: [{ amount: errorCycles }],
-          taskQueue: 'retry-world',
+          taskQueue: 'sleep-world',
           workflowName: 'example',
           workflowId: nanoid(),
         });
@@ -70,11 +70,11 @@ describe('DURABLE | retry | `Workflow Promise.all proxyActivities`', () => {
             class: Redis,
             options,
           },
-          taskQueue: 'retry-world',
+          taskQueue: 'sleep-world',
           workflow: workflows.default.example,
           options: {
             maxSystemRetries: 2,
-            backoffExponent: 5,
+            backoffCoefficient: 5,
           },
         });
         await worker.run();

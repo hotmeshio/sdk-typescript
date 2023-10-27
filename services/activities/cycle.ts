@@ -61,9 +61,9 @@ class Cycle extends Activity {
       return this.context.metadata.aid;
     } catch (error) {
       if (error instanceof GetStateError) {
-        this.logger.error('cycle-get-state-error', error);
+        this.logger.error('cycle-get-state-error', { error });
       } else {
-        this.logger.error('cycle-process-error', error);
+        this.logger.error('cycle-process-error', { error });
       }
       telemetry.setActivityError(error.message);
       throw error;

@@ -1,8 +1,14 @@
+import { nanoid } from 'nanoid';
+import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, HOOK_ID, SUBSCRIBES_TOPIC, getWorkflowYAML } from './factory';
 import { WorkflowHandleService } from './handle';
 import { HotMeshService as HotMesh } from '../hotmesh';
-import { ClientConfig, Connection, WorkflowOptions } from '../../types/durable';
-import { getWorkflowYAML } from './factory';
+import {
+  ClientConfig,
+  Connection,
+  SignalOptions,
+  WorkflowOptions } from '../../types/durable';
 import { JobState } from '../../types/job';
+import { KeyType } from '../../modules/key';
 
 /*
 Here is an example of how the methods in this file are used:
@@ -55,13 +61,14 @@ export class ClientService {
     this.connection = config.connection;
   }
 
-  getHotMesh = async (worflowTopic: string) => {
+  getHotMeshClient = async (worflowTopic: string) => {
+    //NOTE: every unique topic inits a new engine
     if (ClientService.instances.has(worflowTopic)) {
       return await ClientService.instances.get(worflowTopic);
     }
 
-    const hotMesh = HotMesh.init({
-      appId: worflowTopic,
+    const hotMeshClient = HotMesh.init({
+      appId: APP_ID,
       engine: {
         redis: {
           class: this.connection.class,
@@ -69,9 +76,19 @@ export class ClientService {
         }
       }
     });
-    ClientService.instances.set(worflowTopic, hotMesh);
-    await this.activateWorkflow(await hotMesh, worflowTopic);
-    return hotMesh;
+    ClientService.instances.set(worflowTopic, hotMeshClient);
+
+    //since the YAML topic is dynamic, it MUST be manually created before use
+    const store = (await hotMeshClient).engine.store;
+    const params = { appId: APP_ID, topic: worflowTopic };
+    const streamKey = store.mintKey(KeyType.STREAMS, params);
+    try {
+      await store.xgroup('CREATE', streamKey, 'WORKER', '$', 'MKSTREAM');
+    } catch (err) {
+      //ignore if already exists
+    }
+    await this.activateWorkflow(await hotMeshClient);
+    return hotMeshClient;
   }
 
   workflow = {
@@ -80,36 +97,57 @@ export class ClientService {
       const workflowName = options.workflowName;
       const trc = options.workflowTrace;
       const spn = options.workflowSpan;
+      //topic is concat of taskQueue and workflowName
       const workflowTopic = `${taskQueueName}-${workflowName}`;
-      const hotMesh = await this.getHotMesh(workflowTopic);
+      const hotMeshClient = await this.getHotMeshClient(workflowTopic);
       const payload = {
         arguments: [...options.args],
-        workflowId: options.workflowId,
+        workflowId: options.workflowId || nanoid(),
+        workflowTopic: workflowTopic,
+        backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,
       }
       const context = { metadata: { trc, spn }, data: {}};
-      const jobId = await hotMesh.pub(workflowTopic, payload, context as JobState);
-      return new WorkflowHandleService(hotMesh, workflowTopic, jobId);
+      const jobId = await hotMeshClient.pub(
+        SUBSCRIBES_TOPIC,
+        payload,
+        context as JobState);
+      return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
     },
+
+    //signal in to activate a paused (waitForSignal) workflow
+    signal: async (options: SignalOptions): Promise<void> => {
+      const taskQueueName = options.taskQueue;
+      const workflowName = options.workflowName;
+      const workflowTopic = `${taskQueueName}-${workflowName}`;
+      const hotMeshClient = await this.getHotMeshClient(workflowTopic);
+      const payload = {
+        id: options.workflowId,
+        data: { ...options.data },
+      }
+      await hotMeshClient.hook(
+        HOOK_ID,
+        payload
+      );
+    }
   };
 
-  async activateWorkflow(hotMesh: HotMesh, workflowTopic: string): Promise<void> {
-    const version = '1';
-    const app = await hotMesh.engine.store.getApp(workflowTopic);
+  async activateWorkflow(hotMesh: HotMesh, appId = APP_ID, version = APP_VERSION): Promise<void> {
+    const app = await hotMesh.engine.store.getApp(appId);
     const appVersion = app?.version as unknown as number;
     if(isNaN(appVersion)) {
       try {
-        await hotMesh.deploy(getWorkflowYAML(workflowTopic, version));
+        await hotMesh.deploy(getWorkflowYAML(appId, version));
         await hotMesh.activate(version);
-      } catch (err) {
-        hotMesh.engine.logger.error('durable-client-deploy-activate-err', err);
-        throw err;
+      } catch (error) {
+        hotMesh.engine.logger.error('durable-client-deploy-activate-err', { error });
+        throw error;
       }
     } else if(app && !app.active) {
       try {
         await hotMesh.activate(version);
-      } catch (err) {
-        hotMesh.engine.logger.error('durable-client-activate-err', err);
-        throw err;
+      } catch (error) {
+        hotMesh.engine.logger.error('durable-client-activate-err', { error});
+        throw error;
       }
     }
   }

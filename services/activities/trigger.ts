@@ -61,9 +61,9 @@ class Trigger extends Activity {
       return this.context.metadata.jid;
     } catch (error) {
       if (error instanceof DuplicateJobError) {
-        this.logger.error('duplicate-job-error', error);
+        this.logger.error('duplicate-job-error', { error });
       } else {
-        this.logger.error('trigger-process-error', error);
+        this.logger.error('trigger-process-error', { error });
       }
       telemetry.setActivityError(error.message);
       throw error;
@@ -140,6 +140,7 @@ class Trigger extends Activity {
        },
     };
     this.context['$self'] = this.context[this.metadata.aid];
+    this.context['$job'] = this.context; //NEVER call STRINGIFY! (circular)
   }
 
   bindJobMetadataPaths(): string[] {
@@ -151,7 +152,7 @@ class Trigger extends Activity {
   }
 
   resolveGranularity(): string {
-    return ReporterService.DEFAULT_GRANULARITY;
+    return this.config.stats?.granularity || ReporterService.DEFAULT_GRANULARITY;
   }
 
   getJobStatus(): number {

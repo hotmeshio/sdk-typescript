@@ -198,7 +198,7 @@ After executing the mapping rules, the resulting JSON object will be:
 
 ## array.slice
 
-The `array.slice` function returns a shallow copy of a portion of an array into a new array object selected from the beginning index to, but not including, the end index. It takes three parameters: the array to slice, the beginning index, and the end index.
+The `array.slice` function returns a shallow copy of a portion of an array into a new array object selected from the beginning index to, but not including, the end index. It takes three parameters: the array to slice, the beginning index, and the end index. The end index is optional and if not provided, the slice will continue to the end of the array.
 
 ### Example
 

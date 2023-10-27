@@ -161,10 +161,10 @@ const jobId = await hotMesh.pub(topic, payload);
 ```
 
 ### Subscribe to Events
-Call `sub` to subscribe to all workflow results for a given topic.
+Call `psub` (patterned subscription) to subscribe to all workflow results for a given topic.
 
 ```javascript
-await hotMesh.sub('sandbox.work.done', (topic, jobOutput) => {
+await hotMesh.psub('sandbox.work.done.*', (topic, jobOutput) => {
   // use jobOutput.data
 });
 ```

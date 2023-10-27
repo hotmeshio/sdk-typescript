@@ -8,6 +8,7 @@ import { HookRule } from '../../types/hook';
 import { HotMeshGraph, HotMeshManifest } from '../../types/hotmesh';
 import { RedisClient, RedisMulti } from '../../types/redis';
 import { StringAnyType, Symbols } from '../../types/serializer';
+import { Pipe } from '../pipe';
 
 const DEFAULT_METADATA_RANGE_SIZE = 26; //metadata is 26 slots ([a-z] * 1)
 const DEFAULT_DATA_RANGE_SIZE = 260; //data is 260 slots ([a-zA-Z] * 5)
@@ -425,7 +426,8 @@ class Deployer {
       const activities = graph.activities;
       for (const activityKey in activities) {
         const activity = activities[activityKey];
-        if (activity.type === 'worker') {
+        //only precreate if the topic is concrete and not `mappable`
+        if (activity.type === 'worker' && Pipe.resolve(activity.subtype, {}) === activity.subtype) {
           params.topic = activity.subtype;
           const key = this.store.mintKey(KeyType.STREAMS, params);
           //create one worker group per unique activity subtype (the topic)
