@@ -31,7 +31,7 @@ describe('DURABLE | signal | `Durable.workflow.signal`', () => {
     await Durable.Worker.shutdown();
     await StreamSignaler.stopConsuming();
     await RedisConnection.disconnectAll();
-  });
+  }, 10_000);
 
   describe('Connection', () => {
     describe('connect', () => {
@@ -82,10 +82,15 @@ describe('DURABLE | signal | `Durable.workflow.signal`', () => {
   describe('WorkflowHandle', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
+        //signal using the original client handle
         await sleepFor(3_000);
         await handle.signal('abcdefg', { name: 'WarmMash' });
-        await sleepFor(2_000);
-        await handle.signal('hijklmnop', { name: 'WarnCrash' });
+        
+        //signal by instancing a new client connection
+        await sleepFor(1_000);
+        const client = new Client({ connection: { class: Redis, options }});
+        await client.workflow.signal('hijklmnop', { name: 'WarnCrash' });
+
         const result = await handle.result();
         expect(result).toEqual(['Hello, stranger!', {'name': 'WarmMash'}, {'name': 'WarnCrash'}, 'Hello, ColdMush!']);
       }, 15_000);

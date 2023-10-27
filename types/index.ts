@@ -36,6 +36,7 @@ export {
     NativeConnection,
     ProxyType,
     Registry,
+    WorkflowConfig,
     WorkerConfig,
     WorkerOptions,
     WorkflowDataType,
