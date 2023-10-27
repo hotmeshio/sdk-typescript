@@ -63,6 +63,10 @@ class HotMeshService {
     return instance;
   }
 
+  static guid(): string {
+    return nanoid();
+  }
+
   async initEngine(config: HotMeshConfig, logger: ILogger): Promise<void> {
     if (config.engine) {
       await ConnectorService.initRedisClients(
@@ -104,7 +108,7 @@ class HotMeshService {
   }
 
   // ************* PUB/SUB METHODS *************
-  async pub(topic: string, data: JobData = {}, context?: JobState) {
+  async pub(topic: string, data: JobData = {}, context?: JobState): Promise<string> {
     return await this.engine?.pub(topic, data, context);
   }
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
@@ -145,7 +149,7 @@ class HotMeshService {
   async getStatus(jobId: string): Promise<JobStatus> {
     return this.engine?.getStatus(jobId);
   }
-  async getState(topic: string, jobId: string) {
+  async getState(topic: string, jobId: string): Promise<JobOutput> {
     return this.engine?.getState(topic, jobId);
   }
   async getIds(topic: string, query: JobStatsInput, queryFacets = []): Promise<IdsResponse> {
@@ -162,7 +166,6 @@ class HotMeshService {
 
   // ****** `HOOK` ACTIVITY RE-ENTRY POINT ******
   async hook(topic: string, data: JobData, dad?: string): Promise<JobStatus | void> {
-    //return collation int
     return await this.engine?.hook(topic, data, dad);
   }
   async hookAll(hookTopic: string, data: JobData, query: JobStatsInput, queryFacets: string[] = []): Promise<string[]> {

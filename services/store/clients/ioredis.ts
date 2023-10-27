@@ -63,9 +63,9 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
   async xadd(key: string, id: string, messageId: string, messageValue: string, multi?: RedisMultiType): Promise<string | RedisMultiType> {
     try {
       return await (multi || this.redisClient).xadd(key, id, messageId, messageValue);
-    } catch (err) {
-      this.logger.error(`Error publishing 'xadd'; key: ${key}`, err);
-      throw err;
+    } catch (error) {
+      this.logger.error(`Error publishing 'xadd'; key: ${key}`, { error });
+      throw error;
     }
   }
 
@@ -79,9 +79,9 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
   ): Promise<[string, string, number, [string, number][]][] | [string, string, number, number] | unknown[]> {
     try {
       return await this.redisClient.xpending(key, group, start, end, count, consumer);
-    } catch (err) {
-      this.logger.error(`Error in retrieving pending messages for [stream ${key}], [group ${group}]`, err);
-      throw err;
+    } catch (error) {
+      this.logger.error(`Error in retrieving pending messages for [stream ${key}], [group ${group}]`, { error });
+      throw error;
     }
   }
 
@@ -95,27 +95,27 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
   ): Promise<ReclaimedMessageType> {
     try {
       return await this.redisClient.xclaim(key, group, consumer, minIdleTime, id, ...args) as unknown as ReclaimedMessageType;
-    } catch (err) {
-      this.logger.error(`Error in claiming message with id: ${id} in group: ${group} for key: ${key}`, err);
-      throw err;
+    } catch (error) {
+      this.logger.error(`Error in claiming message with id: ${id} in group: ${group} for key: ${key}`, { error });
+      throw error;
     }
   }
 
   async xack(key: string, group: string, id: string, multi? : RedisMultiType): Promise<number|RedisMultiType> {
     try {
       return await (multi || this.redisClient).xack(key, group, id);
-    } catch (err) {
-      this.logger.error(`Error in acknowledging messages in group: ${group} for key: ${key}`, err);
-      throw err;
+    } catch (error) {
+      this.logger.error(`Error in acknowledging messages in group: ${group} for key: ${key}`, { error });
+      throw error;
     }
   }
 
   async xdel(key: string, id: string, multi? : RedisMultiType): Promise<number|RedisMultiType> {
     try {
       return await (multi || this.redisClient).xdel(key, id);
-    } catch (err) {
-      this.logger.error(`Error in deleting messages with id: ${id} for key: ${key}`, err);
-      throw err;
+    } catch (error) {
+      this.logger.error(`Error in deleting messages with id: ${id} for key: ${key}`, { error });
+      throw error;
     }
   }
 }

@@ -431,7 +431,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     const output: IdsData = {};
     for (const [index, result] of results.entries()) {
       const key = indexKeys[index];
-      const idsList: string[] = result[1];
+
+      //todo: resolve this discrepancy between redis/ioredis
+      const idsList: string[] = result[1] || result;
+
       if (idsList && idsList.length > 0) {
         output[key] = idsList;
       } else {
@@ -695,11 +698,17 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return workItemKey;
   }
 
-  async deleteProcessedTaskQueue(workItemKey: string, key: string, processedKey: string): Promise<void> {
+  async deleteProcessedTaskQueue(workItemKey: string, key: string, processedKey: string, scrub = false): Promise<void> {
     const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
     const didRemove = await this.redisClient[this.commands.zrem](zsetKey, workItemKey);
     if (didRemove) {
-      await this.redisClient[this.commands.rename](processedKey, key);
+      if (scrub) {
+        //indexes can be designed to be self-cleaning; `engine.hookAll` exposes this option
+        this.redisClient[this.commands.expire](processedKey, 0);
+        this.redisClient[this.commands.expire](key.split(":").slice(0, 5).join(":"), 0);
+      } else {
+        await this.redisClient[this.commands.rename](processedKey, key);
+      }
     }
     this.cache.removeWorkItem(this.appId);
   }

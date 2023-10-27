@@ -68,6 +68,7 @@ import { StringStringType } from '../../types';
 //wait time to see if a job is complete
 const OTT_WAIT_TIME = 1000;
 const STATUS_CODE_SUCCESS = 200;
+const STATUS_CODE_PENDING = 202;
 const STATUS_CODE_TIMEOUT = 504;
 
 class EngineService {
@@ -366,7 +367,7 @@ class EngineService {
   }
 
   // ***************** `AWAIT` ACTIVITY RETURN RESPONSE ****************
-  async execAdjacentParent(context: JobState, jobOutput: JobOutput): Promise<string> {
+  async execAdjacentParent(context: JobState, jobOutput: JobOutput, emit = false): Promise<string> {
     if (this.hasParentJob(context)) {
       //errors are stringified `StreamError` objects
       const error = this.resolveError(jobOutput.metadata);
@@ -386,6 +387,9 @@ class EngineService {
         streamData.status = StreamStatus.ERROR;
         streamData.data = error;
         streamData.code = error.code;
+      } else if (emit) {
+        streamData.status = StreamStatus.PENDING;
+        streamData.code = STATUS_CODE_PENDING;
       } else {
         streamData.status = StreamStatus.SUCCESS;
         streamData.code = STATUS_CODE_SUCCESS;
@@ -445,24 +449,26 @@ class EngineService {
     };
     await this.streamSignaler.publishMessage(null, streamData);
   }
-  async hookAll(hookTopic: string, data: JobData, query: JobStatsInput, queryFacets: string[] = []): Promise<string[]> {
+  async hookAll(hookTopic: string, data: JobData, keyResolver: JobStatsInput, queryFacets: string[] = []): Promise<string[]> {
     const config = await this.getVID();
     const hookRule = await this.storeSignaler.getHookRule(hookTopic);
     if (hookRule) {
       const subscriptionTopic = await getSubscriptionTopic(hookRule.to, this.store, config)
-      const resolvedQuery = await this.resolveQuery(subscriptionTopic, query);
+      const resolvedQuery = await this.resolveQuery(subscriptionTopic, keyResolver);
       const reporter = new ReporterService(config, this.store, this.logger);
       const workItems = await reporter.getWorkItems(resolvedQuery, queryFacets);
-      const taskService = new TaskService(this.store, this.logger);
-      await taskService.enqueueWorkItems(
-        workItems.map(
-          workItem => `${hookTopic}::${workItem}::${JSON.stringify(data)}`
-      ));
-      this.store.publish(
-        KeyType.QUORUM,
-        { type: 'work', originator: this.guid },
-        this.appId
-      );
+      if (workItems.length) {
+        const taskService = new TaskService(this.store, this.logger);
+        await taskService.enqueueWorkItems(
+          workItems.map(
+            workItem => `${hookTopic}::${workItem}::${keyResolver.scrub || false}::${JSON.stringify(data)}`
+        ));
+        this.store.publish(
+          KeyType.QUORUM,
+          { type: 'work', originator: this.guid },
+          this.appId
+        );
+      }
       return workItems;
     } else {
       throw new Error(`unable to find hook rule for topic ${hookTopic}`);
@@ -472,7 +478,7 @@ class EngineService {
 
   // ********************** PUB/SUB ENTRY POINT **********************
   //publish (returns just the job id)
-  async pub(topic: string, data: JobData, context?: JobState) {
+  async pub(topic: string, data: JobData, context?: JobState): Promise<string> {
     const activityHandler = await this.initActivity(topic, data, context);
     if (activityHandler) {
       return await activityHandler.process();
@@ -534,7 +540,7 @@ class EngineService {
       }, timeout);
     });
   }
-  async resolveOneTimeSubscription(context: JobState, jobOutput: JobOutput) {
+  async resolveOneTimeSubscription(context: JobState, jobOutput: JobOutput, emit = false) {
     //todo: subscriber should query for the job...only publish minimum context needed
     if (this.hasOneTimeSubscription(context)) {
       const message: JobMessage = {
@@ -551,7 +557,7 @@ class EngineService {
     const schema = await this.store.getSchema(activityId, config);
     return schema.publishes;
   }
-  async resolvePersistentSubscriptions(context: JobState, jobOutput: JobOutput) {
+  async resolvePersistentSubscriptions(context: JobState, jobOutput: JobOutput, emit = false) {
     const topic = await this.getPublishesTopic(context);
     if (topic) {
       const message: JobMessage = {
@@ -577,20 +583,23 @@ class EngineService {
   }
 
 
-  // ***************** JOB COMPLETION/CLEANUP *****************
-  async runJobCompletionTasks(context: JobState) {
+  // ********** JOB COMPLETION/CLEANUP (AND JOB EMIT) ***********
+  async runJobCompletionTasks(context: JobState, emit = false) {
+    //if 'emit' is true, the job isn't done. it's just emitting
     const isAwait = this.hasParentJob(context);
     const isOneTimeSubscription = this.hasOneTimeSubscription(context);
     const topic = await this.getPublishesTopic(context);
     if (isAwait || isOneTimeSubscription || topic) {
       const jobOutput = await this.getState(context.metadata.tpc, context.metadata.jid);
       //always wait for stream pub/sub
-      await this.execAdjacentParent(context, jobOutput);
+      await this.execAdjacentParent(context, jobOutput, emit);
       //no need to wait for standard pub/sub
-      this.resolveOneTimeSubscription(context, jobOutput);
-      this.resolvePersistentSubscriptions(context, jobOutput);
+      this.resolveOneTimeSubscription(context, jobOutput, emit);
+      this.resolvePersistentSubscriptions(context, jobOutput, emit);
     }
-    this.task.registerJobForCleanup(context.metadata.jid, context.metadata.expire);
+    if (!emit) {
+      this.task.registerJobForCleanup(context.metadata.jid, context.metadata.expire);
+    }
   }
 
 

@@ -1,0 +1,89 @@
+{
+  "app": {
+    "id": "hook",
+    "version": "1",
+    "graphs": [
+      {
+        "subscribes": "hook.test",
+        "publishes": "hook.tested",
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "parent_job_id": {
+                "type": "string"
+              },
+              "job_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "done": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "activities": {
+          "t1": {
+            "type": "trigger",
+            "emit": true,
+            "job": {
+              "maps": {
+                "job_id": "{$self.input.data.job_id}",
+                "parent_job_id": "{$self.input.data.parent_job_id}",
+                "done": false
+              }
+            },
+            "stats": {
+              "id": "{$self.input.data.job_id}",
+              "key": "{$self.input.data.parent_job_id}",
+              "granularity": "infinity",
+              "measures": [
+                {
+                  "measure": "index",
+                  "target": "{$self.input.data.parent_job_id}"
+                }
+              ]
+            }
+          },
+          "a1": {
+            "type": "activity",
+            "job": {
+              "maps": {
+                "done": "{a1.hook.data.done}"
+              }
+            }
+          }
+        },
+        "transitions": {
+          "t1": [
+            {
+              "to": "a1"
+            }
+          ]
+        },
+        "hooks": {
+          "hook.resume": [
+            {
+              "to": "a1",
+              "conditions": {
+                "match": [
+                  {
+                    "expected": "{t1.output.data.job_id}",
+                    "actual": "{$self.hook.data.id}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

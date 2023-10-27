@@ -12,6 +12,38 @@ class SetStateError extends Error {
   }
 }
 
+//thrown when a signal set is incomplete but already configured
+//if a waitFor set has 'n' items, this can be thrown `n - 1` times
+class DurableIncompleteSignalError extends Error {
+  code: number;
+  constructor(message: string) {
+    super(message);
+    this.code = 593;
+  }
+}
+
+//the original waitFor error that is thrown for a new signal set
+class DurableWaitForSignalError extends Error {
+  code: number;
+  signals: {signal: string, index: number}[]; //signal id and execution order in the workflow
+  constructor(message: string, signals: {signal: string, index: number}[]) {
+    super(message);
+    this.signals = signals;
+    this.code = 594;
+  }
+}
+
+class DurableSleepError extends Error {
+  code: number;
+  duration: number; //seconds
+  index: number;    //execution order in the workflow 
+  constructor(message: string, duration: number, index: number) {
+    super(message);
+    this.duration = duration;
+    this.index = index;
+    this.code = 595;
+  }
+}
 class DurableTimeoutError extends Error {
   code: number;
   constructor(message: string) {
@@ -87,6 +119,9 @@ export {
   DurableMaxedError,
   DurableFatalError,
   DurableRetryError,
+  DurableWaitForSignalError,
+  DurableIncompleteSignalError,
+  DurableSleepError,
   DuplicateJobError,
   GetStateError,
   SetStateError,

@@ -59,7 +59,7 @@ class MapperService {
     if (typeof transitionRule === 'boolean') {
       return transitionRule;
     }
-    if (code.toString() === (transitionRule.code || 200).toString()) {
+    if ((Array.isArray(transitionRule.code) && transitionRule.code.includes(code || 200)) || code.toString() === (transitionRule.code || 200).toString()) {
       if (!transitionRule.match) {
         return true;
       }

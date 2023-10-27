@@ -20,8 +20,8 @@ The HotMesh model is a modern, JSON-based alternative to WSDL/SOAP, offering a f
     - [4.1.2. Trigger](#412-trigger)
     - [4.1.3. Await](#413-await)
     - [4.1.4. Worker](#414-worker)
-    - [4.1.5. Iterate](#415-iterate)
-    - [4.1.6. Emit](#416-emit)
+    - [4.1.5. Cycle](#415-cycle)
+    - [4.1.6. Iterate](#416-iterate)
   - [4.2. Input and Output Schemas](#42-input-and-output-schemas)
   - [4.3. Activity Mapping](#43-activity-mapping)
 - [5. Transitions](#5-transitions)
@@ -256,7 +256,7 @@ By structuring graphs in this manner, developers can create flexible and efficie
 The subscription and publishing mechanism in the graph represent entry and exit points for connecting to *external* event systems.
 
 1. `subscribes`: A graph subscribes to outside triggers by specifying the topic name in the subscribes property. Outside callers can trigger the workflow by publishing a payload to this topic (e.g, `hotMesh.pub(topic, payload)`).
-2. `publishes`: A graph will publish an event only if there is a publishes property with a topcic. When the graph completes its execution, it will emit the specified event. Outside callers can subscribe to the outcome of all associated graphs by subscribing to this topic (e.g, `hotMesh.sub(topic, handlerFn)`).
+2. `publishes`: A graph will publish an event only if there is a publishes property with a topcic. When the graph completes its execution, it will emit the specified event. Outside callers can subscribe to the outcome of all associated workflow runs of the graph by subscribing to this topic (e.g, `hotMesh.psub(topic + '.*', handlerFn)`).
 
 Here's an example of a subscription and publishing mechanism in YAML:
 
@@ -368,11 +368,86 @@ my_calculator_activity:
         # ...
 ```
 
-#### 4.1.5. Iterate
-TODO
+#### 4.1.5. Cycle
+The cycle activity targets an ancestor activity in the graph and re-executes it. This is useful when the graph needs to be re-executed from a specific point in the workflow.
 
-#### 4.1.6. Emit
-TODO
+Cycle activities can also include input mappings in order to overrride and/or provide additional data to the ensuing cycle. The target ancestor will re-run Leg 2 in a new dimensional thread, ensuring no activity state collisions; however, it is possible for any dimensional thread to update the shared job state.
+
+Consider the following graph where the `c1` activity is a cycle activity that targets the `a1` activity. Each time the worker activity, `w1` returns a message with an error status (`code:500`), the cycle activity will re-execute the DAG, starting at the `a1` activity. The cycle repeats until the worker activity returns a message with a success status (`code:200`).
+
+>NOTE: It is important to include a sleep activity in such cases in order to avoid unnecessary cycles when handling errors.
+
+```yaml
+app:
+  id: cycle
+  version: '2'
+  graphs:
+    - subscribes: cycle.test
+      expire: 120
+
+      output:
+        schema:
+          type: object
+          properties:
+            counter:
+              type: number
+
+      activities:
+        t1:
+          title: Flow entry point
+          type: trigger
+
+        a1:
+          title: Ancestor to return to upon error
+          type: activity
+          cycle: true
+
+        w2:
+          title: Calls a function that returns 500 or 200
+          type: worker
+          topic: cycle.err
+
+          output:
+            schema:
+              type: object
+              properties:
+                counter:
+                  type: number
+            500:
+              schema:
+                type: object
+                properties:
+                  counter:
+                    type: number
+
+          job:
+            maps:
+              counter: '{$self.output.data.counter}'
+
+        a2:
+          title: Sleep for 60s
+          type: activity
+          sleep: 60
+
+        c1:
+          title: Go to ancestor a1
+          type: cycle
+          ancestor: a1
+
+      transitions:
+        t1:
+          - to: a1
+        a1:
+          - to: w2
+        w2:
+          - to: a2
+            conditions:
+              code: 500
+        a2:
+          - to: c1
+```
+#### 4.1.5. Iterate
+>TODO
 
 ### 4.2. Input and Output Schemas
 Input and output schemas are used in activities to define the structure and data types of the data that is being passed between activities. They ensure that the data is validated and transformed correctly, improving the reliability and maintainability of the workflow.

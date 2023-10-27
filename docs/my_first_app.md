@@ -362,15 +362,15 @@ const jobId = await hotMesh.pub('calculate', payload);
 //jobId is system-assigned in this context (e.g., `987656789.235`)
 ```
 
-### Sub
-Suppose you need to listen in on the results of all computations on a particular topic, not just the ones you initiated. In that case, you can use the `sub` method. It allows you to subscribe to a specific topic and define a callback function that will be executed every time a new result is published on that topic. 
+### PSub
+Suppose you need to listen in on the results of all computations on a particular topic, not just the ones you initiated. In that case, you can use the patterned subscription `psub` method. It allows you to subscribe to a specific topic and define a callback function that will be executed every time a new result is published on that topic. 
 
 This is useful in scenarios where you're interested in monitoring global computation results, performing some action based on them, or even just logging them for auditing purposes.
 
 Here's how it might look:
 
 ```javascript
-await hotMesh.sub('calculated', (topic: string, message: JobOutput) => {
+await hotMesh.psub('calculated.*', (topic: string, message: JobOutput) => {
   // `message.data.result` will be `5`
 });
 

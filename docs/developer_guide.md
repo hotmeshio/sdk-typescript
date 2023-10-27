@@ -463,13 +463,11 @@ const jobId = await hotMesh.pub(topic, payload);
 //jobId will be `ord123`
 ```
 
-## Sub
-Suppose you need to listen in on the results of all computations on a particular topic, not just the ones you initiated. In that case, you can use the `sub` method.
-
-This is useful in scenarios where you're interested in monitoring global computation results, performing some action based on them, or even just logging them for auditing purposes.
+## PSub
+If you need to listen in on all results for a particular workflow topic, use the patterned subscription `psub` method. This is often useful for auditing scenarios like logging, metrics, and monitoring.
 
 ```javascript
-await hotMesh.sub('discount.responded', (topic: string, jobOutput: JobOutput) => {
+await hotMesh.psub('discount.responded.*', (topic: string, jobOutput: JobOutput) => {
   //jobOutput.data.discount is `5.00`
 });
 

@@ -203,13 +203,13 @@ describe('FUNCTIONAL | Retry', () => {
 
     it('should subscribe to a topic to see all job results', async () => {
       let jobId: string;
+      let bAtLeastOne = false;
       //subscribe to the 'calculated' topic
-      await hotMesh.sub('calculated', (topic: string, message: JobOutput) => {
+      await hotMesh.psub('calculated.*', (topic: string, message: JobOutput) => {
         //results are broadcast here
         expect(topic).toBe('calculated');
         expect(message.data.result).toBe(5);
-        //note: remove; v2 serializer will be exact and does not need the toString() call
-        expect(message.metadata.jid.toString()).toBe(jobId.toString());
+        bAtLeastOne = true;
       });
       const payload = {
         operation: 'divide',
@@ -217,8 +217,35 @@ describe('FUNCTIONAL | Retry', () => {
       };
       //publish a job (sleep for 500, so the test doesn't exit tooo soon)
       jobId = await hotMesh.pub('calculate', payload) as string;
-      await sleepFor(500);
-      await hotMesh.unsub('calculated');
+      while (!bAtLeastOne) {
+        await sleepFor(100);
+      }
+      await hotMesh.punsub('calculated.*');
+    }, 5_000);
+
+
+    it('should subscribe to a topic to see a single job results', async () => {
+      let jobId: string;
+      let bAtLeastOne = false;
+      const payload = {
+        operation: 'divide',
+        values: JSON.stringify([100, 4, 5]),
+      };
+      //publish a job (sleep for 500, so the test doesn't exit tooo soon)
+      jobId = await hotMesh.pub('calculate', payload) as string;
+      //subscribe to the 'calculated' topic
+      await hotMesh.psub(`calculated.${jobId}`, (topic: string, message: JobOutput) => {
+        //results are broadcast here
+        expect(topic).toBe('calculated');
+        expect(message.data.result).toBe(5);
+        //note: remove; v2 serializer will be exact and does not need the toString() call
+        expect(message.metadata.jid.toString()).toBe(jobId.toString());
+        bAtLeastOne = true;
+      });
+      while (!bAtLeastOne) {
+        await sleepFor(100);
+      }
+      await hotMesh.punsub(`calculated.${jobId}`);
     });
 
     it('should return an error if the job throws an error', async () => {

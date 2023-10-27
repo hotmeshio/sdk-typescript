@@ -1,43 +1,48 @@
+import {
+  DurableFatalError,
+  DurableIncompleteSignalError,
+  DurableMaxedError,
+  DurableRetryError,
+  DurableSleepError,
+  DurableTimeoutError, 
+  DurableWaitForSignalError} from '../../modules/errors';
 import { asyncLocalStorage } from './asyncLocalStorage';
+import { APP_ID, APP_VERSION, getWorkflowYAML } from './factory';
 import { HotMeshService as HotMesh } from '../hotmesh';
-import { RedisClass, RedisOptions } from '../../types/redis';
-import { StreamData, StreamDataResponse, StreamStatus } from '../../types/stream';
-import { ActivityWorkflowDataType,
+import {
+  ActivityWorkflowDataType,
   Connection,
   Registry,
   WorkerConfig,
   WorkerOptions,
   WorkflowDataType } from "../../types/durable";
-import { getWorkflowYAML, getActivityYAML } from './factory';
+import { RedisClass, RedisOptions } from '../../types/redis';
 import {
-  DurableFatalError,
-  DurableMaxedError,
-  DurableRetryError,
-  DurableTimeoutError } from '../../modules/errors';
+  StreamData,
+  StreamDataResponse,
+  StreamStatus } from '../../types/stream';
 
 /*
 Here is an example of how the methods in this file are used:
 
 ./worker.ts
 
-import { Durable: { NativeConnection, Worker } } from '@hotmeshio/hotmesh';
+import { Durable } from '@hotmeshio/hotmesh';
 import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
 
 import * as workflows from './workflows';
 
 async function run() {
-  const connection = await NativeConnection.connect({
-    class: Redis,
-    options: {
-      host: 'localhost',
-      port: 6379,
+  const worker = await Durable.Worker.create({
+    connection: {
+      class: Redis,
+      options: {
+        host: 'localhost',
+        port: 6379,
+      },
     },
-  });
-  const worker = await Worker.create({
-    connection,
     taskQueue: 'hello-world',
     workflow: workflows.example,
-    activities,
   });
   await worker.run();
 }
@@ -59,30 +64,29 @@ export class WorkerService {
     if (WorkerService.instances.has(worflowTopic)) {
       return await WorkerService.instances.get(worflowTopic);
     }
-    const hotMesh = HotMesh.init({
-      appId: worflowTopic,
+    const hotMeshClient = HotMesh.init({
+      appId: APP_ID,
       engine: { redis: { ...WorkerService.connection } }
     });
-    WorkerService.instances.set(worflowTopic, hotMesh);
-    await WorkerService.activateWorkflow(await hotMesh, worflowTopic, getWorkflowYAML, options);
-    return hotMesh;
+    WorkerService.instances.set(worflowTopic, hotMeshClient);
+    await WorkerService.activateWorkflow(await hotMeshClient);
+    return hotMeshClient;
   }
 
-  static async activateWorkflow(hotMesh: HotMesh, topic: string, dagFactory: Function, options: WorkerOptions = {}) {
-    const version = '1';
-    const app = await hotMesh.engine.store.getApp(topic);
+  static async activateWorkflow(hotMesh: HotMesh) {
+    const app = await hotMesh.engine.store.getApp(APP_ID);
     const appVersion = app?.version;
     if(!appVersion) {
       try {
-        await hotMesh.deploy(dagFactory(topic, version, options.maxSystemRetries, options.backoffExponent));
-        await hotMesh.activate(version);
+        await hotMesh.deploy(getWorkflowYAML(APP_ID, APP_VERSION));
+        await hotMesh.activate(APP_VERSION);
       } catch (err) {
         hotMesh.engine.logger.error('durable-worker-deploy-activate-err', err);
         throw err;
       }
     } else if(app && !app.active) {
       try {
-        await hotMesh.activate(version);
+        await hotMesh.activate(APP_VERSION);
       } catch (err) {
         hotMesh.engine.logger.error('durable-worker-activate-err', err);
         throw err;
@@ -91,10 +95,6 @@ export class WorkerService {
   }
 
   /**
-   * The `worker` calls `registerActivities` immediately BEFORE
-   * dynamically importing the user's workflow module. That file
-   * contains a call, `proxyActivities`, which needs this info.
-   * 
    * NOTE: Because the worker imports the workflows dynamically AFTER
    * the activities are loaded, there will be items in the registry,
    * allowing proxyActivities to succeed.
@@ -115,7 +115,6 @@ export class WorkerService {
   static async create(config: WorkerConfig) {
     //always call `registerActivities` before `import`
     WorkerService.connection = config.connection;
-    //user can provide the workflow file directly
     const workflow = config.workflow;
     const [workflowFunctionName, workflowFunction] = WorkerService.resolveWorkflowTarget(workflow);
     const baseTopic = `${config.taskQueue}-${workflowFunctionName}`;
@@ -124,10 +123,9 @@ export class WorkerService {
 
     //initialize supporting workflows
     const worker = new WorkerService();
-    worker.activityRunner = await worker.initActivityWorkflow(config, activityTopic);
-    await WorkerService.activateWorkflow(worker.activityRunner, activityTopic, getActivityYAML);
-    worker.workflowRunner = await worker.initWorkerWorkflow(config, workflowTopic, workflowFunction);
-    await WorkerService.activateWorkflow(worker.workflowRunner, workflowTopic, getWorkflowYAML, config.options);
+    worker.activityRunner = await worker.initActivityWorker(config, activityTopic);
+    worker.workflowRunner = await worker.initWorkflowWorker(config, workflowTopic, workflowFunction);
+    await WorkerService.activateWorkflow(worker.workflowRunner);
     return worker;
   }
 
@@ -147,13 +145,13 @@ export class WorkerService {
     this.workflowRunner.engine.logger.info('WorkerService is running');
   }
 
-  async initActivityWorkflow(config: WorkerConfig, activityTopic: string): Promise<HotMesh> {
+  async initActivityWorker(config: WorkerConfig, activityTopic: string): Promise<HotMesh> {
     const redisConfig = {
       class: config.connection.class as RedisClass,
       options: config.connection.options as RedisOptions
     };
-    const hmshInstance = await HotMesh.init({
-      appId: activityTopic,
+    const hotMeshWorker = await HotMesh.init({
+      appId: APP_ID,
       engine: { redis: redisConfig },
       workers: [
         { topic: activityTopic,
@@ -162,8 +160,8 @@ export class WorkerService {
         }
       ]
     });
-    WorkerService.instances.set(activityTopic, hmshInstance);
-    return hmshInstance;
+    WorkerService.instances.set(activityTopic, hotMeshWorker);
+    return hotMeshWorker;
   }
 
   wrapActivityFunctions(): Function {
@@ -197,45 +195,22 @@ export class WorkerService {
     }
   }
 
-  async activateActivityWorkflow(hotMesh: HotMesh, activityTopic: string) {
-    const version = '1';
-    const app = await hotMesh.engine.store.getApp(activityTopic);
-    const appVersion = app?.version as unknown as number;
-    if(isNaN(appVersion)) {
-      try {
-        await hotMesh.deploy(getActivityYAML(activityTopic, version));
-        await hotMesh.activate(version);
-      } catch (err) {
-        hotMesh.engine.logger.error('durable-worker-activity-deploy-activate-error', err);
-        throw err;
-      }
-    } else if(app && !app.active) {
-      try {
-        await hotMesh.activate(version);
-      } catch (err) {
-        hotMesh.engine.logger.error('durable-worker-activity-activate-err', err);
-        throw err;
-      }
-    }
-  }
-
-  async initWorkerWorkflow(config: WorkerConfig, workflowTopic: string, workflowFunction: Function): Promise<HotMesh> {
+  async initWorkflowWorker(config: WorkerConfig, workflowTopic: string, workflowFunction: Function): Promise<HotMesh> {
     const redisConfig = {
       class: config.connection.class as RedisClass,
       options: config.connection.options as RedisOptions
     };
-    const hmshInstance = await HotMesh.init({
-      appId: workflowTopic,
+    const hotMeshWorker = await HotMesh.init({
+      appId: APP_ID,
       engine: { redis: redisConfig },
-      workers: [
-        { topic: workflowTopic,
-          redis: redisConfig,
-          callback: this.wrapWorkflowFunction(workflowFunction, workflowTopic).bind(this)
-        }
-      ]
+      workers: [{
+        topic: workflowTopic,
+        redis: redisConfig,
+        callback: this.wrapWorkflowFunction(workflowFunction, workflowTopic).bind(this)
+      }]
     });
-    WorkerService.instances.set(workflowTopic, hmshInstance);
-    return hmshInstance;
+    WorkerService.instances.set(workflowTopic, hotMeshWorker);
+    return hotMeshWorker;
   }
 
   static Context = {
@@ -249,11 +224,11 @@ export class WorkerService {
 
   wrapWorkflowFunction(workflowFunction: Function, workflowTopic: string): Function {
     return async (data: StreamData): Promise<StreamDataResponse> => {
+     const counter = { counter: 0 };
       try {
         //incoming data payload has arguments and workflowId
         const workflowInput = data.data as unknown as WorkflowDataType;
         const context = new Map();
-        const counter = { counter: 0 };
         context.set('counter', counter);
         context.set('workflowId', workflowInput.workflowId);
         context.set('workflowTopic', workflowTopic);
@@ -268,10 +243,48 @@ export class WorkerService {
           code: 200,
           status: StreamStatus.SUCCESS,
           metadata: { ...data.metadata },
-          data: { response: workflowResponse }
+          data: { response: workflowResponse, done: true }
         };
       } catch (err) {
-        // 59* - Durable*Error
+
+        //not an error...just a trigger to sleep
+        if (err instanceof DurableSleepError) {
+          return {
+            status: StreamStatus.SUCCESS,
+            code: err.code,
+            metadata: { ...data.metadata },
+            data: {
+              code: err.code,
+              message: JSON.stringify({ duration: err.duration, index: err.index }),
+              duration: err.duration,
+              index: err.index
+            }
+          } as StreamDataResponse;
+
+        //not an error...just a trigger to wait for a signal
+        } else if (err instanceof DurableWaitForSignalError) {
+          return {
+            status: StreamStatus.SUCCESS,
+            code: err.code,
+            metadata: { ...data.metadata },
+            data: {
+              code: err.code,
+              signals: err.signals,
+              index: err.signals[0].index
+            }
+          } as StreamDataResponse;
+
+        //not an error...still waiting for all the signals to arrive
+        } else if (err instanceof DurableIncompleteSignalError) {
+          return {
+            status: StreamStatus.SUCCESS,
+            code: err.code,
+            metadata: { ...data.metadata },
+            data: { code: err.code }
+          } as StreamDataResponse;
+        }
+
+        // all other errors are fatal (598, 597, 596) or will be retried (599)
         return {
           status: StreamStatus.ERROR,
           code: err.code || new DurableRetryError(err.message).code,

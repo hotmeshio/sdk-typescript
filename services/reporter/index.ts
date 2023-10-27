@@ -45,12 +45,17 @@ class ReporterService {
   }
 
   private validateOptions(options: GetStatsOptions): void {
-    const { start, end, range } = options;
-    if (start && end && range || !start && !end && !range) {
+    const { start, end, range, granularity } = options;
+    if (granularity !== 'infinity' && (start && end && range || !start && !end && !range)) {
       throw new Error('Invalid combination of start, end, and range values. Provide either start+end, end+range, or start+range.');
     }
   }
+
   private generateDateTimeSets(granularity: string, range: string|undefined, end: string, start?: string): string[] {
+    if (granularity === 'infinity') {
+      //if granularity is infinity, it means a date/time sequence/slice is not used to further segment the statistics
+      return ['0'];
+    }
     if (!range) {
       //pluck just a single value when no range provided
       range = '0m';
@@ -190,6 +195,9 @@ class ReporterService {
   }
 
   private isoTimestampFromKeyTimestamp(hashKey: string): string {
+    if (hashKey.endsWith(':')) {
+      return '0';
+    }
     const keyTimestamp = hashKey.slice(-12);
     const year = keyTimestamp.slice(0, 4);
     const month = keyTimestamp.slice(4, 6);

@@ -1,0 +1,72 @@
+{
+  "app": {
+    "id": "emit",
+    "version": "1",
+    "graphs": [
+      {
+        "subscribes": "emit.test",
+        "publishes": "emit.tested",
+        "expire": 120,
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string"
+              },
+              "done": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "activities": {
+          "t1": {
+            "type": "trigger"
+          },
+          "w1": {
+            "type": "worker",
+            "topic": "emit.test.worker",
+            "emit": true,
+            "output": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "job": {
+              "maps": {
+                "status": "{$self.output.data.status}"
+              }
+            }
+          },
+          "a1": {
+            "type": "activity",
+            "sleep": 15,
+            "job": {
+              "maps": {
+                "done": true
+              }
+            }
+          }
+        },
+        "transitions": {
+          "t1": [
+            {
+              "to": "w1"
+            }
+          ],
+          "w1": [
+            {
+              "to": "a1"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

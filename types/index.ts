@@ -10,9 +10,9 @@ export {
   AwaitActivity,
   BaseActivity,
   CycleActivity,
-  EmitActivity,
   WorkerActivity,
   IterateActivity,
+  SignalActivity,
   TriggerActivity,
   TriggerActivityStats } from './activity';
 export {

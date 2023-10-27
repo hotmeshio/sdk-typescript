@@ -30,6 +30,7 @@ import {
   StreamDataType,
   StreamStatus } from '../../types/stream';
 import { TransitionRule } from '../../types/transition';
+import { HookRule } from '../../types/hook';
 
 /**
  * The base class for all activities
@@ -114,9 +115,9 @@ class Activity {
       return this.context.metadata.aid;
     } catch (error) {
       if (error instanceof GetStateError) {
-        this.logger.error('activity-get-state-error', error);
+        this.logger.error('activity-get-state-error', { error });
       } else {
-        this.logger.error('activity-process-error', error);
+        this.logger.error('activity-process-error', { error });
       }
       telemetry.setActivityError(error.message);
       throw error;
@@ -133,6 +134,11 @@ class Activity {
   //********  SIGNAL RE-ENTRY POINT  ********//
   doesHook(): boolean {
     return !!(this.config.hook?.topic || this.config.sleep);
+  }
+
+  async getHookRule(topic: string): Promise<HookRule | undefined> {
+    const rules = await this.store.getHookRules();
+    return rules?.[topic]?.[0] as HookRule;
   }
 
   async registerHook(multi?: RedisMulti): Promise<string | void> {
@@ -203,7 +209,7 @@ class Activity {
       telemetry.setActivityAttributes(attrs);
       return jobStatus as number;
     } catch (error) {
-      this.logger.error('engine-process-hook-event-error', error);
+      this.logger.error('engine-process-hook-event-error', { error });
       telemetry.setActivityError(error.message);
       throw error;
     } finally {
@@ -245,11 +251,11 @@ class Activity {
       }
       this.transitionAdjacent(multiResponse, telemetry);
     } catch (error) {
-      this.logger.error('activity-process-event-error', error);
-      telemetry.setActivityError(error.message);
+      this.logger.error('activity-process-event-error', { error });
+      telemetry && telemetry.setActivityError(error.message);
       throw error;
     } finally {
-      telemetry.endActivitySpan();
+      telemetry && telemetry.endActivitySpan();
       this.logger.debug('activity-process-event-end', { jid, aid });
     }
   }
@@ -570,14 +576,18 @@ class Activity {
 
   async transition(adjacencyList: StreamData[], jobStatus: JobStatus): Promise<string[]> {
     let mIds: string[] = [];
-    if (adjacencyList.length) {
+     if (jobStatus <= 0 || this.config.emit) {
+      //activity should not send 'emit' if the job is truly over
+      const isTrueEmit = jobStatus > 0;
+      await this.engine.runJobCompletionTasks(this.context, isTrueEmit);
+    }
+
+    if (adjacencyList.length && jobStatus > 0) {
       const multi = this.store.getMulti();
       for (const execSignal of adjacencyList) {
         await this.engine.streamSignaler?.publishMessage(null, execSignal, multi);
       }
       mIds = (await multi.exec()) as string[];
-    } else if (jobStatus <= 0) {
-      await this.engine.runJobCompletionTasks(this.context);
     }
     return mIds;
   }

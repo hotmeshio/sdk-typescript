@@ -10,6 +10,7 @@ route:
   job:
     facility: "{route.hook.data.facility}"
     actual_release_series: "{route.hook.data.actual_release_series}"
+    id: "{schedule.output.data.id}"
 fulfill:
   job:
     actual_release_series: "{route.hook.data.actual_release_series}"

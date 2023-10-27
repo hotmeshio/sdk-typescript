@@ -8,13 +8,10 @@ import {
   ActivityType,
   WorkerActivity } from '../../types/activity';
 import { JobState } from '../../types/job';
-import { MultiResponseFlags } from '../../types/redis';
-import { StringScalarType } from '../../types/serializer';
-import {
-  StreamCode,
-  StreamData,
-  StreamStatus } from '../../types/stream';
+import { MultiResponseFlags, RedisMulti } from '../../types/redis';
+import { StreamData} from '../../types/stream';
 import { TelemetryService } from '../telemetry';
+import { Pipe } from '../pipe';
 
 class Worker extends Activity {
   config: WorkerActivity;
@@ -34,24 +31,26 @@ class Worker extends Activity {
     this.logger.debug('worker-process', { jid: this.context.metadata.jid, aid: this.metadata.aid });
     let telemetry: TelemetryService;
     try {
+      //confirm entry is allowed and restore state
       this.setLeg(1);
       await CollatorService.notarizeEntry(this);
-
       await this.getState();
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
 
+      //save state and authorize reentry
       const multi = this.store.getMulti();
       //todo: await this.registerTimeout();
+      const messageId = await this.execActivity(multi);
       await CollatorService.authorizeReentry(this, multi);
       await this.setState(multi);
       await this.setStatus(0, multi);
       const multiResponse = await multi.exec() as MultiResponseFlags;
 
+      //telemetry
       telemetry.mapActivityAttributes();
       const jobStatus = this.resolveStatus(multiResponse);
-      const messageId = await this.execActivity();
       telemetry.setActivityAttributes({
         'app.activity.mid': messageId,
         'app.job.jss': jobStatus
@@ -60,9 +59,9 @@ class Worker extends Activity {
       return this.context.metadata.aid;
     } catch (error) {
       if (error instanceof GetStateError) {
-        this.logger.error('worker-get-state-error', error);
+        this.logger.error('worker-get-state-error', { error });
       } else {
-        this.logger.error('worker-process-error', error);
+        this.logger.error('worker-process-error', { error });
       }
       telemetry.setActivityError(error.message);
       throw error;
@@ -72,13 +71,14 @@ class Worker extends Activity {
     }
   }
 
-  async execActivity(): Promise<string> {
+  async execActivity(multi: RedisMulti): Promise<string> {
+    const topic = Pipe.resolve(this.config.subtype, this.context);
     const streamData: StreamData = {
       metadata: {
         jid: this.context.metadata.jid,
         dad: this.metadata.dad,
         aid: this.metadata.aid,
-        topic: this.config.subtype,
+        topic,
         spn: this.context['$self'].output.metadata.l1s,
         trc: this.context.metadata.trc,
       },
@@ -89,7 +89,7 @@ class Worker extends Activity {
         retry: this.config.retry
       };
     }
-    return (await this.engine.streamSignaler?.publishMessage(this.config.subtype, streamData)) as string;
+    return (await this.engine.streamSignaler?.publishMessage(topic, streamData, multi)) as string;
   }
 }
 
