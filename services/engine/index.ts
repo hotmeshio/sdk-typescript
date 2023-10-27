@@ -413,7 +413,7 @@ class EngineService {
   }
 
   // ****************** `HOOK` ACTIVITY RE-ENTRY POINT *****************
-  async hook(topic: string, data: JobData, dad?: string): Promise<JobStatus | void> {
+  async hook(topic: string, data: JobData, dad?: string): Promise<string> {
     const hookRule = await this.storeSignaler.getHookRule(topic);
     const [aid, schema] = await this.getSchema(`.${hookRule.to}`);
     if (!dad) {
@@ -432,7 +432,7 @@ class EngineService {
       },
       data,
     };
-    await this.streamSignaler.publishMessage(null, streamData);
+    return await this.streamSignaler.publishMessage(null, streamData) as string;
   }
   async hookTime(jobId: string, activityId: string): Promise<JobStatus | void> {
     //the activityid is concatenated with its dimensional address (dad); split to resolve

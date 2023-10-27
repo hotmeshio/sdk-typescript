@@ -165,7 +165,7 @@ class HotMeshService {
   }
 
   // ****** `HOOK` ACTIVITY RE-ENTRY POINT ******
-  async hook(topic: string, data: JobData, dad?: string): Promise<JobStatus | void> {
+  async hook(topic: string, data: JobData, dad?: string): Promise<string> {
     return await this.engine?.hook(topic, data, dad);
   }
   async hookAll(hookTopic: string, data: JobData, query: JobStatsInput, queryFacets: string[] = []): Promise<string[]> {

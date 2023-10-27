@@ -98,6 +98,7 @@ export {
   Registry,
   SignalOptions,
   WorkerConfig,
+  WorkflowConfig,
   WorkerOptions,
   WorkflowDataType,
   WorkflowOptions,

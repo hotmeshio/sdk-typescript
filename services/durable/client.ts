@@ -1,11 +1,10 @@
 import { nanoid } from 'nanoid';
-import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, HOOK_ID, SUBSCRIBES_TOPIC, getWorkflowYAML } from './factory';
+import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, SUBSCRIBES_TOPIC, getWorkflowYAML } from './factory';
 import { WorkflowHandleService } from './handle';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
   ClientConfig,
   Connection,
-  SignalOptions,
   WorkflowOptions } from '../../types/durable';
 import { JobState } from '../../types/job';
 import { KeyType } from '../../modules/key';
@@ -114,22 +113,10 @@ export class ClientService {
       return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
     },
 
-    //signal in to activate a paused (waitForSignal) workflow
-    signal: async (options: SignalOptions): Promise<void> => {
-      const taskQueueName = options.taskQueue;
-      const workflowName = options.workflowName;
-      const workflowTopic = `${taskQueueName}-${workflowName}`;
-      const hotMeshClient = await this.getHotMeshClient(workflowTopic);
-      const payload = {
-        id: options.workflowId,
-        data: { ...options.data },
-      }
-      await hotMeshClient.hook(
-        HOOK_ID,
-        payload
-      );
+    signal: async (signalId: string, data: Record<any, any>): Promise<string> => {
+      return await (await this.getHotMeshClient('durable.wfs.signal')).hook('durable.wfs.signal', { id: signalId, data });
     }
-  };
+  }
 
   async activateWorkflow(hotMesh: HotMesh, appId = APP_ID, version = APP_VERSION): Promise<void> {
     const app = await hotMesh.engine.store.getApp(appId);
