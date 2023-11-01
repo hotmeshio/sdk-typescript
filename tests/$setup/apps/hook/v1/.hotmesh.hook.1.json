@@ -75,7 +75,7 @@
               "conditions": {
                 "match": [
                   {
-                    "expected": "{t1.output.data.job_id}",
+                    "expected": "{$job.metadata.jid}",
                     "actual": "{$self.hook.data.id}"
                   }
                 ]
