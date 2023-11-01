@@ -1,4 +1,4 @@
-import { GetStateError } from '../../modules/errors';
+import { CollationError, GetStateError } from '../../modules/errors';
 import {
   formatISODate,
   getValueByPath,
@@ -183,11 +183,11 @@ class Activity {
     try {
       this.setLeg(2);
       await this.getState(jobId);
+      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
+      telemetry.startActivitySpan(this.leg);
       const aState = await CollatorService.notarizeReentry(this);
       this.adjacentIndex = CollatorService.getDimensionalIndex(aState);
 
-      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
-      telemetry.startActivitySpan(this.leg);
       this.bindActivityData('hook');
       this.mapJobData();
       this.adjacencyList = await this.filterAdjacent();
@@ -209,6 +209,11 @@ class Activity {
       telemetry.setActivityAttributes(attrs);
       return jobStatus as number;
     } catch (error) {
+      if (error instanceof CollationError) {
+        //caused by external over-signaling; the job is complete
+        this.logger.info('process-hook-event-inactive-error', { error });
+        return;
+      }
       this.logger.error('engine-process-hook-event-error', { error });
       telemetry.setActivityError(error.message);
       throw error;
