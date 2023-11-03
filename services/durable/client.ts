@@ -115,6 +115,12 @@ export class ClientService {
 
     signal: async (signalId: string, data: Record<any, any>): Promise<string> => {
       return await (await this.getHotMeshClient('durable.wfs.signal')).hook('durable.wfs.signal', { id: signalId, data });
+    },
+
+    getHandle: async (taskQueue: string, workflowName: string, workflowId: string): Promise<WorkflowHandleService> => {
+      const workflowTopic = `${taskQueue}-${workflowName}`;
+      const hotMeshClient = await this.getHotMeshClient(workflowTopic);
+      return new WorkflowHandleService(hotMeshClient, workflowTopic, workflowId);
     }
   }
 

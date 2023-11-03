@@ -452,6 +452,9 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   async getStatus(jobId: string, appId: string): Promise<number> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
     const status = await this.redisClient[this.commands.hget](jobKey, ':');
+    if (status === null) {
+      throw new Error(`Job ${jobId} not found`);
+    }
     return Number(status);
   }
 
