@@ -22,7 +22,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write functions 
     }
 
     export async function saludar(nombre: string): Promise<string> {
-      Math.random() > 0.5 && throw new Error('Random error');
+      if (Math.random() > 0.5) throw new Error('Random error');
       return `¡Hola, ${nombre}!`;
     }
     ```

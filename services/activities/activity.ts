@@ -209,8 +209,7 @@ class Activity {
       telemetry.setActivityAttributes(attrs);
       return jobStatus as number;
     } catch (error) {
-      if (error instanceof CollationError) {
-        //caused by external over-signaling; the job is complete
+      if (error instanceof CollationError && error.fault === 'inactive') {
         this.logger.info('process-hook-event-inactive-error', { error });
         return;
       }
@@ -256,6 +255,10 @@ class Activity {
       }
       this.transitionAdjacent(multiResponse, telemetry);
     } catch (error) {
+      if (error instanceof CollationError && error.fault === 'inactive') {
+        this.logger.info('process-event-inactive-error', { error });
+        return;
+      }
       this.logger.error('activity-process-event-error', { error });
       telemetry && telemetry.setActivityError(error.message);
       throw error;

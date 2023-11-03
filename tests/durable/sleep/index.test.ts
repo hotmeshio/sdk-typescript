@@ -12,6 +12,7 @@ const { Connection, Client, Worker } = Durable;
 
 describe('DURABLE | sleep | `Durable.workflow.sleep`', () => {
   let handle: WorkflowHandleService;
+  let workflowGuid: string;
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -47,6 +48,7 @@ describe('DURABLE | sleep | `Durable.workflow.sleep`', () => {
 
   describe('Client', () => {
     describe('start', () => {
+      workflowGuid = nanoid();
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({ connection: { class: Redis, options }});
         //NOTE: `handle` is a global variable.
@@ -54,7 +56,7 @@ describe('DURABLE | sleep | `Durable.workflow.sleep`', () => {
           args: ['ColdMush'],
           taskQueue: 'hello-world',
           workflowName: 'example',
-          workflowId: nanoid(),
+          workflowId: workflowGuid,
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -81,7 +83,13 @@ describe('DURABLE | sleep | `Durable.workflow.sleep`', () => {
   describe('WorkflowHandle', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
-        const result = await handle.result();
+        const client = new Client({ connection: { class: Redis, options }});
+        const localHandle = await client.workflow.getHandle(
+          'hello-world',
+          workflows.example.name,
+          workflowGuid
+        );
+        const result = await localHandle.result();
         expect(result).toEqual('Hello, ColdMush!');
       }, 60_000);
     });

@@ -8,7 +8,6 @@ import { ActivityConfig, ProxyType, WorkflowOptions } from "../../types/durable"
 import { JobOutput, JobState } from '../../types';
 import { ACTIVITY_PUBLISHES_TOPIC, ACTIVITY_SUBSCRIBES_TOPIC, SLEEP_SUBSCRIBES_TOPIC, WFS_SUBSCRIBES_TOPIC } from './factory';
 import { DurableIncompleteSignalError, DurableSleepError, DurableWaitForSignalError } from '../../modules/errors';
-import { stringify } from 'querystring';
 
 /*
 `proxyActivities` returns a wrapped instance of the 
@@ -52,18 +51,32 @@ export class WorkflowService {
     const workflowId = store.get('workflowId');
     const workflowTrace = store.get('workflowTrace');
     const workflowSpan = store.get('workflowSpan');
+    const COUNTER = store.get('counter');
+    const execIndex = COUNTER.counter = COUNTER.counter + 1;
+    const childJobId = `${workflowId}-$${options.workflowName}-${execIndex}`;
 
     const client = new Client({
       connection: await Connection.connect(WorkerService.connection),
     });
-    const handle = await client.workflow.start({
-      ...options,
-      workflowId: `${workflowId}${options.workflowId}`, //concat (caller MUST PROVIDE)
-      workflowTrace,
-      workflowSpan,
-    });
-    const result = await handle.result();
-    return result as T;
+
+    let handle = await client.workflow.getHandle(
+      options.taskQueue,
+      options.workflowName,
+      childJobId
+    );
+
+    try {
+      return await handle.result() as T;
+    } catch (error) {
+      handle = await client.workflow.start({
+        ...options,
+        workflowId: childJobId,
+        workflowTrace,
+        workflowSpan,
+      });
+      const result = await handle.result();
+      return result as T;
+    }
   }
 
   static proxyActivities<ACT>(options?: ActivityConfig): ProxyType<ACT> {
@@ -172,7 +185,7 @@ export class WorkflowService {
       const trc = store.get('workflowTrace');
       const spn = store.get('workflowSpan');
       const activityTopic = `${workflowTopic}-activity`;
-      const activityJobId = `${workflowId}-${activityName}-${execIndex}`;
+      const activityJobId = `${workflowId}-$${activityName}-${execIndex}`;
 
       let activityState: JobOutput
       try {
