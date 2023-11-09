@@ -178,7 +178,7 @@ class Trigger extends Activity {
 
   async setStats(multi?: RedisMulti): Promise<void> {
     const md = this.context.metadata;
-    if (this.config.stats?.measures) {
+    if (md.key && this.config.stats?.measures) {
       const config = await this.engine.getVID();
       const reporter = new ReporterService(config, this.store, this.logger);
       await this.store.setStats(

@@ -24,6 +24,8 @@ const getWorkflowYAML = (app: string, version: string) => {
         schema:
           type: object
           properties:
+            parentWorkflowId:
+              type: string
             workflowId:
               type: string
             arguments:
@@ -46,6 +48,11 @@ const getWorkflowYAML = (app: string, version: string) => {
           type: trigger
           stats:
             id: '{$self.input.data.workflowId}'
+            key: '{$self.input.data.parentWorkflowId}'
+            granularity: infinity
+            measures:
+              - measure: index
+                target: '{$self.input.data.parentWorkflowId}'
           job:
             maps:
               done: false
@@ -65,6 +72,7 @@ const getWorkflowYAML = (app: string, version: string) => {
         w1:
           type: worker
           topic: '{t1.output.data.workflowTopic}'
+          emit: '{$job.data.done}'
           retry:
             '599': [2]
           input:
@@ -121,6 +129,19 @@ const getWorkflowYAML = (app: string, version: string) => {
             maps:
               response: '{$self.output.data.response}'
               done: '{$self.output.data.done}'
+
+        a2:
+          type: activity
+          title: Wait for cleanup signal
+          hook:
+            type: object
+            properties:
+              done:
+                type: boolean
+          job:
+            maps:
+              workflowId: '{t1.output.data.workflowId}'
+
 
         a594:
           title: Wait for signals
@@ -279,7 +300,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               done: true
 
         s2:
-          title: Awaken sleep flows so they end and self-clean
+          title: Awaken sleeping flows so they end and self-clean
           type: signal
           subtype: all
           key_name: parentWorkflowId
@@ -351,10 +372,55 @@ const getWorkflowYAML = (app: string, version: string) => {
                   type: boolean
             maps:
               done: true
+
+        s4:
+          title: Awaken child FLOWS so they end and self-clean
+          type: signal
+          subtype: all
+          key_name: parentWorkflowId
+          key_value:
+            '@pipe':
+              - ['{$job.metadata.jid}', '-f']
+              - ['{@string.concat}']
+          topic: ${app}.childflow.awaken
+          resolver:
+            schema:
+              type: object
+              properties:
+                data:
+                  type: object
+                  properties:
+                    parentWorkflowId:
+                      type: string
+                scrub:
+                  type: boolean
+            maps:
+              data:
+                parentWorkflowId:
+                  '@pipe':
+                    - ['{$job.metadata.jid}', '-f']
+                    - ['{@string.concat}']
+              scrub: true
+          signal:
+            schema:
+              type: object
+              properties:
+                done:
+                  type: boolean
+            maps:
+              done: true
     
       transitions:
         t1:
           - to: a1
+          - to: a2
+            conditions:
+              match:
+                - expected: true
+                  actual:
+                    '@pipe':
+                      - ['{$job.metadata.key}', true, false]
+                      - ['{@conditional.ternary}']
         a1:
           - to: w1
         w1:
@@ -376,11 +442,13 @@ const getWorkflowYAML = (app: string, version: string) => {
           - to: s3
             conditions:
               code: [200, 598, 597, 596]
+          - to: s4
+            conditions:
+              code: [200, 598, 597, 596]
         a594:
           - to: c594
             conditions:
               code: 202
-
         a595:
           - to: c595
             conditions:
@@ -388,6 +456,14 @@ const getWorkflowYAML = (app: string, version: string) => {
         a599:
           - to: c599
 
+      hooks:
+        ${app}.childflow.awaken:
+          - to: a2
+            conditions:
+              match:
+                - expected: '{t1.output.data.workflowId}'
+                  actual: '{$self.hook.data.id}'
+  
     - subscribes: ${app}.activity.execute
       publishes: ${app}.activity.executed
 

@@ -7,6 +7,7 @@ import { nanoid } from 'nanoid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
+import { sleepFor } from '../../../modules/utils';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -91,6 +92,8 @@ describe('DURABLE | sleep | `Durable.workflow.sleep`', () => {
         );
         const result = await localHandle.result();
         expect(result).toEqual('Hello, ColdMush!');
+        //allow signals to self-clean
+        await sleepFor(1_000);
       }, 60_000);
     });
   });

@@ -12,6 +12,7 @@ type WorkflowOptions = {
   args: any[];          //input arguments to pass in
   workflowId: string;   //execution id (the job id)
   workflowName?: string; //the name of the user's workflow function
+  parentWorkflowId?: string;  //system reserved; the id of the parent; if present the flow will not self-clean until the parent that spawned it self-cleans
   workflowTrace?: string;
   workflowSpan?: string;
   config?: WorkflowConfig;
