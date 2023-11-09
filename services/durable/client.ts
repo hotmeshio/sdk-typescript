@@ -101,6 +101,7 @@ export class ClientService {
       const hotMeshClient = await this.getHotMeshClient(workflowTopic);
       const payload = {
         arguments: [...options.args],
+        parentWorkflowId: options.parentWorkflowId,
         workflowId: options.workflowId || nanoid(),
         workflowTopic: workflowTopic,
         backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,

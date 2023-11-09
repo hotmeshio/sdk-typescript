@@ -584,7 +584,12 @@ class Activity {
 
   async transition(adjacencyList: StreamData[], jobStatus: JobStatus): Promise<string[]> {
     let mIds: string[] = [];
-     if (jobStatus <= 0 || this.config.emit) {
+    //emit can be a mapping (allows emissions to be driven by the job state)
+    let emit: boolean = false;
+    if (this.config.emit) {
+      emit = Pipe.resolve(this.config.emit, this.context);
+    }
+    if (jobStatus <= 0 || emit) {
       //activity should not send 'emit' if the job is truly over
       const isTrueEmit = jobStatus > 0;
       await this.engine.runJobCompletionTasks(this.context, isTrueEmit);

@@ -54,6 +54,7 @@ export class WorkflowService {
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
     const childJobId = `${workflowId}-$${options.workflowName}-${execIndex}`;
+    const parentWorkflowId = `${workflowId}-f`;
 
     const client = new Client({
       connection: await Connection.connect(WorkerService.connection),
@@ -71,6 +72,7 @@ export class WorkflowService {
       handle = await client.workflow.start({
         ...options,
         workflowId: childJobId,
+        parentWorkflowId,
         workflowTrace,
         workflowSpan,
       });
