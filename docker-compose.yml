@@ -18,8 +18,8 @@ services:
         condition: service_healthy
 
   redis:
-    image: redislabs/rejson:latest
-    command: ["redis-server", "--requirepass", "key_admin", "--loadmodule", "/usr/lib/redis/modules/rejson.so"]
+    image: redis/redis-stack:latest
+    command: ["redis-server", "--requirepass", "key_admin", "--loadmodule", "/opt/redis-stack/lib/redisearch.so"]
     ports:
       - "6379:6379"
     healthcheck:

@@ -1,4 +1,4 @@
-import { CollationError, GetStateError } from '../../modules/errors';
+import { CollationError } from '../../modules/errors';
 import {
   formatISODate,
   getValueByPath,
@@ -9,7 +9,6 @@ import { ILogger } from '../logger';
 import { MapperService } from '../mapper';
 import { Pipe } from '../pipe';
 import { MDATA_SYMBOLS } from '../serializer';
-import { StoreSignaler } from '../signaler/store';
 import { StoreService } from '../store';
 import { TelemetryService } from '../telemetry';
 import { 
@@ -30,7 +29,6 @@ import {
   StreamDataType,
   StreamStatus } from '../../types/stream';
 import { TransitionRule } from '../../types/transition';
-import { HookRule } from '../../types/hook';
 
 /**
  * The base class for all activities
@@ -48,7 +46,7 @@ class Activity {
   code: StreamCode = 200;
   leg: ActivityLeg;
   adjacencyList: StreamData[];
-  adjacentIndex = 0; //can be updated by leg2 using 'as' metadata hincrby output
+  adjacentIndex = 0;
 
   constructor(
     config: ActivityType,
@@ -67,171 +65,21 @@ class Activity {
       this.store = engine.store;
   }
 
-  //********  INITIAL ENTRY POINT (A)  ********//
-  async process(): Promise<string> {
-    this.logger.debug('activity-process', { jid: this.context.metadata.jid, aid: this.metadata.aid });
-    let telemetry: TelemetryService;
-    try {
-      this.setLeg(1);
-      await CollatorService.notarizeEntry(this);
-
-      await this.getState();
-      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
-      telemetry.startActivitySpan(this.leg);
-      let multiResponse: MultiResponseFlags;
-
-      const multi = this.store.getMulti();
-      if (this.doesHook()) {
-        //sleep and wait to awaken upon a signal
-        await this.registerHook(multi);
-        this.mapOutputData();
-        this.mapJobData();
-        await this.setState(multi);
-        await CollatorService.authorizeReentry(this, multi);
-
-        await this.setStatus(0, multi);
-        await multi.exec();
-        telemetry.mapActivityAttributes();
-      } else {
-        //end the activity and transition to its children
-        this.adjacencyList = await this.filterAdjacent();
-        this.mapOutputData();
-        this.mapJobData();
-        await this.setState(multi);
-        await CollatorService.notarizeEarlyCompletion(this, multi);
-
-        await this.setStatus(this.adjacencyList.length - 1, multi);
-        multiResponse = await multi.exec() as MultiResponseFlags;
-        telemetry.mapActivityAttributes();
-        const jobStatus = this.resolveStatus(multiResponse);
-        const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-        const messageIds = await this.transition(this.adjacencyList, jobStatus);
-        if (messageIds.length) {
-          attrs['app.activity.mids'] = messageIds.join(',')
-        }
-        telemetry.setActivityAttributes(attrs);
-      }
-
-      return this.context.metadata.aid;
-    } catch (error) {
-      if (error instanceof GetStateError) {
-        this.logger.error('activity-get-state-error', { error });
-      } else {
-        this.logger.error('activity-process-error', { error });
-      }
-      telemetry.setActivityError(error.message);
-      throw error;
-    } finally {
-      telemetry.endActivitySpan();
-      this.logger.debug('activity-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
-    }
-  }
-
   setLeg(leg: ActivityLeg): void {
     this.leg = leg;
   }
 
-  //********  SIGNAL RE-ENTRY POINT  ********//
-  doesHook(): boolean {
-    return !!(this.config.hook?.topic || this.config.sleep);
-  }
-
-  async getHookRule(topic: string): Promise<HookRule | undefined> {
-    const rules = await this.store.getHookRules();
-    return rules?.[topic]?.[0] as HookRule;
-  }
-
-  async registerHook(multi?: RedisMulti): Promise<string | void> {
-    if (this.config.hook?.topic) {
-      const signaler = new StoreSignaler(this.store, this.logger);
-      return await signaler.registerWebHook(this.config.hook.topic, this.context, multi);
-    } else if (this.config.sleep) {
-      const durationInSeconds = Pipe.resolve(this.config.sleep, this.context);
-      const jobId = this.context.metadata.jid;
-      const activityId = this.metadata.aid;
-      const dId = this.metadata.dad;
-      await this.engine.task.registerTimeHook(jobId, `${activityId}${dId||''}`, 'sleep', durationInSeconds);
-      return jobId;
-    }
-  }
-
-  async processWebHookEvent(): Promise<JobStatus | void> {
-    this.logger.debug('engine-process-web-hook-event', {
-      topic: this.config.hook.topic,
-      aid: this.metadata.aid
-    });
-    const signaler = new StoreSignaler(this.store, this.logger);
-    const data = { ...this.data };
-    const jobId = await signaler.processWebHookSignal(this.config.hook.topic, data);
-    if (jobId) {
-      await this.processHookEvent(jobId);
-      await signaler.deleteWebHookSignal(this.config.hook.topic, data);
-    } //else => already resolved
-  }
-
-  async processTimeHookEvent(jobId: string): Promise<JobStatus | void> {
-    this.logger.debug('engine-process-time-hook-event', {
-      jid: jobId,
-      aid: this.metadata.aid
-    });
-    return await this.processHookEvent(jobId);
-  }
-
-  async processHookEvent(jobId: string): Promise<JobStatus | void> {
-    this.logger.debug('activity-process-hook-event', { jobId });
-    let telemetry: TelemetryService;
-    try {
-      this.setLeg(2);
-      await this.getState(jobId);
-      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
-      telemetry.startActivitySpan(this.leg);
-      const aState = await CollatorService.notarizeReentry(this);
-      this.adjacentIndex = CollatorService.getDimensionalIndex(aState);
-
-      this.bindActivityData('hook');
-      this.mapJobData();
-      this.adjacencyList = await this.filterAdjacent();
-
-      const multi = this.engine.store.getMulti();
-      await this.setState(multi);
-      await CollatorService.notarizeCompletion(this, multi);
-
-      await this.setStatus(this.adjacencyList.length - 1, multi);
-      const multiResponse = await multi.exec() as MultiResponseFlags;
-
-      telemetry.mapActivityAttributes();
-      const jobStatus = this.resolveStatus(multiResponse);
-      const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-      const messageIds = await this.transition(this.adjacencyList, jobStatus);
-      if (messageIds.length) {
-        attrs['app.activity.mids'] = messageIds.join(',')
-      }
-      telemetry.setActivityAttributes(attrs);
-      return jobStatus as number;
-    } catch (error) {
-      if (error instanceof CollationError && error.fault === 'inactive') {
-        this.logger.info('process-hook-event-inactive-error', { error });
-        return;
-      }
-      this.logger.error('engine-process-hook-event-error', { error });
-      telemetry.setActivityError(error.message);
-      throw error;
-    } finally {
-      telemetry.endActivitySpan();
-    }
-  }
-
   //********  DUPLEX RE-ENTRY POINT  ********//
-  async processEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200): Promise<void> {
+  async processEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200, type: 'hook' | 'output' = 'output', jobId?: string): Promise<void> {
     this.setLeg(2);
-    const jid = this.context.metadata.jid;
+    const jid = this.context.metadata.jid || jobId;
     const aid = this.metadata.aid;
     this.status = status;
     this.code = code;
     this.logger.debug('activity-process-event', { topic: this.config.subtype, jid, aid, status, code });
     let telemetry: TelemetryService;
     try {
-      await this.getState();
+      await this.getState(jobId);
       const aState = await CollatorService.notarizeReentry(this);
       this.adjacentIndex = CollatorService.getDimensionalIndex(aState);
 
@@ -247,18 +95,19 @@ class Activity {
       telemetry.startActivitySpan(this.leg);
       let multiResponse: MultiResponseFlags;
       if (status === StreamStatus.PENDING) {
-        multiResponse = await this.processPending(telemetry);
+        multiResponse = await this.processPending(telemetry, type);
       } else if (status === StreamStatus.SUCCESS) {
-        multiResponse = await this.processSuccess(telemetry);
+        multiResponse = await this.processSuccess(telemetry, type);
       } else {
-        multiResponse = await this.processError(telemetry);
+        multiResponse = await this.processError(telemetry, type);
       }
       this.transitionAdjacent(multiResponse, telemetry);
     } catch (error) {
-      if (error instanceof CollationError && error.fault === 'inactive') {
+      if (error instanceof CollationError) {
         this.logger.info('process-event-inactive-error', { error });
         return;
       }
+      console.error(error);
       this.logger.error('activity-process-event-error', { error });
       telemetry && telemetry.setActivityError(error.message);
       throw error;
@@ -268,8 +117,8 @@ class Activity {
     }
   }
 
-  async processPending(telemetry: TelemetryService): Promise<MultiResponseFlags> {
-    this.bindActivityData('output');
+  async processPending(telemetry: TelemetryService, type: 'hook' | 'output'): Promise<MultiResponseFlags> {
+    this.bindActivityData(type);
     this.adjacencyList = await this.filterAdjacent();
     this.mapJobData();
     const multi = this.store.getMulti();
@@ -280,8 +129,8 @@ class Activity {
     return await multi.exec() as MultiResponseFlags;
   }
 
-  async processSuccess(telemetry: TelemetryService): Promise<MultiResponseFlags> {
-    this.bindActivityData('output');
+  async processSuccess(telemetry: TelemetryService, type: 'hook' | 'output'): Promise<MultiResponseFlags> {
+    this.bindActivityData(type);
     this.adjacencyList = await this.filterAdjacent();
     this.mapJobData();
     const multi = this.store.getMulti();
@@ -292,7 +141,7 @@ class Activity {
     return await multi.exec() as MultiResponseFlags;
   }
 
-  async processError(telemetry: TelemetryService): Promise<MultiResponseFlags> {
+  async processError(telemetry: TelemetryService, type: string): Promise<MultiResponseFlags> {
     this.bindActivityError(this.data);
     this.adjacencyList = await this.filterAdjacent();
     const multi = this.store.getMulti();
@@ -584,7 +433,6 @@ class Activity {
 
   async transition(adjacencyList: StreamData[], jobStatus: JobStatus): Promise<string[]> {
     let mIds: string[] = [];
-    //emit can be a mapping (allows emissions to be driven by the job state)
     let emit: boolean = false;
     if (this.config.emit) {
       emit = Pipe.resolve(this.config.emit, this.context);

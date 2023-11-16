@@ -10,7 +10,7 @@
             "type": "trigger"
           },
           "a1": {
-            "type": "activity"
+            "type": "hook"
           }
         },
         "transitions": {

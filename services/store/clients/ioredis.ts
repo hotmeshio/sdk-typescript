@@ -5,6 +5,7 @@ import { Cache } from '../cache';
 import { StoreService } from '../index';
 import { RedisClientType, RedisMultiType } from '../../../types/ioredisclient';
 import { ReclaimedMessageType } from '../../../types/stream';
+import { type } from 'os';
 
 class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
   redisClient: RedisClientType;
@@ -20,6 +21,18 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
 
   getMulti(): RedisMultiType {
     return this.redisClient.multi();
+  }
+
+  async exec(...args: any[]): Promise<string|string[]|string[][]> {
+    const response = await this.redisClient.call.apply(this.redisClient, args as any);
+    if (typeof response === 'string') {
+      return response as string;
+    } else if (Array.isArray(response)) {
+      if (Array.isArray(response[0])) {
+        return response as string[][];
+      }
+      return response as string[];
+    }
   }
 
   hGetAllResult(result: any) {

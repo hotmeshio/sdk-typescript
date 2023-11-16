@@ -3,10 +3,13 @@ import {
   formatISODate,
   getSubscriptionTopic,
   identifyRedisType,
+  polyfill,
   restoreHierarchy } from '../../modules/utils';
 import Activities from '../activities';
-import { Activity } from '../activities/activity';
 import { Await } from '../activities/await';
+import { Cycle } from '../activities/cycle';
+import { Hook } from '../activities/hook';
+import { Signal } from '../activities/signal';
 import { Worker } from '../activities/worker';
 import { Trigger } from '../activities/trigger';
 import { CompilerService } from '../compiler';
@@ -235,9 +238,10 @@ class EngineService {
   }
 
   // ************* METADATA/MODEL METHODS *************
-  async initActivity(topic: string, data: JobData = {}, context?: JobState): Promise<Activity> {
+  async initActivity(topic: string, data: JobData = {}, context?: JobState): Promise<Await|Cycle|Hook|Signal|Trigger|Worker> {
     const [activityId, schema] = await this.getSchema(topic);
-    const ActivityHandler = Activities[schema.type];
+    polyfill
+    const ActivityHandler = Activities[polyfill.resolveActivityType(schema.type)];
     if (ActivityHandler) {
       const utc = formatISODate(new Date());
       const metadata: ActivityMetadata = {
@@ -334,7 +338,7 @@ class EngineService {
       data: streamData.data,
     };
     if (streamData.type === StreamDataType.TIMEHOOK || streamData.type === StreamDataType.WEBHOOK || streamData.type === StreamDataType.TRANSITION) {
-      const activityHandler = await this.initActivity(`.${streamData.metadata.aid}`, context.data, context as JobState) as Activity;
+      const activityHandler = await this.initActivity(`.${streamData.metadata.aid}`, context.data, context as JobState) as Hook;
       if (streamData.type === StreamDataType.TIMEHOOK) {
         await activityHandler.processTimeHookEvent(streamData.metadata.jid);
       } else if (streamData.type === StreamDataType.TRANSITION) {

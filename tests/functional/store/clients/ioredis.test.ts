@@ -170,6 +170,15 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
     });
   });
 
+  describe('exec', () => {
+    it('should execute an arbitrary command', async () => {
+      const setResponse = await redisStoreService.exec('set', 'exec:test:val', '25');
+      expect(setResponse).toEqual('OK');
+      const getResponse = await redisStoreService.exec('get', 'exec:test:val');
+      expect(getResponse).toEqual('25');
+    });
+  });
+
   describe('setStateNX', () => {
     it('should set the job data in the store with NX behavior', async () => {
       const jobId = 'job-1';

@@ -18,6 +18,7 @@ import {
   Context,
   context, 
   SpanStatusCode } from '../../types/telemetry';
+import { polyfill } from '../../modules/utils';
 
 class TelemetryService {
   span: Span;
@@ -253,7 +254,7 @@ class TelemetryService {
     if (config.type === 'trigger') {
       state[`${metadata.aid}/output/metadata/l1s`] = context['$self'].output.metadata.l1s;
       state[`${metadata.aid}/output/metadata/l2s`] = context['$self'].output.metadata.l2s;
-    } else if (config.type === 'activity' && leg === 1) {
+    } else if (polyfill.resolveActivityType(config.type) === 'hook' && leg === 1) {
       //activities run non-duplexed and only have a single leg
       state[`${metadata.aid}/output/metadata/l1s`] = context['$self'].output.metadata.l1s;
       state[`${metadata.aid}/output/metadata/l2s`] = context['$self'].output.metadata.l1s;

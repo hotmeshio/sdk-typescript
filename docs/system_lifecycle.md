@@ -149,7 +149,7 @@ activities:
 
   a3:
     title: Return Approved
-    type: activity
+    type: hook
     telemetry:
       approved: true
 ```
@@ -162,7 +162,7 @@ activities:
 
   a3:
     title: Return Approved
-    type: activity
+    type: hook
     telemetry:
       approved:
         "@pipe":

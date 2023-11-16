@@ -183,7 +183,7 @@
           },
           "route": {
             "title": "Route Order",
-            "type": "activity",
+            "type": "hook",
             "hook": {
               "schema": {
                 "type": "object",
@@ -217,7 +217,7 @@
           },
           "fulfill": {
             "title": "Fulfill Order",
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "actual_release_series": "{route.hook.data.actual_release_series}"
@@ -529,7 +529,7 @@
           },
           "a3": {
             "title": "Return True",
-            "type": "activity",
+            "type": "hook",
             "telemetry": {
               "approved": {
                 "@pipe": [
@@ -559,7 +559,7 @@
           },
           "a4": {
             "title": "Return False",
-            "type": "activity",
+            "type": "hook",
             "telemetry": {
               "approved": {
                 "@pipe": [
@@ -712,7 +712,7 @@
           },
           "a6": {
             "title": "Return True",
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "approved": true
@@ -721,7 +721,7 @@
           },
           "a7": {
             "title": "Return False",
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "approved": false
@@ -814,7 +814,7 @@
           },
           "mysleeper": {
             "title": "Sleeper Activity",
-            "type": "activity",
+            "type": "hook",
             "sleep": "{$job.data.duration}",
             "job": {
               "maps": {

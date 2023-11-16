@@ -35,7 +35,7 @@ activities:
 
   a3:
     title: Return True
-    type: activity
+    type: hook
     telemetry:
       approved:
         "@pipe":
@@ -47,7 +47,7 @@ activities:
 
   a4:
     title: Return False
-    type: activity
+    type: hook
     telemetry:
       approved:
         "@pipe":

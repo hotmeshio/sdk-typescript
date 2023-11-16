@@ -10,6 +10,7 @@ export {
   AwaitActivity,
   BaseActivity,
   CycleActivity,
+  HookActivity,
   WorkerActivity,
   IterateActivity,
   SignalActivity,
@@ -39,6 +40,7 @@ export {
     WorkflowConfig,
     WorkerConfig,
     WorkerOptions,
+    WorkflowSearchOptions,
     WorkflowDataType,
     WorkflowOptions,
   }from './durable'

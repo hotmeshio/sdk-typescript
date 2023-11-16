@@ -155,7 +155,7 @@ app:
         t1:
           type: trigger
         a1:
-          type: activity
+          type: hook
       transitions:
         t1:
           - to: a1

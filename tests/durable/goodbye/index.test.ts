@@ -7,11 +7,13 @@ import { nanoid } from 'nanoid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
+import { ClientService } from '../../../services/durable/client';
 
 const { Connection, Client, Worker } = Durable;
 
 describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
-  let handle: WorkflowHandleService;
+  let client: ClientService;
+  let workflowGuid: string;
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -48,13 +50,29 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
-        //NOTE: `handle` is a global variable and will be used in a later test
-        handle = await client.workflow.start({
+        client = new Client({ connection: { class: Redis, options }});
+        const prefix = 'bye-world-';
+        workflowGuid = prefix + nanoid();
+
+        const handle = await client.workflow.start({
           args: ['HotMesh'],
           taskQueue: 'goodbye-world',
           workflowName: 'example',
-          workflowId: nanoid(),
+          workflowId: workflowGuid,
+          search: {
+            index: 'bye-bye',
+            prefix: [prefix],
+            schema: {
+              custom1: {
+                type: 'TEXT',
+                sortable: true,
+              },
+              custom2: {
+                type: 'NUMERIC', //or TAG
+                sortable: false
+              }
+            }
+          }
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -78,8 +96,22 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
   describe('WorkflowHandle', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
+        const handle = await client.workflow.getHandle(
+          'goodbye-world',
+          workflows.example.name,
+          workflowGuid
+        );
         const result = await handle.result();
         expect(result).toEqual('Hello, HotMesh! - Goodbye, HotMesh!');
+        const [count, ...rest] = await client.workflow.search(
+          'goodbye-world',
+          workflows.example.name,
+          'bye-bye',
+          '@_custom1:durable'
+        );
+        expect(count).toEqual(1);
+        const [id, ...rest2] = rest;
+        expect(id).toEqual(`hmsh:durable:j:${workflowGuid}`);
       });
     });
   });

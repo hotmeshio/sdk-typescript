@@ -33,7 +33,7 @@ activities:
 
   route:
     title: Route Order
-    type: activity
+    type: hook
     hook:
       schema:
         $ref: '../schemas/order.scheduled.yaml#/route/hook'
@@ -43,7 +43,7 @@ activities:
 
   fulfill:
     title: Fulfill Order
-    type: activity
+    type: hook
     job:
       maps:
         $ref: '../maps/order.scheduled.yaml#/fulfill/job'

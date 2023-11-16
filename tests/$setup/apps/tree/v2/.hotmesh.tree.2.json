@@ -72,7 +72,7 @@
             }
           },
           "shine": {
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "shine": {
@@ -90,7 +90,7 @@
             }
           },
           "graft": {
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "graft": {
@@ -108,7 +108,7 @@
             }
           },
           "water": {
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "water": {
@@ -126,7 +126,7 @@
             }
           },
           "fertilize": {
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "fertilize": {
@@ -144,7 +144,7 @@
             }
           },
           "prune": {
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "prune": {
