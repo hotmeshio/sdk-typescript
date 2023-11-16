@@ -37,7 +37,7 @@ app:
               - measure: index
                 target: "{$self.input.data.parent_job_id}"
         a1:
-          type: activity
+          type: hook
           job:
             maps:
               done: "{a1.hook.data.done}"

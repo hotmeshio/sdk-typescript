@@ -48,7 +48,7 @@ app:
                   - ['{$self.output.data.seed}', '{$self.output.data.speed}']
                   - ['{@math.multiply}']
         shine:
-          type: activity
+          type: hook
           job:
             maps:
               shine:
@@ -56,7 +56,7 @@ app:
                   - ['{@date.now}', 'en-US']
                   - ['{@date.toLocaleString}']
         graft:
-          type: activity
+          type: hook
           job:
             maps:
               graft:
@@ -64,7 +64,7 @@ app:
                   - ['{@date.now}', 'en-US']
                   - ['{@date.toLocaleString}']
         water:
-          type: activity
+          type: hook
           job:
             maps:
               water:
@@ -72,7 +72,7 @@ app:
                   - ['{@date.now}', 'en-US']
                   - ['{@date.toLocaleString}']
         fertilize:
-          type: activity
+          type: hook
           job:
             maps:
               fertilize:
@@ -80,7 +80,7 @@ app:
                   - ['{@date.now}', 'en-US']
                   - ['{@date.toLocaleString}']
         pollinate:
-          type: activity
+          type: hook
           job:
             maps:
               pollinate:
@@ -88,7 +88,7 @@ app:
                   - ['{@date.now}', 'en-US']
                   - ['{@date.toLocaleString}']
         prune:
-          type: activity
+          type: hook
           job:
             maps:
               prune:

@@ -54,7 +54,6 @@ class CollatorService {
     //set second digit to 8, allowing for re-entry
     //decrement by -10_000_000_000_000
     const amount = await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, -10_000_000_000_000, this.getDimensionalAddress(activity), multi);
-    //this.verifyInteger(amount, 1, 'exit');
     return amount;
   }
 

@@ -25,10 +25,12 @@ class Deployer {
   async deploy(store: StoreService<RedisClient, RedisMulti>) {
     this.store = store;
     CollatorService.compile(this.manifest.app.graphs);
+    this.convertActivitiesToHooks();
     this.convertTopicsToTypes();
     this.copyJobSchemas();
     this.bindBackRefs();
     this.bindParents();
+    this.bindCycleTarget();
     this.resolveMappingDependencies();
     this.resolveJobMapsPaths();
     await this.generateSymKeys();
@@ -148,8 +150,22 @@ class Deployer {
     }
   }
 
-  //more intuitive for SDK users to use 'topic',
-  //but the compiler is desiged to be generic and uses 'subtypes'
+  //the cycle/goto activity includes and ancestor target;
+  //update with the cycle flag, so it can be rerun
+  bindCycleTarget() {
+    for (const graph of this.manifest!.app.graphs) {
+      const activities = graph.activities;
+      for (const activityKey in activities) {
+        const activity = activities[activityKey];
+        if (activity.type === 'cycle') {
+          activities[activity.ancestor].cycle = true;
+        }
+      }
+    }
+  }
+
+  //it's more intuitive for SDK users to use 'topic',
+  //but the compiler is desiged to be generic and uses the attribute, 'subtypes'
   convertTopicsToTypes() {
     for (const graph of this.manifest!.app.graphs) {
       const activities = graph.activities;
@@ -161,6 +177,20 @@ class Deployer {
       }
     }
   }
+
+  //legacy; remove at beta (assume no legacy refs to 'activity' at that point)
+  convertActivitiesToHooks() {
+    for (const graph of this.manifest!.app.graphs) {
+      const activities = graph.activities;
+      for (const activityKey in activities) {
+        const activity = activities[activityKey];
+        if (['activity'].includes(activity.type)) {
+          activity.type = 'hook';
+        }
+      }
+    }
+  }
+
 
   async bindParents() {
     const graphs = this.manifest.app.graphs;

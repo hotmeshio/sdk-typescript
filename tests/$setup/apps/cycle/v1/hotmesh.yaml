@@ -17,7 +17,7 @@ app:
           type: trigger
 
         a1:
-          type: activity
+          type: hook
           cycle: true
 
         w1:

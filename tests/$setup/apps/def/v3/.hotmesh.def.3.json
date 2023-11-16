@@ -147,7 +147,7 @@
             }
           },
           "a200": {
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "message": "{a1.output.data.message}",
@@ -156,7 +156,7 @@
             }
           },
           "a202": {
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "percentage": "{a1.output.data.percentage}"
@@ -164,7 +164,7 @@
             }
           },
           "a422": {
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "message": "{a1.output.data.message}",

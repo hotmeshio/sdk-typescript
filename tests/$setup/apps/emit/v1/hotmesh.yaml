@@ -35,7 +35,7 @@ app:
               status: '{$self.output.data.status}'
 
         a1:
-          type: activity
+          type: hook
           sleep: 15
           job:
             maps:

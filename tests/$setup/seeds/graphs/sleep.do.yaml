@@ -26,7 +26,7 @@ activities:
         duration: "{$self.input.data.duration}"
   mysleeper:
     title: Sleeper Activity
-    type: activity
+    type: hook
     sleep: "{$job.data.duration}"
     job:
       maps:

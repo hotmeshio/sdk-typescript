@@ -1,3 +1,3 @@
 export default {
-  REDIS_DATABASE: 1,
+  REDIS_DATABASE: 0,
 };

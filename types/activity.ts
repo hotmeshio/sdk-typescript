@@ -1,7 +1,7 @@
 import { MetricTypes } from "./stats";
 import { StreamRetryPolicy } from "./stream";
 
-type ActivityExecutionType = 'trigger' | 'await' | 'worker' | 'activity' | 'emit' | 'iterate' | 'cycle' | 'signal';
+type ActivityExecutionType = 'trigger' | 'await' | 'worker' | 'activity' | 'emit' | 'iterate' | 'cycle' | 'signal' | 'hook';
 
 type Consumes = Record<string, string[]>;
 
@@ -65,6 +65,10 @@ interface CycleActivity extends BaseActivity {
   ancestor: string; //ancestor activity id
 }
 
+interface HookActivity extends BaseActivity {
+  type: 'hook';
+}
+
 interface SignalActivity extends BaseActivity {
   type: 'signal';         //signal activities call hook/hookAll
   subtype: 'one' | 'all'; //trigger: hook(One) or hookAll
@@ -80,7 +84,7 @@ interface IterateActivity extends BaseActivity {
   type: 'iterate';
 }
 
-type ActivityType = BaseActivity | TriggerActivity | AwaitActivity | WorkerActivity | IterateActivity;
+type ActivityType = BaseActivity | TriggerActivity | AwaitActivity | WorkerActivity | IterateActivity | HookActivity;
 
 type ActivityData = Record<string, any>;
 type ActivityMetadata = {
@@ -124,6 +128,7 @@ export {
   TriggerActivityStats,
   AwaitActivity,
   CycleActivity,
+  HookActivity,
   SignalActivity,
   BaseActivity,
   IterateActivity,

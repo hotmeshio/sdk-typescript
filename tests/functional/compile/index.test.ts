@@ -18,7 +18,7 @@ describe('FUNCTIONAL | Compile', () => {
         tx:
           type: trigger
         ax:
-          type: activity
+          type: hook
       transitions:
         tx:
           - to: ax

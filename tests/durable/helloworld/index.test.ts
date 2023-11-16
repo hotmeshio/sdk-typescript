@@ -7,6 +7,7 @@ import { nanoid } from 'nanoid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/redis';
 import { StreamSignaler } from '../../../services/signaler/stream';
+import { sleepFor } from '../../../modules/utils';
 
 
 const { Connection, Client, Worker } = Durable;
@@ -87,6 +88,7 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
       it('should return the workflow execution result', async () => {
         const result = await handle.result();
         expect(result).toEqual('Hello, HotMesh!');
+        await sleepFor(2500);
       }, 10_000);
     });
   });

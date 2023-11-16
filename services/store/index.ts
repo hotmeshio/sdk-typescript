@@ -70,6 +70,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
 
   //todo: standardize signatures and move concrete methods to this class
   abstract getMulti(): U;
+  abstract exec(...args: any[]): Promise<string|string[]|string[][]>;
   abstract publish(
     keyType: KeyType.QUORUM,
     message: Record<string, any>,

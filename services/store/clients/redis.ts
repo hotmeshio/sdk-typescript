@@ -50,6 +50,10 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
     return multi as unknown as RedisMultiType;
   }
 
+  async exec(...args: any[]): Promise<string|string[]|string[][]> {
+    return await this.redisClient.sendCommand(args);
+  }
+
   async publish(keyType: KeyType.QUORUM, message: Record<string, any>, appId: string, engineId?: string): Promise<boolean> {
     const topic = this.mintKey(keyType, { appId, engineId });
     const status: number = await this.redisClient.publish(topic, JSON.stringify(message));

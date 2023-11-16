@@ -5,9 +5,10 @@ import { HotMeshService as HotMesh } from '../hotmesh';
 import {
   ClientConfig,
   Connection,
-  WorkflowOptions } from '../../types/durable';
+  WorkflowOptions, 
+  WorkflowSearchOptions} from '../../types/durable';
 import { JobState } from '../../types/job';
-import { KeyType } from '../../modules/key';
+import { KeyService, KeyType } from '../../modules/key';
 
 /*
 Here is an example of how the methods in this file are used:
@@ -90,6 +91,41 @@ export class ClientService {
     return hotMeshClient;
   }
 
+  /**
+   * For those deployments with a redis stack backend (with the FT module),
+   * this method will configure the search index for the workflow.
+   */
+  configureSearchIndex = async (hotMeshClient: HotMesh, search?: WorkflowSearchOptions): Promise<void> => {
+    if (search) {
+      const store = hotMeshClient.engine.store;
+      const schema: string[] = [];
+      for (const [key, value] of Object.entries(search.schema)) {
+        //prefix with a comma (avoids collisions with hotmesh reserved words)
+        schema.push(`_${key}`);
+        schema.push(value.type);
+        if (value.sortable) {
+          schema.push('SORTABLE');
+        }
+      }
+      try {
+        const keyParams = {
+          appId: hotMeshClient.appId,
+          jobId: ''
+        }
+        const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+        const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
+        await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length, ...prefixes, 'SCHEMA', ...schema);
+      } catch (err) {
+        hotMeshClient.engine.logger.info('durable-client-search-err', { err });
+      }
+    }
+  }
+
+  search = async (hotMeshClient: HotMesh, index: string, query: string[]): Promise<string[]> => {
+    const store = hotMeshClient.engine.store;
+    return await store.exec('FT.SEARCH', index, ...query) as string[];
+  }
+
   workflow = {
     start: async (options: WorkflowOptions): Promise<WorkflowHandleService> => {
       const taskQueueName = options.taskQueue;
@@ -99,6 +135,7 @@ export class ClientService {
       //topic is concat of taskQueue and workflowName
       const workflowTopic = `${taskQueueName}-${workflowName}`;
       const hotMeshClient = await this.getHotMeshClient(workflowTopic);
+      this.configureSearchIndex(hotMeshClient, options.search)
       const payload = {
         arguments: [...options.args],
         parentWorkflowId: options.parentWorkflowId,
@@ -122,6 +159,17 @@ export class ClientService {
       const workflowTopic = `${taskQueue}-${workflowName}`;
       const hotMeshClient = await this.getHotMeshClient(workflowTopic);
       return new WorkflowHandleService(hotMeshClient, workflowTopic, workflowId);
+    },
+
+    search: async (taskQueue: string, workflowName: string, index: string, ...query: string[]): Promise<string[]> => {
+      const workflowTopic = `${taskQueue}-${workflowName}`;
+      const hotMeshClient = await this.getHotMeshClient(workflowTopic);
+      try {
+        return await this.search(hotMeshClient, index, query);
+      } catch (err) {
+        hotMeshClient.engine.logger.error('durable-client-search-err', { err });
+        throw err;
+      }
     }
   }
 

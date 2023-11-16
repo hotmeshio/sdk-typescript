@@ -1,6 +1,7 @@
 import { Activity } from './activity';
 import { Await } from './await';
 import { Cycle } from './cycle';
+import { Hook } from './hook';
 import { Iterate } from './iterate';
 import { Signal } from './signal';
 import { Trigger } from './trigger';
@@ -10,6 +11,7 @@ export default {
   activity: Activity,
   await: Await,
   cycle: Cycle,
+  hook: Hook,
   iterate: Iterate,
   signal: Signal,
   trigger: Trigger,

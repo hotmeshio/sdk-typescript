@@ -4,10 +4,11 @@ import { asyncLocalStorage } from './asyncLocalStorage';
 import { WorkerService } from './worker';
 import { ClientService as Client } from './client';
 import { ConnectionService as Connection } from './connection';
-import { ActivityConfig, ProxyType, WorkflowOptions } from "../../types/durable";
+import { ActivityConfig, ProxyType, WorkflowConfig, WorkflowOptions, WorkflowSearchOptions } from "../../types/durable";
 import { JobOutput, JobState } from '../../types';
 import { ACTIVITY_PUBLISHES_TOPIC, ACTIVITY_SUBSCRIBES_TOPIC, SLEEP_SUBSCRIBES_TOPIC, WFS_SUBSCRIBES_TOPIC } from './factory';
 import { DurableIncompleteSignalError, DurableSleepError, DurableWaitForSignalError } from '../../modules/errors';
+import { Search } from './search';
 
 /*
 `proxyActivities` returns a wrapped instance of the 
@@ -95,6 +96,36 @@ export class WorkflowService {
       });
     }
     return proxy;
+  }
+
+  static async data(command: 'del' | 'get' | 'set' | 'incr' | 'mult', ...args: string[]): Promise<number | boolean | string> {
+    const store = asyncLocalStorage.getStore();
+    if (!store) {
+      throw new Error('durable-store-not-found');
+    }
+    const workflowId = store.get('workflowId');
+    const workflowTopic = store.get('workflowTopic');
+
+    try {
+      const hotMeshClient = await WorkerService.getHotMesh(workflowTopic);
+      const search = new Search(workflowId, hotMeshClient);
+      if (command === 'get') {
+        return await search.get(args[0]) as string;
+      } else if (command === 'set') {
+        await search.set(args[0], args[1]);
+        return true;
+      } else if (command === 'del') {
+        await search.del(args[0]);
+        return true;
+      } else if (command === 'incr') {
+        return await search.incr(args[0], Number(args[1])) as number;
+      } else if (command === 'mult') {
+        return await search.mult(args[0], Number(args[1])) as number;
+      }
+    } catch (e) {
+      console.error(e);
+      return '';
+    }
   }
 
   static async sleep(duration: string): Promise<number> {

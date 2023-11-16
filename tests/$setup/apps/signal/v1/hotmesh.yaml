@@ -14,7 +14,7 @@ app:
 
         sleeper:
           title: Sleep for 5s
-          type: activity
+          type: hook
           sleep: 5
 
         awaiter:
@@ -63,11 +63,11 @@ app:
 
         pender:
           title: Runs when awaiter returns 202
-          type: activity
+          type: hook
 
         ender:
           title: Runs when awaiter returns 200
-          type: activity
+          type: hook
 
       transitions:
         trigger:
@@ -117,7 +117,7 @@ app:
               - measure: index
                 target: "{$self.input.data.parent_job_id}"
         a1:
-          type: activity
+          type: hook
           hook:
             type: object
             properties:
@@ -128,7 +128,7 @@ app:
               done: "{$self.hook.data.done}"
 
         a2:
-          type: activity
+          type: hook
 
       transitions:
         t1:

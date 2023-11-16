@@ -53,7 +53,7 @@
             }
           },
           "a1": {
-            "type": "activity",
+            "type": "hook",
             "job": {
               "maps": {
                 "done": "{a1.hook.data.done}"

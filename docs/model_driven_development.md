@@ -16,12 +16,12 @@ The HotMesh model is a modern, JSON-based alternative to WSDL/SOAP, offering a f
   - [3.2. Subscription and Publishing Mechanism](#32-subscription-and-publishing-mechanism)
 - [4. Activities](#4-activities)
   - [4.1. Types of Activities](#41-types-of-activities)
-    - [4.1.1. Activity](#411-activity)
+    - [4.1.1. Hook](#411-hook)
     - [4.1.2. Trigger](#412-trigger)
     - [4.1.3. Await](#413-await)
     - [4.1.4. Worker](#414-worker)
     - [4.1.5. Cycle](#415-cycle)
-    - [4.1.6. Iterate](#416-iterate)
+    - [4.1.6. Signal](#415-signal)
   - [4.2. Input and Output Schemas](#42-input-and-output-schemas)
   - [4.3. Activity Mapping](#43-activity-mapping)
 - [5. Transitions](#5-transitions)
@@ -277,9 +277,9 @@ graphs:
 ### 4.1. Types of Activities
 Activities are the core building blocks of a graph, representing individual tasks or operations that need to be performed as part of the workflow. There are several types of activities, each with its own purpose and functionality.
 
-#### 4.1.1. Activity
+#### 4.1.1. Hook
 
-An `activity` represents an abstract task or operation that is executed by the engine but does not invoke outside services. It can use the output of upstream activities as input, map job data and even be configured to support the `hook/signal` and `sleep` patterns. It can be used to "test the pipes" of a flow, mapping incoming information and verifying activity flow. And it can be used to resolve complex mapping values that would be too expensive to resolve more than once.
+An `hook` represents an activity that listens for outside events, including time hook (sleep), Web hook, and cycle (repeat). It can be used to resolve complex mapping values that would be too expensive to resolve more than once.
 
 Example of an `activity` in YAML:
 
@@ -399,7 +399,7 @@ app:
 
         a1:
           title: Ancestor to return to upon error
-          type: activity
+          type: hook
           cycle: true
 
         w2:
@@ -426,7 +426,7 @@ app:
 
         a2:
           title: Sleep for 60s
-          type: activity
+          type: hook
           sleep: 60
 
         c1:
@@ -446,8 +446,10 @@ app:
         a2:
           - to: c1
 ```
-#### 4.1.5. Iterate
->TODO
+#### 4.1.6. Signal
+The signal activity allows any flow to send a signal to any other flow, regardless of the relationship between the flows.
+
+[TODO]
 
 ### 4.2. Input and Output Schemas
 Input and output schemas are used in activities to define the structure and data types of the data that is being passed between activities. They ensure that the data is validated and transformed correctly, improving the reliability and maintainability of the workflow.

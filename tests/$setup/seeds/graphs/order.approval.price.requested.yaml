@@ -31,13 +31,13 @@ activities:
           target: "{a5.input.data.object_type}"
   a6:
     title: Return True
-    type: activity
+    type: hook
     job:
       maps:
         $ref: '../maps/order.approval.price.requested.yaml#/a6/job'
   a7:
     title: Return False
-    type: activity
+    type: hook
     job:
       maps:
         $ref: '../maps/order.approval.price.requested.yaml#/a7/job'

@@ -7,6 +7,12 @@ type WorkflowConfig = {
   initialInterval?: string; //default 1s
 }
 
+type WorkflowSearchOptions = {
+  index: string;         //FT index name (myapp:myindex)
+  prefix: string[];      //FT prefixes (['myapp:myindex:prefix1', 'myapp:myindex:prefix2'])
+  schema: Record<string, {type: 'TEXT' | 'NUMERIC' | 'TAG', sortable: boolean}>;
+}
+
 type WorkflowOptions = {
   taskQueue: string;
   args: any[];          //input arguments to pass in
@@ -15,6 +21,7 @@ type WorkflowOptions = {
   parentWorkflowId?: string;  //system reserved; the id of the parent; if present the flow will not self-clean until the parent that spawned it self-cleans
   workflowTrace?: string;
   workflowSpan?: string;
+  search?: WorkflowSearchOptions
   config?: WorkflowConfig;
 }
 
@@ -101,6 +108,7 @@ export {
   WorkerConfig,
   WorkflowConfig,
   WorkerOptions,
+  WorkflowSearchOptions,
   WorkflowDataType,
   WorkflowOptions,
 };

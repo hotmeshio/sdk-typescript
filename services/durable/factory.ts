@@ -58,7 +58,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               done: false
 
         a1:
-          type: activity
+          type: hook
           cycle: true
           output:
             schema:
@@ -131,7 +131,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               done: '{$self.output.data.done}'
 
         a2:
-          type: activity
+          type: hook
           title: Wait for cleanup signal
           hook:
             type: object
@@ -247,7 +247,7 @@ const getWorkflowYAML = (app: string, version: string) => {
 
         a599:
           title: Sleep exponentially longer before retrying
-          type: activity
+          type: hook
           sleep: '{a1.output.data.duration}'
 
         c599:
@@ -539,7 +539,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               done: true
 
         s1a:
-          type: activity
+          type: hook
           title: Wait for cleanup signal
           hook:
             type: object
@@ -559,6 +559,7 @@ const getWorkflowYAML = (app: string, version: string) => {
       hooks:
         ${app}.activity.awaken:
           - to: s1a
+            keep_alive: true
             conditions:
               match:
                 - expected: '{t1a.output.data.workflowId}'
@@ -605,13 +606,13 @@ const getWorkflowYAML = (app: string, version: string) => {
                 target: '{$self.input.data.parentWorkflowId}'
 
         a1s:
-          type: activity
+          type: hook
           title: Sleep for a duration
           sleep: '{t1s.output.data.duration}'
           emit: true
 
         a2s:
-          type: activity
+          type: hook
           title: Wait for cleanup signal
           hook:
             type: object
@@ -683,7 +684,7 @@ const getWorkflowYAML = (app: string, version: string) => {
 
         a1wc:
           title: Split signal data
-          type: activity
+          type: hook
           cycle: true
           output:
             schema:
@@ -721,7 +722,7 @@ const getWorkflowYAML = (app: string, version: string) => {
                   - ['{t1wc.output.data.signals}', 1]
                   - ['{@array.slice}']
         a2wc:
-          type: activity
+          type: hook
           output:
             schema:
               type: object
@@ -848,7 +849,7 @@ const getWorkflowYAML = (app: string, version: string) => {
                 target: '{$self.input.data.parentWorkflowId}'
 
         a1ww:
-          type: activity
+          type: hook
           title: Wait for custom signal
           emit: true
           hook:
@@ -863,7 +864,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               signalId: '{t1ww.output.data.signalId}'
 
         a2ww:
-          type: activity
+          type: hook
           title: Wait for cleanup signal
           hook:
             type: object

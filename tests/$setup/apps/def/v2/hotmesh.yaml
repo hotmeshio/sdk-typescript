@@ -75,12 +75,12 @@ app:
                 reason: '{$self.output.data.reason}'
 
         a200:
-          type: activity
+          type: hook
           job:
             maps:
               message: '{a1.output.data.message}'
         a422:
-          type: activity
+          type: hook
           job:
             maps:
               message: '{a1.output.data.message}'

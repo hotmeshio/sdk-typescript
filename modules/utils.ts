@@ -23,6 +23,17 @@ export function identifyRedisType(redisInstance: any): 'redis' | 'ioredis' | nul
   return null;
 }
 
+//todo: the polyfill methods will all be deleted in the `beta` release.
+export const polyfill = {
+  resolveActivityType(activityType: string): string {
+    if (activityType === 'activity') {
+      return 'hook';
+    }
+    return activityType;
+  }
+}
+
+
 export function identifyRedisTypeFromClass(redisClass: any): 'redis' | 'ioredis' | null {
   if (redisClass && redisClass.name === 'Redis' || redisClass.name === 'EventEmitter') {
     return 'ioredis';
