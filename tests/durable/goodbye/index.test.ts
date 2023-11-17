@@ -4,7 +4,6 @@ import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
 import * as workflows from './src/workflows';
 import { nanoid } from 'nanoid';
-import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
 import { ClientService } from '../../../services/durable/client';
@@ -12,6 +11,7 @@ import { ClientService } from '../../../services/durable/client';
 const { Connection, Client, Worker } = Durable;
 
 describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
+  const prefix = 'bye-world-';
   let client: ClientService;
   let workflowGuid: string;
   const options = {
@@ -51,7 +51,6 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         client = new Client({ connection: { class: Redis, options }});
-        const prefix = 'bye-world-';
         workflowGuid = prefix + nanoid();
 
         const handle = await client.workflow.start({
@@ -60,17 +59,9 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
           workflowName: 'example',
           workflowId: workflowGuid,
           search: {
-            index: 'bye-bye',
-            prefix: [prefix],
-            schema: {
-              custom1: {
-                type: 'TEXT',
-                sortable: true,
-              },
-              custom2: {
-                type: 'NUMERIC', //or TAG
-                sortable: false
-              }
+            data: {
+              fred: 'flintstone',
+              barney: 'rubble',
             }
           }
         });
@@ -86,6 +77,20 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
           connection: { class: Redis, options },
           taskQueue: 'goodbye-world',
           workflow: workflows.example,
+          search: {
+            index: 'bye-bye',
+            prefix: [prefix],
+            schema: {
+              custom1: {
+                type: 'TEXT',
+                sortable: true,
+              },
+              custom2: {
+                type: 'NUMERIC', //or TAG
+                sortable: true
+              }
+            }
+          }
         });
         await worker.run();
         expect(worker).toBeDefined();

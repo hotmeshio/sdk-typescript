@@ -15,43 +15,14 @@ import {
   Registry,
   WorkerConfig,
   WorkerOptions,
-  WorkflowDataType } from "../../types/durable";
+  WorkflowDataType, 
+  WorkflowSearchOptions} from "../../types/durable";
 import { RedisClass, RedisOptions } from '../../types/redis';
 import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../types/stream';
-
-/*
-Here is an example of how the methods in this file are used:
-
-./worker.ts
-
-import { Durable } from '@hotmeshio/hotmesh';
-import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
-
-import * as workflows from './workflows';
-
-async function run() {
-  const worker = await Durable.Worker.create({
-    connection: {
-      class: Redis,
-      options: {
-        host: 'localhost',
-        port: 6379,
-      },
-    },
-    taskQueue: 'hello-world',
-    workflow: workflows.example,
-  });
-  await worker.run();
-}
-
-run().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-*/
+import { KeyService, KeyType } from '../../modules/key';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
@@ -112,6 +83,38 @@ export class WorkerService {
     return WorkerService.activityRegistry;
   }
 
+  /**
+   * For those deployments with a redis stack backend (with the FT module),
+   * this method will configure the search index for the workflow.
+   */
+  //todo: bind this to the Search service; update constructor to expect hotMeshClient as first param (id is optional
+  //refactor and delete other one as well)
+  static async configureSearchIndex(hotMeshClient: HotMesh, search?: WorkflowSearchOptions): Promise<void> {
+    if (search?.schema) {
+      const store = hotMeshClient.engine.store;
+      const schema: string[] = [];
+      for (const [key, value] of Object.entries(search.schema)) {
+        //prefix with a comma (avoids collisions with hotmesh reserved words)
+        schema.push(`_${key}`);
+        schema.push(value.type);
+        if (value.sortable) {
+          schema.push('SORTABLE');
+        }
+      }
+      try {
+        const keyParams = {
+          appId: hotMeshClient.appId,
+          jobId: ''
+        }
+        const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+        const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
+        await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length, ...prefixes, 'SCHEMA', ...schema);
+      } catch (err) {
+        hotMeshClient.engine.logger.info('durable-client-search-err', { err });
+      }
+    }
+  }
+
   static async create(config: WorkerConfig) {
     //always call `registerActivities` before `import`
     WorkerService.connection = config.connection;
@@ -125,6 +128,7 @@ export class WorkerService {
     const worker = new WorkerService();
     worker.activityRunner = await worker.initActivityWorker(config, activityTopic);
     worker.workflowRunner = await worker.initWorkflowWorker(config, workflowTopic, workflowFunction);
+    WorkerService.configureSearchIndex(worker.workflowRunner, config.search)
     await WorkerService.activateWorkflow(worker.workflowRunner);
     return worker;
   }

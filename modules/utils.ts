@@ -9,6 +9,12 @@ export async function sleepFor(ms: number) {
 }
 
 export function identifyRedisType(redisInstance: any): 'redis' | 'ioredis' | null {
+  const prototype = Object.getPrototypeOf(redisInstance);
+  if ('defineCommand' in prototype || Object.keys(prototype).includes('multi')) {
+    return 'ioredis';
+  } else if (Object.keys(prototype).includes('Multi')) {
+    return 'redis';
+  }
   if (redisInstance.constructor) {
     if (redisInstance.constructor.name === 'Redis' || redisInstance.constructor.name === 'EventEmitter') {
       if ('hset' in redisInstance) {

@@ -1,4 +1,5 @@
-import { CollationError, GetStateError } from '../../modules/errors';
+import { GetStateError } from '../../modules/errors';
+import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
@@ -8,15 +9,14 @@ import {
   ActivityData,
   ActivityMetadata,
   ActivityType,
-  HookActivity} from '../../types/activity';
+  HookActivity } from '../../types/activity';
+import { HookRule } from '../../types/hook';
 import { JobState, JobStatus } from '../../types/job';
 import {
   MultiResponseFlags,
   RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
-import { HookRule } from '../../types/hook';
-import { Activity } from './activity';
-import { StreamStatus } from '../../types';
+import { StreamStatus } from '../../types/stream';
 
 /**
  * Listens for `webhook`, `timehook`, and `cycle` (repeat) signals
