@@ -9,47 +9,7 @@ import {
   WorkflowSearchOptions} from '../../types/durable';
 import { JobState } from '../../types/job';
 import { KeyService, KeyType } from '../../modules/key';
-
-/*
-Here is an example of how the methods in this file are used:
-
-./client.ts
-
-import { Durable } from '@hotmeshio/hotmesh';
-import Redis from 'ioredis';
-import { example } from './workflows';
-import { nanoid } from 'nanoid';
-
-async function run() {
-  const connection = await Durable.Connection.connect({
-    class: Redis,
-    options: {
-      host: 'localhost',
-      port: 6379,
-    },
-  });
-
-  const client = new Durable.Client({
-    connection,
-  });
-
-  const handle = await client.workflow.start({
-    args: ['HotMesh'],
-    taskQueue: 'hello-world',
-    workflowName: 'example',
-    workflowId: 'workflow-' + nanoid(),
-  });
-
-  console.log(`Started workflow ${handle.workflowId}`);
-  console.log(await handle.result());
-}
-
-run().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
-
-*/
+import { Search } from './search';
 
 export class ClientService {
 
@@ -96,7 +56,7 @@ export class ClientService {
    * this method will configure the search index for the workflow.
    */
   configureSearchIndex = async (hotMeshClient: HotMesh, search?: WorkflowSearchOptions): Promise<void> => {
-    if (search) {
+    if (search?.schema) {
       const store = hotMeshClient.engine.store;
       const schema: string[] = [];
       for (const [key, value] of Object.entries(search.schema)) {
@@ -148,6 +108,13 @@ export class ClientService {
         SUBSCRIBES_TOPIC,
         payload,
         context as JobState);
+       if (jobId && options.search?.data) {
+        //job successfully kicked off; there is default job data to persist
+        const search = new Search(jobId, hotMeshClient);
+        for (const [key, value] of Object.entries(options.search.data)) {
+          search.set(key, value);
+        }
+      }
       return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
     },
 

@@ -10,35 +10,6 @@ import { ACTIVITY_PUBLISHES_TOPIC, ACTIVITY_SUBSCRIBES_TOPIC, SLEEP_SUBSCRIBES_T
 import { DurableIncompleteSignalError, DurableSleepError, DurableWaitForSignalError } from '../../modules/errors';
 import { Search } from './search';
 
-/*
-`proxyActivities` returns a wrapped instance of the 
-target activity, so that when the workflow calls a
-proxied activity, it is actually calling the proxy
-function, which in turn calls the activity function.
-
-Here is an example of how the methods in this file are used:
-
-./workflows.ts
-
-import { Durable } from '@hotmeshio/hotmesh';
-import * as activities from './activities';
-
-const { greet } = Durable.workflow.proxyActivities<typeof activities>({
-  activities: activities,
-  startToCloseTimeout: '1 minute',
-  retryPolicy: {
-    initialInterval: '5 seconds',  // Initial delay between retries
-    maximumAttempts: 3,            // Max number of retry attempts
-    backoffCoefficient: 2.0,       // Backoff factor for delay between retries: delay = initialInterval * (backoffCoefficient ^ retry_attempt)
-    maximumInterval: '30 seconds', // Max delay between retries
-  },
-});
-
-export async function example(name: string): Promise<string> {
-  return await greet(name);
-}
-*/
-
 export class WorkflowService {
 
   /**
@@ -98,7 +69,7 @@ export class WorkflowService {
     return proxy;
   }
 
-  static async data(command: 'del' | 'get' | 'set' | 'incr' | 'mult', ...args: string[]): Promise<number | boolean | string> {
+  static async search(): Promise<Search> {
     const store = asyncLocalStorage.getStore();
     if (!store) {
       throw new Error('durable-store-not-found');
@@ -106,26 +77,8 @@ export class WorkflowService {
     const workflowId = store.get('workflowId');
     const workflowTopic = store.get('workflowTopic');
 
-    try {
-      const hotMeshClient = await WorkerService.getHotMesh(workflowTopic);
-      const search = new Search(workflowId, hotMeshClient);
-      if (command === 'get') {
-        return await search.get(args[0]) as string;
-      } else if (command === 'set') {
-        await search.set(args[0], args[1]);
-        return true;
-      } else if (command === 'del') {
-        await search.del(args[0]);
-        return true;
-      } else if (command === 'incr') {
-        return await search.incr(args[0], Number(args[1])) as number;
-      } else if (command === 'mult') {
-        return await search.mult(args[0], Number(args[1])) as number;
-      }
-    } catch (e) {
-      console.error(e);
-      return '';
-    }
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic);
+    return new Search(workflowId, hotMeshClient);
   }
 
   static async sleep(duration: string): Promise<number> {

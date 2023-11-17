@@ -8,9 +8,10 @@ type WorkflowConfig = {
 }
 
 type WorkflowSearchOptions = {
-  index: string;         //FT index name (myapp:myindex)
-  prefix: string[];      //FT prefixes (['myapp:myindex:prefix1', 'myapp:myindex:prefix2'])
-  schema: Record<string, {type: 'TEXT' | 'NUMERIC' | 'TAG', sortable: boolean}>;
+  index?: string;         //FT index name (myapp:myindex)
+  prefix?: string[];      //FT prefixes (['myapp:myindex:prefix1', 'myapp:myindex:prefix2'])
+  schema?: Record<string, {type: 'TEXT' | 'NUMERIC' | 'TAG', sortable: boolean}>;
+  data?: Record<string, string>;
 }
 
 type WorkflowOptions = {
@@ -66,6 +67,7 @@ type WorkerConfig = {
   taskQueue: string; //`subscribes` in the YAML (e.g, 'hello-world')
   workflow: Function; //target function to run
   options?: WorkerOptions;
+  search?: WorkflowSearchOptions;
 }
 
 type WorkerOptions = {
