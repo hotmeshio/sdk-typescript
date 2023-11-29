@@ -6,6 +6,7 @@ import {
   DurableSleepError,
   DurableTimeoutError, 
   DurableWaitForSignalError} from '../../modules/errors';
+import { KeyService, KeyType } from '../../modules/key';
 import { asyncLocalStorage } from './asyncLocalStorage';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './factory';
 import { HotMeshService as HotMesh } from '../hotmesh';
@@ -16,13 +17,12 @@ import {
   WorkerConfig,
   WorkerOptions,
   WorkflowDataType, 
-  WorkflowSearchOptions} from "../../types/durable";
+  WorkflowSearchOptions} from '../../types/durable';
 import { RedisClass, RedisOptions } from '../../types/redis';
 import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../types/stream';
-import { KeyService, KeyType } from '../../modules/key';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
@@ -31,25 +31,26 @@ export class WorkerService {
   workflowRunner: HotMesh;
   activityRunner: HotMesh;
 
-  static getHotMesh = async (worflowTopic: string, options?: WorkerOptions) => {
-    if (WorkerService.instances.has(worflowTopic)) {
-      return await WorkerService.instances.get(worflowTopic);
+  static getHotMesh = async (workflowTopic: string, config?: Partial<WorkerConfig>, options?: WorkerOptions) => {
+    if (WorkerService.instances.has(workflowTopic)) {
+      return await WorkerService.instances.get(workflowTopic);
     }
     const hotMeshClient = HotMesh.init({
-      appId: APP_ID,
+      logLevel: options?.logLevel as 'debug' ?? 'info',
+      appId: config.namespace ?? APP_ID,
       engine: { redis: { ...WorkerService.connection } }
     });
-    WorkerService.instances.set(worflowTopic, hotMeshClient);
+    WorkerService.instances.set(workflowTopic, hotMeshClient);
     await WorkerService.activateWorkflow(await hotMeshClient);
     return hotMeshClient;
   }
 
   static async activateWorkflow(hotMesh: HotMesh) {
-    const app = await hotMesh.engine.store.getApp(APP_ID);
+    const app = await hotMesh.engine.store.getApp(hotMesh.engine.appId);
     const appVersion = app?.version;
     if(!appVersion) {
       try {
-        await hotMesh.deploy(getWorkflowYAML(APP_ID, APP_VERSION));
+        await hotMesh.deploy(getWorkflowYAML(hotMesh.engine.appId, APP_VERSION));
         await hotMesh.activate(APP_VERSION);
       } catch (err) {
         hotMesh.engine.logger.error('durable-worker-deploy-activate-err', err);
@@ -65,11 +66,6 @@ export class WorkerService {
     }
   }
 
-  /**
-   * NOTE: Because the worker imports the workflows dynamically AFTER
-   * the activities are loaded, there will be items in the registry,
-   * allowing proxyActivities to succeed.
-   */
   static registerActivities<ACT>(activities: ACT): Registry  {
     if (typeof activities === 'function' && typeof WorkerService.activityRegistry[activities.name] !== 'function') {
       WorkerService.activityRegistry[activities.name] = activities as Function;
@@ -85,10 +81,11 @@ export class WorkerService {
 
   /**
    * For those deployments with a redis stack backend (with the FT module),
-   * this method will configure the search index for the workflow.
+   * this method will configure the search index for the workflow. For all
+   * others, this method will fail gracefully. In all cases, the values
+   * will be stored in the workflow's central HASH data structure, allowing
+   * for manual traversal and inspection as well.
    */
-  //todo: bind this to the Search service; update constructor to expect hotMeshClient as first param (id is optional
-  //refactor and delete other one as well)
   static async configureSearchIndex(hotMeshClient: HotMesh, search?: WorkflowSearchOptions): Promise<void> {
     if (search?.schema) {
       const store = hotMeshClient.engine.store;
@@ -116,7 +113,6 @@ export class WorkerService {
   }
 
   static async create(config: WorkerConfig) {
-    //always call `registerActivities` before `import`
     WorkerService.connection = config.connection;
     const workflow = config.workflow;
     const [workflowFunctionName, workflowFunction] = WorkerService.resolveWorkflowTarget(workflow);
@@ -155,7 +151,8 @@ export class WorkerService {
       options: config.connection.options as RedisOptions
     };
     const hotMeshWorker = await HotMesh.init({
-      appId: APP_ID,
+      logLevel: config.options?.logLevel as 'debug' ?? 'info',
+      appId: config.namespace ?? APP_ID,
       engine: { redis: redisConfig },
       workers: [
         { topic: activityTopic,
@@ -205,12 +202,13 @@ export class WorkerService {
       options: config.connection.options as RedisOptions
     };
     const hotMeshWorker = await HotMesh.init({
-      appId: APP_ID,
+      logLevel: config.options?.logLevel as 'debug' ?? 'info',
+      appId: config.namespace ?? APP_ID,
       engine: { redis: redisConfig },
       workers: [{
         topic: workflowTopic,
         redis: redisConfig,
-        callback: this.wrapWorkflowFunction(workflowFunction, workflowTopic).bind(this)
+        callback: this.wrapWorkflowFunction(workflowFunction, workflowTopic, config).bind(this)
       }]
     });
     WorkerService.instances.set(workflowTopic, hotMeshWorker);
@@ -226,15 +224,22 @@ export class WorkerService {
     },
   };
 
-  wrapWorkflowFunction(workflowFunction: Function, workflowTopic: string): Function {
+  wrapWorkflowFunction(workflowFunction: Function, workflowTopic: string, config: WorkerConfig): Function {
     return async (data: StreamData): Promise<StreamDataResponse> => {
      const counter = { counter: 0 };
       try {
         //incoming data payload has arguments and workflowId
         const workflowInput = data.data as unknown as WorkflowDataType;
         const context = new Map();
+        context.set('namespace', config.namespace ?? APP_ID);
         context.set('counter', counter);
         context.set('workflowId', workflowInput.workflowId);
+        if (data.data.workflowDimension) {
+          //every hook function runs in an isolated dimension controlled
+          //by the index assigned when the signal was received; even if the
+          //hook function re-runs, its scope will always remain constant
+          context.set('workflowDimension', data.data.workflowDimension);
+        }
         context.set('workflowTopic', workflowTopic);
         context.set('workflowName', workflowTopic.split('-').pop());
         context.set('workflowTrace', data.metadata.trc);
@@ -259,9 +264,10 @@ export class WorkerService {
             metadata: { ...data.metadata },
             data: {
               code: err.code,
-              message: JSON.stringify({ duration: err.duration, index: err.index }),
+              message: JSON.stringify({ duration: err.duration, index: err.index, dimension: err.dimension }),
               duration: err.duration,
-              index: err.index
+              index: err.index,
+              dimension: err.dimension
             }
           } as StreamDataResponse;
 

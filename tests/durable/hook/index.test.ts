@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
 import * as workflows from './src/workflows';
+import * as childWorkflows from './child/workflows';
 import { nanoid } from 'nanoid';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
@@ -11,9 +12,8 @@ import { sleepFor } from '../../../modules/utils';
 
 const { Connection, Client, Worker } = Durable;
 
-describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
+describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
   const prefix = 'bye-world-';
-  const namespace = 'prod';
   let client: ClientService;
   let workflowGuid: string;
   const options = {
@@ -34,7 +34,7 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
     await Durable.Worker.shutdown();
     await StreamSignaler.stopConsuming();
     await RedisConnection.disconnectAll();
-  }, 10_000);
+  }, 15_000);
 
   describe('Connection', () => {
     describe('connect', () => {
@@ -56,16 +56,15 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
         workflowGuid = prefix + nanoid();
 
         const handle = await client.workflow.start({
-          namespace,
-          args: ['HotMesh'],
-          taskQueue: 'goodbye-world',
+          args: ['HookMesh'],
+          taskQueue: 'hook-world',
           workflowName: 'example',
           workflowId: workflowGuid,
           //SEED the initial workflow state with data (this is
           //different than the 'args' input data which the workflow
           //receives as its first argument...this data is available
           //to the workflow via the 'search' object)
-          //NOTE: data can be updated during workflow execution
+          //NOTE: data can also be updated during workflow execution
           search: {
             data: {
               fred: 'flintstone',
@@ -83,8 +82,7 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
       it('should create a worker', async () => {
         const worker = await Worker.create({
           connection: { class: Redis, options },
-          namespace,
-          taskQueue: 'goodbye-world',
+          taskQueue: 'hook-world',
           workflow: workflows.example,
           //INDEX the search space; if the index doesn't exist, it will be created
           //(this is supported by Redis backends with the FT module enabled)
@@ -107,25 +105,38 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
         expect(worker).toBeDefined();
       });
 
+      it('should create and run the CHILD workflow worker', async () => {
+        //the main flow has an executeChild command which will be serviced
+        //by this worker
+        const worker = await Worker.create({
+          connection: { class: Redis, options },
+          taskQueue: 'child-world',
+          workflow: childWorkflows.childExample,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+
       it('should create a hook worker', async () => {
         const worker = await Worker.create({
           connection: { class: Redis, options },
-          namespace,
-          taskQueue: 'goodbye-world',
+          taskQueue: 'hook-world',
           workflow: workflows.exampleHook,
         });
         await worker.run();
         expect(worker).toBeDefined();
       });
 
-      it('should create a hook client and publish to invoke a hook', async () => {
-        //sleep so the main thread gets into a paused state
-        await sleepFor(2_000);
+      it('should spawn a hook and run the hook function', async () => {
+        //sleep so the main thread fully executes and gets into a paused state
+        //where it is awaiting a signal
+        await sleepFor(2_500);
 
-        //send a hook to spawn a hook thread attached to this workflow
+        //send a `hook` to spawn a hook thread attached to this workflow
+        //the exampleHook function will be invoked in job context, allowing
+        //it the ability to read/write/augment shared job state
         await client.workflow.hook({
-          namespace,
-          taskQueue: 'goodbye-world',
+          taskQueue: 'hook-world',
           workflowName: 'exampleHook',
           workflowId: workflowGuid,
           args: ['HotMeshHook'],
@@ -137,28 +148,30 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
   describe('WorkflowHandle', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
+        //get the workflow handle and wait for the result
         const handle = await client.workflow.getHandle(
-          'goodbye-world',
+          'hook-world',
           workflows.example.name,
-          workflowGuid,
-          namespace,
+          workflowGuid
         );
-        const result = await handle.result();
-        expect(result).toEqual('Hello, HotMesh! - Goodbye, HotMesh!');
+        const result = await handle.result(true);
+        expect(result).toEqual('Hello, HookMesh! - Goodbye, HookMesh!');
+
         //call the FT search module to locate the workflow via fuzzy search
         //NOTE: always include an underscore prefix before your search term (e.g., `_custom1`).
         //      HotMesh uses this to avoid collisions with reserved words
         const [count, ...rest] = await client.workflow.search(
-          'goodbye-world',
+          'hook-world',
           workflows.example.name,
-          namespace,
+          null,
           'bye-bye',
           '@_custom1:durable'
         );
         expect(count).toEqual(1);
         const [id, ...rest2] = rest;
-        expect(id).toEqual(`hmsh:${namespace}:j:${workflowGuid}`);
-      });
+        expect(id).toEqual(`hmsh:durable:j:${workflowGuid}`);
+        await sleepFor(5_000);
+      }, 25_000);
     });
   });
 });

@@ -36,11 +36,13 @@ class DurableWaitForSignalError extends Error {
 class DurableSleepError extends Error {
   code: number;
   duration: number; //seconds
-  index: number;    //execution order in the workflow 
-  constructor(message: string, duration: number, index: number) {
+  index: number;    //execution order in the workflow
+  dimension: string; //hook dimension (e.g., ',0,1,0') (uses empty string for `null`)
+  constructor(message: string, duration: number, index: number, dimension: string) {
     super(message);
     this.duration = duration;
     this.index = index;
+    this.dimension = dimension;
     this.code = 595;
   }
 }

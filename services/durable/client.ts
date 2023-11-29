@@ -1,15 +1,17 @@
 import { nanoid } from 'nanoid';
-import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, SUBSCRIBES_TOPIC, getWorkflowYAML } from './factory';
+import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, getWorkflowYAML } from './factory';
 import { WorkflowHandleService } from './handle';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
   ClientConfig,
   Connection,
+  HookOptions,
   WorkflowOptions, 
   WorkflowSearchOptions} from '../../types/durable';
 import { JobState } from '../../types/job';
 import { KeyService, KeyType } from '../../modules/key';
 import { Search } from './search';
+import { StreamStatus } from '../../types';
 
 export class ClientService {
 
@@ -21,14 +23,14 @@ export class ClientService {
     this.connection = config.connection;
   }
 
-  getHotMeshClient = async (worflowTopic: string) => {
+  getHotMeshClient = async (worflowTopic: string, namespace?: string) => {
     //NOTE: every unique topic inits a new engine
     if (ClientService.instances.has(worflowTopic)) {
       return await ClientService.instances.get(worflowTopic);
     }
 
     const hotMeshClient = HotMesh.init({
-      appId: APP_ID,
+      appId: namespace ?? APP_ID,
       engine: {
         redis: {
           class: this.connection.class,
@@ -40,14 +42,14 @@ export class ClientService {
 
     //since the YAML topic is dynamic, it MUST be manually created before use
     const store = (await hotMeshClient).engine.store;
-    const params = { appId: APP_ID, topic: worflowTopic };
+    const params = { appId: namespace ?? APP_ID, topic: worflowTopic };
     const streamKey = store.mintKey(KeyType.STREAMS, params);
     try {
       await store.xgroup('CREATE', streamKey, 'WORKER', '$', 'MKSTREAM');
     } catch (err) {
       //ignore if already exists
     }
-    await this.activateWorkflow(await hotMeshClient);
+    await this.activateWorkflow(await hotMeshClient, namespace ?? APP_ID);
     return hotMeshClient;
   }
 
@@ -60,7 +62,7 @@ export class ClientService {
       const store = hotMeshClient.engine.store;
       const schema: string[] = [];
       for (const [key, value] of Object.entries(search.schema)) {
-        //prefix with a comma (avoids collisions with hotmesh reserved words)
+        //prefix with an underscore (avoids collisions with hotmesh reserved symbols)
         schema.push(`_${key}`);
         schema.push(value.type);
         if (value.sortable) {
@@ -94,7 +96,7 @@ export class ClientService {
       const spn = options.workflowSpan;
       //topic is concat of taskQueue and workflowName
       const workflowTopic = `${taskQueueName}-${workflowName}`;
-      const hotMeshClient = await this.getHotMeshClient(workflowTopic);
+      const hotMeshClient = await this.getHotMeshClient(workflowTopic, options.namespace);
       this.configureSearchIndex(hotMeshClient, options.search)
       const payload = {
         arguments: [...options.args],
@@ -105,12 +107,13 @@ export class ClientService {
       }
       const context = { metadata: { trc, spn }, data: {}};
       const jobId = await hotMeshClient.pub(
-        SUBSCRIBES_TOPIC,
+        `${options.namespace ?? APP_ID}.execute`,
         payload,
         context as JobState);
        if (jobId && options.search?.data) {
         //job successfully kicked off; there is default job data to persist
-        const search = new Search(jobId, hotMeshClient);
+        const searchSessionId = `-search-0`;
+        const search = new Search(jobId, hotMeshClient, searchSessionId);
         for (const [key, value] of Object.entries(options.search.data)) {
           search.set(key, value);
         }
@@ -118,19 +121,41 @@ export class ClientService {
       return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
     },
 
-    signal: async (signalId: string, data: Record<any, any>): Promise<string> => {
-      return await (await this.getHotMeshClient('durable.wfs.signal')).hook('durable.wfs.signal', { id: signalId, data });
+    /**
+     * send a message to a running workflow that is paused and awaiting the signal
+     */
+    signal: async (signalId: string, data: Record<any, any>, namespace?: string): Promise<string> => {
+      const topic = `${namespace ?? APP_ID}.wfs.signal`;
+      return await (await this.getHotMeshClient(topic, namespace)).hook(topic, { id: signalId, data });
     },
 
-    getHandle: async (taskQueue: string, workflowName: string, workflowId: string): Promise<WorkflowHandleService> => {
+    /**
+     * send a message to spawn an parallel in-process thread of execution
+     * with the same job state as the main thread but bound to a different
+     * handler function. All job state will be journaled to the same hash
+     * as is used by the main thread.
+     */
+    hook: async (options: HookOptions): Promise<string> => {
+      const workflowTopic = `${options.taskQueue}-${options.workflowName}`;
+      const payload = {
+        arguments: [...options.args],
+        id: options.workflowId,
+        workflowTopic,
+        backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,
+      }
+      const hotMeshClient = await this.getHotMeshClient(workflowTopic, options.namespace);
+      return await hotMeshClient.hook(`${hotMeshClient.appId}.flow.signal`, payload, StreamStatus.PENDING, 202);
+    },
+
+    getHandle: async (taskQueue: string, workflowName: string, workflowId: string, namespace?: string): Promise<WorkflowHandleService> => {
       const workflowTopic = `${taskQueue}-${workflowName}`;
-      const hotMeshClient = await this.getHotMeshClient(workflowTopic);
+      const hotMeshClient = await this.getHotMeshClient(workflowTopic, namespace);
       return new WorkflowHandleService(hotMeshClient, workflowTopic, workflowId);
     },
 
-    search: async (taskQueue: string, workflowName: string, index: string, ...query: string[]): Promise<string[]> => {
+    search: async (taskQueue: string, workflowName: string, namespace: null | string, index: string, ...query: string[]): Promise<string[]> => {
       const workflowTopic = `${taskQueue}-${workflowName}`;
-      const hotMeshClient = await this.getHotMeshClient(workflowTopic);
+      const hotMeshClient = await this.getHotMeshClient(workflowTopic, namespace);
       try {
         return await this.search(hotMeshClient, index, query);
       } catch (err) {

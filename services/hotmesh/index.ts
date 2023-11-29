@@ -20,7 +20,7 @@ import {
   IdsResponse,
   StatsResponse } from '../../types/stats';
 import { ConnectorService } from '../connector';
-import { StreamData, StreamDataResponse } from '../../types/stream';
+import { StreamCode, StreamData, StreamDataResponse, StreamStatus } from '../../types/stream';
 
 class HotMeshService {
   namespace: string;
@@ -165,8 +165,8 @@ class HotMeshService {
   }
 
   // ****** `HOOK` ACTIVITY RE-ENTRY POINT ******
-  async hook(topic: string, data: JobData, dad?: string): Promise<string> {
-    return await this.engine?.hook(topic, data, dad);
+  async hook(topic: string, data: JobData, status?: StreamStatus, code?: StreamCode): Promise<string> {
+    return await this.engine?.hook(topic, data, status, code);
   }
   async hookAll(hookTopic: string, data: JobData, query: JobStatsInput, queryFacets: string[] = []): Promise<string[]> {
     return await this.engine?.hookAll(hookTopic, data, query, queryFacets);

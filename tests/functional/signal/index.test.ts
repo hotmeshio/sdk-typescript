@@ -53,18 +53,43 @@ describe('FUNCTIONAL | Signal', () => {
       });
 
       let jobId: string;
+      await hotMesh.sub('hook.tested.abc123', (topic: string, message: JobOutput) => {
+        expect(topic).toBe('hook.tested');
+        expect(message.data.parent_job_id).toBe(jobId);
+      });
+
+      jobId = await hotMesh.pub('signal.test', {child_flow_id: 'abc123'});
+      while (!isDone) {
+        await sleepFor(100);
+      }
+
+      await hotMesh.punsub('signal.tested*');
+      await hotMesh.unsub('hook.tested.abc123');
+    }, 25_000);
+  });
+
+  describe('Signal One', () => {
+    it('sends a signal to awaken one paused job', async () => {
+      let isDone = false;
+
+      await hotMesh.psub('signal.one.tested*', (topic: string, message: JobOutput) => {
+        expect(topic).toBe('signal.one.tested');
+        isDone = true;
+      });
+
+      let jobId: string;
       await hotMesh.psub('hook.tested*', (topic: string, message: JobOutput) => {
         expect(topic).toBe('hook.tested');
         expect(message.data.parent_job_id).toBe(jobId);
       });
 
-      jobId = await hotMesh.pub('signal.test', {});
+      jobId = await hotMesh.pub('signal.one.test', {child_flow_id: 'xyz456'});
       while (!isDone) {
         await sleepFor(100);
       }
 
-      await hotMesh.punsub('signal.tested.*');
-      await hotMesh.punsub('hook.tested.*');
+      await hotMesh.punsub('signal.one.tested*');
+      await hotMesh.punsub('hook.tested*');
     }, 25_000);
   });
 });

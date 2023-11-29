@@ -10,7 +10,7 @@ import {
   ActivityMetadata,
   SignalActivity } from '../../types/activity';
 import { JobState } from '../../types/job';
-import { MultiResponseFlags, RedisMulti } from '../../types/redis';
+import { MultiResponseFlags } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 import { JobStatsInput } from '../../types/stats';
 
@@ -50,8 +50,11 @@ class Signal extends Activity {
       await this.setStatus(this.adjacencyList.length - 1, multi);
       const multiResponse = await multi.exec() as MultiResponseFlags;
 
-      //signal to awaken all paused jobs that share the targeted job key
-      await this.hookAll();
+      if (this.config.subtype === 'all') {
+        await this.hookAll();
+      } else {
+        await this.hookOne();
+      }
 
       //transition to adjacent activities
       const jobStatus = this.resolveStatus(multiResponse);
@@ -90,6 +93,17 @@ class Signal extends Activity {
       const mapper = new MapperService(this.config.resolver.maps, this.context);
       return mapper.mapRules();
     }
+  }
+
+  /**
+   * The signal activity will hook one
+   */
+  async hookOne(): Promise<string> {
+    const topic = Pipe.resolve(this.config.topic, this.context);
+    const signalInputData = this.mapSignalData();
+    const status = Pipe.resolve(this.config.status, this.context);
+    const code = Pipe.resolve(this.config.code, this.context);
+    return await this.engine.hook(topic, signalInputData, status, code);
   }
 
   /**

@@ -252,10 +252,15 @@ class TelemetryService {
 
   static bindActivityTelemetryToState(state: StringAnyType, config: ActivityType, metadata: ActivityMetadata, context: JobState, leg: number): void {
     if (config.type === 'trigger') {
+      //trigger activities run non-duplexed and only have a single leg (2)
       state[`${metadata.aid}/output/metadata/l1s`] = context['$self'].output.metadata.l1s;
       state[`${metadata.aid}/output/metadata/l2s`] = context['$self'].output.metadata.l2s;
     } else if (polyfill.resolveActivityType(config.type) === 'hook' && leg === 1) {
-      //activities run non-duplexed and only have a single leg
+      //hook activities run non-duplexed and only have a single leg (1)
+      state[`${metadata.aid}/output/metadata/l1s`] = context['$self'].output.metadata.l1s;
+      state[`${metadata.aid}/output/metadata/l2s`] = context['$self'].output.metadata.l1s;
+    } else if (config.type === 'signal' && leg === 1) {
+      //signal activities run non-duplexed and only have a single leg (1)
       state[`${metadata.aid}/output/metadata/l1s`] = context['$self'].output.metadata.l1s;
       state[`${metadata.aid}/output/metadata/l2s`] = context['$self'].output.metadata.l1s;
     } else {

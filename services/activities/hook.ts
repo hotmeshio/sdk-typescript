@@ -16,7 +16,7 @@ import {
   MultiResponseFlags,
   RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
-import { StreamStatus } from '../../types/stream';
+import { StreamCode, StreamStatus } from '../../types/stream';
 
 /**
  * Listens for `webhook`, `timehook`, and `cycle` (repeat) signals
@@ -108,7 +108,7 @@ class Hook extends Activity {
   async registerHook(multi?: RedisMulti): Promise<string | void> {
     if (this.config.hook?.topic) {
       const signaler = new StoreSignaler(this.store, this.logger);
-      return await signaler.registerWebHook(this.config.hook.topic, this.context, multi);
+      return await signaler.registerWebHook(this.config.hook.topic, this.context, this.resolveDad(), multi);
     } else if (this.config.sleep) {
       const durationInSeconds = Pipe.resolve(this.config.sleep, this.context);
       const jobId = this.context.metadata.jid;
@@ -119,19 +119,22 @@ class Hook extends Activity {
     }
   }
 
-  async processWebHookEvent(): Promise<JobStatus | void> {
+  async processWebHookEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200): Promise<JobStatus | void> {
     this.logger.debug('hook-process-web-hook-event', {
       topic: this.config.hook.topic,
-      aid: this.metadata.aid
+      aid: this.metadata.aid,
+      status,
+      code,
     });
     const signaler = new StoreSignaler(this.store, this.logger);
     const data = { ...this.data };
-    const jobId = await signaler.processWebHookSignal(this.config.hook.topic, data);
-    if (jobId) {
-      //if a webhook signal is sent that includes 'keep_alive' the hook will remain open
-      const code = data.keep_alive ? 202 : 200;
-      await this.processEvent(StreamStatus.SUCCESS, code, 'hook', jobId);
-      if (code === 200) {
+    const signal = await signaler.processWebHookSignal(this.config.hook.topic, data);
+    if (signal) {
+      const [jobId, aid, dad] = signal;
+      this.context.metadata.jid = jobId;
+      this.context.metadata.dad = dad;
+      await this.processEvent(status, code, 'hook');
+      if (code === 200) { //otherwise 202 for pending/keepalive
         await signaler.deleteWebHookSignal(this.config.hook.topic, data);
       }
     } //else => already resolved

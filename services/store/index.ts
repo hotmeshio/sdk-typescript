@@ -504,6 +504,8 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
         delete state[':'];
       }
       return [state, status];
+    } else {
+      throw new Error(`Job ${jobId} not found`);
     }
   }
 

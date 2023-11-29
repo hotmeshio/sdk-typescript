@@ -15,6 +15,7 @@ type WorkflowSearchOptions = {
 }
 
 type WorkflowOptions = {
+  namespace?: string;   //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
   taskQueue: string;
   args: any[];          //input arguments to pass in
   workflowId: string;   //execution id (the job id)
@@ -24,6 +25,16 @@ type WorkflowOptions = {
   workflowSpan?: string;
   search?: WorkflowSearchOptions
   config?: WorkflowConfig;
+}
+
+type HookOptions = {
+  namespace?: string;   //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
+  taskQueue: string;
+  args: any[];          //input arguments to pass into the hook
+  workflowId: string;   //execution id (the job id to hook into)
+  workflowName?: string; //the name of the user's hook function
+  search?: WorkflowSearchOptions //bind additional search terms immediately before hook reentry
+  config?: WorkflowConfig; //hook function constraints (backoffCoefficient, maximumAttempts, maximumInterval, initialInterval)
 }
 
 type SignalOptions = {
@@ -71,6 +82,7 @@ type WorkerConfig = {
 }
 
 type WorkerOptions = {
+  logLevel?: string; //debug, info, warn, error
   maxSystemRetries?: number; //1-3 (10ms, 100ms, 1_000ms)
   backoffCoefficient?: number; //2-10ish
 }
@@ -107,6 +119,7 @@ export {
   ProxyType,
   Registry,
   SignalOptions,
+  HookOptions,
   WorkerConfig,
   WorkflowConfig,
   WorkerOptions,

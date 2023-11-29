@@ -152,8 +152,9 @@ describe('FUNCTIONAL | HotMesh', () => {
         facility: 'acme',
         actual_release_series: '202304110015'
       };
-      const jobId = await hotMesh.hook('order.routed', payload);
-      expect(jobId).not.toBeNull();
+      //hook returns the streamId (searchable through open telemetry)
+      const streamId = await hotMesh.hook('order.routed', payload);
+      expect(streamId).not.toBeNull();
     });
 
     it('should distribute messages to different job queues', async () => {
