@@ -16,7 +16,6 @@ interface HookConditions {
 
 interface HookRule {
   to: string;
-  keep_alive?: boolean; //if true, the hook will not be deleted after use
   conditions: HookConditions;
 }
 

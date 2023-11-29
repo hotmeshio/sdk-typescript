@@ -70,14 +70,16 @@ interface HookActivity extends BaseActivity {
 }
 
 interface SignalActivity extends BaseActivity {
-  type: 'signal';         //signal activities call hook/hookAll
-  subtype: 'one' | 'all'; //trigger: hook(One) or hookAll
-  topic: string;          //e.g., 'hook.resume'
-  key_name: string;       //e.g., 'parent_job_id'
-  key_value: string;      //e.g., '1234567890'
-  scrub: boolean;         //if true, the index will be deleted after use
-  signal?: Record<string, any>;   //used to define/map the signal input data
-  resolver?: Record<string, any>; //used to define/map the signal key resolver
+  type: 'signal';                 //signal activities call hook/hookAll
+  subtype: 'one' | 'all';         //trigger: hook(One) or hookAll
+  topic: string;                  //e.g., 'hook.resume'
+  key_name?: string;              //e.g., 'parent_job_id'
+  key_value?: string;             //e.g., '1234567890'
+  scrub?: boolean;                //if true, the index will be deleted after use
+  signal?: Record<string, any>;   //used to define/map the signal input data (what to send/singnal into the job(s))
+  resolver?: Record<string, any>; //used to define/map the signal key resolver (the key used to lookup the job(s that are assigned to the key)
+  status?: string;                //pending, success (default), error
+  code?: number;                  //202, 200 (default)
 }
 
 interface IterateActivity extends BaseActivity {

@@ -19,7 +19,7 @@ class StoreSignaler {
     return rules?.[topic]?.[0] as HookRule;
   }
 
-  async registerWebHook(topic: string, context: JobState, multi?: RedisMulti): Promise<string> {
+  async registerWebHook(topic: string, context: JobState, dad: string, multi?: RedisMulti): Promise<string> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
       const mapExpression = hookRule.conditions.match[0].expected;
@@ -28,7 +28,8 @@ class StoreSignaler {
       const hook: HookSignal = {
         topic,
         resolved,
-        jobId,
+        //hookSignalId is composed of `<dad>::<jid>`
+        jobId: `${dad}::${jobId}`,
       }
       await this.store.setHookSignal(hook, multi);
       return jobId;
@@ -37,25 +38,34 @@ class StoreSignaler {
     }
   }
 
-  async processWebHookSignal(topic: string, data: Record<string, unknown>): Promise<string> {
+  async processWebHookSignal(topic: string, data: Record<string, unknown>): Promise<[string, string, string] | undefined> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
       //NOTE: both formats are supported: $self.hook.data OR $hook.data
       const context = { $self: { hook: { data }}, $hook: { data }};
       const mapExpression = hookRule.conditions.match[0].actual;
       const resolved = Pipe.resolve(mapExpression, context);
-      const jobId = await this.store.getHookSignal(topic, resolved);
-      return jobId;
+      const hookSignalId = await this.store.getHookSignal(topic, resolved);
+      if (!hookSignalId) {
+        //messages can be double-processed; not an issue; return undefined
+        //users can also provide a bogus topic; not an issue; return undefined
+        return undefined;
+      }
+      const [dad, jid] = hookSignalId.split('::');
+      //return [jid, aid, dad]
+      return [jid, hookRule.to, dad];
     } else {
-      throw new Error('signaler.process:error: hook rule not found');
+      throw new Error('signal-not-found');
     }
   }
 
   async deleteWebHookSignal(topic: string, data: Record<string, unknown>): Promise<number> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
-      //todo: use the rule to generate `resolved`
-      const resolved = (data as { id: string}).id;
+      //NOTE: both formats are supported: $self.hook.data OR $hook.data
+      const context = { $self: { hook: { data }}, $hook: { data }};
+      const mapExpression = hookRule.conditions.match[0].actual;
+      const resolved = Pipe.resolve(mapExpression, context);
       return await this.store.deleteHookSignal(topic, resolved);
     } else {
       throw new Error('signaler.process:error: hook rule not found');

@@ -86,7 +86,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
       return (await this.redisClient.sendCommand(['XGROUP', 'CREATE', key, groupName, id, ...args])) === 1;
     } catch (error) {
       const streamType = mkStream === 'MKSTREAM' ? 'with MKSTREAM' : 'without MKSTREAM';
-      this.logger.warn(`x-group-error ${streamType} for key: ${key} and group: ${groupName}`, { error });
+      this.logger.info(`x-group-error ${streamType} for key: ${key} and group: ${groupName}`, { error });
       throw error;
     }
   }

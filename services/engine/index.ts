@@ -60,6 +60,7 @@ import {
   StatsResponse
 } from '../../types/stats';
 import {
+  StreamCode,
   StreamData,
   StreamDataResponse,
   StreamDataType,
@@ -344,7 +345,8 @@ class EngineService {
       } else if (streamData.type === StreamDataType.TRANSITION) {
         await activityHandler.process();
       } else {
-        await activityHandler.processWebHookEvent();
+        //a 202 code keeps the hook alive (hooks are single-use by default)
+        await activityHandler.processWebHookEvent(streamData.status, streamData.code);
       }
     } else if (streamData.type === StreamDataType.AWAIT) {
       context.metadata = {
@@ -362,7 +364,7 @@ class EngineService {
       await activityHandler.processEvent(streamData.status, streamData.code);
     } else {
       const activityHandler = await this.initActivity(`.${streamData.metadata.aid}`, streamData.data, context as JobState) as Worker;
-      await activityHandler.processEvent(streamData.status, streamData.code);
+      await activityHandler.processEvent(streamData.status, streamData.code, 'output');
     }
     this.logger.debug('engine-process-stream-message-end', {
       jid: streamData.metadata.jid,
@@ -417,21 +419,15 @@ class EngineService {
   }
 
   // ****************** `HOOK` ACTIVITY RE-ENTRY POINT *****************
-  async hook(topic: string, data: JobData, dad?: string): Promise<string> {
+  async hook(topic: string, data: JobData, status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200): Promise<string> {
     const hookRule = await this.storeSignaler.getHookRule(topic);
-    const [aid, schema] = await this.getSchema(`.${hookRule.to}`);
-    if (!dad) {
-      //assume dimensional address is singular (0)
-      // for ancestors and self if not provided
-      // todo: register
-      dad = ',0'.repeat(schema.ancestors.length + 1);
-    }
+    const [aid] = await this.getSchema(`.${hookRule.to}`);
     const streamData: StreamData = {
       type: StreamDataType.WEBHOOK,
+      status,
+      code,
       metadata: {
-        //jid is unknown at this point; will be resolved using the data
         aid,
-        dad,
         topic
       },
       data,

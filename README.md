@@ -1,7 +1,7 @@
 # HotMesh
 ![alpha release](https://img.shields.io/badge/release-alpha-yellow)
 
-Elevate Redis from an in-memory data store to a game-changing [service mesh](./docs/faq.md#what-is-hotmesh). Turn your unpredictable functions into unbreakable workflows.
+Elevate Redis from an in-memory data cache to a game-changing [service mesh](./docs/faq.md#what-is-hotmesh). Turn your unpredictable functions into unbreakable workflows.
 
 ## Install
 [![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
@@ -13,7 +13,7 @@ npm install @hotmeshio/hotmesh
 ## Design
 The HotMesh SDK is designed to keep your code front-and-center. Write functions as you normally would, then use HotMesh to make them durable.
 
-1. Start by defining **activities**. Activities are those functions that will be invoked by your workflow. They are commonly used to read and write to databases and invoke external services. They can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise. *Note how the `saludar` example throws an error 50% of the time. It doesn't matter how unpredictable your functions are, HotMesh will retry as necessary until they succeed.*
+1. Start by defining **activities**. Activities can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise. *Note how the `saludar` example throws an error 50% of the time. It doesn't matter how unpredictable your functions are, HotMesh will retry as necessary until they succeed.*
     ```javascript
     //activities.ts
 
@@ -47,7 +47,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write functions 
     }
     ```
 
-3. Although you could call your workflow directly (it's just a vanilla function), it's only durable when invoked and orchestrated via HotMesh. By using a HotMesh **client** to trigger the function, it's guaranteed to return a result.
+3. Although you could call your workflow directly (it's just a vanilla function), it's only durable when invoked and orchestrated via HotMesh.
     ```javascript
     //client.ts
 
@@ -75,7 +75,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write functions 
     }
     ```
 
-4. The last step is to create a **worker** and link it to your workflow function. Workers listen for tasks on their assigned channel, executing the targeted workflow function until it succeeds.
+4. Finally, create a **worker** and link your workflow function. Workers listen for tasks on their assigned Redis stream and invoke your workflow function each time they receive an event.
     ```javascript
     //worker.ts
 

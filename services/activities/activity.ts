@@ -70,16 +70,20 @@ class Activity {
   }
 
   //********  DUPLEX RE-ENTRY POINT  ********//
-  async processEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200, type: 'hook' | 'output' = 'output', jobId?: string): Promise<void> {
+  async processEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200, type: 'hook' | 'output' = 'output'): Promise<void> {
     this.setLeg(2);
-    const jid = this.context.metadata.jid || jobId;
+    const jid = this.context.metadata.jid;
+    if (!jid) {
+      this.logger.error('activity-process-event-error', { message: 'job id is undefined' });
+      return;
+    }
     const aid = this.metadata.aid;
     this.status = status;
     this.code = code;
     this.logger.debug('activity-process-event', { topic: this.config.subtype, jid, aid, status, code });
     let telemetry: TelemetryService;
     try {
-      await this.getState(jobId);
+      await this.getState();
       const aState = await CollatorService.notarizeReentry(this);
       this.adjacentIndex = CollatorService.getDimensionalIndex(aState);
 
@@ -107,7 +111,6 @@ class Activity {
         this.logger.info('process-event-inactive-error', { error });
         return;
       }
-      console.error(error);
       this.logger.error('activity-process-event-error', { error });
       telemetry && telemetry.setActivityError(error.message);
       throw error;
@@ -323,7 +326,7 @@ class Activity {
     return MDATA_SYMBOLS[keys_to_save].KEYS.map((key) => `output/metadata/${key}`);
   }
 
-  async getState(jobId?: string) {
+  async getState() {
     //assemble list of paths necessary to create 'job state' from the 'symbol hash'
     const jobSymbolHashName = `$${this.config.subscribes}`;
     const consumes: Consumes = {
@@ -348,10 +351,9 @@ class Activity {
     }
     TelemetryService.addTargetTelemetryPaths(consumes, this.config, this.metadata, this.leg);
     let { dad, jid } = this.context.metadata;
-    jobId = jobId || jid;
-    const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], dad);
+    const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], dad || '');
     //`state` is a flat hash; context is a tree
-    const [state, status] = await this.store.getState(jobId, consumes, dIds);
+    const [state, status] = await this.store.getState(jid, consumes, dIds);
     this.context = restoreHierarchy(state) as JobState;
     this.initDimensionalAddress(dad);
     this.initSelf(this.context);

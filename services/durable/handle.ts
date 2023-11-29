@@ -1,6 +1,5 @@
 import { JobOutput } from '../../types/job';
 import { HotMeshService as HotMesh } from '../hotmesh';
-import { PUBLISHES_TOPIC } from './factory';
 
 export class WorkflowHandleService {
   hotMesh: HotMesh;
@@ -14,12 +13,26 @@ export class WorkflowHandleService {
   }
 
   async signal(signalId: string, data: Record<any, any>): Promise<void> {
-    await this.hotMesh.hook('durable.wfs.signal', { id: signalId, data });
+    await this.hotMesh.hook(`${this.hotMesh.appId}.wfs.signal`, { id: signalId, data });
   }
 
-  async result(): Promise<any> {
+  async result(loadState?: boolean): Promise<any> {
+    if (loadState) {
+      const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
+      if (!state.data && state.metadata.err) {
+        throw new Error(JSON.parse(state.metadata.err));
+      }
+      if (state?.data?.done) {
+        //child flows are never technically 'done' as they have an open hook
+        //that is tied to the parent flow's completion. so, we need to check
+        //the 'done' flag on the child flow's payload (not the 'js' metadata field
+        //which is typically used); the loadState parameter ensures this
+        //check happens early
+        return state.data.response;
+      }
+    }
     let status = await this.hotMesh.getStatus(this.workflowId);
-    const topic = `${PUBLISHES_TOPIC}.${this.workflowId}`;
+    const topic = `${this.hotMesh.appId}.executed.${this.workflowId}`;
   
     return new Promise((resolve, reject) => {
       let isResolved = false;
@@ -31,7 +44,7 @@ export class WorkflowHandleService {
         if (err) {
           return reject(JSON.parse(err));
         } else if (!response) {
-          const state = await this.hotMesh.getState(this.workflowTopic, this.workflowId);
+          const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
           if (!state.data && state.metadata.err) {
             return reject(JSON.parse(state.metadata.err));
           }

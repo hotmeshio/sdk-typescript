@@ -150,6 +150,7 @@ class StreamSignaler {
     try {
       output = await callback(input);
     } catch (error) {
+      console.error(error);
       this.logger.error(`stream-call-function-error`, { error });
       output = this.structureUnhandledError(input, error);
     }

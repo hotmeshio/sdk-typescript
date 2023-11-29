@@ -2,16 +2,12 @@
  * NOTE: Using `maxSystemRetries = 3` and `backoffCoefficient = 10`, errant
  *       workflows will be retried on the following schedule (8 times in 27 hours):
  *       => 10ms, 100ms, 1000ms, 10s, 100s, 1_000s, 10_000s, 100_000s
- * 593: 
+ *
  * 594: waitforsignal
  * 595: sleep
  * 596, 597, 598: fatal
  * 599: retry
  */
-
-//todo: getChildWorkflowYAML (includes key, so flow will cleanup)
-//todo: if an activity throws an error, it should self-clean its index
-
 const getWorkflowYAML = (app: string, version: string) => {
   return `app:
   id: ${app}
@@ -45,6 +41,7 @@ const getWorkflowYAML = (app: string, version: string) => {
 
       activities:
         t1:
+          title: Main Flow Trigger
           type: trigger
           stats:
             id: '{$self.input.data.workflowId}'
@@ -58,6 +55,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               done: false
 
         a1:
+          title: Main Flow Pivot - All Cycling Descendants Point Here
           type: hook
           cycle: true
           output:
@@ -70,6 +68,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               duration: '{t1.output.data.backoffCoefficient}'
 
         w1:
+          title: Main Worker - Calls Workflow Functions
           type: worker
           topic: '{t1.output.data.workflowTopic}'
           emit: '{$job.data.done}'
@@ -131,8 +130,8 @@ const getWorkflowYAML = (app: string, version: string) => {
               done: '{$self.output.data.done}'
 
         a2:
-          type: hook
           title: Wait for cleanup signal
+          type: hook
           hook:
             type: object
             properties:
@@ -142,6 +141,209 @@ const getWorkflowYAML = (app: string, version: string) => {
             maps:
               workflowId: '{t1.output.data.workflowId}'
 
+        sig:
+          title: Signal In - Receive signals
+          type: hook
+          hook:
+            type: object
+            properties:
+              id:
+                type: string
+              arguments:
+                type: array
+              workflowTopic:
+                type: string
+          job:
+            maps:
+              workflowId: '{t1.output.data.workflowId}'
+    
+        siga1:
+          title: Signal In Flow Pivot - Cycling Descendants Point Here
+          type: hook
+          cycle: true
+          output:
+            schema:
+              type: object
+              properties:
+                duration:
+                  type: number
+            maps:
+              duration: '{t1.output.data.backoffCoefficient}'
+    
+        sigw1:
+          title: Signal In - Worker
+          type: worker
+          topic: '{sig.hook.data.workflowTopic}'
+          retry:
+            '599': [2]
+          input:
+            schema:
+              type: object
+              properties:
+                workflowId:
+                  type: string
+                workflowDimension:
+                  type: string
+                arguments:
+                  type: array
+            maps:
+              workflowId: '{t1.output.data.workflowId}'
+              workflowDimension: '{sig.output.metadata.dad}'
+              arguments: '{sig.hook.data.arguments}'
+          output:
+            schema:
+              type: object
+            594:
+              schema:
+                type: object
+                properties:
+                  index:
+                    type: number
+                    description: the index of the first signal in the array
+                  signals:
+                    type: array
+                    description: remaining signal ids
+                    items:
+                      type: object
+                      properties:
+                        signal:
+                          type: string
+                        index:
+                          type: number
+              maps:
+                index: '{$self.output.data.index}'
+                signals: '{$self.output.data.signals}'
+            595:
+              schema:
+                type: object
+                properties:
+                  duration:
+                    type: number
+                    description: sleep duration in seconds
+                  index:
+                    type: number
+                    description: the current index
+              maps:
+                duration: '{$self.output.data.duration}'
+                index: '{$self.output.data.index}'
+
+        siga594:
+          title: Signal In - Wait for signals
+          type: await
+          topic: ${app}.wfsc.execute
+          input:
+            schema:
+              type: object
+              properties:
+                index:
+                  type: number
+                signals:
+                  type: array
+                  description: signal ids
+                  items:
+                    type: object
+                    properties:
+                      signal:
+                        type: string
+                      index:
+                        type: number
+                parentWorkflowId:
+                  type: string
+                cycleWorkflowId:
+                  type: string
+                baseWorkflowId:
+                  type: string
+                  description: index will be appended later
+            maps:
+              signals: '{sigw1.output.data.signals}'
+              parentWorkflowId:
+                '@pipe':
+                  - ['{$job.metadata.jid}', '-w']
+                  - ['{@string.concat}']
+              cycleWorkflowId:
+                '@pipe':
+                  - ['{$job.metadata.jid}', '-$wfc', '{sig.output.metadata.dad}', '-', '{sigw1.output.data.index}']
+                  - ['{@string.concat}']
+              baseWorkflowId:
+                '@pipe':
+                  - ['{$job.metadata.jid}', '-$wfs', '{sig.output.metadata.dad}', '-']
+                  - ['{@string.concat}']
+          output:
+            schema:
+              type: object
+              properties:
+                done:
+                  type: boolean
+            maps:
+              done: '{sigw1.output.data.done}'
+
+        sigc594:
+          title: Signal In - Goto Activity siga1
+          type: cycle
+          ancestor: siga1
+          input:
+            maps:
+              duration: '{siga1.output.data.duration}'
+
+        siga595:
+          title: Signal In - Sleep before trying again
+          type: await
+          topic: ${app}.sleep.execute
+          input:
+            schema:
+              type: object
+              properties:
+                duration:
+                  type: number
+                index:
+                  type: number
+                workflowId:
+                  type: string
+                parentWorkflowId:
+                  type: string
+            maps:
+              duration: '{sigw1.output.data.duration}'
+              index: '{sigw1.output.data.index}'
+              parentWorkflowId:
+                '@pipe':
+                  - ['{$job.metadata.jid}', '-s']
+                  - ['{@string.concat}']
+              workflowId:
+                '@pipe':
+                  - ['{$job.metadata.jid}', '-$sleep', '{sig.output.metadata.dad}', '-', '{sigw1.output.data.index}']
+                  - ['{@string.concat}']
+          output:
+            schema:
+              type: object
+              properties:
+                done:
+                  type: boolean
+            maps:
+              done: '{sigw1.output.data.done}'
+
+        sigc595:
+          title: Signal In - Goto Activity siga1
+          type: cycle
+          ancestor: siga1
+          input:
+            maps:
+              duration: '{siga1.output.data.duration}'
+
+        siga599:
+          title: Signal In - Sleep exponentially longer and retry
+          type: hook
+          sleep: '{siga1.output.data.duration}'
+
+        sigc599:
+          title: Signal In - Goto Activity siga1
+          type: cycle
+          ancestor: siga1
+          input:
+            maps:
+              duration:
+                '@pipe':
+                  - ['{siga1.output.data.duration}', '{t1.output.data.backoffCoefficient}']
+                  - ['{@math.multiply}']
 
         a594:
           title: Wait for signals
@@ -374,7 +576,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               done: true
 
         s4:
-          title: Awaken child FLOWS so they end and self-clean
+          title: Awaken child flows so they end and self-clean
           type: signal
           subtype: all
           key_name: parentWorkflowId
@@ -409,6 +611,19 @@ const getWorkflowYAML = (app: string, version: string) => {
                   type: boolean
             maps:
               done: true
+        s5:
+          title: Close Signal In Channel
+          type: signal
+          subtype: one
+          topic: ${app}.flow.signal
+          signal:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+            maps:
+              id: '{$job.metadata.jid}'
     
       transitions:
         t1:
@@ -421,6 +636,33 @@ const getWorkflowYAML = (app: string, version: string) => {
                     '@pipe':
                       - ['{$job.metadata.key}', true, false]
                       - ['{@conditional.ternary}']
+          - to: sig
+        sig:
+          - to: siga1
+            conditions:
+              code: 202
+        siga1:
+          - to: sigw1
+        sigw1:
+          - to: siga594
+            conditions:
+              code: 594
+          - to: siga595
+            conditions:
+              code: 595
+          - to: siga599
+            conditions:
+              code: 599
+        siga594:
+          - to: sigc594
+            conditions:
+              code: 202
+        siga595:
+          - to: sigc595
+            conditions:
+              code: 202
+        siga599:
+          - to: sigc599
         a1:
           - to: w1
         w1:
@@ -433,16 +675,19 @@ const getWorkflowYAML = (app: string, version: string) => {
           - to: a599
             conditions:
               code: 599
+          - to: s3
+            conditions:
+              code: [200, 598, 597, 596]
           - to: s1
             conditions:
               code: [200, 598, 597, 596]
           - to: s2
             conditions:
               code: [200, 598, 597, 596]
-          - to: s3
+          - to: s4
             conditions:
               code: [200, 598, 597, 596]
-          - to: s4
+          - to: s5
             conditions:
               code: [200, 598, 597, 596]
         a594:
@@ -463,7 +708,14 @@ const getWorkflowYAML = (app: string, version: string) => {
               match:
                 - expected: '{t1.output.data.workflowId}'
                   actual: '{$self.hook.data.id}'
-  
+
+        ${app}.flow.signal:
+          - to: sig
+            conditions:
+              match:
+                - expected: '{t1.output.data.workflowId}'
+                  actual: '{$self.hook.data.id}'
+
     - subscribes: ${app}.activity.execute
       publishes: ${app}.activity.executed
 
@@ -494,6 +746,7 @@ const getWorkflowYAML = (app: string, version: string) => {
 
       activities:
         t1a:
+          title: Activity Flow Trigger
           type: trigger
           stats:
             id: '{$self.input.data.workflowId}'
@@ -504,6 +757,7 @@ const getWorkflowYAML = (app: string, version: string) => {
                 target: '{$self.input.data.parentWorkflowId}'
 
         w1a:
+          title: Activity Worker - Calls Activity Functions
           type: worker
           topic: '{t1a.output.data.workflowTopic}'
           emit: true
@@ -539,8 +793,8 @@ const getWorkflowYAML = (app: string, version: string) => {
               done: true
 
         s1a:
+          title: Awaken activity flows so they end and self-clean
           type: hook
-          title: Wait for cleanup signal
           hook:
             type: object
             properties:
@@ -559,7 +813,6 @@ const getWorkflowYAML = (app: string, version: string) => {
       hooks:
         ${app}.activity.awaken:
           - to: s1a
-            keep_alive: true
             conditions:
               match:
                 - expected: '{t1a.output.data.workflowId}'
@@ -596,6 +849,7 @@ const getWorkflowYAML = (app: string, version: string) => {
 
       activities:
         t1s:
+          title: Sleep Flow Trigger
           type: trigger
           stats:
             id: '{$self.input.data.workflowId}'
@@ -606,14 +860,14 @@ const getWorkflowYAML = (app: string, version: string) => {
                 target: '{$self.input.data.parentWorkflowId}'
 
         a1s:
-          type: hook
           title: Sleep for a duration
+          type: hook
           sleep: '{t1s.output.data.duration}'
           emit: true
 
         a2s:
+          title: Awaken sleep flows so they end and self-clean
           type: hook
-          title: Wait for cleanup signal
           hook:
             type: object
             properties:
@@ -683,7 +937,7 @@ const getWorkflowYAML = (app: string, version: string) => {
             id: '{$self.input.data.cycleWorkflowId}'
 
         a1wc:
-          title: Split signal data
+          title: Pivot - All Cycling Descendants Point Here
           type: hook
           cycle: true
           output:
@@ -722,6 +976,7 @@ const getWorkflowYAML = (app: string, version: string) => {
                   - ['{t1wc.output.data.signals}', 1]
                   - ['{@array.slice}']
         a2wc:
+          title: Precalculate targetLength
           type: hook
           output:
             schema:
@@ -733,7 +988,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               targetLength: '{a1wc.output.data.targetLength}'
  
         c1wc:
-          title: Goto Activity a1wc
+          title: Goto Activity a1wc - Spawn Signal children
           type: cycle
           ancestor: a1wc
           input:
@@ -839,6 +1094,7 @@ const getWorkflowYAML = (app: string, version: string) => {
 
       activities:
         t1ww:
+          title: WFS - Wait For Signal Trigger
           type: trigger
           stats:
             id: '{$self.input.data.workflowId}'
@@ -849,8 +1105,8 @@ const getWorkflowYAML = (app: string, version: string) => {
                 target: '{$self.input.data.parentWorkflowId}'
 
         a1ww:
+          title: WFS - signal entry point
           type: hook
-          title: Wait for custom signal
           emit: true
           hook:
             type: object
@@ -864,8 +1120,8 @@ const getWorkflowYAML = (app: string, version: string) => {
               signalId: '{t1ww.output.data.signalId}'
 
         a2ww:
+          title: WFS - cleanup signal entry point
           type: hook
-          title: Wait for cleanup signal
           hook:
             type: object
             properties:
@@ -900,39 +1156,11 @@ const getWorkflowYAML = (app: string, version: string) => {
 
 const APP_VERSION = '1';
 const APP_ID = 'durable';
-const ACTIVITY_SUBSCRIBES_TOPIC = 'durable.activity.execute';
-const ACTIVITY_PUBLISHES_TOPIC = 'durable.activity.executed';
-const SLEEP_SUBSCRIBES_TOPIC = 'durable.sleep.execute';
-const SLEEP_PUBLISHES_TOPIC = 'durable.sleep.executed';
-const WFS_SUBSCRIBES_TOPIC = 'durable.wfs.execute';
-const WFS_PUBLISHES_TOPIC = 'durable.wfs.executed';
-const WFSC_SUBSCRIBES_TOPIC = 'durable.wfsc.execute';
-const WFSC_PUBLISHES_TOPIC = 'durable.wfsc.executed';
-const SUBSCRIBES_TOPIC = 'durable.execute';
-const PUBLISHES_TOPIC = 'durable.executed';
-const HOOK_ID = 'durable.awaken';
-const ACTIVITY_HOOK_ID = 'durable.activity.awaken';
-const SLEEP_HOOK_ID = 'durable.sleep.awaken';
-const WFS_HOOK_ID = 'durable.wfs.awaken';
 const DEFAULT_COEFFICIENT = 10;
 
 export {
   getWorkflowYAML,
   APP_VERSION,
   APP_ID,
-  ACTIVITY_SUBSCRIBES_TOPIC,
-  ACTIVITY_PUBLISHES_TOPIC,
-  SLEEP_SUBSCRIBES_TOPIC,
-  SLEEP_PUBLISHES_TOPIC,
-  SUBSCRIBES_TOPIC,
-  PUBLISHES_TOPIC,
-  HOOK_ID,
-  ACTIVITY_HOOK_ID,
-  SLEEP_HOOK_ID,
   DEFAULT_COEFFICIENT,
-  WFS_SUBSCRIBES_TOPIC,
-  WFS_PUBLISHES_TOPIC,
-  WFSC_SUBSCRIBES_TOPIC,
-  WFSC_PUBLISHES_TOPIC,
-  WFS_HOOK_ID,
 };

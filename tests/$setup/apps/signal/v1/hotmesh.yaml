@@ -5,12 +5,22 @@ app:
     - subscribes: signal.test
       publishes: signal.tested
 
+      input:
+        schema:
+          type: object
+          properties:
+            child_flow_id:
+              type: string
+
       expire: 180
 
       activities:
         trigger:
           title: Entry Point
           type: trigger
+          job:
+            maps:
+              child_flow_id: "{$self.input.data.child_flow_id}"
 
         sleeper:
           title: Sleep for 5s
@@ -25,9 +35,12 @@ app:
             schema:
               type: object
               properties:
+                id:
+                  type: string
                 parent_job_id:
                   type: string
             maps:
+              id: '{trigger.output.data.child_flow_id}'
               parent_job_id: '{$job.metadata.jid}'
 
         signaler:
@@ -81,6 +94,109 @@ app:
             conditions:
               code: 202
 
+    - subscribes: signal.one.test
+      publishes: signal.one.tested
+
+      input:
+        schema:
+          type: object
+          properties:
+            child_flow_id:
+              type: string
+
+      expire: 180
+
+      activities:
+        onetrigger:
+          title: One Trigger Entry Point
+          type: trigger
+          job:
+            maps:
+              child_flow_id: "{$self.input.data.child_flow_id}"
+
+        onesleeper:
+          title: Sleep for 5s
+          type: hook
+          sleep: 5
+
+        oneawaiter:
+          title: Invoke another flow
+          type: await
+          topic: hook.test
+          input:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                parent_job_id:
+                  type: string
+            maps:
+              id: '{onetrigger.output.data.child_flow_id}'
+              parent_job_id: '{$job.metadata.jid}'
+
+        onesignaler:
+          title: Signal other flow - pending
+          type: signal
+          subtype: one
+          topic: hook.resume
+          code: 202
+          status: pending
+          signal:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                done:
+                  type: boolean
+            maps:
+              id: '{onetrigger.output.data.child_flow_id}'
+              done: false
+
+        twosignaler:
+          title: Signal other flow - success
+          type: signal
+          subtype: one
+          topic: hook.resume
+          code: 200
+          status: success
+          signal:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+                done:
+                  type: boolean
+            maps:
+              id: '{onetrigger.output.data.child_flow_id}'
+              done: true
+
+        onepender:
+          title: Runs when awaiter returns 202
+          type: hook
+
+        oneender:
+          title: Runs when awaiter returns 200
+          type: hook
+
+      transitions:
+        onetrigger:
+          - to: onesleeper
+          - to: oneawaiter
+        onesleeper:
+          - to: onesignaler
+        onesignaler:
+          - to: twosignaler
+        oneawaiter:
+          - to: oneender
+            conditions:
+              code: 200
+          - to: onepender
+            conditions:
+              code: 202
+
     - subscribes: hook.test
       publishes: hook.tested
 
@@ -102,7 +218,7 @@ app:
               type: boolean
 
       activities:
-        t1:
+        hookTrigger:
           type: trigger
           emit: true
           job:
@@ -111,12 +227,13 @@ app:
               parent_job_id: "{$self.output.data.parent_job_id}"
               done: false
           stats:
+            id: "{$self.input.data.id}"
             key: "{$self.input.data.parent_job_id}"
             granularity: infinity
             measures:
               - measure: index
                 target: "{$self.input.data.parent_job_id}"
-        a1:
+        hookSignaler:
           type: hook
           hook:
             type: object
@@ -127,18 +244,28 @@ app:
             maps:
               done: "{$self.hook.data.done}"
 
-        a2:
+        hook200:
+          title: 200 Response
           type: hook
+        hook202:
+          title: 202 Response
+          type: hook
+          emit: true
 
       transitions:
-        t1:
-          - to: a1
-        a1:
-          - to: a2
+        hookTrigger:
+          - to: hookSignaler
+        hookSignaler:
+          - to: hook200
+            conditions:
+              code: 200
+          - to: hook202
+            conditions:
+              code: 202
 
       hooks:
         hook.resume:
-          - to: a1
+          - to: hookSignaler
             conditions:
               match:
                 - expected: "{$job.metadata.jid}"

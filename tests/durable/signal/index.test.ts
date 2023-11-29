@@ -27,6 +27,7 @@ describe('DURABLE | signal | `Durable.workflow.signal`', () => {
   });
 
   afterAll(async () => {
+    await sleepFor(1500);
     await Durable.Client.shutdown();
     await Durable.Worker.shutdown();
     await StreamSignaler.stopConsuming();
