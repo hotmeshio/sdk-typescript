@@ -1,12 +1,12 @@
 # Model Driven Development
 
-The HotMesh model is a modern, JSON-based alternative to WSDL/SOAP, offering a flexible and extensible way to define and manage distributed process execution.
+The HotMesh model is a YAML-based alternative to WSDL/SOAP, offering a flexible and extensible way to define and manage distributed process execution.
 
 ## Table of Contents
 
 - [Introduction](#1-introduction)
   - [1.1. Overview of the Model](#11-overview-of-the-model)
-  - [1.2. JSON Structure](#12-json-structure)
+  - [1.2. YAML Structure](#12-yaml-structure)
   - [1.3. Key Concepts: Graphs, Activities, and Transitions](#13-key-concepts-graphs-activities-and-transitions)
 - [2. Settings](#2-settings)
   - [2.1. Defining Global Settings](#21-defining-global-settings)
@@ -50,7 +50,7 @@ One of the key features of this model is the functional mapper called '@pipes', 
 
 The model is highly adaptable and can be used to define a wide range of applications, from simple data processing tasks to sophisticated business processes. From a cost of ownership perspective, it represents a more maintainable, scalable, and efficient approach.
 
-### 1.2. JSON Structure
+### 1.2. YAML Structure
 The model is represented as a JSON object by the engine once compiled (although YAML can be interchangeably used for authoring given its better readability). The structure is comprised of various nested properties that define the application's settings, and execution behavior. The primary components of the JSON model are as follows:
 
 - `app`: The top-level object that contains the application's metadata, settings, and graphs.
