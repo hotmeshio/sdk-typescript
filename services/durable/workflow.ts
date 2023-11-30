@@ -183,15 +183,11 @@ export class WorkflowService {
     const hotMeshClient = await WorkerService.getHotMesh(`${namespace}.flow.signal`, { namespace });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'hook')) {
       const store = asyncLocalStorage.getStore();
-      let workflowId: string;
-      let workflowTopic: string;
-      if (options.workflowId && options.taskQueue && options.workflowName) {
-        workflowId = options.workflowId;
+      const workflowId = options.workflowId ?? store.get('workflowId');
+      let workflowTopic = store.get('workflowTopic');
+      if (options.taskQueue && options.workflowName) {
         workflowTopic = `${options.taskQueue}-${options.workflowName}`;
-      } else {
-        workflowId = store.get('workflowId');
-        workflowTopic = store.get('workflowTopic');
-      }
+      } //else this is essentially recursion as the function calls itself
       const payload = {
         arguments: [...options.args],
         id: workflowId,

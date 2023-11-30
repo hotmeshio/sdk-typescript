@@ -74,7 +74,6 @@ export async function exampleHook(name: string): Promise<void> {
   await search.set('jimbo', 'jackson');
   const greeting = await bye(name);
 
-
   //start a child workflow and wait for the result
   const childWorkflowOutput = await Durable.workflow.executeChild<string>({
     args: [`${name} to CHILD`],

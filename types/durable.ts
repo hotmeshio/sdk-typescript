@@ -29,9 +29,9 @@ type WorkflowOptions = {
 
 type HookOptions = {
   namespace?: string;   //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
-  taskQueue: string;
+  taskQueue?: string;
   args: any[];          //input arguments to pass into the hook
-  workflowId: string;   //execution id (the job id to hook into)
+  workflowId?: string;   //execution id (the job id to hook into)
   workflowName?: string; //the name of the user's hook function
   search?: WorkflowSearchOptions //bind additional search terms immediately before hook reentry
   config?: WorkflowConfig; //hook function constraints (backoffCoefficient, maximumAttempts, maximumInterval, initialInterval)
