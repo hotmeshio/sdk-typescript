@@ -18,16 +18,25 @@ export async function example(name: string): Promise<string> {
   const search = await Durable.workflow.search();
   await search.set('custom1', 'durable');
   await search.set('custom2', '55');
-  //the hook function will update this value to 'jackson'
+
+  //note: the `exampleHook` function below will change this to 'jackson'
   await search.set('jimbo', 'jones');
 
+  //start a child workflow and wait for the result
   const childWorkflowOutput = await Durable.workflow.executeChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
-    workflowId: '-'
   });
   console.log('childWorkflowOutput is=>', childWorkflowOutput);
+
+  //start a child workflow and only confirm it started (don't wait for result)
+  const childWorkflowId = await Durable.workflow.startChild<string>({
+    args: [`${name} to CHILD`],
+    taskQueue: 'child-world',
+    workflowName: 'childExample',
+  });
+  console.log('childWorkflowId is=>', childWorkflowId);
 
   //call a few activities in parallel (proxyActivities)
   const [hello, goodbye] = await Promise.all([greet(name), bye(name)]);
@@ -64,6 +73,23 @@ export async function exampleHook(name: string): Promise<void> {
   await search.incr('counter', 100);
   await search.set('jimbo', 'jackson');
   const greeting = await bye(name);
+
+
+  //start a child workflow and wait for the result
+  const childWorkflowOutput = await Durable.workflow.executeChild<string>({
+    args: [`${name} to CHILD`],
+    taskQueue: 'child-world',
+    workflowName: 'childExample',
+  });
+  console.log('Hook Spawn: childWorkflowOutput is=>', childWorkflowOutput);
+
+  //start a child workflow and only confirm it started (don't wait for result)
+  const childWorkflowId = await Durable.workflow.startChild<string>({
+    args: [`${name} to CHILD`],
+    taskQueue: 'child-world',
+    workflowName: 'childExample',
+  });
+  console.log('Hook Spawn: childWorkflowId is=>', childWorkflowId);
 
   //test out sleeping
   await Durable.workflow.sleep('1 second');

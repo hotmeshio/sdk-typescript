@@ -23,17 +23,21 @@ import { StreamStatus } from '../../types/stream';
 export class WorkflowService {
 
   /**
-   * Spawn a child workflow. await the result.
+   * Spawn a child workflow. await and return the result.
    */
   static async executeChild<T>(options: WorkflowOptions): Promise<T> {
     const store = asyncLocalStorage.getStore();
+    const namespace = store.get('namespace');
     const workflowId = store.get('workflowId');
     const workflowDimension = store.get('workflowDimension') ?? '';
     const workflowTrace = store.get('workflowTrace');
     const workflowSpan = store.get('workflowSpan');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const childJobId = `${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
+    //this is risky but MUST be allowed. Users MAY set the workflowId,
+    //but if there is a naming collision, the data from the target entity will be used
+    //as there is know way of knowing if the item was generated via a prior run of the workflow
+    const childJobId = options.workflowId ?? `${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
     const parentWorkflowId = `${workflowId}-f`;
 
     const client = new Client({
@@ -43,7 +47,8 @@ export class WorkflowService {
     let handle = await client.workflow.getHandle(
       options.taskQueue,
       options.workflowName,
-      childJobId
+      childJobId,
+      namespace,
     );
 
     try {
@@ -51,13 +56,53 @@ export class WorkflowService {
     } catch (error) {
       handle = await client.workflow.start({
         ...options,
+        namespace,
         workflowId: childJobId,
         parentWorkflowId,
         workflowTrace,
         workflowSpan,
       });
+      //todo: options.startToCloseTimeout
       const result = await handle.result();
       return result as T;
+    }
+  }
+
+  /**
+   * spawn a child workflow. return the childJobId.
+   */
+  static async startChild<T>(options: WorkflowOptions): Promise<string> {
+    const store = asyncLocalStorage.getStore();
+    const namespace = store.get('namespace');
+    const workflowId = store.get('workflowId');
+    const workflowDimension = store.get('workflowDimension') ?? '';
+    const workflowTrace = store.get('workflowTrace');
+    const workflowSpan = store.get('workflowSpan');
+    const COUNTER = store.get('counter');
+    const execIndex = COUNTER.counter = COUNTER.counter + 1;
+    const childJobId = options.workflowId ?? `${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
+    const parentWorkflowId = `${workflowId}-f`;
+    const workflowTopic = `${options.taskQueue}-${options.workflowName}`;
+
+    try {
+      //get the status; if there is no error, return childJobId (what was spawned)
+      const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+      await hotMeshClient.getStatus(childJobId);
+      return childJobId;
+    } catch (error) {
+      const client = new Client({
+        connection: await Connection.connect(WorkerService.connection),
+      });
+  
+      await client.workflow.start({
+        ...options,
+        namespace,
+        workflowId: childJobId,
+        parentWorkflowId,
+        workflowTrace,
+        workflowSpan,
+      });
+      return childJobId;
     }
   }
 
