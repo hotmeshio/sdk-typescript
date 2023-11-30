@@ -34,9 +34,7 @@ From this vantage point, the legacy network remains chaotic. But now we have a s
 <img src="./img/refactor/rf3.png" alt="HotMesh reverses the information flow" style="max-width:100%;width:600px;">
 
 ## Apples-to-Apples  
-If you're familiar with Temporal, then you're familiar with HotMesh. We align on pretty much every principle, including the need for a fleet of servers to provide *durable process execution*. However, in the case of HotMesh, the fleet of servers is minaturized and distributed to the fringes just-in-time (i.e., the "Ajax/SPA" architecture).
-
-*It's serverless Temporal delivered just-in-time, anywhere you have a connection to Redis.*
+If you're familiar with Temporal, then you're familiar with HotMesh. We align on many principles, including the need for a fleet of servers to provide *durable process execution*. However, in the case of HotMesh, the fleet of servers is minaturized and distributed to the fringes just-in-time (i.e., the "Ajax/SPA" architecture).
 
 Temporal's TypeScript SDK was an inspiration for HotMesh's TypeScript SDK. Their well-designed approach allows developers to focus on code rather than learning workflow-specific terminology.
 

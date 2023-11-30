@@ -226,9 +226,6 @@ Exchanging data between activities is central to HotMesh. For detailed informati
 ## Composition
 While the simplest graphs are linear, detailing a consistent sequence of non-cyclical activities, graphs can be layered to represent intricate business scenarios. Some can even be designed to accommodate long-lasting workflows that span months. For more details, check out the [Composable Workflow Guide](./docs/composable_workflow.md).
 
-## Architectural First Principles
-For a deep dive into HotMesh's distributed orchestration philosophy, refer to the [Architectural First Principles Overview](./docs/architecture.md).
-
 ## Distributed Orchestration
 HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](./docs/distributed_orchestration.md) for a detailed breakdown of the approach.
 
