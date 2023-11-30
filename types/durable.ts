@@ -18,7 +18,7 @@ type WorkflowOptions = {
   namespace?: string;   //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
   taskQueue: string;
   args: any[];          //input arguments to pass in
-  workflowId: string;   //execution id (the job id)
+  workflowId?: string;   //execution id (the job id)
   workflowName?: string; //the name of the user's workflow function
   parentWorkflowId?: string;  //system reserved; the id of the parent; if present the flow will not self-clean until the parent that spawned it self-cleans
   workflowTrace?: string;

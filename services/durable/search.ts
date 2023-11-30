@@ -19,10 +19,9 @@ export class Search {
   constructor(workflowId: string, hotMeshClient: HotMesh, searchSessionId: string) {
     const keyParams = {
       appId: hotMeshClient.appId,
-      jobId: ''
+      jobId: workflowId
     }
-    const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
-    this.jobId = `${hotMeshPrefix}${workflowId}`;
+    this.jobId = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
     this.searchSessionId = searchSessionId;
     this.hotMeshClient = hotMeshClient;
     this.store = hotMeshClient.engine.store as StoreService<RedisClient, RedisMulti>;

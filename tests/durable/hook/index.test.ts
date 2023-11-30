@@ -9,10 +9,12 @@ import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
 import { ClientService } from '../../../services/durable/client';
 import { sleepFor } from '../../../modules/utils';
+import { HMNS, KeyService, KeyType } from '../../../modules/key';
 
 const { Connection, Client, Worker } = Durable;
 
 describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
+  const namespace = 'staging';
   const prefix = 'bye-world-';
   let client: ClientService;
   let workflowGuid: string;
@@ -56,6 +58,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
         workflowGuid = prefix + nanoid();
 
         const handle = await client.workflow.start({
+          namespace,
           args: ['HookMesh'],
           taskQueue: 'hook-world',
           workflowName: 'example',
@@ -81,6 +84,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
     describe('create', () => {
       it('should create a worker', async () => {
         const worker = await Worker.create({
+          namespace,
           connection: { class: Redis, options },
           taskQueue: 'hook-world',
           workflow: workflows.example,
@@ -109,6 +113,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
         //the main flow has an executeChild command which will be serviced
         //by this worker
         const worker = await Worker.create({
+          namespace,
           connection: { class: Redis, options },
           taskQueue: 'child-world',
           workflow: childWorkflows.childExample,
@@ -119,6 +124,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
 
       it('should create a hook worker', async () => {
         const worker = await Worker.create({
+          namespace,
           connection: { class: Redis, options },
           taskQueue: 'hook-world',
           workflow: workflows.exampleHook,
@@ -136,6 +142,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
         //the exampleHook function will be invoked in job context, allowing
         //it the ability to read/write/augment shared job state
         await client.workflow.hook({
+          namespace,
           taskQueue: 'hook-world',
           workflowName: 'exampleHook',
           workflowId: workflowGuid,
@@ -152,7 +159,8 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
         const handle = await client.workflow.getHandle(
           'hook-world',
           workflows.example.name,
-          workflowGuid
+          workflowGuid,
+          namespace
         );
         const result = await handle.result(true);
         expect(result).toEqual('Hello, HookMesh! - Goodbye, HookMesh!');
@@ -160,16 +168,19 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
         //call the FT search module to locate the workflow via fuzzy search
         //NOTE: always include an underscore prefix before your search term (e.g., `_custom1`).
         //      HotMesh uses this to avoid collisions with reserved words
-        const [count, ...rest] = await client.workflow.search(
+        const [count, ...results] = await client.workflow.search(
           'hook-world',
           workflows.example.name,
-          null,
+          namespace,
           'bye-bye',
           '@_custom1:durable'
         );
         expect(count).toEqual(1);
-        const [id, ...rest2] = rest;
-        expect(id).toEqual(`hmsh:durable:j:${workflowGuid}`);
+        const [id, ...rest2] = results;
+
+        const keyParams = { appId: namespace, jobId: workflowGuid }
+        const expectedGuid = KeyService.mintKey(HMNS, KeyType.JOB_STATE, keyParams);
+        expect(id).toEqual(expectedGuid);
         await sleepFor(5_000);
       }, 25_000);
     });
