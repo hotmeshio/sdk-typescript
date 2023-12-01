@@ -2,11 +2,13 @@
  * NOTE: Using `maxSystemRetries = 3` and `backoffCoefficient = 10`, errant
  *       workflows will be retried on the following schedule (8 times in 27 hours):
  *       => 10ms, 100ms, 1000ms, 10s, 100s, 1_000s, 10_000s, 100_000s
+ * TODO: Max Interval, Min Interval, Initial Interval
  *
- * 594: waitforsignal
- * 595: sleep
- * 596, 597, 598: fatal
- * 599: retry
+ * ERROR CODES:
+ *      594: waitforsignal
+ *      595: sleep
+ *      596, 597, 598: fatal
+ *      599: retry
  */
 const getWorkflowYAML = (app: string, version: string) => {
   return `app:

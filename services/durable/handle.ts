@@ -16,6 +16,22 @@ export class WorkflowHandleService {
     await this.hotMesh.hook(`${this.hotMesh.appId}.wfs.signal`, { id: signalId, data });
   }
 
+  async state(metadata = false): Promise<Record<string, any>> {
+    const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
+    if (!state.data && state.metadata.err) {
+      throw new Error(JSON.parse(state.metadata.err));
+    }
+    return metadata ? state : state.data;
+  }
+
+  async queryState(fields: string[]): Promise<Record<string, any>> {
+    return await this.hotMesh.getQueryState(this.workflowId, fields);
+  }
+
+  async status(): Promise<number> {
+    return await this.hotMesh.getStatus(this.workflowId);
+  }
+
   async result(loadState?: boolean): Promise<any> {
     if (loadState) {
       const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
@@ -26,8 +42,7 @@ export class WorkflowHandleService {
         //child flows are never technically 'done' as they have an open hook
         //that is tied to the parent flow's completion. so, we need to check
         //the 'done' flag on the child flow's payload (not the 'js' metadata field
-        //which is typically used); the loadState parameter ensures this
-        //check happens early
+        //which is typically used); the `loadState` parameter triggers this
         return state.data.response;
       }
     }
