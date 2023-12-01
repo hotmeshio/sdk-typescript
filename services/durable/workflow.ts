@@ -106,6 +106,9 @@ export class WorkflowService {
     }
   }
 
+  /**
+   * wrap all activities in a proxy that will durably run them
+   */
   static proxyActivities<ACT>(options?: ActivityConfig): ProxyType<ACT> {
     if (options.activities) {
       WorkerService.registerActivities(options.activities)
@@ -122,6 +125,9 @@ export class WorkflowService {
     return proxy;
   }
 
+  /**
+   * return a search session for use when reading/writing to the workflow HASH
+   */
   static async search(): Promise<Search> {
     const store = asyncLocalStorage.getStore();
     const workflowId = store.get('workflowId');
@@ -130,15 +136,16 @@ export class WorkflowService {
     const namespace = store.get('namespace');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    //this ID is used as a item key with a hash (dash prefix ensures no collision)
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    //this ID is used as a item key with a hash (dash prefix ensures no collision)
     const searchSessionId = `-search${workflowDimension}-${execIndex}`;
     return new Search(workflowId, hotMeshClient, searchSessionId);
   }
 
   /**
    * those methods that may only be called once must be protected by flagging
-   * their execution with a unique key (the key is stored in the workflow state)
+   * their execution with a unique key (the key is stored in the HASH alongside
+   * process state and job state)
    */
   static async isSideEffectAllowed(hotMeshClient: HotMesh, prefix:string): Promise<boolean> {
     const store = asyncLocalStorage.getStore();
@@ -146,15 +153,12 @@ export class WorkflowService {
     const workflowDimension = store.get('workflowDimension') ?? '';
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    //this ID is used as a item key with a hash (dash prefix ensures no collision)
     const sessionId = `-${prefix}${workflowDimension}-${execIndex}-`;
-    //this ID is used as a item key with a hash (dash prefix ensures no collision)
     const keyParams = {
       appId: hotMeshClient.appId,
-      jobId: ''
+      jobId: workflowId
     }
-    const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
-    const workflowGuid = `${hotMeshPrefix}${workflowId}`;
+    const workflowGuid = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
     const guidValue = Number(await hotMeshClient.engine.store.exec('HINCRBYFLOAT', workflowGuid, sessionId, '1') as string);
     return guidValue === 1;
   }

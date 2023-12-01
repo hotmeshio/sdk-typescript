@@ -476,6 +476,21 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return jobId;
   }
 
+  /**
+   * returns custom search fields and values. The fields param
+   * should not prefix items with an underscore.
+   */
+  async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
+    const key = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+    const _fields = fields.map(field => `_${field}`);
+    const jobDataArray = await this.redisClient[this.commands.hmget](key, _fields);
+    const jobData: StringAnyType = {};
+    fields.forEach((field, index) => {
+      jobData[field] = jobDataArray[index];
+    });
+    return jobData;
+  }
+
   async getState(jobId: string, consumes: Consumes, dIds: StringStringType): Promise<[StringAnyType, number] | undefined> {
     //get abbreviated field list (the symbols for the paths)
     const key = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });

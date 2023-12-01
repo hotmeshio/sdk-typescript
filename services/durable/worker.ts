@@ -6,7 +6,6 @@ import {
   DurableSleepError,
   DurableTimeoutError, 
   DurableWaitForSignalError} from '../../modules/errors';
-import { KeyService, KeyType } from '../../modules/key';
 import { asyncLocalStorage } from './asyncLocalStorage';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './factory';
 import { HotMeshService as HotMesh } from '../hotmesh';
@@ -16,9 +15,9 @@ import {
   Registry,
   WorkerConfig,
   WorkerOptions,
-  WorkflowDataType, 
-  WorkflowSearchOptions} from '../../types/durable';
+  WorkflowDataType } from '../../types/durable';
 import { RedisClass, RedisOptions } from '../../types/redis';
+import { Search } from './search';
 import {
   StreamData,
   StreamDataResponse,
@@ -79,39 +78,6 @@ export class WorkerService {
     return WorkerService.activityRegistry;
   }
 
-  /**
-   * For those deployments with a redis stack backend (with the FT module),
-   * this method will configure the search index for the workflow. For all
-   * others, this method will fail gracefully. In all cases, the values
-   * will be stored in the workflow's central HASH data structure, allowing
-   * for manual traversal and inspection as well.
-   */
-  static async configureSearchIndex(hotMeshClient: HotMesh, search?: WorkflowSearchOptions): Promise<void> {
-    if (search?.schema) {
-      const store = hotMeshClient.engine.store;
-      const schema: string[] = [];
-      for (const [key, value] of Object.entries(search.schema)) {
-        //prefix with a comma (avoids collisions with hotmesh reserved words)
-        schema.push(`_${key}`);
-        schema.push(value.type);
-        if (value.sortable) {
-          schema.push('SORTABLE');
-        }
-      }
-      try {
-        const keyParams = {
-          appId: hotMeshClient.appId,
-          jobId: ''
-        }
-        const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
-        const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
-        await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length, ...prefixes, 'SCHEMA', ...schema);
-      } catch (err) {
-        hotMeshClient.engine.logger.info('durable-client-search-err', { err });
-      }
-    }
-  }
-
   static async create(config: WorkerConfig) {
     WorkerService.connection = config.connection;
     const workflow = config.workflow;
@@ -124,7 +90,7 @@ export class WorkerService {
     const worker = new WorkerService();
     worker.activityRunner = await worker.initActivityWorker(config, activityTopic);
     worker.workflowRunner = await worker.initWorkflowWorker(config, workflowTopic, workflowFunction);
-    WorkerService.configureSearchIndex(worker.workflowRunner, config.search)
+    Search.configureSearchIndex(worker.workflowRunner, config.search)
     await WorkerService.activateWorkflow(worker.workflowRunner);
     return worker;
   }

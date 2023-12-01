@@ -10,7 +10,7 @@ import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamSignaler } from '../../../services/signaler/stream';
 import { sleepFor } from '../../../modules/utils';
 
-const { Connection, Client, NativeConnection, Worker } = Durable;
+const { Connection, Client, Worker } = Durable;
 
 describe('DURABLE | nested | `workflow.executeChild`', () => {
   let handle: WorkflowHandleService;

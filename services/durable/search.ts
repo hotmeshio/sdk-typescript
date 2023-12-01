@@ -2,6 +2,7 @@ import { HotMeshService as HotMesh } from '../hotmesh'
 import { RedisClient, RedisMulti } from '../../types/redis';
 import { StoreService } from '../store';
 import { KeyService, KeyType } from '../../modules/key';
+import { WorkflowSearchOptions } from '../../types/durable';
 
 export class Search {
   jobId: string;
@@ -11,9 +12,42 @@ export class Search {
   store: StoreService<RedisClient, RedisMulti> | null;
 
   safeKey(key:string): string {
-    //note: protect the execution namespace with a prefix,
-    //so its design never conflicts with the hotmesh keyspace
+    //note: protect the execution namespace with a prefix
     return `_${key}`;
+  }
+
+  /**
+   * For those deployments with a redis stack backend (with the FT module),
+   * this method will configure the search index for the workflow. For all
+   * others, this method will exit/fail gracefully and not index
+   * the fields in the HASH. However, all values are still available
+   * in the HASH.
+   */
+  static async configureSearchIndex(hotMeshClient: HotMesh, search?: WorkflowSearchOptions): Promise<void> {
+    if (search?.schema) {
+      const store = hotMeshClient.engine.store;
+      const schema: string[] = [];
+      for (const [key, value] of Object.entries(search.schema)) {
+        //prefix with a comma (avoids collisions with hotmesh reserved words)
+        schema.push(`_${key}`);
+        schema.push(value.type);
+        if (value.sortable) {
+          schema.push('SORTABLE');
+        }
+      }
+      try {
+        const keyParams = {
+          appId: hotMeshClient.appId,
+          jobId: ''
+        }
+        const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+        const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
+        await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length.toString(), ...prefixes, 'SCHEMA', ...schema);
+      } catch (err) {
+        console.error(err);
+        hotMeshClient.engine.logger.info('durable-client-search-err', { err });
+      }
+    }
   }
 
   constructor(workflowId: string, hotMeshClient: HotMesh, searchSessionId: string) {

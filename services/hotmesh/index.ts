@@ -21,6 +21,7 @@ import {
   StatsResponse } from '../../types/stats';
 import { ConnectorService } from '../connector';
 import { StreamCode, StreamData, StreamDataResponse, StreamStatus } from '../../types/stream';
+import { StringAnyType } from '../../types/serializer';
 
 class HotMeshService {
   namespace: string;
@@ -59,7 +60,7 @@ class HotMeshService {
     instance.logger = new LoggerService(config.appId, instance.guid, config.name || '', config.logLevel);
     await instance.initEngine(config, instance.logger);
     await instance.initQuorum(config, instance.engine, instance.logger);
-    await instance.initWorkers(config, instance.logger);
+    await instance.doWork(config, instance.logger);
     return instance;
   }
 
@@ -97,7 +98,7 @@ class HotMeshService {
     }
   }
 
-  async initWorkers(config: HotMeshConfig, logger: ILogger) {
+  async doWork(config: HotMeshConfig, logger: ILogger) {
     this.workers = await WorkerService.init(
       this.namespace,
       this.appId,
@@ -151,6 +152,9 @@ class HotMeshService {
   }
   async getState(topic: string, jobId: string): Promise<JobOutput> {
     return this.engine?.getState(topic, jobId);
+  }
+  async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
+    return await this.engine?.getQueryState(jobId, fields);
   }
   async getIds(topic: string, query: JobStatsInput, queryFacets = []): Promise<IdsResponse> {
     return await this.engine?.getIds(topic, query, queryFacets);

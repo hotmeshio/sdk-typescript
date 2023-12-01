@@ -57,12 +57,27 @@ type WorkflowDataType = {
   workflowTopic: string;
 }
 
+type MeshDBClassConfig = {
+  namespace: string;
+  taskQueue: string;
+  redisOptions: RedisOptions;
+  redisClass: RedisClass;
+}
+
+type MeshDBConfig = {
+  taskQueue?: string;
+  index?: {
+    index: string;
+    prefix: string[];
+    schema: Record<string, {type: 'TEXT' | 'NUMERIC' | 'TAG', sortable: boolean}>;
+  };
+}
+
 type ConnectionConfig = {
   class: RedisClass;
   options: RedisOptions;
 }
 type Connection =  ConnectionConfig;
-type NativeConnection =  ConnectionConfig;
 
 type ClientConfig = {
   connection: Connection;
@@ -115,11 +130,12 @@ export {
   ContextType,
   ConnectionConfig,
   Connection,
-  NativeConnection,
   ProxyType,
   Registry,
   SignalOptions,
   HookOptions,
+  MeshDBClassConfig,
+  MeshDBConfig,
   WorkerConfig,
   WorkflowConfig,
   WorkerOptions,

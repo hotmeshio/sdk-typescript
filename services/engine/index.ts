@@ -53,6 +53,7 @@ import {
   SubscriptionCallback } from '../../types/quorum';
 import { RedisClient, RedisMulti } from '../../types/redis';
 import { RedisClientType } from '../../types/redisclient';
+import { StringAnyType, StringStringType } from '../../types/serializer';
 import {
   GetStatsOptions,
   IdsResponse,
@@ -67,7 +68,6 @@ import {
   StreamError,
   StreamRole,
   StreamStatus } from '../../types/stream';
-import { StringStringType } from '../../types';
 
 //wait time to see if a job is complete
 const OTT_WAIT_TIME = 1000;
@@ -628,6 +628,9 @@ class EngineService {
       stateTree.metadata.js = status;
     }
     return stateTree;
+  }
+  async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
+    return await this.store.getQueryState(jobId, fields);
   }
 
   async compress(terms: string[]): Promise<boolean> {
