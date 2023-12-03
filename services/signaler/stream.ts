@@ -61,7 +61,7 @@ class StreamSignaler {
     try {
       await this.store.xgroup('CREATE', stream, group, '$', 'MKSTREAM');
     } catch (err) {
-      this.logger.info('consumer-group-exists', { stream, group });
+      this.logger.debug('consumer-group-exists', { stream, group });
     }
   }
 
@@ -150,7 +150,6 @@ class StreamSignaler {
     try {
       output = await callback(input);
     } catch (error) {
-      console.error(error);
       this.logger.error(`stream-call-function-error`, { error });
       output = this.structureUnhandledError(input, error);
     }

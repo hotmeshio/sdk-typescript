@@ -111,7 +111,7 @@ export class WorkflowService {
    */
   static proxyActivities<ACT>(options?: ActivityConfig): ProxyType<ACT> {
     if (options.activities) {
-      WorkerService.registerActivities(options.activities)
+      WorkerService.registerActivities(options.activities);
     }
 
     const proxy: any = {};
@@ -143,6 +143,16 @@ export class WorkflowService {
   }
 
   /**
+   * return a handle to the hotmesh client currently running the workflow
+   */
+  static async getHotMesh(): Promise<HotMesh> {
+    const store = asyncLocalStorage.getStore();
+    const workflowTopic = store.get('workflowTopic');
+    const namespace = store.get('namespace');
+    return await WorkerService.getHotMesh(workflowTopic, { namespace });
+  }
+
+  /**
    * those methods that may only be called once must be protected by flagging
    * their execution with a unique key (the key is stored in the HASH alongside
    * process state and job state)
@@ -169,8 +179,11 @@ export class WorkflowService {
    */
   static async signal(signalId: string, data: Record<any, any>): Promise<string> {
     const store = asyncLocalStorage.getStore();
+    const workflowTopic = store.get('workflowTopic');
     const namespace = store.get('namespace');
-    const hotMeshClient = await WorkerService.getHotMesh(`${namespace}.wfs.signal`, { namespace });
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    //todo: this particular one is better patterned as a get/set,
+    //since the receipt is a meaningful string (the stream id)
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'signal')) {
       return await hotMeshClient.hook(`${namespace}.wfs.signal`, { id: signalId, data });
     }
@@ -183,8 +196,9 @@ export class WorkflowService {
    */
   static async hook(options: HookOptions): Promise<string> {
     const store = asyncLocalStorage.getStore();
+    const workflowTopic = store.get('workflowTopic');
     const namespace = store.get('namespace');
-    const hotMeshClient = await WorkerService.getHotMesh(`${namespace}.flow.signal`, { namespace });
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'hook')) {
       const store = asyncLocalStorage.getStore();
       const workflowId = options.workflowId ?? store.get('workflowId');
@@ -220,9 +234,8 @@ export class WorkflowService {
       //if no error is thrown, we've already slept, return the delay
       return seconds;
     } catch (e) {
-      //if an error, the sleep job was not found...rethrow error; sleep job
-      // will be automatically created according to the DAG rules (they
       // spawn a new sleep job if error code 595 is thrown by the worker)
+      // NOTE: If this message shows up in your stack trace, you forgot to await `Durable.workflow.sleep()` in your workflow code.
       throw new DurableSleepError(workflowId, seconds, execIndex, workflowDimension);
     }
   }

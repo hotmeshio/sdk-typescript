@@ -1,6 +1,6 @@
 import { ClientService } from './client';
 import { ConnectionService } from './connection';
-import { MeshDBService } from './meshdb';
+import { RedisOSService } from './redisos';
 import { WorkerService } from './worker';
 import { WorkflowService } from './workflow';
 import { ContextType } from '../../types/durable';
@@ -8,7 +8,7 @@ import { ContextType } from '../../types/durable';
 export const Durable = {
   Client: ClientService,
   Connection: ConnectionService,
-  MeshDB: MeshDBService,
+  RedisOS: RedisOSService,
   Worker: WorkerService,
   workflow: WorkflowService,
 };

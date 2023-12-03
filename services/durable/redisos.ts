@@ -1,0 +1,334 @@
+import { nanoid } from 'nanoid';
+
+import { ClientService as Client } from './client';
+import { WorkflowHandleService } from './handle';
+import { Search } from './search';
+import { WorkerService as Worker } from './worker';
+import { FindOptions, RedisOSActivityOptions, RedisOSOptions, WorkflowSearchOptions } from '../../types/durable';
+import { RedisOptions, RedisClass } from '../../types/redis';
+import { StringAnyType } from '../../types';
+import { Durable } from '.';
+import { asyncLocalStorage } from './asyncLocalStorage';
+import { WorkflowService } from './workflow';
+
+/**
+ * The base class for running Redis OS workflows.
+ * Extend and register subclass methods by name to
+ * execute as durable workflows, backed by Redis.
+ */
+
+export class RedisOSService {
+
+  /**
+   * The top-level Redis isolation. All workflow data is
+   * isolated within this namespace. Values should be
+   * lower-case with no spaces (e.g, 'staging', 'prod', 'test',
+   * 'routing-stagig', 'reporting-prod', etc.). 
+   *  1) only url-safe values are allowed;
+   *  2) the 'a' symbol is reserved by HotMesh for indexing apps
+   */
+  namespace = 'durable';
+
+  /**
+   * Data is routed to workers that specify this task queue.
+   * Setting the task queue when the worker is created will
+   * ensure that the worker only receives messages destined
+   * for the queue. Callers can specify the taskQue to when
+   * starting a job to call those workers.
+   */
+  taskQueue = 'default';
+
+  /**
+   * These methods run as durable workflows
+   */
+  workflowFunctions: Array<RedisOSOptions | string> = ['create'];
+
+  /**
+   * These methods run as hooks (hook into a running workflow)
+   */
+  hookFunctions: Array<RedisOSOptions | string> = [];
+
+  /**
+   * These methods run as proxied activities (and are safely memoized)
+   */
+  proxyFunctions: Array<RedisOSActivityOptions | string> = [];
+
+  /**
+   * The workflow GUID. Workflows will be persisted to
+   * Redis using the pattern hmsh:<namespace>:j:<id>.
+   */
+  id: string;
+
+  /**
+   * The Redis connection options. NOTE: Redis and IORedis
+   * use different formats for their connection config.
+   */
+  redisOptions: RedisOptions = {
+    host: 'localhost',
+    port: 6379,
+    password: '',
+    db: 0,
+  };
+
+  /**
+   * The Redis connection class.
+   * 
+   * @example
+   * import Redis from 'ioredis';
+   * import * as Redis from 'redis';
+   */
+  redisClass: RedisClass;
+
+  /**
+   * Optional model declaration (custom workflow state)
+   */
+  model: StringAnyType;
+
+  /**
+   * Optional configuration for Redis FT search
+   */
+  search: WorkflowSearchOptions;
+
+  static async getHotMeshClient (redisClass: RedisClass, redisOptions: RedisOptions, namespace: string, taskQueue: string) {
+    const client = new Client({
+      connection: {
+        class: redisClass,
+        options: redisOptions,
+      }
+    });
+    return await client.getHotMeshClient(taskQueue, namespace);
+  }
+
+  /**
+   * mints a workflow ID, using the search prefix.
+   * NOTE: The prefix is necesary when indexing
+   *       HASHes when FT search is enabled.
+   * @returns {string}
+   */
+  static mintGuid(): string {
+    const my = new this();
+    return `${my.search?.prefix?.[0]}${nanoid()}}`;
+  }
+
+  /**
+   * Creates an FT search index
+   */
+  static async createIndex() {
+    const my = new this();
+    const hmClient = await RedisOSService.getHotMeshClient(my.redisClass, my.redisOptions, my.namespace, my.taskQueue);
+    Search.configureSearchIndex(hmClient, my.search)
+  }
+
+  /**
+   * Initialize the worker(s) for the entity. This is a static
+   * method that allows for optional task Queue targeting.
+   * NOTE: Allow List may be optionally used to only wrap
+   *       specific methods in this class. 
+   * @param {string} taskQueue 
+   * @param {string[]} allowList 
+   */
+  static async startWorkers(taskQueue?: string, allowList: Array<RedisOSOptions | string> = []) {
+    const my = new this();
+
+    //helper functions
+    const resolveFunctionNames = (arr: any[]) => arr.map(item => typeof item === 'string' ? item : item.name);
+    const belongsTo = (name: string, target: Array<RedisOSOptions | RedisOSActivityOptions | string>): boolean => {
+      const isWorkflow = target.find((item: RedisOSOptions | string) => {
+        return typeof item === 'string' ? item === name : item.name === name;
+      });
+      return isWorkflow !== undefined;
+    };
+
+    // proxy registered activities
+    const proxyFunctionNames = resolveFunctionNames([...my.proxyFunctions]);
+    if (proxyFunctionNames.length) {
+      const proxyActivities = proxyFunctionNames.reduce((acc, funcName) => {
+        let originalMethod = my[funcName];
+        if (typeof originalMethod === 'function') {
+          acc[funcName] = async (...args: any[]) => {
+            return await originalMethod.apply(my, args);
+          }
+        }
+        return acc;
+      }, {});
+      const proxiedActivities = Durable.workflow.proxyActivities({
+        activities: proxyActivities
+      });
+      //WATCH!: unsure if this will pollute the scope; don't think
+      //      so as activity functions are terminal in the chain.
+      Object.assign(my, proxiedActivities);
+    }
+
+    const functionsToIterate = allowList.length ? resolveFunctionNames(allowList) : resolveFunctionNames([...my.workflowFunctions, ...my.hookFunctions]);
+
+    // Iterating through the functions sequentially
+    for (const funcName of functionsToIterate) {
+      const originalMethod = my[funcName];
+      if (typeof originalMethod === 'function') {
+
+        //wrap the function to return
+        const wrappedFunction = {
+          [funcName]: async (...args: any[]) => {
+            const store = asyncLocalStorage.getStore();
+            const workflowId = store.get('workflowId');
+
+            //use a Proxy to wrap hook methods
+            const context = new Proxy(my, {
+              get: (target, prop, receiver) => {
+                if (prop === 'id') {
+                  return workflowId;
+                } else if (typeof target[prop] === 'function') {
+                  return (...args: any[]) => {
+                    return new Promise(async (resolve, reject) => {
+                      if (belongsTo(prop as string, my.hookFunctions)) {
+                        return WorkflowService.hook({
+                          namespace: my.namespace,
+                          taskQueue: my.taskQueue,
+                          workflowName: prop as string,
+                          workflowId,
+                          args,
+                        }).then(resolve).catch(reject);
+                      }
+                      //otherwise, call the method as a standard instance method.
+                      target[prop].apply(this, args).then(resolve).catch(reject);
+                    });
+                  }
+                }
+                return Reflect.get(target, prop, receiver);
+              },
+            });
+            return await originalMethod.apply(context, args);
+          }
+        };
+
+        //start the worker
+        await Worker.create({
+          namespace: my.namespace,
+          connection: {
+            class: my.redisClass,
+            options: my.redisOptions,
+          },
+          taskQueue: taskQueue ?? my.taskQueue,
+          workflow: wrappedFunction,
+        });
+      }
+    }
+  }
+
+  /**
+   * executes the redis FT search query
+   * @example '@_quantity:[89 89]'
+   * @param {any[]} args
+   * @returns {string}
+   */
+  static async find(options: FindOptions, ...args: string[]): Promise<string[] | [number]> {
+    const my = new this();
+    const client = new Client({ connection: {
+      class: my.redisClass,
+      options: my.redisOptions 
+    }});
+    //workflow name is the function name driving the workflow
+    let workflowName: string;
+    if (options?.workflowName) {
+      workflowName = options?.workflowName
+    } else if(my.workflowFunctions?.length) {
+      let target = my.workflowFunctions[0];
+      if (typeof target === 'string') {
+        workflowName = target;
+      } else {
+        workflowName = target.name;
+      }
+    }
+    return await client.workflow.search(
+      options?.taskQueue ?? my.taskQueue,
+      workflowName,
+      my.namespace,
+      my.search.index,
+      ...args,
+    ); //[count, [id, fields[], id, fields[], id, fields[], ...]]
+  }
+
+  /**
+   * returns the workflow handle. The handle can then be
+   * used to query for status, state, custom state, etc.
+   * @param {string} id 
+   * @returns {Promise<WorkflowHandleService>}
+   */
+  static async get(id: string): Promise<WorkflowHandleService> {
+    const my = new this();
+    const client = new Client({ connection: {
+      class: my.redisClass,
+      options: my.redisOptions 
+    }});
+    let workflowName: string;
+    let target = my.workflowFunctions[0];
+    if (typeof target === 'string') {
+      workflowName = target;
+    } else {
+      workflowName = target.name;
+    }
+    return await client.workflow.getHandle(
+      my.taskQueue,
+      workflowName,
+      id,
+      my.namespace,
+    );
+  }
+
+  /**
+   * Optionally include a target taskQueue to exec the
+   * workflow's call on a specific worker queue.
+   */
+  constructor(id?: string, taskQueue?: string) {
+    this.id = id;
+    if (taskQueue) {
+      this.taskQueue = taskQueue;
+    } else if (!id && !taskQueue) {
+      return this;
+    }
+
+    function belongsTo(name: string, target: Array<RedisOSOptions | RedisOSActivityOptions | string>): boolean {
+      const isWorkflow = target.find((item: RedisOSOptions | string) => {
+        return typeof item === 'string' ? item === name : item.name === name;
+      });
+      return isWorkflow !== undefined;
+    }
+
+    return new Proxy(this, {
+      get: (target, prop, receiver) => {
+        if (typeof target[prop] === 'function') {
+          return (...args: any[]) => {
+            return new Promise(async (resolve, reject) => {
+              const client = new Client({ connection: {
+                class: this.redisClass,
+                options: this.redisOptions 
+              }});
+              if (belongsTo(prop as string, this.workflowFunctions)) {
+                //start a new workflow
+                return client.workflow.start({
+                  namespace: this.namespace,
+                  args,
+                  taskQueue: this.taskQueue,
+                  workflowName: prop as string,
+                  workflowId: this.id,
+                }).then(resolve).catch(reject);
+              } else if (belongsTo(prop as string, this.hookFunctions)) {
+                //hook into a running workflow
+                return client.workflow.hook({
+                  namespace: this.namespace,
+                  taskQueue: this.taskQueue,
+                  workflowName: prop as string,
+                  workflowId: this.id,
+                  args,
+                }).then(resolve).catch(reject);
+              }
+              //otherwise, call the method as a standard instance method.
+              target[prop].apply(this, args).then(resolve).catch(reject);
+            });
+          };
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+  }
+}

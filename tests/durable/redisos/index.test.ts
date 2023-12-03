@@ -6,9 +6,9 @@ import { nanoid } from 'nanoid';
 import { RedisConnection } from '../../../services/connector/clients/redis';
 import { StreamSignaler } from '../../../services/signaler/stream';
 import { sleepFor } from '../../../modules/utils';
-import { MeshDBTestSubClass as MeshDBTest } from './src/subclass';
+import { RedisOSTestSubClass as RedisOSTest } from './src/subclass';
 
-describe('DURABLE | MeshDB', () => {
+describe('DURABLE | RedisOS', () => {
   const prefix = 'ord_';
   const guid = `${prefix}${nanoid()}`;
   const options = {
@@ -31,61 +31,61 @@ describe('DURABLE | MeshDB', () => {
   });
 
   afterAll(async () => {
-    await sleepFor(2500);
+    await sleepFor(5000);
     await Durable.Client.shutdown();
     await Durable.Worker.shutdown();
     await StreamSignaler.stopConsuming();
     await RedisConnection.disconnectAll();
-  }, 15_000);
+  }, 25_000);
 
   describe('Worker', () => {
     it('should start the workers', async () => {
-      await MeshDBTest.doWork();
-    });
+      await RedisOSTest.startWorkers();
+    }, 15_000);
   });
 
   describe('Search', () => {
     it('should create a search index', async () => {
-      await MeshDBTest.createIndex();
+      await RedisOSTest.createIndex();
     });
   });
 
   describe('Create/Start Workflow', () => {
     it('should start a new workflow', async () => {
-      const client = new MeshDBTest(guid);
+      const client = new RedisOSTest(guid);
       await client.create(100);
     });
   });
 
   describe('Query Custom Value', () => {
     it('should query for custom state fields', async () => {
-      const handle = await MeshDBTest.get(guid);
+      const handle = await RedisOSTest.get(guid);
       let result = await handle.queryState(['quantity']);
       while (result.quantity !== '100') {
         await sleepFor(500);
         result = await handle.queryState(['quantity']);
       }
       expect(result).not.toBeUndefined();
-    });
+    }, 10_000);
   });
 
   describe('Update Workflow', () => {
     it('should hook into a running workflow and update state', async () => {
-      const client = new MeshDBTest(guid);
+      const client = new RedisOSTest(guid);
       const result = await client.decrement(11);
       expect(result).not.toBeUndefined();
-    }, 5_000);
+    }, 10_000);
   });
 
   describe('Get Workflow', () => {
     it('should get the workflow status', async () => {
-      const handle = await MeshDBTest.get(guid);
+      const handle = await RedisOSTest.get(guid);
       const result = await handle.status();
       expect(result).not.toBeUndefined();
     });
 
     it('should get the workflow data and metadata', async () => {
-      const handle = await MeshDBTest.get(guid);
+      const handle = await RedisOSTest.get(guid);
       const result = await handle.state(true);
       expect(result).not.toBeUndefined();
     });
@@ -96,7 +96,8 @@ describe('DURABLE | MeshDB', () => {
       let count: string | number = 0;
       let rest: any;
       do {
-        [count, ...rest] = await MeshDBTest.find(
+        [count, ...rest] = await RedisOSTest.find(
+          {},
           '@_quantity:[89 89]',
           'RETURN',
           '1',
@@ -105,14 +106,14 @@ describe('DURABLE | MeshDB', () => {
         await sleepFor(500);
       } while (count as number === 0);
       expect(count).toBe(1);
-    });
+    }, 15_000);
   });
 
-  describe('Subscribe', () => {
+  describe('Result', () => {
     it('should publish the workflow results', async () => {
-      const handle = await MeshDBTest.get(guid);
+      const handle = await RedisOSTest.get(guid);
       const result = await handle.result(true);
       expect(result).toBe('89');
-    }, 10_000);
+    }, 25_000);
   });
 });

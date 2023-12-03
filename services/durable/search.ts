@@ -44,7 +44,6 @@ export class Search {
         const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
         await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length.toString(), ...prefixes, 'SCHEMA', ...schema);
       } catch (err) {
-        console.error(err);
         hotMeshClient.engine.logger.info('durable-client-search-err', { err });
       }
     }

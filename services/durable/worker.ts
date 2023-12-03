@@ -72,13 +72,15 @@ export class WorkerService {
       Object.keys(activities).forEach(key => {
         if (activities[key].name && typeof WorkerService.activityRegistry[activities[key].name] !== 'function') {
           WorkerService.activityRegistry[activities[key].name] = (activities as any)[key] as Function;
+        } else if (typeof (activities as any)[key] === 'function') {
+          WorkerService.activityRegistry[key] = (activities as any)[key] as Function;
         }
       });
     }
     return WorkerService.activityRegistry;
   }
 
-  static async create(config: WorkerConfig) {
+  static async create(config: WorkerConfig): Promise<WorkerService> {
     WorkerService.connection = config.connection;
     const workflow = config.workflow;
     const [workflowFunctionName, workflowFunction] = WorkerService.resolveWorkflowTarget(workflow);
@@ -95,16 +97,17 @@ export class WorkerService {
     return worker;
   }
 
-  static resolveWorkflowTarget(workflow: object | Function): [string, Function] {
+  static resolveWorkflowTarget(workflow: object | Function, name?: string): [string, Function] {
     let workflowFunction: Function;
     if (typeof workflow === 'function') {
       workflowFunction = workflow;
+      return [workflowFunction.name ?? name, workflowFunction];
     } else {
       const workflowFunctionNames = Object.keys(workflow);
-      workflowFunction = workflow[workflowFunctionNames[workflowFunctionNames.length - 1]];
-      return WorkerService.resolveWorkflowTarget(workflowFunction);
+      const lastFunctionName = workflowFunctionNames[workflowFunctionNames.length - 1];
+      workflowFunction = workflow[lastFunctionName];
+      return WorkerService.resolveWorkflowTarget(workflowFunction, lastFunctionName);
     }
-    return [workflowFunction.name, workflowFunction];
   }
 
   async run() {

@@ -10,7 +10,7 @@ type WorkflowConfig = {
 type WorkflowSearchOptions = {
   index?: string;         //FT index name (myapp:myindex)
   prefix?: string[];      //FT prefixes (['myapp:myindex:prefix1', 'myapp:myindex:prefix2'])
-  schema?: Record<string, {type: 'TEXT' | 'NUMERIC' | 'TAG', sortable: boolean}>;
+  schema?: Record<string, {type: 'TEXT' | 'NUMERIC' | 'TAG', sortable?: boolean}>;
   data?: Record<string, string>;
 }
 
@@ -57,14 +57,14 @@ type WorkflowDataType = {
   workflowTopic: string;
 }
 
-type MeshDBClassConfig = {
+type RedisOSClassConfig = {
   namespace: string;
   taskQueue: string;
   redisOptions: RedisOptions;
   redisClass: RedisClass;
 }
 
-type MeshDBConfig = {
+type RedisOSConfig = {
   taskQueue?: string;
   index?: {
     index: string;
@@ -91,9 +91,26 @@ type WorkerConfig = {
   connection: Connection;
   namespace?: string; //`appid` in the YAML (e.g, 'default')
   taskQueue: string; //`subscribes` in the YAML (e.g, 'hello-world')
-  workflow: Function; //target function to run
+  workflow: Function | Record<string | symbol, Function>; //target function to run
   options?: WorkerOptions;
   search?: WorkflowSearchOptions;
+}
+
+type FindOptions = {
+  workflowName?: string; //also the function name
+  taskQueue?: string;
+  namespace?: string;
+  index?: string;        //the FT search index name
+}
+
+type RedisOSOptions = {
+  name: string;
+  options: WorkerOptions;
+}
+
+type RedisOSActivityOptions = {
+  name: string;
+  options: ActivityConfig;
 }
 
 type WorkerOptions = {
@@ -133,9 +150,12 @@ export {
   ProxyType,
   Registry,
   SignalOptions,
+  FindOptions,
   HookOptions,
-  MeshDBClassConfig,
-  MeshDBConfig,
+  RedisOSActivityOptions,
+  RedisOSClassConfig,
+  RedisOSConfig,
+  RedisOSOptions,
   WorkerConfig,
   WorkflowConfig,
   WorkerOptions,

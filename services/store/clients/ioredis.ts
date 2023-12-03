@@ -5,7 +5,6 @@ import { Cache } from '../cache';
 import { StoreService } from '../index';
 import { RedisClientType, RedisMultiType } from '../../../types/ioredisclient';
 import { ReclaimedMessageType } from '../../../types/stream';
-import { type } from 'os';
 
 class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
   redisClient: RedisClientType;
@@ -60,14 +59,14 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
       try {
         return (await this.redisClient.xgroup(command, key, groupName, id, mkStream)) === 'OK';
       } catch (err) {
-        this.logger.info(`Consumer group not created with MKSTREAM for key: ${key} and group: ${groupName}`);
+        this.logger.debug(`Consumer group not created with MKSTREAM for key: ${key} and group: ${groupName}`);
         throw err;
       }
     } else {
       try {
         return (await this.redisClient.xgroup(command, key, groupName, id)) === 'OK';
       } catch (err) {
-        this.logger.info(`Consumer group not created for key: ${key} and group: ${groupName}`);
+        this.logger.debug(`Consumer group not created for key: ${key} and group: ${groupName}`);
         throw err;
       }
     }

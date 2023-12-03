@@ -39,10 +39,8 @@ export class WorkflowHandleService {
         throw new Error(JSON.parse(state.metadata.err));
       }
       if (state?.data?.done) {
-        //child flows are never technically 'done' as they have an open hook
-        //that is tied to the parent flow's completion. so, we need to check
-        //the 'done' flag on the child flow's payload (not the 'js' metadata field
-        //which is typically used); the `loadState` parameter triggers this
+        //child flows are never 'done'; they use a hook
+        //that only closes upon parent flow completion.
         return state.data.response;
       }
     }
