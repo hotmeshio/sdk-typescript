@@ -1,26 +1,14 @@
-import { Durable } from '../../../../services/durable';
+import { MeshOSTest } from './meshostest';
 import { WorkflowSearchOptions } from '../../../../types/durable';
-import { RedisOSTest } from './redisostest';
 
-export class RedisOSTestSubClass extends RedisOSTest {
+export class MyClass extends MeshOSTest {
 
   namespace = 'staging';
-  taskQueue = 'inventory'; //OR inventory-priority
+  //taskQueue = 'priority'; //a worker with this taskQueue will service
 
-  workflowFunctions = ['create'];
+  workflowFunctions = ['create', 'stringDoubler'];
   hookFunctions = ['decrement', 'updateStatus'];
   proxyFunctions = ['greet'];
-  
-  model = {
-    quantity: {type: 'numeric', indexed: true, sortable: true},
-    status: {type: 'tag', indexed: true, items: [
-      'ordered',
-      'cancelled',
-      'shipped',
-      'delivered',
-      'depleted'
-    ]},
-  };
 
   search: WorkflowSearchOptions = {
     index: 'inventory-orders',
@@ -42,7 +30,7 @@ export class RedisOSTestSubClass extends RedisOSTest {
    */
   async create(val: number): Promise<string> {
     //set a custom value that's indexed / searchable
-    const search = await Durable.workflow.search();
+    const search = await MyClass.MeshOS.search();
     await search.set('quantity', val.toString()); //100
 
     //call both a proxied activity and a vanilla activity
@@ -51,14 +39,14 @@ export class RedisOSTestSubClass extends RedisOSTest {
     console.log(greeting, salud);
 
     //sleep for 1 second (or week, or year, or whatever)
-    await Durable.workflow.sleep('1 second');
+    await MyClass.MeshOS.sleep('1 second');
 
     const receipt = await this.updateStatus('ordered', val);
     console.log('updateStatus receipt=>', receipt);
 
     //wait for the hook method to finish and signal completion
     console.log('waiting for signal!!!');
-    const [hookResult] = await Durable.workflow.waitForSignal(['abc']);
+    const [hookResult] = await MyClass.MeshOS.waitForSignal(['abc']);
     console.log('wait for signal result=>', hookResult);
 
     return await search.get('quantity'); //89
@@ -71,7 +59,7 @@ export class RedisOSTestSubClass extends RedisOSTest {
     //update the workflow status
     console.log('updating status to=>', status, Date.now());
 
-    const search = await Durable.workflow.search();
+    const search = await MyClass.MeshOS.search();
     const current = await search.get('status');
     await search.set('status', status);
 
@@ -81,16 +69,10 @@ export class RedisOSTestSubClass extends RedisOSTest {
       await search.set('quantity', quantity.toString());
     }
 
-    await Durable.workflow.sleep('2 seconds');
+    await MyClass.MeshOS.sleep('2 seconds');
 
     console.log('sending the abc signal');
-    //NOTE: this test is non-deterministic: signals can fire so
-    //      quickly that the subscriber (the method containing
-    //      the 'waitForSignal' call) can miss the signal.
-    //      If timing is absolutely critical, and the main thread
-    //      needs to pause and await a response call
-    //      `await Durable.workflow.executeChild()` instead.
-    await Durable.workflow.signal('abc', { status, quantity });
+    await MyClass.MeshOS.signal('abc', { status, quantity });
   }
 
   /**
@@ -98,7 +80,7 @@ export class RedisOSTestSubClass extends RedisOSTest {
    */
   async decrement(val: number): Promise<void> {
     //update a custom value that's indexed / searchable
-    const search = await Durable.workflow.search();
+    const search = await MyClass.MeshOS.search();
     await search.incr('quantity', -val); //subtract 11
 
     //call another hook method if quantity is 0
@@ -121,5 +103,12 @@ export class RedisOSTestSubClass extends RedisOSTest {
   async saludar(name: string): Promise<string> {
     console.log('calling saludar with input=>', name);
     return `Hola ${name}!`;
+  }
+
+  /**
+   * test awaiting a result
+   */
+  async stringDoubler(a: string): Promise<string> {
+    return `${a}${a}`;
   }
 }

@@ -4,7 +4,7 @@ import { ClientService as Client } from './client';
 import { WorkflowHandleService } from './handle';
 import { Search } from './search';
 import { WorkerService as Worker } from './worker';
-import { FindOptions, RedisOSActivityOptions, RedisOSOptions, WorkflowSearchOptions } from '../../types/durable';
+import { FindOptions, MeshOSActivityOptions, MeshOSOptions, WorkflowSearchOptions } from '../../types/durable';
 import { RedisOptions, RedisClass } from '../../types/redis';
 import { StringAnyType } from '../../types';
 import { Durable } from '.';
@@ -12,12 +12,12 @@ import { asyncLocalStorage } from './asyncLocalStorage';
 import { WorkflowService } from './workflow';
 
 /**
- * The base class for running Redis OS workflows.
+ * The base class for running MeshOS workflows.
  * Extend and register subclass methods by name to
  * execute as durable workflows, backed by Redis.
  */
 
-export class RedisOSService {
+export class MeshOSService {
 
   /**
    * The top-level Redis isolation. All workflow data is
@@ -41,17 +41,17 @@ export class RedisOSService {
   /**
    * These methods run as durable workflows
    */
-  workflowFunctions: Array<RedisOSOptions | string> = ['create'];
+  workflowFunctions: Array<MeshOSOptions | string> = [];
 
   /**
    * These methods run as hooks (hook into a running workflow)
    */
-  hookFunctions: Array<RedisOSOptions | string> = [];
+  hookFunctions: Array<MeshOSOptions | string> = [];
 
   /**
    * These methods run as proxied activities (and are safely memoized)
    */
-  proxyFunctions: Array<RedisOSActivityOptions | string> = [];
+  proxyFunctions: Array<MeshOSActivityOptions | string> = [];
 
   /**
    * The workflow GUID. Workflows will be persisted to
@@ -89,6 +89,8 @@ export class RedisOSService {
    */
   search: WorkflowSearchOptions;
 
+  static MeshOS = WorkflowService
+
   static async getHotMeshClient (redisClass: RedisClass, redisOptions: RedisOptions, namespace: string, taskQueue: string) {
     const client = new Client({
       connection: {
@@ -115,7 +117,7 @@ export class RedisOSService {
    */
   static async createIndex() {
     const my = new this();
-    const hmClient = await RedisOSService.getHotMeshClient(my.redisClass, my.redisOptions, my.namespace, my.taskQueue);
+    const hmClient = await MeshOSService.getHotMeshClient(my.redisClass, my.redisOptions, my.namespace, my.taskQueue);
     Search.configureSearchIndex(hmClient, my.search)
   }
 
@@ -127,13 +129,13 @@ export class RedisOSService {
    * @param {string} taskQueue 
    * @param {string[]} allowList 
    */
-  static async startWorkers(taskQueue?: string, allowList: Array<RedisOSOptions | string> = []) {
+  static async startWorkers(taskQueue?: string, allowList: Array<MeshOSOptions | string> = []) {
     const my = new this();
 
     //helper functions
     const resolveFunctionNames = (arr: any[]) => arr.map(item => typeof item === 'string' ? item : item.name);
-    const belongsTo = (name: string, target: Array<RedisOSOptions | RedisOSActivityOptions | string>): boolean => {
-      const isWorkflow = target.find((item: RedisOSOptions | string) => {
+    const belongsTo = (name: string, target: Array<MeshOSOptions | MeshOSActivityOptions | string>): boolean => {
+      const isWorkflow = target.find((item: MeshOSOptions | string) => {
         return typeof item === 'string' ? item === name : item.name === name;
       });
       return isWorkflow !== undefined;
@@ -279,16 +281,16 @@ export class RedisOSService {
    * Optionally include a target taskQueue to exec the
    * workflow's call on a specific worker queue.
    */
-  constructor(id?: string, taskQueue?: string) {
+  constructor(id?: string, options?: Record<string, any>) {
     this.id = id;
-    if (taskQueue) {
-      this.taskQueue = taskQueue;
-    } else if (!id && !taskQueue) {
+    if (options?.taskQueue) {
+      this.taskQueue = options.taskQueue;
+    } else if (!id && !options?.taskQueue) {
       return this;
     }
 
-    function belongsTo(name: string, target: Array<RedisOSOptions | RedisOSActivityOptions | string>): boolean {
-      const isWorkflow = target.find((item: RedisOSOptions | string) => {
+    function belongsTo(name: string, target: Array<MeshOSOptions | MeshOSActivityOptions | string>): boolean {
+      const isWorkflow = target.find((item: MeshOSOptions | string) => {
         return typeof item === 'string' ? item === name : item.name === name;
       });
       return isWorkflow !== undefined;
@@ -305,13 +307,21 @@ export class RedisOSService {
               }});
               if (belongsTo(prop as string, this.workflowFunctions)) {
                 //start a new workflow
-                return client.workflow.start({
+                const handle = await client.workflow.start({
                   namespace: this.namespace,
                   args,
                   taskQueue: this.taskQueue,
                   workflowName: prop as string,
                   workflowId: this.id,
-                }).then(resolve).catch(reject);
+                });
+                if (options?.await) {
+                  //wait for the workflow to complete
+                  const result = await handle.result();
+                  return resolve(result);
+                } else {
+                  //return the workflow handle
+                  return resolve(handle);
+                }
               } else if (belongsTo(prop as string, this.hookFunctions)) {
                 //hook into a running workflow
                 return client.workflow.hook({

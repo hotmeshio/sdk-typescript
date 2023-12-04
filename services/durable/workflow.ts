@@ -37,7 +37,7 @@ export class WorkflowService {
     //this is risky but MUST be allowed. Users MAY set the workflowId,
     //but if there is a naming collision, the data from the target entity will be used
     //as there is know way of knowing if the item was generated via a prior run of the workflow
-    const childJobId = options.workflowId ?? `${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
+    const childJobId = options.workflowId ?? `-${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
     const parentWorkflowId = `${workflowId}-f`;
 
     const client = new Client({
@@ -80,7 +80,7 @@ export class WorkflowService {
     const workflowSpan = store.get('workflowSpan');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const childJobId = options.workflowId ?? `${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
+    const childJobId = options.workflowId ?? `-${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
     const parentWorkflowId = `${workflowId}-f`;
     const workflowTopic = `${options.taskQueue}-${options.workflowName}`;
 
@@ -226,7 +226,7 @@ export class WorkflowService {
     const workflowTopic = store.get('workflowTopic');
     const workflowDimension = store.get('workflowDimension') ?? '';
     const namespace = store.get('namespace');
-    const sleepJobId = `${workflowId}-$sleep${workflowDimension}-${execIndex}`;
+    const sleepJobId = `-${workflowId}-$sleep${workflowDimension}-${execIndex}`;
 
     try {
       const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
@@ -255,7 +255,7 @@ export class WorkflowService {
     const signalResults: any[] = [];
     for (const signal of signals) {
       const execIndex = COUNTER.counter = COUNTER.counter + 1;
-      const wfsJobId = `${workflowId}-$wfs${workflowDimension}-${execIndex}`;
+      const wfsJobId = `-${workflowId}-$wfs${workflowDimension}-${execIndex}`;
       try {
         if (allAreComplete) {
           const state = await hotMeshClient.getState(`${hotMeshClient.appId}.wfs.execute`, wfsJobId);
@@ -302,7 +302,7 @@ export class WorkflowService {
       const spn = store.get('workflowSpan');
       const namespace = store.get('namespace');
       const activityTopic = `${workflowTopic}-activity`;
-      const activityJobId = `${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
+      const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
 
       let activityState: JobOutput
       try {

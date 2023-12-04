@@ -6,9 +6,9 @@ import { nanoid } from 'nanoid';
 import { RedisConnection } from '../../../services/connector/clients/redis';
 import { StreamSignaler } from '../../../services/signaler/stream';
 import { sleepFor } from '../../../modules/utils';
-import { RedisOSTestSubClass as RedisOSTest } from './src/subclass';
+import { MyClass as MeshOSTest } from './src/subclass';
 
-describe('DURABLE | RedisOS', () => {
+describe('DURABLE | MeshOS', () => {
   const prefix = 'ord_';
   const guid = `${prefix}${nanoid()}`;
   const options = {
@@ -40,26 +40,35 @@ describe('DURABLE | RedisOS', () => {
 
   describe('Worker', () => {
     it('should start the workers', async () => {
-      await RedisOSTest.startWorkers();
+      await MeshOSTest.startWorkers();
     }, 15_000);
   });
 
   describe('Search', () => {
     it('should create a search index', async () => {
-      await RedisOSTest.createIndex();
+      await MeshOSTest.createIndex();
     });
   });
 
-  describe('Create/Start Workflow', () => {
+  describe('Create/Start a Workflow and await the result', () => {
+    it('should start a new workflow and await', async () => {
+      const client = new MeshOSTest(nanoid(), { await: true });
+      const doubled = await client.stringDoubler('hello');
+      expect(doubled).toBe('hellohello');
+    });
+  });
+
+  describe('Create/Start a Workflow and return the workflow handle', () => {
     it('should start a new workflow', async () => {
-      const client = new RedisOSTest(guid);
-      await client.create(100);
+      const client = new MeshOSTest(guid);
+      const handle = await client.create(100);
+      expect(handle).not.toBeUndefined();
     });
   });
 
   describe('Query Custom Value', () => {
     it('should query for custom state fields', async () => {
-      const handle = await RedisOSTest.get(guid);
+      const handle = await MeshOSTest.get(guid);
       let result = await handle.queryState(['quantity']);
       while (result.quantity !== '100') {
         await sleepFor(500);
@@ -71,7 +80,7 @@ describe('DURABLE | RedisOS', () => {
 
   describe('Update Workflow', () => {
     it('should hook into a running workflow and update state', async () => {
-      const client = new RedisOSTest(guid);
+      const client = new MeshOSTest(guid);
       const result = await client.decrement(11);
       expect(result).not.toBeUndefined();
     }, 10_000);
@@ -79,13 +88,13 @@ describe('DURABLE | RedisOS', () => {
 
   describe('Get Workflow', () => {
     it('should get the workflow status', async () => {
-      const handle = await RedisOSTest.get(guid);
+      const handle = await MeshOSTest.get(guid);
       const result = await handle.status();
       expect(result).not.toBeUndefined();
     });
 
     it('should get the workflow data and metadata', async () => {
-      const handle = await RedisOSTest.get(guid);
+      const handle = await MeshOSTest.get(guid);
       const result = await handle.state(true);
       expect(result).not.toBeUndefined();
     });
@@ -96,7 +105,7 @@ describe('DURABLE | RedisOS', () => {
       let count: string | number = 0;
       let rest: any;
       do {
-        [count, ...rest] = await RedisOSTest.find(
+        [count, ...rest] = await MeshOSTest.find(
           {},
           '@_quantity:[89 89]',
           'RETURN',
@@ -111,7 +120,7 @@ describe('DURABLE | RedisOS', () => {
 
   describe('Result', () => {
     it('should publish the workflow results', async () => {
-      const handle = await RedisOSTest.get(guid);
+      const handle = await MeshOSTest.get(guid);
       const result = await handle.result(true);
       expect(result).toBe('89');
     }, 25_000);

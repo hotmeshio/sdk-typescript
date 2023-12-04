@@ -264,11 +264,11 @@ const getWorkflowYAML = (app: string, version: string) => {
                   - ['{@string.concat}']
               cycleWorkflowId:
                 '@pipe':
-                  - ['{$job.metadata.jid}', '-$wfc', '{sig.output.metadata.dad}', '-', '{sigw1.output.data.index}']
+                  - ['-', '{$job.metadata.jid}', '-$wfc', '{sig.output.metadata.dad}', '-', '{sigw1.output.data.index}']
                   - ['{@string.concat}']
               baseWorkflowId:
                 '@pipe':
-                  - ['{$job.metadata.jid}', '-$wfs', '{sig.output.metadata.dad}', '-']
+                  - ['-', '{$job.metadata.jid}', '-$wfs', '{sig.output.metadata.dad}', '-']
                   - ['{@string.concat}']
           output:
             schema:
@@ -312,7 +312,7 @@ const getWorkflowYAML = (app: string, version: string) => {
                   - ['{@string.concat}']
               workflowId:
                 '@pipe':
-                  - ['{$job.metadata.jid}', '-$sleep', '{sig.output.metadata.dad}', '-', '{sigw1.output.data.index}']
+                  - ['-', '{$job.metadata.jid}', '-$sleep', '{sig.output.metadata.dad}', '-', '{sigw1.output.data.index}']
                   - ['{@string.concat}']
           output:
             schema:
@@ -382,11 +382,11 @@ const getWorkflowYAML = (app: string, version: string) => {
                   - ['{@string.concat}']
               cycleWorkflowId:
                 '@pipe':
-                  - ['{$job.metadata.jid}', '-$wfc-', '{w1.output.data.index}']
+                  - ['-', '{$job.metadata.jid}', '-$wfc-', '{w1.output.data.index}']
                   - ['{@string.concat}']
               baseWorkflowId:
                 '@pipe':
-                  - ['{$job.metadata.jid}', '-$wfs-']
+                  - ['-', '{$job.metadata.jid}', '-$wfs-']
                   - ['{@string.concat}']
           output:
             schema:
@@ -430,7 +430,7 @@ const getWorkflowYAML = (app: string, version: string) => {
                   - ['{@string.concat}']
               workflowId:
                 '@pipe':
-                  - ['{$job.metadata.jid}', '-$sleep-', '{w1.output.data.index}']
+                  - ['-', '{$job.metadata.jid}', '-$sleep-', '{w1.output.data.index}']
                   - ['{@string.concat}']
           output:
             schema:

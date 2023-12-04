@@ -1,12 +1,10 @@
 import * as Redis from 'redis';
 
 import config from '../../../$setup/config'
-import { Durable } from '../../../../services/durable';
+import { MeshOS } from '../../../../index'
 
-export class RedisOSTest extends Durable.RedisOS {
-
+export class MeshOSTest extends MeshOS {
   redisClass = Redis;
-
   redisOptions = {
     socket: {
       host: config.REDIS_HOST,

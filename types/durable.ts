@@ -57,14 +57,14 @@ type WorkflowDataType = {
   workflowTopic: string;
 }
 
-type RedisOSClassConfig = {
+type MeshOSClassConfig = {
   namespace: string;
   taskQueue: string;
   redisOptions: RedisOptions;
   redisClass: RedisClass;
 }
 
-type RedisOSConfig = {
+type MeshOSConfig = {
   taskQueue?: string;
   index?: {
     index: string;
@@ -103,12 +103,12 @@ type FindOptions = {
   index?: string;        //the FT search index name
 }
 
-type RedisOSOptions = {
+type MeshOSOptions = {
   name: string;
   options: WorkerOptions;
 }
 
-type RedisOSActivityOptions = {
+type MeshOSActivityOptions = {
   name: string;
   options: ActivityConfig;
 }
@@ -152,10 +152,10 @@ export {
   SignalOptions,
   FindOptions,
   HookOptions,
-  RedisOSActivityOptions,
-  RedisOSClassConfig,
-  RedisOSConfig,
-  RedisOSOptions,
+  MeshOSActivityOptions,
+  MeshOSClassConfig,
+  MeshOSConfig,
+  MeshOSOptions,
   WorkerConfig,
   WorkflowConfig,
   WorkerOptions,
