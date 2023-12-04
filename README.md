@@ -3,6 +3,13 @@
 
 Elevate Redis from an in-memory data cache to a game-changing [service mesh](./docs/faq.md#what-is-hotmesh). Turn your unpredictable functions into unbreakable workflows.
 
+## What is HotMesh?
+HotMesh is a wrapper for Redis that exposes a higher level set of domain constructs like ‘activities’, ‘workflows’, 'jobs', etc. Behind the scenes, it uses *Redis Data* (Hash, ZSet, and List); *Redis Streams* (XReadGroup, XAdd, XLen); and *Redis Publish/Subscribe*.
+
+The ultimate goal is to resurface Redis as a *Durable Service Mesh*, capable of running unbreakable workflows that span your microservices. The technical term for this type of durability is *Reentrant Process Engine*.
+
+It's still Redis in the background, but the information flow is fundamentally different. Your functions no longer call Redis (e.g., to cache a document) and instead are called by Redis.
+
 ## Install
 [![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
 
@@ -11,92 +18,84 @@ npm install @hotmeshio/hotmesh
 ```
 
 ## Design
-The HotMesh SDK is designed to keep your code front-and-center. Write functions as you normally would, then use HotMesh to make them durable.
+The HotMesh SDK is designed to keep your code front-and-center. Write code as you normally would, then use HotMesh to make it durable.
 
-1. Start by defining **activities**. Activities can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise. *Note how the `saludar` example throws an error 50% of the time. It doesn't matter how unpredictable your functions are, HotMesh will retry as necessary until they succeed.*
+1. Start with any ordinary class. Pay attention to unpredictable functions: those that execute slowly, cause problems at scale, or simply fail to return. *Note how the `saludar` function throws an error 50% of the time. This is exactly the type of function to fix.*
     ```javascript
-    //activities.ts
+    //myworkflow.ts
 
-    export async function greet(name: string): Promise<string> {
-      return `Hello, ${name}!`;
-    }
+    export class MyWorkflow {
 
-    export async function saludar(nombre: string): Promise<string> {
-      if (Math.random() > 0.5) throw new Error('Random error');
-      return `¡Hola, ${nombre}!`;
-    }
-    ```
-2. Define your **workflow** logic. Include conditional branching, loops, etc to control activity execution. It's vanilla code written in your own coding style. The only requirement is to use `proxyActivities`, ensuring your activities are executed with HotMesh's durability guarantee.
-    ```javascript
-    //workflows.ts
+      //main method
+      async run(name: string): Promise<string> {
+        const salud = await this.saludar(name);
+        const hello = await this.greet(name);
+        return `${hello} ${salud}`;
+      }
 
-    import { Durable } from '@hotmeshio/hotmesh';
-    import * as activities from './activities';
+      //this function only succeeds 50% of the time!
+      async saludar(nombre: string): Promise<string> {
+        if (Math.random() < 0.5) {
+          throw new Error('¡No hablo español!');
+        }
+        return `¡Hola, ${nombre}!`;
+      }
 
-    const { greet, saludar } = Durable.workflow
-      .proxyActivities<typeof activities>({
-        activities
-      });
-
-    export async function example(name: string, lang: string): Promise<string> {
-      if (lang === 'es') {
-        return await saludar(name);
-      } else {
-        return await greet(name);
+      //this function always succeeds
+      async greet(name: string): Promise<string> {
+        return `Hello, ${name}!`;
       }
     }
     ```
-
-3. Although you could call your workflow directly (it's just a vanilla function), it's only durable when invoked and orchestrated via HotMesh.
+2. Import `MeshOS` and subclass it as shown. Configure `host`, `port`, etc., and list those functions that should run durably like `run` and `saludar`. Your class is now a durable workflow! *Additional methods include `waitForSignal`, `signal`, `hook`, `sleep` (months, years, etc), `executeChild`, `startChild`, `get`, `set`, `incr` (increment), and `mult` (multiply).*
     ```javascript
-    //client.ts
+    //myworkflow.ts
 
-    import { Durable } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
-    import { nanoid } from 'nanoid';
+    import { MeshOS } from '@hotmeshio/hotmesh';
 
-    async function run(): Promise<string> {
-      const client = new Durable.Client({
-        connection: {
-          class: Redis,
-          options: { host: 'localhost', port: 6379 }
+    export class MyWorkflow extends MeshOS {
+
+      redisClass = Redis;
+      redisOptions = { host: 'localhost', port: 6379 };
+
+      //list functions to run as durable workflows
+      workflowFunctions = ['run'];
+
+      //list functions to retry and cache
+      proxyFunctions = ['saludar'];
+
+      //main method (Redis will now govern its execution)
+      async run(name: string): Promise<string> {
+        const salud = await this.saludar(name);
+        const hello = await this.greet(name);
+        return `${hello} ${salud}`;
+      }
+
+      //this function will now be retried until it succeeds;
+      async saludar(nombre: string): Promise<string> {
+        if (Math.random() < 0.5) {
+          throw new Error('¡No hablo español!');
         }
-      });
+        return `¡Hola, ${nombre}!`;
+      }
 
-      const handle = await client.workflow.start({
-        args: ['HotMesh', 'es'],
-        taskQueue: 'hello-world',
-        workflowName: 'example',
-        workflowId: nanoid()
-      });
-
-      return await handle.result();
-      //returns '¡Hola, HotMesh!'
+      //this vanilla function is unchanged
+      async greet(name: string): Promise<string> {
+        return `Hello, ${name}!`;
+      }
     }
     ```
-
-4. Finally, create a **worker** and link your workflow function. Workers listen for tasks on their assigned Redis stream and invoke your workflow function each time they receive an event.
+3. Invoke your class, providing a unique GUID (it's now a workflow and it's idempotent). Nothing changes from the outside, *but Redis now governs its end-to-end execution.* It's guaranteed to succeed and return regardless of catastrophic network failure. Redis will simply inflate like a balloon and deflate as things come back online.
     ```javascript
-    //worker.ts
+    //mycaller.ts
 
-    import { Durable } from '@hotmeshio/hotmesh';
-    import Redis from 'ioredis';
-    import * as workflows from './workflows';
+    //...import MyWorkflow, etc...
 
-    async function run() {
-      const worker = await Durable.Worker.create({
-        connection: {
-          class: Redis,
-          options: { host: 'localhost', port: 6379 },
-        },
-        taskQueue: 'hello-world',
-        workflow: workflows.example,
-      });
-      await worker.run();
-    }
+    const workflow = new MyWorkflow('unique123', { await: true }); //await the response
+    const response = await workflow.run('John');
+    //Hello, John! ¡Hola, John!
     ```
-
->HotMesh delivers durable workflows without the cost and complexity of a centralized service mesh. Refer to the [samples-typescript](https://github.com/hotmeshio/samples-typescript) Git Repo for a range of examples, including compositional workflows (where one workflow calls another) and remote execution (where calls are brokered across microservices).
 
 ## Advanced Design
 HotMesh's TypeScript SDK is the easiest way to make your functions durable. But if you need full control over your function lifecycles (including high-volume, high-speed use cases), you can use HotMesh's underlying YAML models to optimize your durable workflows. The following model depicts a sequence of activities orchestrated by HotMesh. Any function you associate with a `topic` in your YAML definition is guaranteed to be durable.
