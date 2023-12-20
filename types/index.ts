@@ -40,6 +40,7 @@ export {
     FindOptions,
     HookOptions,
     MeshOSActivityOptions,
+    MeshOSWorkerOptions,
     MeshOSClassConfig,
     MeshOSConfig,
     MeshOSOptions,
@@ -49,7 +50,7 @@ export {
     WorkflowSearchOptions,
     WorkflowDataType,
     WorkflowOptions,
-  }from './durable'
+  } from './durable'
 export {
   HookCondition,
   HookConditions,
