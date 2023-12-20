@@ -21,7 +21,7 @@ class RedisSubService extends SubService<RedisClientType, RedisMultiType> {
   }
 
   getMulti(): RedisMultiType {
-    const multi = this.redisClient.MULTI();
+    const multi = this.redisClient.multi();
     return multi as unknown as RedisMultiType;
   }
 

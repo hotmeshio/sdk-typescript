@@ -46,8 +46,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
   }
 
   getMulti(): RedisMultiType {
-    const multi = this.redisClient.MULTI();
-    return multi as unknown as RedisMultiType;
+    return this.redisClient.multi() as unknown as RedisMultiType;
   }
 
   async exec(...args: any[]): Promise<string|string[]|string[][]> {

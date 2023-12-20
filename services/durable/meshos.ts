@@ -1,20 +1,27 @@
 import { nanoid } from 'nanoid';
 
+import { Durable } from '.';
+import { asyncLocalStorage } from './asyncLocalStorage';
 import { ClientService as Client } from './client';
 import { WorkflowHandleService } from './handle';
 import { Search } from './search';
 import { WorkerService as Worker } from './worker';
-import { FindOptions, MeshOSActivityOptions, MeshOSOptions, WorkflowSearchOptions } from '../../types/durable';
-import { RedisOptions, RedisClass } from '../../types/redis';
-import { StringAnyType } from '../../types';
-import { Durable } from '.';
-import { asyncLocalStorage } from './asyncLocalStorage';
 import { WorkflowService } from './workflow';
+import { StreamSignaler } from '../signaler/stream';
+import {
+  FindOptions,
+  MeshOSActivityOptions,
+  MeshOSConfig,
+  MeshOSOptions,
+  MeshOSWorkerOptions,
+  WorkflowSearchOptions } from '../../types/durable';
+import { RedisOptions, RedisClass } from '../../types/redis';
+import { StringAnyType } from '../../types/serializer';
 
 /**
  * The base class for running MeshOS workflows.
- * Extend and register subclass methods by name to
- * execute as durable workflows, backed by Redis.
+ * Extend this class, add your Redis config, and add functions to
+ * execute as durable `hooks`, `workflows`, and `activities`.
  */
 
 export class MeshOSService {
@@ -122,14 +129,25 @@ export class MeshOSService {
   }
 
   /**
-   * Initialize the worker(s) for the entity. This is a static
-   * method that allows for optional task Queue targeting.
-   * NOTE: Allow List may be optionally used to only wrap
-   *       specific methods in this class. 
-   * @param {string} taskQueue 
-   * @param {string[]} allowList 
+   * stop the workers
+   * @returns {Promise<void>}
    */
-  static async startWorkers(taskQueue?: string, allowList: Array<MeshOSOptions | string> = []) {
+  static async stopWorkers(): Promise<void> {
+    await Durable.Client.shutdown();
+    await Durable.Worker.shutdown();
+    await StreamSignaler.stopConsuming();
+  }
+
+  /**
+   * Initializes the worker(s). This is a static
+   * method that allows for optional task Queue targeting.
+   * An `allowList` may be optionally provided to start
+   * specific `worker` and `hook` methods. 
+   * @param {MeshOSWorkerOptions} [options]
+   */
+  static async startWorkers(options?: MeshOSWorkerOptions) {
+    const taskQueue = options && options.taskQueue;
+    const allowList = options && options.allowList || [];
     const my = new this();
 
     //helper functions
@@ -156,8 +174,6 @@ export class MeshOSService {
       const proxiedActivities = Durable.workflow.proxyActivities({
         activities: proxyActivities
       });
-      //WATCH!: unsure if this will pollute the scope; don't think
-      //      so as activity functions are terminal in the chain.
       Object.assign(my, proxiedActivities);
     }
 
@@ -281,8 +297,14 @@ export class MeshOSService {
    * Optionally include a target taskQueue to exec the
    * workflow's call on a specific worker queue.
    */
-  constructor(id?: string, options?: Record<string, any>) {
-    this.id = id;
+  constructor(id?: string | MeshOSConfig, options?: MeshOSConfig) {
+    if (typeof(id) === 'string') {
+      this.id = id;
+    } else if (id?.id) {
+      this.id = id.id;
+      options = id;
+      id = undefined;
+    };
     if (options?.taskQueue) {
       this.taskQueue = options.taskQueue;
     } else if (!id && !options?.taskQueue) {

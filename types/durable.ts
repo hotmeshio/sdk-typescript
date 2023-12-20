@@ -65,12 +65,9 @@ type MeshOSClassConfig = {
 }
 
 type MeshOSConfig = {
-  taskQueue?: string;
-  index?: {
-    index: string;
-    prefix: string[];
-    schema: Record<string, {type: 'TEXT' | 'NUMERIC' | 'TAG', sortable: boolean}>;
-  };
+  id?: string; //guid for the workflow when instancing
+  await?: boolean; //default is false; must explicitly send true to await the final result
+  taskQueue?: string; //optional target queue isolate for the function
 }
 
 type ConnectionConfig = {
@@ -113,6 +110,14 @@ type MeshOSActivityOptions = {
   options: ActivityConfig;
 }
 
+type MeshOSWorkerOptions = {
+  taskQueue?: string; //change the default task queue
+  allowList?: Array<MeshOSOptions | string>; //limit which `hook` and `workflow` workers start
+  logLevel?: string; //debug, info, warn, error
+  maxSystemRetries?: number; //1-3 (10ms, 100ms, 1_000ms)
+  backoffCoefficient?: number; //2-10ish
+}
+
 type WorkerOptions = {
   logLevel?: string; //debug, info, warn, error
   maxSystemRetries?: number; //1-3 (10ms, 100ms, 1_000ms)
@@ -153,6 +158,7 @@ export {
   FindOptions,
   HookOptions,
   MeshOSActivityOptions,
+  MeshOSWorkerOptions,
   MeshOSClassConfig,
   MeshOSConfig,
   MeshOSOptions,

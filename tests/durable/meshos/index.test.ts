@@ -32,9 +32,7 @@ describe('DURABLE | MeshOS', () => {
 
   afterAll(async () => {
     await sleepFor(5000);
-    await Durable.Client.shutdown();
-    await Durable.Worker.shutdown();
-    await StreamSignaler.stopConsuming();
+    await MeshOSTest.stopWorkers();
     await RedisConnection.disconnectAll();
   }, 25_000);
 
@@ -52,7 +50,7 @@ describe('DURABLE | MeshOS', () => {
 
   describe('Create/Start a Workflow and await the result', () => {
     it('should start a new workflow and await', async () => {
-      const client = new MeshOSTest(nanoid(), { await: true });
+      const client = new MeshOSTest({ id: nanoid(), await: true });
       const doubled = await client.stringDoubler('hello');
       expect(doubled).toBe('hellohello');
     });

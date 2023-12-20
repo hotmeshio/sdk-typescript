@@ -21,7 +21,7 @@ class RedisStreamService extends StreamService<RedisClientType, RedisMultiType> 
   }
 
   getMulti(): RedisMultiType {
-    return this.redisClient.MULTI() as unknown as RedisMultiType;
+    return this.redisClient.multi() as unknown as RedisMultiType;
   }
 
   mintKey(type: KeyType, params: KeyStoreParams): string {
