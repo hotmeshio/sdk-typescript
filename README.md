@@ -1,11 +1,11 @@
 # HotMesh
 ![alpha release](https://img.shields.io/badge/release-alpha-yellow)
 
-Elevate Redis from an in-memory data cache to a game-changing [service mesh](./docs/faq.md#what-is-hotmesh). Turn your unpredictable functions into unbreakable workflows.
+Elevate Redis from an in-memory data cache, and turn your unpredictable functions into unbreakable workflows.
 
-HotMesh is a wrapper for Redis that exposes a higher level set of domain constructs like ‘activities’, ‘workflows’, 'jobs', etc. Behind the scenes, it uses *Redis Data* (Hash, ZSet, List); *Redis Streams* (XReadGroup, XAdd, XLen, etc); and *Redis Publish/Subscribe*.
+**HotMesh** is a wrapper for Redis that exposes a higher level set of domain constructs like ‘activities’, ‘workflows’, 'jobs', etc. Behind the scenes, it uses *Redis Data* (Hash, ZSet, List); *Redis Streams* (XReadGroup, XAdd, XLen, etc); and *Redis Publish/Subscribe*.
 
-It's still Redis in the background, but the information flow is fundamentally different. Your functions no longer call Redis (e.g., to cache a document) and instead are called by Redis.
+It's still Redis in the background, but the information flow is fundamentally different. Instead of the typical function calls to Redis for tasks like caching, HotMesh brings in a more structured approach. Your functions become part of a cohesive network, efficiently managed and orchestrated by Redis.
 
 ## Install
 [![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
@@ -79,7 +79,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write code as yo
       }
     }
     ```
-3. Invoke your class, providing a unique id (it's now an idempotent workflow and needs a GUID). Nothing changes from the outside, *but Redis now governs the end-to-end execution.* It's guaranteed to succeed and return regardless of  network or microservice failure. Redis will simply inflate like a balloon and deflate as your services come back online.
+3. Invoke your class, providing a unique id (it's now an idempotent workflow and needs a GUID). Nothing changes from the outside, *but Redis now governs the end-to-end execution.* It's guaranteed to succeed, even if it takes a while. 
     ```javascript
     //mycaller.ts
 
@@ -88,7 +88,20 @@ The HotMesh SDK is designed to keep your code front-and-center. Write code as yo
     //Hello, John! Hi, John!
     ```
 
->NOTE: MeshOS provides a full suite of durable workflow methods for extending your functions, including: `waitForSignal`, `signal`, `hook`, `sleep` (months, years, etc), `executeChild`, `startChild`, `get`, `set`, `incr` (increment), and `mult` (multiply).
+Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions. The following methods serve to solve the most common state management challenges.
+
+ - `waitForSignal` | Pause and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once they've all arrived.
+ - `signal` | Send a signal (and optional payload) to any paused function.
+ - `hook` | Redis governance supercharges your functions, transforming them into 're-entrant processes'. Optionally use the *hook* method to spawn parallel execution threads within any running function.
+ - `sleep` | Pause function execution for a ridiculous amount of time (months, years, etc). There's no risk of information loss, as Redis governs function state. When your function awakens, function state is efficiently (and automatically) restored.
+ - `executeChild` | Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
+ - `startChild` | Call another durable function, but do not await the response.
+ - `set` | Set a value (e.g, `set('name', 'value')`)
+ - `get` | Get a value (e.g, `get('name')`)
+ - `incr` | Increment (or decrement) a number (e.g, `incr('name', -99)`)
+ - `mult` | Multiply (or divide) a number (e.g, `mult('name', 12)`)
+
+Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) repo for usage examples. 
 
 ## Advanced Design
 HotMesh's TypeScript SDK is the easiest way to make your functions durable. But if you need full control over your function lifecycles (including high-volume, high-speed use cases), you can use HotMesh's underlying YAML models to optimize your durable workflows. The following model depicts a sequence of activities orchestrated by HotMesh. Any function you associate with a `topic` in your YAML definition is guaranteed to be durable.
@@ -225,4 +238,4 @@ HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchest
 Gain insight into HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](./docs/system_lifecycle.md).
 
 ## Alpha Release
-So what exacty is an [alpha release](./docs/alpha.md)?!
+So what exacty is an [alpha release](./docs/alpha.md)?

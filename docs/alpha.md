@@ -34,13 +34,8 @@ From this vantage point, the legacy network remains chaotic. But now we have a s
 <img src="./img/refactor/rf3.png" alt="HotMesh reverses the information flow" style="max-width:100%;width:600px;">
 
 ## Apples-to-Apples  
-If you're familiar with Temporal, then you're familiar with HotMesh. We align on many principles, including the need for a fleet of servers to provide *durable process execution*. However, in the case of HotMesh, the fleet of servers is minaturized and distributed to the fringes just-in-time (i.e., the "Ajax/SPA" architecture).
+Temporal.io's TypeScript SDK was an inspiration for HotMesh's TypeScript SDK. The approach allows developers to focus on code rather than learning workflow-specific terminology.
 
-Temporal's TypeScript SDK was an inspiration for HotMesh's TypeScript SDK. Their well-designed approach allows developers to focus on code rather than learning workflow-specific terminology.
-
-In the initial, alpha release, I've included a module named `Durable` that emulates Temporal's standard `worker`, `client`, `activities`, and `workflows` files as well as `proxyActivity` and `executeChild` methods, as these are crucial for validating the capabilities of HotMesh as a *drop-in serverless replacement* for Temporal.
+In the initial, alpha release, I've included a module named `Durable` that emulates Temporal's standard `worker`, `client`, `activities`, and `workflows` files as well as `proxyActivity` and `executeChild` and other workflow-management methods methods, as these are crucial for validating the capabilities of HotMesh as a *drop-in serverless replacement* for Temporal.
 
 I've conducted performance tests comparing Temporal Cloud to Redis Enterprise Cloud, and my hypothesis is that a serverless, distributed architecture offers various advantages, including speed and cost. Import HotMesh instead of Temporal for a quick side-by-side comparison, using your own deployments.
-
-## Concluding Thoughts  
-The industry's shift from server-based technologies like JSP, ASP, and Cold Fusion to client-side solutions like Ajax serves as a precedent for this kind of transition. Ajax was revolutionary not because it introduced new technologies but because it simplified and distributed existing capabilities, leading to economic efficiencies. I believe HotMesh has the potential for a similar impact in the field of durable process orchestration.
