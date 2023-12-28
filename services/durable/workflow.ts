@@ -19,6 +19,7 @@ import {
   WorkflowOptions } from "../../types/durable";
 import { JobOutput, JobState } from '../../types/job';
 import { StreamStatus } from '../../types/stream';
+import { deterministicRandom } from '../../modules/utils';
 
 export class WorkflowService {
 
@@ -171,6 +172,19 @@ export class WorkflowService {
     const workflowGuid = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
     const guidValue = Number(await hotMeshClient.engine.store.exec('HINCRBYFLOAT', workflowGuid, sessionId, '1') as string);
     return guidValue === 1;
+  }
+
+  /**
+   * returns a random number between 0 and 1. This number is deterministic
+   * and will never vary for a given seed. This is useful for randomizing
+   * pathways in a workflow that can be safely replayed.
+   * @returns {number}
+   */
+  static random(): number {
+    const store = asyncLocalStorage.getStore();
+    const COUNTER = store.get('counter');
+    const seed = COUNTER.counter = COUNTER.counter + 1;
+    return deterministicRandom(seed);
   }
 
   /**

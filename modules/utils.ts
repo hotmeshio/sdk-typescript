@@ -8,6 +8,11 @@ export async function sleepFor(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function deterministicRandom(seed: number): number {
+  let x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
 export function identifyRedisType(redisInstance: any): 'redis' | 'ioredis' | null {
   const prototype = Object.getPrototypeOf(redisInstance);
   if ('defineCommand' in prototype || Object.keys(prototype).includes('multi')) {

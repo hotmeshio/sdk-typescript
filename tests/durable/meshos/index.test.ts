@@ -1,10 +1,8 @@
 import * as Redis from 'redis';
 
 import config from '../../$setup/config'
-import { Durable } from '../../../services/durable';
 import { nanoid } from 'nanoid';
 import { RedisConnection } from '../../../services/connector/clients/redis';
-import { StreamSignaler } from '../../../services/signaler/stream';
 import { sleepFor } from '../../../modules/utils';
 import { MyClass as MeshOSTest } from './src/subclass';
 
@@ -99,7 +97,7 @@ describe('DURABLE | MeshOS', () => {
   });
 
   describe('Search', () => {
-    it('should find a workflow using FT search query syntax', async () => {
+    it('should find workflows using `find`', async () => {
       let count: string | number = 0;
       let rest: any;
       do {
@@ -114,6 +112,56 @@ describe('DURABLE | MeshOS', () => {
       } while (count as number === 0);
       expect(count).toBe(1);
     }, 15_000);
+
+    it('should find workflows using `findWhere` convenience method', async () => {
+      let count: string | number = 0;
+      let rest: any;
+      //loop like the prior test, as this test adds a condition (e.g., `status=ordered`)
+      // which might not get set in time. If an additional condition were not to have
+      // been added, it would be unnecessary to wait as the prior test already established
+      // that there is a record where `quantity=89`
+      do {
+        [count, ...rest] = await MeshOSTest.findWhere(
+          { query: [
+              { field: 'quantity', is: '=', value: 89 },
+              { field: 'status', is: '=', value: 'ordered' }
+            ],
+            return: ['quantity', 'status']
+          });
+        await sleepFor(500);
+      } while (count as number === 0);
+      const [key, items] = rest;
+      const [f1, v1, f2, v2] = items as unknown as string[];
+      expect(count).toBe(1);
+      expect((key as string).includes(guid)).toBe(true);
+      expect(f1).toBe('_quantity');
+      expect(v1).toBe('89');
+      expect(f2).toBe('_status');
+      expect(v2).toBe('ordered');
+    }, 15_000);
+
+    it('should count workflows using `findWhere` convenience method', async () => {
+      const [count, ...rest] = await MeshOSTest.findWhere(
+        { query: [
+            { field: 'quantity', is: '>', value: 88 }
+          ],
+          count: true 
+        });
+      expect(count).toBe(1);
+      expect(rest.length).toBe(0);
+    });
+
+    it('should paginate workflows using `findWhere` convenience method', async () => {
+      const [count, ...rest] = await MeshOSTest.findWhere(
+        { query: [
+            { field: 'quantity', is: '<', value: 90 }
+          ],
+          return: ['status'],
+          limit: { start: 0, size: 1 } 
+        });
+      expect(count).toBe(1);
+      expect(rest.length).toBe(2); //[key, [fields]]
+    });
   });
 
   describe('Result', () => {

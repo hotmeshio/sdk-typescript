@@ -10,6 +10,8 @@ import { WorkflowService } from './workflow';
 import { StreamSignaler } from '../signaler/stream';
 import {
   FindOptions,
+  FindWhereOptions,
+  FindWhereQuery,
   MeshOSActivityOptions,
   MeshOSConfig,
   MeshOSOptions,
@@ -245,9 +247,9 @@ export class MeshOSService {
       class: my.redisClass,
       options: my.redisOptions 
     }});
-    //workflow name is the function name driving the workflow
+
     let workflowName: string;
-    if (options?.workflowName) {
+    if (options.workflowName) {
       workflowName = options?.workflowName
     } else if(my.workflowFunctions?.length) {
       let target = my.workflowFunctions[0];
@@ -258,12 +260,70 @@ export class MeshOSService {
       }
     }
     return await client.workflow.search(
-      options?.taskQueue ?? my.taskQueue,
+      options.taskQueue ?? my.taskQueue,
       workflowName,
-      my.namespace,
-      my.search.index,
+      options.namespace ?? my.namespace,
+      options.index ?? my.search.index,
       ...args,
-    ); //[count, [id, fields[], id, fields[], id, fields[], ...]]
+    ); //[count, [id, fields[]], [id, fields[]], [id, fields[]], ...]]
+  }
+
+  /**
+   * Provides a JSON abstraction for the Redis FT.search command
+   * (e.g, `count`, `query`, `return`, `limit`)
+   * @param {FindWhereOptions} options 
+   * @returns {Promise<string[] | [number]>}
+   */
+  static async findWhere(options: FindWhereOptions): Promise<string[] | [number]> {
+    const args: string[] = [this.generateSearchQuery(options.query)];
+    if (options.count) {
+      args.push('LIMIT', '0', '0');
+    } else {
+      //limit which hash fields to return
+      if (options.return?.length) {
+        args.push('RETURN');
+        args.push(options.return.length.toString());
+        options.return.forEach(returnField => {
+          args.push(`_${returnField}`);
+        });
+      }
+      //paginate
+      if (options.limit) {
+        args.push('LIMIT', options.limit.start.toString(), options.limit.size.toString());
+      }
+    } 
+    return await this.find(options.options ?? {}, ...args);
+  }
+
+  static generateSearchQuery(query: FindWhereQuery[]) {
+    const my = new this();
+    let queryString = query.map(q => {
+      const { field, is, value, type } = q;
+      const prefixedFieldName = my.search?.schema && field in my.search.schema ? `@_${field}` : `@${field}`;
+      const fieldType = my.search?.schema[field]?.type ?? type ?? 'TEXT';
+
+      switch (fieldType) {
+        case 'TAG':
+          return `${prefixedFieldName}:{${value}}`;
+        case 'TEXT':
+          return `${prefixedFieldName}:"${value}"`;
+        case 'NUMERIC':
+          let range = '';
+          if (is.startsWith('=')) {
+            range = `[${value} ${value}]`;
+          } else if (is === '<') {
+            range = `[-inf ${value}]`;
+          } else if (is === '>') {
+            range = `[${value} +inf]`;
+          } else if (is === '[]') {
+            range = `[${value[0]} ${value[1]}]`
+          }
+          return `${prefixedFieldName}:${range}`;
+        default:
+          return '';
+      }
+    }).join(' ');
+    return queryString;
   }
 
   /**
