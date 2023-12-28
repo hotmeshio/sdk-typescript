@@ -309,13 +309,13 @@ export class MeshOSService {
           return `${prefixedFieldName}:"${value}"`;
         case 'NUMERIC':
           let range = '';
-          if (is.startsWith('=')) {
+          if (is.startsWith('=')) {        //equal
             range = `[${value} ${value}]`;
-          } else if (is === '<') {
+          } else if (is.startsWith('<')) { //less than or equal
             range = `[-inf ${value}]`;
-          } else if (is === '>') {
+          } else if (is.startsWith('>')) { //greater than or equal
             range = `[${value} +inf]`;
-          } else if (is === '[]') {
+          } else if (is === '[]') {        //between
             range = `[${value[0]} ${value[1]}]`
           }
           return `${prefixedFieldName}:${range}`;

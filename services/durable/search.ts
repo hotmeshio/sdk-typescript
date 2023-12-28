@@ -69,12 +69,17 @@ export class Search {
     return `${this.searchSessionId}-${this.searchSessionIndex++}-`;
   }
 
-  async set(key: string, value: string): Promise<void> {
+  async set(...args: string[]): Promise<void> {
     const ssGuid = this.getSearchSessionGuid();
     const ssGuidValue = Number(await this.store.exec('HINCRBYFLOAT', this.jobId, ssGuid, '1') as string);
     if (ssGuidValue === 1) {
-      //only allowed to set a value the first time
-      await this.store.exec('HSET', this.jobId, this.safeKey(key), value.toString());
+      const safeArgs: string[] = [];
+      for (let i = 0; i < args.length; i += 2) {
+        const key = this.safeKey(args[i]);
+        const value = args[i+1].toString();
+        safeArgs.push(key, value);
+      }
+      await this.store.exec('HSET', this.jobId, ...safeArgs);
     }
   }
 
@@ -87,11 +92,29 @@ export class Search {
     }
   }
 
-  async del(key: string): Promise<void> {
+  async mget(...args: string[]): Promise<string[]> {
+    const safeArgs: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      safeArgs.push(this.safeKey(args[i]));
+    }
+    try {
+      return await this.store.exec('HMGET', this.jobId, ...safeArgs) as string[];
+    } catch (err) {
+      this.hotMeshClient.logger.error('durable-search-mget-error', { err });
+      return [];
+    }
+  }
+
+  async del(...args: string[]): Promise<number | void> {
     const ssGuid = this.getSearchSessionGuid();
     const ssGuidValue = Number(await this.store.exec('HINCRBYFLOAT', this.jobId, ssGuid, '1') as string);
     if (ssGuidValue === 1) {
-      await this.store.exec('HDEL', this.jobId, this.safeKey(key));
+      const safeArgs: string[] = [];
+      for (let i = 0; i < args.length; i++) {
+        safeArgs.push(this.safeKey(args[i]));
+      }
+      const response = await this.store.exec('HDEL', this.jobId, ...safeArgs);
+      return isNaN(response as unknown as number) ? undefined : Number(response);
     }
   }
 
