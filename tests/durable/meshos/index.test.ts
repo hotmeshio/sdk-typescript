@@ -103,7 +103,7 @@ describe('DURABLE | MeshOS', () => {
       do {
         [count, ...rest] = await MeshOSTest.find(
           {},
-          '@_quantity:[89 89]',
+          '@_quantity:[89 89] @_quality:"great"',
           'RETURN',
           '1',
           '_quantity'
@@ -119,11 +119,12 @@ describe('DURABLE | MeshOS', () => {
       //loop like the prior test, as this test adds a condition (e.g., `status=ordered`)
       // which might not get set in time. If an additional condition were not to have
       // been added, it would be unnecessary to wait as the prior test already established
-      // that there is a record where `quantity=89`
+      // that there is a record where `quantity=89 AND quality=great`
       do {
         [count, ...rest] = await MeshOSTest.findWhere(
           { query: [
               { field: 'quantity', is: '=', value: 89 },
+              { field: 'quality', is: '=', value: 'great'},
               { field: 'status', is: '=', value: 'ordered' }
             ],
             return: ['quantity', 'status']
@@ -143,7 +144,7 @@ describe('DURABLE | MeshOS', () => {
     it('should count workflows using `findWhere` convenience method', async () => {
       const [count, ...rest] = await MeshOSTest.findWhere(
         { query: [
-            { field: 'quantity', is: '>', value: 88 }
+            { field: 'quantity', is: '>=', value: 88 }
           ],
           count: true 
         });
@@ -154,7 +155,7 @@ describe('DURABLE | MeshOS', () => {
     it('should paginate workflows using `findWhere` convenience method', async () => {
       const [count, ...rest] = await MeshOSTest.findWhere(
         { query: [
-            { field: 'quantity', is: '<', value: 90 }
+            { field: 'quantity', is: '[]', value: [88, 90] } //between 88 and 90
           ],
           return: ['status'],
           limit: { start: 0, size: 1 } 

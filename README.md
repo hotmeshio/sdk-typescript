@@ -3,9 +3,11 @@
 
 Elevate Redis from an in-memory data cache, and turn your unpredictable functions into unbreakable workflows.
 
-**HotMesh** is a wrapper for Redis that exposes a higher level set of domain constructs like ‘activities’, ‘workflows’, 'jobs', etc. Behind the scenes, it uses *Redis Data* (Hash, ZSet, List); *Redis Streams* (XReadGroup, XAdd, XLen, etc); and *Redis Publish/Subscribe*.
+**HotMesh** is a wrapper for Redis that exposes concepts like ‘activities’, ‘workflows’, and 'jobs'. Behind the scenes, it uses *Redis Data* (Hash, ZSet, List); *Redis Streams* (XReadGroup, XAdd, XLen, etc); and *Redis Publish/Subscribe*.
 
-It's still Redis in the background, but the information flow is reversed. Instead of your functions calling Redis (e.g., for caching a document), Redis governs your function execution. If your microservice container goes down or your function simply fails, HotMesh will restore function state at the point of failure and retry until it succeeds.
+It's still Redis in the background, but your functions are run as *reentrant processes* and are executed in a distributed environment, with all the benefits of a distributed system, including fault tolerance, scalability, and high availability.
+
+Write functions in your own preferred style, and let Redis govern their execution at its unmatched scale and performance.
 
 ## Install
 [![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)

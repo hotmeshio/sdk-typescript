@@ -21,6 +21,10 @@ export class MyClass extends MeshOSTest {
       status: {
         type: 'TAG',
         sortable: true
+      },
+      quality: {        // nice, good, bad, ugly
+        type: 'TEXT',
+        sortable: true
       }
     }
   };
@@ -29,9 +33,9 @@ export class MyClass extends MeshOSTest {
    * main method: start the workflow.
    */
   async create(val: number): Promise<string> {
-    //set a custom value that's indexed / searchable
+    //set multiple custom values at once (these are indexed and searchable)
     const search = await MyClass.MeshOS.search();
-    await search.set('quantity', val.toString()); //100
+    await search.set('quantity', val.toString(), 'quality', 'great'); //100
 
     //call both a proxied activity and a vanilla activity
     const greeting = await this.greet('world');
@@ -49,7 +53,9 @@ export class MyClass extends MeshOSTest {
     const [hookResult] = await MyClass.MeshOS.waitForSignal(['abc']);
     console.log('wait for signal result=>', hookResult);
 
-    return await search.get('quantity'); //89
+    //get multiple search values at once using 'mget'
+    const [status, quality, quantity] = await search.mget('status', 'quality', 'quantity');
+    return quantity; //89
   }
 
   /**

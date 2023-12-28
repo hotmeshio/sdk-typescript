@@ -95,7 +95,7 @@ type WorkerConfig = {
 
 type FindWhereQuery = {
   field: string;
-  is: string;
+  is: '=' | '==' | '>=' | '<=' | '[]';
   value: string | boolean | number | [number, number];
   type?: string; //default is TEXT
 }
