@@ -38,6 +38,8 @@ export {
     Registry,
     SignalOptions,
     FindOptions,
+    FindWhereOptions,
+    FindWhereQuery,
     HookOptions,
     MeshOSActivityOptions,
     MeshOSWorkerOptions,

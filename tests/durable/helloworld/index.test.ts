@@ -7,7 +7,7 @@ import { nanoid } from 'nanoid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/redis';
 import { StreamSignaler } from '../../../services/signaler/stream';
-import { sleepFor } from '../../../modules/utils';
+import { deterministicRandom, sleepFor } from '../../../modules/utils';
 
 
 const { Connection, Client, Worker } = Durable;
@@ -88,7 +88,10 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
         const result = await handle.result();
-        expect(result).toEqual('Hello, HotMesh!');
+        //test the random number generator
+        const r1 = deterministicRandom(1);
+        const r2 = deterministicRandom(3);
+        expect(result).toEqual(`${r1} Hello, HotMesh! ${r2}`);
         await sleepFor(2500);
       }, 10_000);
     });

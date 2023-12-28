@@ -5,7 +5,7 @@ Elevate Redis from an in-memory data cache, and turn your unpredictable function
 
 **HotMesh** is a wrapper for Redis that exposes a higher level set of domain constructs like ‘activities’, ‘workflows’, 'jobs', etc. Behind the scenes, it uses *Redis Data* (Hash, ZSet, List); *Redis Streams* (XReadGroup, XAdd, XLen, etc); and *Redis Publish/Subscribe*.
 
-It's still Redis in the background, but the information flow is fundamentally different. Instead of the typical function calls to Redis for tasks like caching, HotMesh brings in a more structured approach. Your functions become part of a cohesive network, efficiently managed and orchestrated by Redis.
+It's still Redis in the background, but the information flow is reversed. Instead of your functions calling Redis (e.g., for caching a document), Redis governs your function execution. If your microservice container goes down or your function simply fails, HotMesh will restore function state at the point of failure and retry until it succeeds.
 
 ## Install
 [![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
@@ -84,16 +84,17 @@ The HotMesh SDK is designed to keep your code front-and-center. Write code as yo
     //mycaller.ts
 
     const workflow = new MyWorkflow({ id: 'my123', await: true });
-    const response = await workflow.run('John');
-    //Hello, John! Hi, John!
+    const response = await workflow.run('World');
+    //Hi, World! Hello, World!
     ```
 
-Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions. The following methods serve to solve the most common state management challenges.
+Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. Use the following methods to solve the most common state management challenges.
 
  - `waitForSignal` | Pause and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once they've all arrived.
  - `signal` | Send a signal (and optional payload) to any paused function.
  - `hook` | Redis governance supercharges your functions, transforming them into 're-entrant processes'. Optionally use the *hook* method to spawn parallel execution threads within any running function.
  - `sleep` | Pause function execution for a ridiculous amount of time (months, years, etc). There's no risk of information loss, as Redis governs function state. When your function awakens, function state is efficiently (and automatically) restored.
+ - `random` | Generate a deterministic random number that can be used in a reentrant process workflow (replaces `Math.random()`).
  - `executeChild` | Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
  - `startChild` | Call another durable function, but do not await the response.
  - `set` | Set a value (e.g, `set('name', 'value')`)

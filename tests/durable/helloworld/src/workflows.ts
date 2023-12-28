@@ -12,5 +12,8 @@ const { greet } = Durable.workflow
   .proxyActivities<ActivitiesType>({ activities });
 
 export async function example(name: string): Promise<string> {
-  return await greet(name);
+  const random1 = Durable.workflow.random();
+  const greeting = await greet(name);
+  const random2 = Durable.workflow.random();
+  return `${random1} ${greeting} ${random2}`;
 }

@@ -93,11 +93,29 @@ type WorkerConfig = {
   search?: WorkflowSearchOptions;
 }
 
+type FindWhereQuery = {
+  field: string;
+  is: string;
+  value: string | boolean | number | [number, number];
+  type?: string; //default is TEXT
+}
+
 type FindOptions = {
   workflowName?: string; //also the function name
   taskQueue?: string;
   namespace?: string;
   index?: string;        //the FT search index name
+}
+
+type FindWhereOptions = {
+  options?: FindOptions;
+  count?: boolean;
+  query: FindWhereQuery[];
+  return?: string[];
+  limit?: {
+    start: number,
+    size: number
+  }
 }
 
 type MeshOSOptions = {
@@ -156,6 +174,8 @@ export {
   Registry,
   SignalOptions,
   FindOptions,
+  FindWhereOptions,
+  FindWhereQuery,
   HookOptions,
   MeshOSActivityOptions,
   MeshOSWorkerOptions,

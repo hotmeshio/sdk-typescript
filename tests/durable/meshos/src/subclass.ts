@@ -72,7 +72,8 @@ export class MyClass extends MeshOSTest {
     await MyClass.MeshOS.sleep('2 seconds');
 
     console.log('sending the abc signal');
-    await MyClass.MeshOS.signal('abc', { status, quantity });
+    const random = MyClass.MeshOS.random(); //0.20008059867222983
+    await MyClass.MeshOS.signal('abc', { status, quantity, random });
   }
 
   /**
