@@ -7,7 +7,7 @@ Elevate Redis from an in-memory data cache, and turn your unpredictable function
 
 It's still Redis in the background, but your functions are run as *reentrant processes* and are executed in a distributed environment, with all the benefits of a distributed system, including fault tolerance, scalability, and high availability.
 
-Write functions in your own preferred style, and let Redis govern their execution at its unmatched scale and performance.
+Write functions in your own preferred style, and let Redis govern their execution with its unmatched performance.
 
 ## Install
 [![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
@@ -99,10 +99,12 @@ Redis governance delivers more than just reliability. Externalizing state fundam
  - `random` | Generate a deterministic random number that can be used in a reentrant process workflow (replaces `Math.random()`).
  - `executeChild` | Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
  - `startChild` | Call another durable function, but do not await the response.
- - `set` | Set a value (e.g, `set('name', 'value')`)
- - `get` | Get a value (e.g, `get('name')`)
+ - `set` | Set one or more name/value pairs (e.g, `set('name1', 'value1', 'name1', 'value2')`)
+ - `get` | Get a single value by name(e.g, `get('name')`)
+ - `mget` | Get multiple values by name (e.g, `get('name1', 'name2')`)
+ - `del` | Delete one or more entries by name and return the number deleted (e.g, `del('name1', 'name1')`)
  - `incr` | Increment (or decrement) a number (e.g, `incr('name', -99)`)
- - `mult` | Multiply (or divide) a number (e.g, `mult('name', 12)`)
+ - `mult` | Multiply a number (e.g, `mult('name', 12)`)
 
 Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) repo for usage examples. 
 

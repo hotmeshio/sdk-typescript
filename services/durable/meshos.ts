@@ -118,7 +118,7 @@ export class MeshOSService {
    */
   static mintGuid(): string {
     const my = new this();
-    return `${my.search?.prefix?.[0]}${nanoid()}}`;
+    return `${my.search?.prefix?.[0]}${nanoid()}`;
   }
 
   /**
