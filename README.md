@@ -17,9 +17,7 @@ npm install @hotmeshio/hotmesh
 ```
 
 ## Design
-The HotMesh SDK is designed to keep your code front-and-center. Write code as you normally would, then use HotMesh to make it durable.
-
-1. Start with any ordinary class. Pay attention to unpredictable functions: those that execute slowly, cause problems at scale, or simply fail to return. *Note how the `flaky` function throws an error 50% of the time. This is exactly the type of function that can be fixed using HotMesh.*
+1. Start with any ordinary class. Pay attention to unpredictable functions: those that execute slowly, cause problems at scale, or simply fail to return now and then. *Note how the `flaky` function throws an error 50% of the time. This is exactly the type of function that can be fixed using HotMesh.*
     ```javascript
     //myworkflow.ts
 
@@ -44,7 +42,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write code as yo
       }
     }
     ```
-2. Import `Redis` and `MeshOS` and configure host, port, etc. List those functions that Redis should govern as durable workflows (like `run` and `flaky`). And that's it! *Your functions don't actually change; rather, their governance does.*
+2. Import and configure `Redis` and `MeshOS` as shown. List those functions that Redis should govern as durable workflows (like `run` and `flaky`). And that's it! *Your functions don't actually change; rather, their governance does.*
     ```javascript
     //myworkflow.ts
 
@@ -53,6 +51,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write code as yo
 
     export class MyWorkflow extends MeshOS {
 
+      //configure Redis
       redisClass = Redis;
       redisOptions = { host: 'localhost', port: 6379 };
 
@@ -62,13 +61,14 @@ The HotMesh SDK is designed to keep your code front-and-center. Write code as yo
       //list functions to retry and cache
       proxyFunctions = ['flaky'];
 
+      //no need to change anything else!
+
       async run(name: string): Promise<string> {
         const hi = await this.flaky(name);
         const hello = await this.greet(name);
         return `${hi} ${hello}`;
       }
 
-      //this function is now durable and will be retried until it succeeds!
       async flaky(name: string): Promise<string> {
         if (Math.random() < 0.5) {
           throw new Error('Ooops!');
@@ -81,7 +81,7 @@ The HotMesh SDK is designed to keep your code front-and-center. Write code as yo
       }
     }
     ```
-3. Invoke your class, providing a unique id (it's now an idempotent workflow and needs a GUID). Nothing changes from the outside, *but Redis now governs the end-to-end execution.* It's guaranteed to succeed, even if it takes a while. 
+3. Invoke your class, providing a unique id (it's now an idempotent workflow and needs a GUID). Nothing changes from the outside, *but Redis now governs the end-to-end execution.* It's guaranteed to succeed, even if it breaks a few times along the way. 
     ```javascript
     //mycaller.ts
 
@@ -90,11 +90,11 @@ The HotMesh SDK is designed to keep your code front-and-center. Write code as yo
     //Hi, World! Hello, World!
     ```
 
-Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. Use the following methods to solve the most common state management challenges.
+Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `MeshOS` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
 
- - `waitForSignal` | Pause and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once they've all arrived.
+ - `waitForSignal` | Pause your function and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once they've all arrived.
  - `signal` | Send a signal (and optional payload) to any paused function.
- - `hook` | Redis governance supercharges your functions, transforming them into 're-entrant processes'. Optionally use the *hook* method to spawn parallel execution threads within any running function.
+ - `hook` | Redis governance converts your functions into 're-entrant processes'. Optionally use the *hook* method to spawn parallel execution threads to augment a running workflow.
  - `sleep` | Pause function execution for a ridiculous amount of time (months, years, etc). There's no risk of information loss, as Redis governs function state. When your function awakens, function state is efficiently (and automatically) restored.
  - `random` | Generate a deterministic random number that can be used in a reentrant process workflow (replaces `Math.random()`).
  - `executeChild` | Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
