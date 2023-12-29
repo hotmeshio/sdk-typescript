@@ -236,12 +236,15 @@ export class MeshOSService {
   }
 
   /**
-   * executes the redis FT search query
+   * executes the redis FT search query; optionally specify other commands
    * @example '@_quantity:[89 89]'
+   * @example '@_quantity:[89 89] @_name:"John"'
+   * @example 'FT.search my-index @_quantity:[89 89]'
+   * @param {FindOptions} options
    * @param {any[]} args
-   * @returns {string}
+   * @returns {Promise<string[] | [number] | Array<number, string | number | string[]>>}
    */
-  static async find(options: FindOptions, ...args: string[]): Promise<string[] | [number]> {
+  static async find(options: FindOptions, ...args: string[]): Promise<string[] | [number] | Array<string | number | string[]>> {
     const my = new this();
     const client = new Client({ connection: {
       class: my.redisClass,
@@ -272,9 +275,9 @@ export class MeshOSService {
    * Provides a JSON abstraction for the Redis FT.search command
    * (e.g, `count`, `query`, `return`, `limit`)
    * @param {FindWhereOptions} options 
-   * @returns {Promise<string[] | [number]>}
+   * @returns {Promise<string[] | [number] | Array<string | number | string[]>>}
    */
-  static async findWhere(options: FindWhereOptions): Promise<string[] | [number]> {
+  static async findWhere(options: FindWhereOptions): Promise<string[] | [number] | Array<string | number | string[]>> {
     const args: string[] = [this.generateSearchQuery(options.query)];
     if (options.count) {
       args.push('LIMIT', '0', '0');

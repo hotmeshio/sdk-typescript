@@ -98,11 +98,13 @@ describe('DURABLE | MeshOS', () => {
 
   describe('Search', () => {
     it('should find workflows using `find`', async () => {
-      let count: string | number = 0;
+      let count: any;
       let rest: any;
       do {
         [count, ...rest] = await MeshOSTest.find(
           {},
+          'FT.SEARCH',
+          'inventory-orders',
           '@_quantity:[89 89] @_quality:"great"',
           'RETURN',
           '1',
@@ -114,7 +116,7 @@ describe('DURABLE | MeshOS', () => {
     }, 15_000);
 
     it('should find workflows using `findWhere` convenience method', async () => {
-      let count: string | number = 0;
+      let count: any;
       let rest: any;
       //loop like the prior test, as this test adds a condition (e.g., `status=ordered`)
       // which might not get set in time. If an additional condition were not to have

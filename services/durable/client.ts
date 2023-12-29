@@ -85,6 +85,9 @@ export class ClientService {
 
   search = async (hotMeshClient: HotMesh, index: string, query: string[]): Promise<string[]> => {
     const store = hotMeshClient.engine.store;
+    if (query[0]?.startsWith('FT.')) {
+      return await store.exec(...query) as string[];
+    }
     return await store.exec('FT.SEARCH', index, ...query) as string[];
   }
 
