@@ -1,4 +1,3 @@
-import { nanoid } from 'nanoid';
 import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, getWorkflowYAML } from './factory';
 import { WorkflowHandleService } from './handle';
 import { HotMeshService as HotMesh } from '../hotmesh';
@@ -104,7 +103,7 @@ export class ClientService {
       const payload = {
         arguments: [...options.args],
         parentWorkflowId: options.parentWorkflowId,
-        workflowId: options.workflowId || nanoid(),
+        workflowId: options.workflowId || HotMesh.guid(),
         workflowTopic: workflowTopic,
         backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,
       }
@@ -112,9 +111,10 @@ export class ClientService {
       const jobId = await hotMeshClient.pub(
         `${options.namespace ?? APP_ID}.execute`,
         payload,
-        context as JobState);
-       if (jobId && options.search?.data) {
-        //job successfully kicked off; there is default job data to persist
+        context as JobState
+      );
+      //seed search data if present
+      if (jobId && options.search?.data) {
         const searchSessionId = `-search-0`;
         const search = new Search(jobId, hotMeshClient, searchSessionId);
         for (const [key, value] of Object.entries(options.search.data)) {
@@ -146,8 +146,17 @@ export class ClientService {
         workflowTopic,
         backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,
       }
+      //seed search data if presentthe hook before entering
       const hotMeshClient = await this.getHotMeshClient(workflowTopic, options.namespace);
-      return await hotMeshClient.hook(`${hotMeshClient.appId}.flow.signal`, payload, StreamStatus.PENDING, 202);
+      const msgId = await hotMeshClient.hook(`${hotMeshClient.appId}.flow.signal`, payload, StreamStatus.PENDING, 202);
+      if (options.search?.data) {
+        const searchSessionId = `-search-${HotMesh.guid()}-0`;
+        const search = new Search(options.workflowId, hotMeshClient, searchSessionId);
+        for (const [key, value] of Object.entries(options.search.data)) {
+          search.set(key, value);
+        }
+      }
+      return msgId;
     },
 
     getHandle: async (taskQueue: string, workflowName: string, workflowId: string, namespace?: string): Promise<WorkflowHandleService> => {
