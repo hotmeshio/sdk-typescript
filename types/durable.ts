@@ -54,11 +54,11 @@ type WorkflowSearchOptions = {
 
 type WorkflowOptions = {
   namespace?: string;         //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
-  taskQueue: string;
+  taskQueue?: string;         //optional if entity is provided
   args: any[];                //input arguments to pass in
   workflowId?: string;        //execution id (the job id)
   entity?: string;            //If invoking a workflow, passing 'entity' will apply the value as the workflowName, taskQueue, and prefix, ensuring the FT.SEARCH index is properly scoped. This is a convenience method but limits options.
-  workflowName?: string;      //the name of the user's workflow function
+  workflowName?: string;      //the name of the user's workflow function; optional if 'entity' is provided
   parentWorkflowId?: string;  //system reserved; the id of the parent; if present the flow will not self-clean until the parent that spawned it self-cleans
   workflowTrace?: string;
   workflowSpan?: string;
@@ -68,7 +68,7 @@ type WorkflowOptions = {
 
 type HookOptions = {
   namespace?: string;   //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
-  taskQueue?: string;
+  taskQueue?: string;   //optional if 'entity' is provided
   args: any[];          //input arguments to pass into the hook
   entity?: string;      //If invoking a hook, passing 'entity' will apply the value as the workflowName, taskQueue, and prefix, ensuring the FT.SEARCH index is properly scoped. This is a convenience method but limits options.
   workflowId?: string;   //execution id (the job id to hook into)
