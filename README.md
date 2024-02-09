@@ -102,7 +102,7 @@ Redis governance delivers more than just reliability. Externalizing state fundam
  - `search` | Instance a search session (e.g, `const search = MeshOS.search()`)
     - `set` | Set one or more name/value pairs (e.g, `search.set('name1', 'value1', 'name2', 'value2')`)
     - `get` | Get a single value by name(e.g, `search.get('name')`)
-    - `mget` | Get multiple values by name (e.g, `search.get('name1', 'name2')`)
+    - `mget` | Get multiple values by name (e.g, `search.mget('name1', 'name2')`)
     - `del` | Delete one or more entries by name and return the number deleted (e.g, `search.del('name1', 'name2')`)
     - `incr` | Increment (or decrement) a number (e.g, `search.incr('name', -99)`)
     - `mult` | Multiply a number (e.g, `search.mult('name', 12)`)
