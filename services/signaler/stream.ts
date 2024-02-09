@@ -260,7 +260,7 @@ class StreamSignaler {
     this.shouldConsume = false;
     this.logger.info(`stream-consumer-stopping`, this.topic ? { topic: this.topic } : undefined);
     this.cancelThrottle();
-    await sleepFor(BLOCK_TIME_MS);
+    //await sleepFor(BLOCK_TIME_MS);
   }
 
   cancelThrottle() {
