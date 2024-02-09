@@ -92,8 +92,8 @@ export class ClientService {
 
   workflow = {
     start: async (options: WorkflowOptions): Promise<WorkflowHandleService> => {
-      const taskQueueName = options.taskQueue;
-      const workflowName = options.workflowName;
+      const taskQueueName = options.entity ?? options.taskQueue;
+      const workflowName = options.entity ?? options.workflowName;
       const trc = options.workflowTrace;
       const spn = options.workflowSpan;
       //topic is concat of taskQueue and workflowName
