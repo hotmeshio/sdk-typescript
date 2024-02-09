@@ -254,7 +254,6 @@ class StreamSignaler {
     for (const instance of [...StreamSignaler.signalers]) {
       instance.stopConsuming();
     }
-    await sleepFor(BLOCK_TIME_MS);
   }
   
   async stopConsuming() {
