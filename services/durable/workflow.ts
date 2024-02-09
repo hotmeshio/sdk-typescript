@@ -39,11 +39,11 @@ export class WorkflowService {
     const workflowSpan = store.get('workflowSpan');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const prefix = options.prefix ?? '';
-    //this is risky but MUST be allowed. Users MAY set the workflowId,
-    //but if there is a naming collision, the data from the target entity will be used
-    //as there is know way of knowing if the item was generated via a prior run of the workflow
-    const childJobId = options.workflowId ?? `${prefix}-${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
+    //NOTE: this is the hash prefix; necessary for the search index to locate the entity
+    //if the hash is a helper, a dash begins it, so it isn't indexed
+    const entityOrEmptyString = options.entity ?? '';
+    //If the workflowId is not provided, it is generated from the entity and the workflow name
+    const childJobId = options.workflowId ?? `${entityOrEmptyString}-${workflowId}-$${options.entity ?? options.workflowName}${workflowDimension}-${execIndex}`;
     const parentWorkflowId = `${workflowId}-f`;
 
     const client = new Client({
@@ -51,8 +51,8 @@ export class WorkflowService {
     });
 
     let handle = await client.workflow.getHandle(
-      options.taskQueue,
-      options.workflowName,
+      options.entity ?? options.taskQueue,
+      options.entity ?? options.workflowName,
       childJobId,
       namespace,
     );
@@ -89,10 +89,12 @@ export class WorkflowService {
     const workflowSpan = store.get('workflowSpan');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const prefix = options.prefix ?? '';
-    const childJobId = options.workflowId ?? `${prefix}-${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
+    //NOTE: this is the hash prefix; necessary for the search index to locate the entity
+    const entityOrEmptyString = options.entity ?? '';
+    //If the workflowId is not provided, it is generated from the entity and the workflow name
+    const childJobId = options.workflowId ?? `${entityOrEmptyString}-${workflowId}-$${options.entity ?? options.workflowName}${workflowDimension}-${execIndex}`;
     const parentWorkflowId = `${workflowId}-f`;
-    const workflowTopic = `${options.taskQueue}-${options.workflowName}`;
+    const workflowTopic = `${options.entity ?? options.taskQueue}-${options.entity ?? options.workflowName}`;
 
     try {
       //get the status; if there is no error, return childJobId (what was spawned)
@@ -273,8 +275,8 @@ export class WorkflowService {
       const store = asyncLocalStorage.getStore();
       const workflowId = options.workflowId ?? store.get('workflowId');
       let workflowTopic = store.get('workflowTopic');
-      if (options.taskQueue && options.workflowName) {
-        workflowTopic = `${options.taskQueue}-${options.workflowName}`;
+      if (options.entity || (options.taskQueue && options.workflowName)) {
+        workflowTopic = `${options.entity ?? options.taskQueue}-${options.entity ?? options.workflowName}`;
       } //else this is essentially recursion as the function calls itself
       const payload = {
         arguments: [...options.args],
