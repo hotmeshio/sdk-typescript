@@ -49,6 +49,7 @@ export {
     WorkflowConfig,
     WorkerConfig,
     WorkerOptions,
+    WorkflowContext,
     WorkflowSearchOptions,
     WorkflowDataType,
     WorkflowOptions,

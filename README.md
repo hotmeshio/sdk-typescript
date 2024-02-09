@@ -92,19 +92,25 @@ npm install @hotmeshio/hotmesh
 
 Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `MeshOS` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
 
- - `waitForSignal` | Pause your function and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once they've all arrived.
+ - `waitForSignal` | Pause your function and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once all signals have arrived.
  - `signal` | Send a signal (and optional payload) to any paused function.
  - `hook` | Redis governance converts your functions into 're-entrant processes'. Optionally use the *hook* method to spawn parallel execution threads to augment a running workflow.
- - `sleep` | Pause function execution for a ridiculous amount of time (months, years, etc). There's no risk of information loss, as Redis governs function state. When your function awakens, function state is efficiently (and automatically) restored.
+ - `sleep` | Pause function execution for a ridiculous amount of time (months, years, etc). There's no risk of information loss, as Redis governs function state. When your function awakens, function state is efficiently (and automatically) restored and your function will resume right where it left off.
  - `random` | Generate a deterministic random number that can be used in a reentrant process workflow (replaces `Math.random()`).
  - `executeChild` | Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
  - `startChild` | Call another durable function, but do not await the response.
- - `set` | Set one or more name/value pairs (e.g, `set('name1', 'value1', 'name1', 'value2')`)
- - `get` | Get a single value by name(e.g, `get('name')`)
- - `mget` | Get multiple values by name (e.g, `get('name1', 'name2')`)
- - `del` | Delete one or more entries by name and return the number deleted (e.g, `del('name1', 'name1')`)
- - `incr` | Increment (or decrement) a number (e.g, `incr('name', -99)`)
- - `mult` | Multiply a number (e.g, `mult('name', 12)`)
+ - `search` | Instance a search session (e.g, `const search = MeshOS.search()`)
+    - `set` | Set one or more name/value pairs (e.g, `search.set('name1', 'value1', 'name2', 'value2')`)
+    - `get` | Get a single value by name(e.g, `search.get('name')`)
+    - `mget` | Get multiple values by name (e.g, `search.get('name1', 'name2')`)
+    - `del` | Delete one or more entries by name and return the number deleted (e.g, `search.del('name1', 'name2')`)
+    - `incr` | Increment (or decrement) a number (e.g, `search.incr('name', -99)`)
+    - `mult` | Multiply a number (e.g, `search.mult('name', 12)`)
+ - `find` | Find workflows using the native Redis [FT.*](https://redis.io/commands/ft.search/) search commands
+ - `findWhere` | Find workflows using a simplified, JSON-based search syntax that overlays the native Redis FT.SEARCH syntax.
+ - `createIndex` | Create a searchable index in Redis using simplified, JSON-based syntax that overlays the native Redis FT.CREATE syntax.
+ - `startWorkers` | Start the workers necessary to govern your class (typically called at server startup).
+ - `stopWorkers` | Stop all workers (typically called at server shutdown)
 
 Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) repo for usage examples. 
 

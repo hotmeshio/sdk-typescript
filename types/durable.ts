@@ -7,6 +7,44 @@ type WorkflowConfig = {
   initialInterval?: string; //default 1s
 }
 
+type WorkflowContext = {
+
+  /**
+   * the reentrant semaphore, incremented in real-time as idempotent statements are re-traversed upon reentry. Indicates the current semaphore count.
+   */
+  counter: number;
+
+  /**
+   * the HotMesh App namespace. `durable` is the default.
+   */
+  namespace: string;
+
+  /**
+   * the workflow/job ID
+   */
+  workflowId: string;
+
+  /** 
+   * the dimensional isolation for the reentrant hook, expressed in the format `0,0`, `0,1`, etc
+   */
+  workflowDimension: string;
+
+  /**
+   * a concatenation of the task queue and workflow name (e.g., `${taskQueueName}-${workflowName}`)
+   */
+  workflowTopic: string;
+
+  /**
+   * the open telemetry trace context for the workflow, used for logging and tracing. If a sink is enabled, this will be sent to the sink.
+   */
+  workflowTrace: string;
+
+  /**
+   * the open telemetry span context for the workflow, used for logging and tracing. If a sink is enabled, this will be sent to the sink.
+   */
+  workflowSpan: string;
+}
+
 type WorkflowSearchOptions = {
   index?: string;         //FT index name (myapp:myindex)
   prefix?: string[];      //FT prefixes (['myapp:myindex:prefix1', 'myapp:myindex:prefix2'])
@@ -15,11 +53,12 @@ type WorkflowSearchOptions = {
 }
 
 type WorkflowOptions = {
-  namespace?: string;   //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
+  namespace?: string;         //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
   taskQueue: string;
-  args: any[];          //input arguments to pass in
-  workflowId?: string;   //execution id (the job id)
-  workflowName?: string; //the name of the user's workflow function
+  args: any[];                //input arguments to pass in
+  workflowId?: string;        //execution id (the job id)
+  prefix?: string;            //If invoking a hook, the prefix ensures the FT.SEARCH index is properly scoped to those documents with this prefix
+  workflowName?: string;      //the name of the user's workflow function
   parentWorkflowId?: string;  //system reserved; the id of the parent; if present the flow will not self-clean until the parent that spawned it self-cleans
   workflowTrace?: string;
   workflowSpan?: string;
@@ -188,4 +227,5 @@ export {
   WorkflowSearchOptions,
   WorkflowDataType,
   WorkflowOptions,
+  WorkflowContext,
 };

@@ -16,6 +16,7 @@ import {
   ActivityConfig,
   HookOptions,
   ProxyType,
+  WorkflowContext,
   WorkflowOptions } from "../../types/durable";
 import { JobOutput, JobState } from '../../types/job';
 import { StreamStatus } from '../../types/stream';
@@ -24,7 +25,10 @@ import { deterministicRandom } from '../../modules/utils';
 export class WorkflowService {
 
   /**
-   * Spawn a child workflow. await and return the result.
+   * Spawns a child workflow. await and return the result.
+   * @template T - the result type
+   * @param {WorkflowOptions} options - the workflow options
+   * @returns {Promise<T>} - the result of the child workflow
    */
   static async executeChild<T>(options: WorkflowOptions): Promise<T> {
     const store = asyncLocalStorage.getStore();
@@ -35,10 +39,11 @@ export class WorkflowService {
     const workflowSpan = store.get('workflowSpan');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
+    const prefix = options.prefix ?? '';
     //this is risky but MUST be allowed. Users MAY set the workflowId,
     //but if there is a naming collision, the data from the target entity will be used
     //as there is know way of knowing if the item was generated via a prior run of the workflow
-    const childJobId = options.workflowId ?? `-${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
+    const childJobId = options.workflowId ?? `${prefix}-${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
     const parentWorkflowId = `${workflowId}-f`;
 
     const client = new Client({
@@ -70,7 +75,10 @@ export class WorkflowService {
   }
 
   /**
-   * spawn a child workflow. return the childJobId.
+   * Spawns a child workflow. return the childJobId.
+   * This method is used when the result of the child workflow is not needed.
+   * @param {WorkflowOptions} options - the workflow options
+   * @returns {Promise<string>} - the childJobId
    */
   static async startChild<T>(options: WorkflowOptions): Promise<string> {
     const store = asyncLocalStorage.getStore();
@@ -81,7 +89,8 @@ export class WorkflowService {
     const workflowSpan = store.get('workflowSpan');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const childJobId = options.workflowId ?? `-${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
+    const prefix = options.prefix ?? '';
+    const childJobId = options.workflowId ?? `${prefix}-${workflowId}-$${options.workflowName}${workflowDimension}-${execIndex}`;
     const parentWorkflowId = `${workflowId}-f`;
     const workflowTopic = `${options.taskQueue}-${options.workflowName}`;
 
@@ -108,7 +117,22 @@ export class WorkflowService {
   }
 
   /**
-   * wrap all activities in a proxy that will durably run them
+   * Wraps activities in a proxy that will durably run them
+   * @param {ActivityConfig} options - the activity configuration
+   * that will be used to wrap the activities. You must pass an
+   * `activities` object to this configuration. The activities object
+   * should be a key-value pair of activity names and their respective
+   * functions. This is typically done by importing the activities.
+   * 
+   * @returns {ProxyType<ACT>} - a proxy object with the same keys as the
+   * activities object, but with the values replaced by a wrapped function
+   * @example
+   * // import the activities
+   * import * as activities from './activities';
+   * const proxy = WorkflowService.proxyActivities<typeof activities>({ activities });
+   * 
+   * //or destructure the proxy object, as the function names are the keys
+   * const { activity1, activity2 } = WorkflowService.proxyActivities<typeof activities>({ activities });
    */
   static proxyActivities<ACT>(options?: ActivityConfig): ProxyType<ACT> {
     if (options.activities) {
@@ -127,7 +151,9 @@ export class WorkflowService {
   }
 
   /**
-   * return a search session for use when reading/writing to the workflow HASH
+   * Returns a search session for use when reading/writing to the workflow HASH.
+   * The search session provides access to methods like `get`, `mget`, `set`, `del`, and `incr`.
+   * @returns {Promise<Search>} - a search session
    */
   static async search(): Promise<Search> {
     const store = asyncLocalStorage.getStore();
@@ -144,7 +170,8 @@ export class WorkflowService {
   }
 
   /**
-   * return a handle to the hotmesh client currently running the workflow
+   * Return a handle to the hotmesh client currently running the workflow
+   * @returns {Promise<HotMesh>} - a hotmesh client
    */
   static async getHotMesh(): Promise<HotMesh> {
     const store = asyncLocalStorage.getStore();
@@ -154,9 +181,34 @@ export class WorkflowService {
   }
 
   /**
-   * those methods that may only be called once must be protected by flagging
+   * Returns the current workflow context
+   * @returns {WorkflowContext} - the current workflow context
+   */
+  static getContext(): WorkflowContext {
+    const store = asyncLocalStorage.getStore();
+    const workflowId = store.get('workflowId');
+    const workflowDimension = store.get('workflowDimension') ?? '';
+    const workflowTopic = store.get('workflowTopic');
+    const namespace = store.get('namespace');
+    const workflowTrace = store.get('workflowTrace');
+    const workflowSpan = store.get('workflowSpan');
+    const COUNTER = store.get('counter');
+    return {
+      counter: COUNTER.counter,
+      namespace,
+      workflowId,
+      workflowDimension,
+      workflowTopic,
+      workflowTrace,
+      workflowSpan,
+    };
+  }
+
+  /**
+   * Those methods that may only be called once must be protected by flagging
    * their execution with a unique key (the key is stored in the HASH alongside
    * process state and job state)
+   * @private
    */
   static async isSideEffectAllowed(hotMeshClient: HotMesh, prefix:string): Promise<boolean> {
     const store = asyncLocalStorage.getStore();
@@ -175,10 +227,10 @@ export class WorkflowService {
   }
 
   /**
-   * returns a random number between 0 and 1. This number is deterministic
+   * Returns a random number between 0 and 1. This number is deterministic
    * and will never vary for a given seed. This is useful for randomizing
    * pathways in a workflow that can be safely replayed.
-   * @returns {number}
+   * @returns {number} - a random number between 0 and 1
    */
   static random(): number {
     const store = asyncLocalStorage.getStore();
@@ -188,8 +240,11 @@ export class WorkflowService {
   }
 
   /**
-   * send signal data into any other paused thread (which is paused and
+   * Sends signal data into any other paused thread (which is paused and
    * awaiting the signal) from within a hook-thread or the main-thread
+   * @param {string} signalId - the signal id
+   * @param {Record<any, any>} data - the signal data
+   * @returns {Promise<string>} - the stream id
    */
   static async signal(signalId: string, data: Record<any, any>): Promise<string> {
     const store = asyncLocalStorage.getStore();
@@ -204,9 +259,10 @@ export class WorkflowService {
   }
 
   /**
-   * spawn a hook from either the main thread or a hook thread with
+   * Spawns a hook from either the main thread or a hook thread with
    * the provided options; worflowId/TaskQueue/Name are optional and will
    * default to the current workflowId/WorkflowTopic if not provided
+   * @param {HookOptions} options - the hook options
    */
   static async hook(options: HookOptions): Promise<string> {
     const store = asyncLocalStorage.getStore();
@@ -230,6 +286,11 @@ export class WorkflowService {
     }
   }
 
+  /**
+   * Sleeps for a duration.
+   * @param {string} duration - for example: '1 minute', '2 hours', '3 days'
+   * @returns {Promise<number>}
+   */
   static async sleep(duration: string): Promise<number> {
     const seconds = ms(duration) / 1000;
 
@@ -254,6 +315,12 @@ export class WorkflowService {
     }
   }
 
+  /**
+   * Waits for a signal to awaken
+   * @param {string[]} signals - the signals to wait for
+   * @param {Record<string, string>} options - the options
+   * @returns {Promise<Record<any, any>[]>}
+   */
   static async waitForSignal(signals: string[], options?: Record<string, string>): Promise<Record<any, any>[]> {
     const store = asyncLocalStorage.getStore();
     const COUNTER = store.get('counter');
