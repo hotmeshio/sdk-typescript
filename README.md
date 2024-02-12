@@ -44,7 +44,7 @@ npm install @hotmeshio/hotmesh
       }
     }
     ```
-3. Although you could call your workflow directly (it's just a vanilla function), it's only durable when invoked and orchestrated via HotMesh.
+3. Instance a HotMesh **client** to invoke the workflow.
     ```javascript
     //client.ts
     import { Durable } from '@hotmeshio/hotmesh';
@@ -91,29 +91,77 @@ npm install @hotmeshio/hotmesh
     }
     ```
 
+### Workflow Extensions
 Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `Durable.workflow` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
 
-Include statements like `await Durable.workflow.sleep('1 month')` to pause your workflow function for a month, or `await Durable.workflow.waitForSignal('signal1', 'signal2')` to pause your function until all signals have arrived.
-
- - `waitForSignal` | Pause your function and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once all signals have arrived.
- - `signal` | Send a signal (and optional payload) to any paused function.
- - `hook` | Redis governance converts your functions into 're-entrant processes'. Optionally use the *hook* method to spawn parallel execution threads to augment a running workflow.
- - `sleep` | Pause function execution for a ridiculous amount of time (months, years, etc). There's no risk of information loss, as Redis governs function state. When your function awakens, function state is efficiently (and automatically) restored and your function will resume right where it left off.
- - `random` | Generate a deterministic random number that can be used in a reentrant process workflow (replaces `Math.random()`).
- - `executeChild` | Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
- - `startChild` | Call another durable function, but do not await the response.
- - `search` | Instance a search session (e.g, `const search = MeshOS.search()`)
-    - `set` | Set one or more name/value pairs (e.g, `search.set('name1', 'value1', 'name2', 'value2')`)
-    - `get` | Get a single value by name(e.g, `search.get('name')`)
-    - `mget` | Get multiple values by name (e.g, `search.mget('name1', 'name2')`)
-    - `del` | Delete one or more entries by name and return the number deleted (e.g, `search.del('name1', 'name2')`)
-    - `incr` | Increment (or decrement) a number (e.g, `search.incr('name', -99)`)
-    - `mult` | Multiply a number (e.g, `search.mult('name', 12)`)
- - `find` | Find workflows using the native Redis [FT.*](https://redis.io/commands/ft.search/) search commands
- - `findWhere` | Find workflows using a simplified, JSON-based search syntax that overlays the native Redis FT.SEARCH syntax.
- - `createIndex` | Create a searchable index in Redis using simplified, JSON-based syntax that overlays the native Redis FT.CREATE syntax.
- - `startWorkers` | Start the workers necessary to govern your class (typically called at server startup).
- - `stopWorkers` | Stop all workers (typically called at server shutdown)
+ - `waitForSignal` Pause your function and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once all signals have arrived.
+   ```javascript
+    const signals = [a, b] = await Durable.workflow.waitForSignal('sig1', 'sig2')` 
+    ```
+ - `signal` Send a signal (and optional payload) to a paused function awaiting the signal.
+    ```javascript
+      await Durable.workflow.signal('sig1', {payload: 'hi!'});
+    ```
+ - `hook` Redis governance converts your functions into 're-entrant processes'. Optionally use the *hook* method to spawn parallel execution threads to augment a running workflow.
+    ```javascript
+    await Durable.workflow.hook({
+      workflowName: 'newsletter',
+      taskQueue: 'default',
+      args: []
+    });
+    ```
+ - `sleepFor` Pause function execution for a ridiculous amount of time (months, years, etc). There's no risk of information loss, as Redis governs function state. When your function awakens, function state is efficiently (and automatically) restored and your function will resume right where it left off.
+    ```javascript
+    await Durable.workflow.sleepFor('1 month');
+    ```
+ - `random` Generate a deterministic random number that can be used in a reentrant process workflow (replaces `Math.random()`).
+    ```javascript
+    const random = await Durable.workflow.random();
+    ```
+ - `executeChild` Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
+    ```javascript
+    const jobResponse = await Durable.workflow.executeChild({
+      workflowName: 'newsletter',
+      taskQueue: 'default',
+      args: [{ id, user_id, etc }],
+    });
+    ```
+ - `startChild` Call another durable function, but do not await the response.
+    ```javascript
+    const jobId = await Durable.workflow.startChild({
+      workflowName: 'newsletter',
+      taskQueue: 'default',
+      args: [{ id, user_id, etc }],
+    });
+    ```
+ - `search` Instance a search session
+    ```javascript
+    const search = await Durable.workflow.search();
+    ```
+    - `set` Set one or more name/value pairs
+      ```javascript
+      await search.set('name1', 'value1', 'name2', 'value2');
+      ```
+    - `get` Get a single value by name
+      ```javascript
+      const value = await search.get('name');
+      ```
+    - `mget` Get multiple values by name
+      ```javascript
+      const [val1, val2] = await search.mget('name1', 'name2');
+      ```
+    - `del` Delete one or more entries by name and return the number deleted
+      ```javascript
+      const count = await search.del('name1', 'name2');
+      ```
+    - `incr` Increment (or decrement) a number
+      ```javascript
+      const value = await search.incr('name', 12);
+      ```
+    - `mult` Multiply a number
+      ```javascript
+      const value = await search.mult('name', 12);
+      ```
 
 Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) repo for usage examples. 
 

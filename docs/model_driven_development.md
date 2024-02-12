@@ -279,7 +279,7 @@ Activities are the core building blocks of a graph, representing individual task
 
 #### 4.1.1. Hook
 
-An `hook` represents an activity that listens for outside events, including time hook (sleep), Web hook, and cycle (repeat). It can be used to resolve complex mapping values that would be too expensive to resolve more than once.
+A `hook` represents an activity that listens for outside events, including time hook (sleep), Web hook, and cycle (repeat). It can be used to resolve complex mapping values that would be too expensive to resolve more than once.
 
 Example of an `activity` in YAML:
 
@@ -375,7 +375,7 @@ Cycle activities can also include input mappings in order to overrride and/or pr
 
 Consider the following graph where the `c1` activity is a cycle activity that targets the `a1` activity. Each time the worker activity, `w1` returns a message with an error status (`code:500`), the cycle activity will re-execute the DAG, starting at the `a1` activity. The cycle repeats until the worker activity returns a message with a success status (`code:200`).
 
->NOTE: It is important to include a sleep activity in such cases in order to avoid unnecessary cycles when handling errors.
+>NOTE: It is important to also include a hook activity configured with a sleep delay, in order to avoid unnecessary cycles when handling errors.
 
 ```yaml
 app:
