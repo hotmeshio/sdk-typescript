@@ -44,7 +44,7 @@ npm install @hotmeshio/hotmesh
       }
     }
     ```
-3. Instance a HotMesh client to invoke the workflow.
+3. Instance a HotMesh **client** to invoke the workflow.
     ```javascript
     //client.ts
     import { Durable } from '@hotmeshio/hotmesh';
