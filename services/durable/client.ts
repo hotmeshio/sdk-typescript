@@ -113,13 +113,12 @@ export class ClientService {
         payload,
         context as JobState
       );
-      //seed search data if present
+      // Seed search data if present
       if (jobId && options.search?.data) {
         const searchSessionId = `-search-0`;
         const search = new Search(jobId, hotMeshClient, searchSessionId);
-        for (const [key, value] of Object.entries(options.search.data)) {
-          search.set(key, value);
-        }
+        const entries = Object.entries(options.search.data).flat();
+        search.set(...entries);
       }
       return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
     },
