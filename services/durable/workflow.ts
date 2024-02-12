@@ -3,6 +3,7 @@ import ms from 'ms';
 import {
   DurableIncompleteSignalError,
   DurableSleepError,
+  DurableSleepForError,
   DurableWaitForSignalError } from '../../modules/errors';
 import { KeyService, KeyType } from '../../modules/key';
 import { asyncLocalStorage } from './asyncLocalStorage';
@@ -289,9 +290,37 @@ export class WorkflowService {
   }
 
   /**
-   * Sleeps for a duration.
+   * Sleeps the workflow for a duration. As the function is reentrant, 
+   * upon reentry, the function will traverse prior execution paths up
+   * until the sleep command and then resume execution from that point.
    * @param {string} duration - for example: '1 minute', '2 hours', '3 days'
    * @returns {Promise<number>}
+   */
+  static async sleepFor(duration: string): Promise<number> {
+    const seconds = ms(duration) / 1000;
+    const store = asyncLocalStorage.getStore();
+    const namespace = store.get('namespace');
+    const workflowTopic = store.get('workflowTopic');
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'sleep')) {
+      const workflowId = store.get('workflowId');
+      const workflowDimension = store.get('workflowDimension') ?? '';
+      const COUNTER = store.get('counter');
+      const execIndex = COUNTER.counter;
+      // spawn a new sleep job if error code 592 is thrown by the worker
+      // NOTE: If this message appears in the stack trace, the `.sleepFor()` method in your workflow code was NOT awaited.
+      throw new DurableSleepForError(workflowId, seconds, execIndex, workflowDimension);
+    }
+    return seconds;
+  }
+
+  /**
+   * Sleeps the workflow for a duration. As the function is reentrant, 
+   * upon reentry, the function will traverse prior execution paths up
+   * until the sleep command and then resume execution from that point.
+   * @param {string} duration - for example: '1 minute', '2 hours', '3 days'
+   * @returns {Promise<number>}
+   * @deprecated - use `sleepFor` instead
    */
   static async sleep(duration: string): Promise<number> {
     const seconds = ms(duration) / 1000;
@@ -312,7 +341,6 @@ export class WorkflowService {
       return seconds;
     } catch (e) {
       // spawn a new sleep job if error code 595 is thrown by the worker)
-      // NOTE: If this message shows up in your stack trace, you forgot to await `Durable.workflow.sleep()` in your workflow code.
       throw new DurableSleepError(workflowId, seconds, execIndex, workflowDimension);
     }
   }

@@ -11,7 +11,7 @@ import { sleepFor } from '../../../modules/utils';
 
 const { Connection, Client, Worker } = Durable;
 
-describe('DURABLE | sleep | `Durable.workflow.sleep`', () => {
+describe('DURABLE | sleep | `Durable.workflow.sleepFor`', () => {
   let handle: WorkflowHandleService;
   let workflowGuid: string;
   const options = {

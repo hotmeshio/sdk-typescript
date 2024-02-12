@@ -6,7 +6,8 @@
  *
  * ERROR CODES:
  *      594: waitforsignal
- *      595: sleep
+ *      592: sleepFor
+ *      595: sleep (deprecated)
  *      596, 597, 598: fatal
  *      599: retry
  */
@@ -126,6 +127,20 @@ const getWorkflowYAML = (app: string, version: string) => {
               maps:
                 duration: '{$self.output.data.duration}'
                 index: '{$self.output.data.index}'
+            592:
+              schema:
+                type: object
+                properties:
+                  duration:
+                    type: number
+                    description: sleepFor duration in seconds
+                  index:
+                    type: number
+                    description: the current index
+              maps:
+                duration: '{$self.output.data.duration}'
+                index: '{$self.output.data.index}'
+  
           job:
             maps:
               response: '{$self.output.data.response}'
@@ -228,7 +243,20 @@ const getWorkflowYAML = (app: string, version: string) => {
               maps:
                 duration: '{$self.output.data.duration}'
                 index: '{$self.output.data.index}'
-
+            592:
+              schema:
+                type: object
+                properties:
+                  duration:
+                    type: number
+                    description: sleepFor duration in seconds
+                  index:
+                    type: number
+                    description: the current index
+              maps:
+                duration: '{$self.output.data.duration}'
+                index: '{$self.output.data.index}'
+  
         siga594:
           title: Signal In - Wait for signals
           type: await
@@ -331,6 +359,19 @@ const getWorkflowYAML = (app: string, version: string) => {
             maps:
               duration: '{siga1.output.data.duration}'
 
+        siga592:
+          title: Signal In - Sleep For a duration and then cycle/goto
+          type: hook
+          sleep: '{sigw1.output.data.duration}'
+
+        sigc592:
+          title: Signal In - Goto Activity a1 after sleeping for a duration
+          type: cycle
+          ancestor: siga1
+          input:
+            maps:
+              duration: '{siga1.output.data.duration}'
+    
         siga599:
           title: Signal In - Sleep exponentially longer and retry
           type: hook
@@ -443,6 +484,19 @@ const getWorkflowYAML = (app: string, version: string) => {
 
         c595:
           title: Goto Activity a1
+          type: cycle
+          ancestor: a1
+          input:
+            maps:
+              duration: '{a1.output.data.duration}'
+
+        a592:
+          title: Sleep For a duration and then cycle/goto
+          type: hook
+          sleep: '{w1.output.data.duration}'
+
+        c592:
+          title: Goto Activity a1 after sleeping for a duration
           type: cycle
           ancestor: a1
           input:
@@ -652,6 +706,9 @@ const getWorkflowYAML = (app: string, version: string) => {
           - to: siga595
             conditions:
               code: 595
+          - to: siga592
+            conditions:
+              code: 592
           - to: siga599
             conditions:
               code: 599
@@ -663,6 +720,8 @@ const getWorkflowYAML = (app: string, version: string) => {
           - to: sigc595
             conditions:
               code: 202
+        siga592:
+          - to: sigc592
         siga599:
           - to: sigc599
         a1:
@@ -674,6 +733,9 @@ const getWorkflowYAML = (app: string, version: string) => {
           - to: a595
             conditions:
               code: 595
+          - to: a592
+            conditions:
+              code: 592
           - to: a599
             conditions:
               code: 599
@@ -700,6 +762,8 @@ const getWorkflowYAML = (app: string, version: string) => {
           - to: c595
             conditions:
               code: 202
+        a592:
+          - to: c592
         a599:
           - to: c599
 

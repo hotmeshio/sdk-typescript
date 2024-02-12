@@ -55,7 +55,7 @@ export async function example(name: string): Promise<string> {
   console.log('jimbo should be jackson=>', await search.get('jimbo'));
 
   //sleep for 5 and then return
-  await Durable.workflow.sleep('5 seconds');
+  await Durable.workflow.sleepFor('5 seconds');
   return `${hello} - ${goodbye}`;
 }
 
@@ -91,7 +91,7 @@ export async function exampleHook(name: string): Promise<void> {
   console.log('Hook Spawn: childWorkflowId is=>', childWorkflowId);
 
   //test out sleeping
-  await Durable.workflow.sleep('1 second');
+  await Durable.workflow.sleepFor('1 second');
 
   //awake the parent/main thread by sending the 'abcdefg' signal
   await Durable.workflow.signal('abcdefg', { data: greeting });

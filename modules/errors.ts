@@ -33,6 +33,7 @@ class DurableWaitForSignalError extends Error {
   }
 }
 
+/* @deprecated */
 class DurableSleepError extends Error {
   code: number;
   duration: number; //seconds
@@ -44,6 +45,19 @@ class DurableSleepError extends Error {
     this.index = index;
     this.dimension = dimension;
     this.code = 595;
+  }
+}
+class DurableSleepForError extends Error {
+  code: number;
+  duration: number; //seconds
+  index: number;    //execution order in the workflow
+  dimension: string; //hook dimension (e.g., ',0,1,0') (uses empty string for `null`)
+  constructor(message: string, duration: number, index: number, dimension: string) {
+    super(message);
+    this.duration = duration;
+    this.index = index;
+    this.dimension = dimension;
+    this.code = 592;
   }
 }
 class DurableTimeoutError extends Error {
@@ -124,6 +138,7 @@ export {
   DurableWaitForSignalError,
   DurableIncompleteSignalError,
   DurableSleepError,
+  DurableSleepForError,
   DuplicateJobError,
   GetStateError,
   SetStateError,
