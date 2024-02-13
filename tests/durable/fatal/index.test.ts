@@ -30,10 +30,7 @@ describe('DURABLE | fatal | `Workflow Promise.all proxyActivities`', () => {
 
   afterAll(async () => {
     await sleepFor(1500);
-    await Durable.Client.shutdown();
-    await Durable.Worker.shutdown();
-    await StreamSignaler.stopConsuming();
-    await RedisConnection.disconnectAll();
+    await Durable.shutdown();
   }, 10_000);
 
   describe('Connection', () => {

@@ -6,7 +6,6 @@ import { HMNS } from '../../../modules/key';
 import { sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { MathHandler } from '../../../services/pipe/functions/math';
-import { StreamSignaler } from '../../../services/signaler/stream';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 
 import {
@@ -61,8 +60,8 @@ describe('FUNCTIONAL | Quorum', () => {
   });
 
   afterAll(async () => {
-    await StreamSignaler.stopConsuming();
-    await RedisConnection.disconnectAll();
+    hotMesh.stop();
+    await HotMesh.stop();
   });
 
   describe('Setup', () => {

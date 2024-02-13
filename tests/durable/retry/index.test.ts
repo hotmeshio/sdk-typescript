@@ -6,7 +6,6 @@ import * as workflows from './src/workflows';
 import { nanoid } from 'nanoid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
-import { StreamSignaler } from '../../../services/signaler/stream';
 import { sleepFor } from '../../../modules/utils';
 
 const { Connection, Client, Worker } = Durable;
@@ -29,10 +28,7 @@ describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
 
   afterAll(async () => {
     await sleepFor(1500);
-    await Durable.Client.shutdown();
-    await Durable.Worker.shutdown();
-    await StreamSignaler.stopConsuming();
-    await RedisConnection.disconnectAll();
+    await Durable.shutdown();
   }, 10_000);
 
   describe('Connection', () => {
