@@ -4,7 +4,6 @@ import Redis from 'ioredis';
 import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
-import { StreamSignaler } from '../../../services/signaler/stream';
 import {
   StreamData,
   StreamDataResponse } from '../../../types/stream';
@@ -79,8 +78,8 @@ describe('FUNCTIONAL | Activity Cycles', () => {
   }, 15_000);
 
   afterAll(async () => {
-    await StreamSignaler.stopConsuming();
-    await RedisConnection.disconnectAll();
+    hotMesh.stop();
+    await HotMesh.stop();
   });
 
   describe('Cycle', () => {

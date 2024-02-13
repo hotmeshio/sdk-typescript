@@ -30,6 +30,8 @@ describe('Trigger class', () => {
   });
 
   afterAll(async () => {
+    hotMesh.stop();
+    await HotMesh.stop();
     await RedisConnection.disconnectAll();
   });
 

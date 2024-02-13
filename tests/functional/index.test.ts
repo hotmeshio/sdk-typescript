@@ -9,7 +9,6 @@ import {
   StreamDataResponse,
   StreamStatus } from '../../types/stream';
 import { RedisConnection } from '../../services/connector/clients/ioredis';
-import { StreamSignaler } from '../../services/signaler/stream';
 import { JobOutput } from '../../types/job';
 import { sleepFor } from '../../modules/utils';
 
@@ -30,9 +29,8 @@ describe('FUNCTIONAL | HotMesh', () => {
   });
 
   afterAll(async () => {
-    await StreamSignaler.stopConsuming();
-    await RedisConnection.disconnectAll();
-    await hotMesh.stop();
+    hotMesh.stop();
+    await HotMesh.stop();
   });
 
   describe('init()', () => {

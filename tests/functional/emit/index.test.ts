@@ -6,7 +6,6 @@ import { HMNS } from '../../../modules/key';
 import { sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
-import { StreamSignaler } from '../../../services/signaler/stream';
 import { JobOutput } from '../../../types/job';
 import {
   StreamData,
@@ -57,8 +56,8 @@ describe('FUNCTIONAL | EMIT', () => {
   });
 
   afterAll(async () => {
-    await StreamSignaler.stopConsuming();
-    await RedisConnection.disconnectAll();
+    hotMesh.stop();
+    await HotMesh.stop();
   });
 
   describe('Emit Interim Job State', () => {

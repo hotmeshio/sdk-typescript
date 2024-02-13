@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid';
 import { RedisConnection } from '../../../services/connector/clients/redis';
 import { sleepFor } from '../../../modules/utils';
 import { MyClass as MeshOSTest } from './src/subclass';
+import { Durable } from '../../../services/durable';
 
 describe('DURABLE | MeshOS', () => {
   const prefix = 'ord_';
@@ -30,8 +31,7 @@ describe('DURABLE | MeshOS', () => {
 
   afterAll(async () => {
     await sleepFor(5000);
-    await MeshOSTest.stopWorkers();
-    await RedisConnection.disconnectAll();
+    await Durable.shutdown();
   }, 25_000);
 
   describe('Worker', () => {

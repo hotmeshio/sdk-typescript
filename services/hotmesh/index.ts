@@ -1,5 +1,7 @@
 import { nanoid } from 'nanoid';
 import { HMNS } from '../../modules/key';
+import { RedisConnection } from '../connector/clients/redis';
+import { RedisConnection as IORedisConnection } from '../connector/clients/ioredis';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
 import { StreamSignaler } from '../signaler/stream';
@@ -31,6 +33,8 @@ class HotMeshService {
   quorum: QuorumService | null = null;
   workers: WorkerService[] = [];
   logger: ILogger;
+
+  static disconnecting = false;
 
   verifyAndSetNamespace(namespace?: string) {
     if (!namespace) {
@@ -176,8 +180,16 @@ class HotMeshService {
     return await this.engine?.hookAll(hookTopic, data, query, queryFacets);
   }
 
-  async stop() {
-    await StreamSignaler.stopConsuming();
+  static async stop() {
+    if (!this.disconnecting) {
+      this.disconnecting = true;
+      await StreamSignaler.stopConsuming();
+      await RedisConnection.disconnectAll();
+      await IORedisConnection.disconnectAll();
+    }
+  }
+
+  stop() {
     this.engine?.task.cancelCleanup();
   }
 

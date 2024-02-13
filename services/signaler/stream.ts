@@ -254,13 +254,13 @@ class StreamSignaler {
     for (const instance of [...StreamSignaler.signalers]) {
       instance.stopConsuming();
     }
+    await sleepFor(BLOCK_TIME_MS);
   }
   
   async stopConsuming() {
     this.shouldConsume = false;
     this.logger.info(`stream-consumer-stopping`, this.topic ? { topic: this.topic } : undefined);
     this.cancelThrottle();
-    //await sleepFor(BLOCK_TIME_MS);
   }
 
   cancelThrottle() {

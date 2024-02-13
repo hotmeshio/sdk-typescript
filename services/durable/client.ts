@@ -198,9 +198,8 @@ export class ClientService {
   }
 
   static async shutdown(): Promise<void> {
-    for (const [key, value] of ClientService.instances) {
-      const hotMesh = await value;
-      await hotMesh.stop();
+    for (const [_, hotMeshInstance] of ClientService.instances) {
+      (await hotMeshInstance).stop();
     }
   }
 }

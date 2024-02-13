@@ -7,7 +7,6 @@ import { WorkflowHandleService } from './handle';
 import { Search } from './search';
 import { WorkerService as Worker } from './worker';
 import { WorkflowService } from './workflow';
-import { StreamSignaler } from '../signaler/stream';
 import {
   FindOptions,
   FindWhereOptions,
@@ -135,9 +134,7 @@ export class MeshOSService {
    * @returns {Promise<void>}
    */
   static async stopWorkers(): Promise<void> {
-    await Durable.Client.shutdown();
-    await Durable.Worker.shutdown();
-    await StreamSignaler.stopConsuming();
+    await Durable.shutdown();
   }
 
   /**

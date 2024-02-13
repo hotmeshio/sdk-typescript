@@ -291,9 +291,8 @@ export class WorkerService {
   }
 
   static async shutdown(): Promise<void> {
-    for (const [key, value] of WorkerService.instances) {
-      const hotMesh = await value;
-      await hotMesh.stop();
+    for (const [_, hotMeshInstance] of WorkerService.instances) {
+      (await hotMeshInstance).stop();
     }
   }
 }
