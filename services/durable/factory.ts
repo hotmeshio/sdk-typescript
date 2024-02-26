@@ -18,12 +18,18 @@ const getWorkflowYAML = (app: string, version: string) => {
   graphs:
     - subscribes: ${app}.execute
       publishes: ${app}.executed
-      expire: 120
+      expire:
+        '@pipe':
+          - ['{t1.output.data.originJobId}', 0, '{t1.output.data.expire}']
+          - ['{@conditional.ternary}']
+
       input:
         schema:
           type: object
           properties:
             parentWorkflowId:
+              type: string
+            originJobId:
               type: string
             workflowId:
               type: string
@@ -32,6 +38,8 @@ const getWorkflowYAML = (app: string, version: string) => {
             workflowTopic:
               type: string
             backoffCoefficient:
+              type: number
+            expire:
               type: number
       output:
         schema:
@@ -49,10 +57,7 @@ const getWorkflowYAML = (app: string, version: string) => {
           stats:
             id: '{$self.input.data.workflowId}'
             key: '{$self.input.data.parentWorkflowId}'
-            granularity: infinity
-            measures:
-              - measure: index
-                target: '{$self.input.data.parentWorkflowId}'
+            parent: '{$self.input.data.originJobId}'
           job:
             maps:
               done: false
@@ -83,10 +88,13 @@ const getWorkflowYAML = (app: string, version: string) => {
               properties:
                 workflowId:
                   type: string
+                originJobId:
+                  type: string
                 arguments:
                   type: array
             maps:
               workflowId: '{t1.output.data.workflowId}'
+              originJobId: '{t1.output.data.originJobId}'
               arguments: '{t1.output.data.arguments}'
           output:
             schema:
@@ -146,18 +154,6 @@ const getWorkflowYAML = (app: string, version: string) => {
               response: '{$self.output.data.response}'
               done: '{$self.output.data.done}'
 
-        a2:
-          title: Wait for cleanup signal
-          type: hook
-          hook:
-            type: object
-            properties:
-              done:
-                type: boolean
-          job:
-            maps:
-              workflowId: '{t1.output.data.workflowId}'
-
         sig:
           title: Signal In - Receive signals
           type: hook
@@ -199,12 +195,15 @@ const getWorkflowYAML = (app: string, version: string) => {
               properties:
                 workflowId:
                   type: string
+                originJobId:
+                  type: string
                 workflowDimension:
                   type: string
                 arguments:
                   type: array
             maps:
               workflowId: '{t1.output.data.workflowId}'
+              originJobId: '{t1.output.data.originJobId}'
               workflowDimension: '{sig.output.metadata.dad}'
               arguments: '{sig.hook.data.arguments}'
           output:
@@ -256,7 +255,7 @@ const getWorkflowYAML = (app: string, version: string) => {
               maps:
                 duration: '{$self.output.data.duration}'
                 index: '{$self.output.data.index}'
-  
+
         siga594:
           title: Signal In - Wait for signals
           type: await
@@ -279,6 +278,8 @@ const getWorkflowYAML = (app: string, version: string) => {
                         type: number
                 parentWorkflowId:
                   type: string
+                originJobId:
+                  type: string
                 cycleWorkflowId:
                   type: string
                 baseWorkflowId:
@@ -290,6 +291,10 @@ const getWorkflowYAML = (app: string, version: string) => {
                 '@pipe':
                   - ['{$job.metadata.jid}', '-w']
                   - ['{@string.concat}']
+              originJobId:
+                '@pipe':
+                  - ['{t1.output.data.originJobId}', '{t1.output.data.originJobId}', '{$job.metadata.jid}']
+                  - ['{@conditional.ternary}']
               cycleWorkflowId:
                 '@pipe':
                   - ['-', '{$job.metadata.jid}', '-$wfc', '{sig.output.metadata.dad}', '-', '{sigw1.output.data.index}']
@@ -331,6 +336,8 @@ const getWorkflowYAML = (app: string, version: string) => {
                   type: string
                 parentWorkflowId:
                   type: string
+                originJobId:
+                  type: string
             maps:
               duration: '{sigw1.output.data.duration}'
               index: '{sigw1.output.data.index}'
@@ -338,6 +345,11 @@ const getWorkflowYAML = (app: string, version: string) => {
                 '@pipe':
                   - ['{$job.metadata.jid}', '-s']
                   - ['{@string.concat}']
+              originJobId:
+                '@pipe':
+                  - ['{t1.output.data.originJobId}', '{t1.output.data.originJobId}', '{$job.metadata.jid}']
+                  - ['{@conditional.ternary}']
+
               workflowId:
                 '@pipe':
                   - ['-', '{$job.metadata.jid}', '-$sleep', '{sig.output.metadata.dad}', '-', '{sigw1.output.data.index}']
@@ -410,6 +422,8 @@ const getWorkflowYAML = (app: string, version: string) => {
                         type: number
                 parentWorkflowId:
                   type: string
+                originJobId:
+                  type: string
                 cycleWorkflowId:
                   type: string
                 baseWorkflowId:
@@ -421,6 +435,10 @@ const getWorkflowYAML = (app: string, version: string) => {
                 '@pipe':
                   - ['{$job.metadata.jid}', '-w']
                   - ['{@string.concat}']
+              originJobId:
+                '@pipe':
+                  - ['{t1.output.data.originJobId}', '{t1.output.data.originJobId}', '{$job.metadata.jid}']
+                  - ['{@conditional.ternary}']
               cycleWorkflowId:
                 '@pipe':
                   - ['-', '{$job.metadata.jid}', '-$wfc-', '{w1.output.data.index}']
@@ -462,6 +480,8 @@ const getWorkflowYAML = (app: string, version: string) => {
                   type: string
                 parentWorkflowId:
                   type: string
+                originJobId:
+                  type: string
             maps:
               duration: '{w1.output.data.duration}'
               index: '{w1.output.data.index}'
@@ -469,6 +489,10 @@ const getWorkflowYAML = (app: string, version: string) => {
                 '@pipe':
                   - ['{$job.metadata.jid}', '-s']
                   - ['{@string.concat}']
+              originJobId:
+                '@pipe':
+                  - ['{t1.output.data.originJobId}', '{t1.output.data.originJobId}', '{$job.metadata.jid}']
+                  - ['{@conditional.ternary}']
               workflowId:
                 '@pipe':
                   - ['-', '{$job.metadata.jid}', '-$sleep-', '{w1.output.data.index}']
@@ -519,154 +543,6 @@ const getWorkflowYAML = (app: string, version: string) => {
                   - ['{a1.output.data.duration}', '{t1.output.data.backoffCoefficient}']
                   - ['{@math.multiply}']
 
-        s1:
-          title: Awaken activity flows so they end and self-clean
-          type: signal
-          subtype: all
-          key_name: parentWorkflowId
-          key_value:
-            '@pipe':
-              - ['{$job.metadata.jid}', '-a']
-              - ['{@string.concat}']
-          topic: ${app}.activity.awaken
-          resolver:
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    parentWorkflowId:
-                      type: string
-                scrub:
-                  type: boolean
-            maps:
-              data:
-                parentWorkflowId:
-                  '@pipe':
-                    - ['{$job.metadata.jid}', '-a']
-                    - ['{@string.concat}']
-
-              scrub: true
-          signal:
-            schema:
-              type: object
-              properties:
-                done:
-                  type: boolean
-            maps:
-              done: true
-
-        s2:
-          title: Awaken sleeping flows so they end and self-clean
-          type: signal
-          subtype: all
-          key_name: parentWorkflowId
-          key_value:
-            '@pipe':
-              - ['{$job.metadata.jid}', '-s']
-              - ['{@string.concat}']
-          topic: ${app}.sleep.awaken
-          resolver:
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    parentWorkflowId:
-                      type: string
-                scrub:
-                  type: boolean
-            maps:
-              data:
-                parentWorkflowId:
-                  '@pipe':
-                    - ['{$job.metadata.jid}', '-s']
-                    - ['{@string.concat}']
-              scrub: true
-          signal:
-            schema:
-              type: object
-              properties:
-                done:
-                  type: boolean
-            maps:
-              done: true
-
-        s3:
-          title: Awaken WFS flows so they end and self-clean
-          type: signal
-          subtype: all
-          key_name: parentWorkflowId
-          key_value:
-            '@pipe':
-              - ['{$job.metadata.jid}', '-w']
-              - ['{@string.concat}']
-          topic: ${app}.wfs.awaken
-          resolver:
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    parentWorkflowId:
-                      type: string
-                scrub:
-                  type: boolean
-            maps:
-              data:
-                parentWorkflowId:
-                  '@pipe':
-                    - ['{$job.metadata.jid}', '-w']
-                    - ['{@string.concat}']
-              scrub: true
-          signal:
-            schema:
-              type: object
-              properties:
-                done:
-                  type: boolean
-            maps:
-              done: true
-
-        s4:
-          title: Awaken child flows so they end and self-clean
-          type: signal
-          subtype: all
-          key_name: parentWorkflowId
-          key_value:
-            '@pipe':
-              - ['{$job.metadata.jid}', '-f']
-              - ['{@string.concat}']
-          topic: ${app}.childflow.awaken
-          resolver:
-            schema:
-              type: object
-              properties:
-                data:
-                  type: object
-                  properties:
-                    parentWorkflowId:
-                      type: string
-                scrub:
-                  type: boolean
-            maps:
-              data:
-                parentWorkflowId:
-                  '@pipe':
-                    - ['{$job.metadata.jid}', '-f']
-                    - ['{@string.concat}']
-              scrub: true
-          signal:
-            schema:
-              type: object
-              properties:
-                done:
-                  type: boolean
-            maps:
-              done: true
         s5:
           title: Close Signal In Channel
           type: signal
@@ -684,14 +560,6 @@ const getWorkflowYAML = (app: string, version: string) => {
       transitions:
         t1:
           - to: a1
-          - to: a2
-            conditions:
-              match:
-                - expected: true
-                  actual:
-                    '@pipe':
-                      - ['{$job.metadata.key}', true, false]
-                      - ['{@conditional.ternary}']
           - to: sig
         sig:
           - to: siga1
@@ -714,12 +582,8 @@ const getWorkflowYAML = (app: string, version: string) => {
               code: 599
         siga594:
           - to: sigc594
-            conditions:
-              code: 202
         siga595:
           - to: sigc595
-            conditions:
-              code: 202
         siga592:
           - to: sigc592
         siga599:
@@ -739,42 +603,19 @@ const getWorkflowYAML = (app: string, version: string) => {
           - to: a599
             conditions:
               code: 599
-          - to: s3
-            conditions:
-              code: [200, 598, 597, 596]
-          - to: s1
-            conditions:
-              code: [200, 598, 597, 596]
-          - to: s2
-            conditions:
-              code: [200, 598, 597, 596]
-          - to: s4
-            conditions:
-              code: [200, 598, 597, 596]
           - to: s5
             conditions:
               code: [200, 598, 597, 596]
         a594:
           - to: c594
-            conditions:
-              code: 202
         a595:
           - to: c595
-            conditions:
-              code: 202
         a592:
           - to: c592
         a599:
           - to: c599
 
       hooks:
-        ${app}.childflow.awaken:
-          - to: a2
-            conditions:
-              match:
-                - expected: '{t1.output.data.workflowId}'
-                  actual: '{$self.hook.data.id}'
-
         ${app}.flow.signal:
           - to: sig
             conditions:
@@ -785,13 +626,15 @@ const getWorkflowYAML = (app: string, version: string) => {
     - subscribes: ${app}.activity.execute
       publishes: ${app}.activity.executed
 
-      expire: 120
+      expire: 0
 
       input:
         schema:
           type: object
           properties:
             parentWorkflowId:
+              type: string
+            originJobId:
               type: string
             workflowId:
               type: string
@@ -817,16 +660,12 @@ const getWorkflowYAML = (app: string, version: string) => {
           stats:
             id: '{$self.input.data.workflowId}'
             key: '{$self.input.data.parentWorkflowId}'
-            granularity: infinity
-            measures:
-              - measure: index
-                target: '{$self.input.data.parentWorkflowId}'
+            parent: '{$self.input.data.originJobId}'
 
         w1a:
           title: Activity Worker - Calls Activity Functions
           type: worker
           topic: '{t1a.output.data.workflowTopic}'
-          emit: true
           input:
             schema:
               type: object
@@ -858,42 +697,22 @@ const getWorkflowYAML = (app: string, version: string) => {
               response: '{$self.output.data.response}'
               done: true
 
-        s1a:
-          title: Awaken activity flows so they end and self-clean
-          type: hook
-          hook:
-            type: object
-            properties:
-              done:
-                type: boolean
-          job:
-            maps:
-              workflowId: '{t1a.output.data.workflowId}'
-
       transitions:
         t1a:
           - to: w1a
-        w1a:
-          - to: s1a
-
-      hooks:
-        ${app}.activity.awaken:
-          - to: s1a
-            conditions:
-              match:
-                - expected: '{t1a.output.data.workflowId}'
-                  actual: '{$self.hook.data.id}'
 
     - subscribes: ${app}.sleep.execute
       publishes: ${app}.sleep.executed
 
-      expire: 120
+      expire: 0
 
       input:
         schema:
           type: object
           properties:
             parentWorkflowId:
+              type: string
+            originJobId:
               type: string
             workflowId:
               type: string
@@ -920,50 +739,27 @@ const getWorkflowYAML = (app: string, version: string) => {
           stats:
             id: '{$self.input.data.workflowId}'
             key: '{$self.input.data.parentWorkflowId}'
-            granularity: infinity
-            measures:
-              - measure: index
-                target: '{$self.input.data.parentWorkflowId}'
+            parent: '{$self.input.data.originJobId}'
 
         a1s:
           title: Sleep for a duration
           type: hook
           sleep: '{t1s.output.data.duration}'
-          emit: true
-
-        a2s:
-          title: Awaken sleep flows so they end and self-clean
-          type: hook
-          hook:
-            type: object
-            properties:
-              done:
-                type: boolean
           job:
             maps:
               done: true
               duration: '{t1s.output.data.duration}'
               index: '{t1s.output.data.index}'
               workflowId: '{t1s.output.data.workflowId}'
-  
+
       transitions:
         t1s:
           - to: a1s
-        a1s:
-          - to: a2s
-
-      hooks:
-        ${app}.sleep.awaken:
-          - to: a2s
-            conditions:
-              match:
-                - expected: '{t1s.output.data.workflowId}'
-                  actual: '{$self.hook.data.id}'
 
     - subscribes: ${app}.wfsc.execute
       publishes: ${app}.wfsc.executed
 
-      expire: 120
+      expire: 0
 
       input:
         schema:
@@ -983,6 +779,8 @@ const getWorkflowYAML = (app: string, version: string) => {
                     type: number
             parentWorkflowId:
               type: string
+            originJobId:
+              type: string
             cycleWorkflowId:
               type: string
             baseWorkflowId:
@@ -1001,6 +799,7 @@ const getWorkflowYAML = (app: string, version: string) => {
           type: trigger
           stats:
             id: '{$self.input.data.cycleWorkflowId}'
+            parent: '{$self.input.data.originJobId}'
 
         a1wc:
           title: Pivot - All Cycling Descendants Point Here
@@ -1076,7 +875,6 @@ const getWorkflowYAML = (app: string, version: string) => {
           title: Call WFS workflow
           type: await
           topic: ${app}.wfs.execute
-          emit: true
           input:
             schema:
               type: object
@@ -1084,6 +882,9 @@ const getWorkflowYAML = (app: string, version: string) => {
                 parentWorkflowId:
                   type: string
                   description: used to forge the cleanup key
+                originJobId:
+                  type: string
+                  description: used for dependency cleanup
                 signalId:
                   type: string
                   description: used to forge the custom hookid
@@ -1092,6 +893,7 @@ const getWorkflowYAML = (app: string, version: string) => {
                   description: the baseId + index
             maps:
               parentWorkflowId: '{t1wc.output.data.parentWorkflowId}'
+              originJobId: '{t1wc.output.data.originJobId}'
               signalId: '{a1wc.output.data.targetSignal.signal}'
               workflowId:
                 '@pipe':
@@ -1132,7 +934,7 @@ const getWorkflowYAML = (app: string, version: string) => {
     - subscribes: ${app}.wfs.execute
       publishes: ${app}.wfs.executed
 
-      expire: 120
+      expire: 0
 
       input:
         schema:
@@ -1141,6 +943,9 @@ const getWorkflowYAML = (app: string, version: string) => {
             parentWorkflowId:
               type: string
               description: used to forge the cleanup key
+            originJobId:
+              type: string
+              description: used for dependency cleanup
             workflowId:
               type: string
               description: used to forge the cleanup hookid
@@ -1165,15 +970,11 @@ const getWorkflowYAML = (app: string, version: string) => {
           stats:
             id: '{$self.input.data.workflowId}'
             key: '{$self.input.data.parentWorkflowId}'
-            granularity: infinity
-            measures:
-              - measure: index
-                target: '{$self.input.data.parentWorkflowId}'
+            parent: '{$self.input.data.originJobId}'
 
         a1ww:
           title: WFS - signal entry point
           type: hook
-          emit: true
           hook:
             type: object
             properties:
@@ -1184,24 +985,11 @@ const getWorkflowYAML = (app: string, version: string) => {
               signalData: '{$self.hook.data}'
               workflowId: '{t1ww.output.data.workflowId}'
               signalId: '{t1ww.output.data.signalId}'
-
-        a2ww:
-          title: WFS - cleanup signal entry point
-          type: hook
-          hook:
-            type: object
-            properties:
-              done:
-                type: boolean
-          job:
-            maps:
               done: true
-              workflowId: '{t1ww.output.data.workflowId}'
 
       transitions:
         t1ww:
           - to: a1ww
-          - to: a2ww
 
       hooks:
         ${app}.wfs.signal:
@@ -1209,14 +997,7 @@ const getWorkflowYAML = (app: string, version: string) => {
             conditions:
               match:
                 - expected: '{t1ww.output.data.signalId}'
-                  actual: '{$self.hook.data.id}'
-        ${app}.wfs.awaken:
-          - to: a2ww
-            conditions:
-              match:
-                - expected: '{t1ww.output.data.workflowId}'
-                  actual: '{$self.hook.data.id}'
-                
+                  actual: '{$self.hook.data.id}'       
 `;
 };
 

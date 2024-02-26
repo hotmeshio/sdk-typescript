@@ -1,0 +1,220 @@
+{
+  "app": {
+    "id": "tree",
+    "version": "9",
+    "graphs": [
+      {
+        "subscribes": "spring",
+        "publishes": "fall",
+        "expire": 120,
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "seed": {
+                "type": "number"
+              },
+              "speed": {
+                "type": "number"
+              },
+              "throw": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "seed": {
+                "type": "number"
+              },
+              "speed": {
+                "type": "number"
+              },
+              "throw": {
+                "type": "boolean"
+              },
+              "height": {
+                "type": "number"
+              },
+              "shine": {
+                "type": "string"
+              },
+              "graft": {
+                "type": "string"
+              },
+              "water": {
+                "type": "string"
+              },
+              "fertilize": {
+                "type": "string"
+              },
+              "prune": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "activities": {
+          "tree": {
+            "type": "trigger",
+            "job": {
+              "maps": {
+                "seed": "{$self.output.data.seed}",
+                "speed": "{$self.output.data.speed}",
+                "throw": "{$self.output.data.throw}",
+                "height": {
+                  "@pipe": [
+                    [
+                      "{$self.output.data.seed}",
+                      "{$self.output.data.speed}"
+                    ],
+                    [
+                      "{@math.multiply}"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "shine": {
+            "type": "interrupt",
+            "throw": "{tree.output.data.throw}",
+            "job": {
+              "maps": {
+                "shine": {
+                  "@pipe": [
+                    [
+                      "{@date.now}",
+                      "en-US"
+                    ],
+                    [
+                      "{@date.toLocaleString}"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "sleeper": {
+            "type": "hook",
+            "sleep": 1,
+            "job": {
+              "maps": {
+                "sleeper": {
+                  "@pipe": [
+                    [
+                      "{@date.now}",
+                      "en-US"
+                    ],
+                    [
+                      "{@date.toLocaleString}"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "graft": {
+            "type": "hook",
+            "job": {
+              "maps": {
+                "graft": {
+                  "@pipe": [
+                    [
+                      "{@date.now}",
+                      "en-US"
+                    ],
+                    [
+                      "{@date.toLocaleString}"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "water": {
+            "type": "hook",
+            "job": {
+              "maps": {
+                "water": {
+                  "@pipe": [
+                    [
+                      "{@date.now}",
+                      "en-US"
+                    ],
+                    [
+                      "{@date.toLocaleString}"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "fertilize": {
+            "type": "hook",
+            "job": {
+              "maps": {
+                "fertilize": {
+                  "@pipe": [
+                    [
+                      "{@date.now}",
+                      "en-US"
+                    ],
+                    [
+                      "{@date.toLocaleString}"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "prune": {
+            "type": "hook",
+            "job": {
+              "maps": {
+                "prune": {
+                  "@pipe": [
+                    [
+                      "{@date.now}",
+                      "en-US"
+                    ],
+                    [
+                      "{@date.toLocaleString}"
+                    ]
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "transitions": {
+          "tree": [
+            {
+              "to": "shine"
+            },
+            {
+              "to": "sleeper"
+            }
+          ],
+          "sleeper": [
+            {
+              "to": "graft"
+            },
+            {
+              "to": "water"
+            },
+            {
+              "to": "fertilize"
+            },
+            {
+              "to": "prune"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

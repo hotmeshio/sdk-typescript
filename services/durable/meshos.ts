@@ -1,5 +1,3 @@
-import { nanoid } from 'nanoid';
-
 import { Durable } from '.';
 import { asyncLocalStorage } from './asyncLocalStorage';
 import { ClientService as Client } from './client';
@@ -18,6 +16,7 @@ import {
   WorkflowSearchOptions } from '../../types/durable';
 import { RedisOptions, RedisClass } from '../../types/redis';
 import { StringAnyType } from '../../types/serializer';
+import { guid } from '../../modules/utils';
 
 /**
  * The base class for running MeshOS workflows.
@@ -117,7 +116,7 @@ export class MeshOSService {
    */
   static mintGuid(): string {
     const my = new this();
-    return `${my.search?.prefix?.[0]}${nanoid()}`;
+    return `${my.search?.prefix?.[0]}${guid()}`;
   }
 
   /**

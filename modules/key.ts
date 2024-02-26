@@ -34,6 +34,7 @@ enum KeyType {
   APP,
   ENGINE_ID,
   HOOKS,
+  JOB_DEPENDENTS,
   JOB_STATE,
   JOB_STATS_GENERAL,
   JOB_STATS_MEDIAN,
@@ -93,7 +94,9 @@ class KeyService {
       case KeyType.QUORUM:
         return `${namespace}:${params.appId}:q:${params.engineId || ''}`;
       case KeyType.JOB_STATE:
-        return `${namespace}:${params.appId}:j:${params.jobId}`;
+          return `${namespace}:${params.appId}:j:${params.jobId}`;
+      case KeyType.JOB_DEPENDENTS:
+        return `${namespace}:${params.appId}:d:${params.jobId}`;
       case KeyType.JOB_STATS_GENERAL:
         return `${namespace}:${params.appId}:s:${params.jobKey}:${params.dateTime}`;
       case KeyType.JOB_STATS_MEDIAN:

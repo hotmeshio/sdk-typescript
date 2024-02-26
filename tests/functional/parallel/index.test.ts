@@ -1,4 +1,3 @@
-import { nanoid } from 'nanoid';
 import Redis from 'ioredis';
 
 import config from '../../$setup/config';
@@ -8,6 +7,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
+import { guid } from '../../../modules/utils';
 
 describe('FUNCTIONAL | Parallel', () => {
   const appConfig = { id: 'tree' };
@@ -21,7 +21,7 @@ describe('FUNCTIONAL | Parallel', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
     redisConnection.getClient().flushdb();
 
     //init/activate HotMesh (test both `engine` and `worker` roles)

@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { StoreService } from "../services/store";
 import { AppSubscriptions, AppTransitions, AppVID } from "../types/app";
 import { RedisClient, RedisMulti } from "../types/redis";
@@ -6,6 +7,10 @@ import { StreamCode, StreamStatus } from "../types/stream";
 
 export async function sleepFor(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function guid(): string {
+  return nanoid();
 }
 
 export function deterministicRandom(seed: number): number {

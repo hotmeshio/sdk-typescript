@@ -1,7 +1,7 @@
-import { nanoid } from 'nanoid';
 import Redis from 'ioredis';
 
 import config from '../../$setup/config';
+import { guid } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import {
@@ -22,7 +22,7 @@ describe('FUNCTIONAL | Status Codes', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
     redisConnection.getClient().flushdb();
 
     //init HotMesh

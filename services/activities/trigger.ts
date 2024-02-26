@@ -1,6 +1,5 @@
-import { nanoid } from 'nanoid';
 import { DuplicateJobError } from '../../modules/errors';
-import { formatISODate, getTimeSeries } from '../../modules/utils';
+import { formatISODate, getTimeSeries, guid } from '../../modules/utils';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
@@ -47,6 +46,7 @@ class Trigger extends Activity {
       const multi = this.store.getMulti();
       await this.setState(multi);
       await this.setStats(multi);
+      await this.setDependency(multi);
       await multi.exec();
 
       telemetry.mapActivityAttributes();
@@ -68,8 +68,8 @@ class Trigger extends Activity {
       telemetry.setActivityError(error.message);
       throw error;
     } finally {
-      telemetry.endJobSpan();
-      telemetry.endActivitySpan();
+      telemetry?.endJobSpan();
+      telemetry?.endActivitySpan();
       this.logger.debug('trigger-process-end', { subscribes: this.config.subscribes, jid: this.context.metadata.jid });
     }
   }
@@ -161,7 +161,7 @@ class Trigger extends Activity {
 
   resolveJobId(context: Partial<JobState>): string {
     const jobId = this.config.stats?.id;
-    return jobId ? Pipe.resolve(jobId, context) : nanoid();
+    return jobId ? Pipe.resolve(jobId, context) : guid();
   }
 
   resolveJobKey(context: Partial<JobState>): string {
@@ -173,6 +173,22 @@ class Trigger extends Activity {
     const jobId = this.context.metadata.jid;
     if (!await this.store.setStateNX(jobId, this.engine.appId)) {
       throw new DuplicateJobError(jobId);
+    }
+  }
+
+  /**
+   * Registers this job as a dependent of the parent job
+   */
+  async setDependency(multi?: RedisMulti): Promise<void> {
+    const depKey = this.config.stats?.parent;
+    const resolvedDepKey = depKey ? Pipe.resolve(depKey, this.context) : '';
+    if (resolvedDepKey) {
+      await this.store.setDependency(
+        resolvedDepKey,
+        this.context.metadata.tpc,
+        this.context.metadata.jid,
+        multi,
+      );
     }
   }
 

@@ -60,10 +60,12 @@ type WorkflowOptions = {
   entity?: string;            //If invoking a workflow, passing 'entity' will apply the value as the workflowName, taskQueue, and prefix, ensuring the FT.SEARCH index is properly scoped. This is a convenience method but limits options.
   workflowName?: string;      //the name of the user's workflow function; optional if 'entity' is provided
   parentWorkflowId?: string;  //system reserved; the id of the parent; if present the flow will not self-clean until the parent that spawned it self-cleans
+  originJobId?: string;       //system reserved;
   workflowTrace?: string;
   workflowSpan?: string;
   search?: WorkflowSearchOptions
   config?: WorkflowConfig;
+  expire?: number;            //default is 3seconds; time before completed jobs and dependents are expired/scrubbed/removed
 }
 
 type HookOptions = {
@@ -80,8 +82,8 @@ type HookOptions = {
 type SignalOptions = {
   taskQueue: string;
   data: Record<string, any>; //input data (any serializable object)
-  workflowId: string;   //execution id (the job id)
-  workflowName?: string; //the name of the user's workflow function
+  workflowId: string;        //execution id (the job id)
+  workflowName?: string;     //the name of the user's workflow function
 }
 
 type ActivityWorkflowDataType = {
@@ -95,6 +97,8 @@ type WorkflowDataType = {
   arguments: any[];
   workflowId: string;
   workflowTopic: string;
+  workflowDimension?: string; //is present if hook (not main workflow)
+  originJobId?: string;       //is present if there is an originating ancestor job (should rename to originJobId)
 }
 
 type MeshOSClassConfig = {
@@ -105,8 +109,8 @@ type MeshOSClassConfig = {
 }
 
 type MeshOSConfig = {
-  id?: string; //guid for the workflow when instancing
-  await?: boolean; //default is false; must explicitly send true to await the final result
+  id?: string;        //guid for the workflow when instancing
+  await?: boolean;    //default is false; must explicitly send true to await the final result
   taskQueue?: string; //optional target queue isolate for the function
 }
 

@@ -3,12 +3,9 @@ import Redis from 'ioredis';
 import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
 import * as workflows from './src/workflows';
-import { nanoid } from 'nanoid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
-import { StreamSignaler } from '../../../services/signaler/stream';
-import { sleepFor } from '../../../modules/utils';
-
+import { guid, sleepFor } from '../../../modules/utils';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -23,7 +20,7 @@ describe('DURABLE | loopactivity | `Iterate Same Activity`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
     redisConnection.getClient().flushdb();
   });
 
@@ -54,7 +51,7 @@ describe('DURABLE | loopactivity | `Iterate Same Activity`', () => {
           args: ['HotMesh'],
           taskQueue: 'loop-world',
           workflowName: 'example',
-          workflowId: 'workflow-' + nanoid(),
+          workflowId: 'workflow-' + guid(),
         });
         expect(handle.workflowId).toBeDefined();
       });

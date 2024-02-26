@@ -2,8 +2,11 @@ import { ActivityDuplex } from "../types/activity";
 import { CollationFaultType, CollationStage } from "../types/collator";
 
 class GetStateError extends Error {
-  constructor() {
-    super("Error occurred while getting job state");
+  jobId: string;
+  code: 404;
+  constructor(jobId: string) {
+    super(`${jobId} Not Found`);
+    this.jobId = jobId;
   }
 }
 class SetStateError extends Error {
@@ -107,7 +110,18 @@ class DuplicateJobError extends Error {
     this.message = `Duplicate job: ${jobId}`;
   }
 }
-
+class InactiveJobError extends Error {
+  jobId: string;
+  activityId: string;
+  status: number; //non-positive integer
+  constructor(jobId: string, status: number, activityId: string) {
+    super("Inactive job");
+    this.jobId = jobId;
+    this.activityId = activityId;
+    this.message = `Inactive job: ${jobId}`;
+    this.status = status;
+  }
+}
 class ExecActivityError extends Error {
   constructor() {
     super("Error occurred while executing activity");
@@ -131,18 +145,19 @@ class CollationError extends Error {
 
 export {
   CollationError,
-  DurableTimeoutError,
-  DurableMaxedError,
   DurableFatalError,
-  DurableRetryError,
-  DurableWaitForSignalError,
   DurableIncompleteSignalError,
+  DurableMaxedError,
+  DurableRetryError,
   DurableSleepError,
   DurableSleepForError,
+  DurableTimeoutError,
+  DurableWaitForSignalError,
   DuplicateJobError,
+  ExecActivityError,
   GetStateError,
-  SetStateError,
+  InactiveJobError,
   MapDataError,
   RegisterTimeoutError,
-  ExecActivityError
+  SetStateError,
 };

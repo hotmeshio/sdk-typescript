@@ -28,6 +28,9 @@ import {
 import { Transitions } from '../../types/transition';
 import { formatISODate, getSymKey } from '../../modules/utils';
 import { ReclaimedMessageType } from '../../types/stream';
+import { JobCompletionOptions, JobInterruptOptions } from '../../types/job';
+import { STATUS_CODE_INTERRUPT } from '../../modules/enums';
+import { GetStateError } from '../../modules/errors';
 
 interface AbstractRedisClient {
   exec(): any;
@@ -371,6 +374,22 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return await this.redisClient[this.commands.hset](key, payload as any);
   }
 
+  /**
+   * Registers jobId with the originJobId that spawned it. In the future,
+   * when originJobId is interrupted or expired, the items in the
+   * list (added via RPUSH) are LPOPed. If origin was expired, then
+   * LPOPed items from the list are likewise expired;
+   */
+  async setDependency(originJobId: string, topic: string, jobId: string, multi? : U): Promise<any> {
+    const privateMulti = multi || this.getMulti();
+    const depParams = { appId: this.appId, jobId: originJobId };
+    const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, depParams);
+    privateMulti[this.commands.rpush](depKey, `expire::${topic}::${jobId}`);
+    if (!multi) {
+      return await privateMulti.exec();
+    }
+  }
+
   async setStats(jobKey: string, jobId: string, dateTime: string, stats: StatsType, appVersion: AppVID, multi? : U): Promise<any> {
     const params: KeyStoreParams = { appId: appVersion.id, jobId, jobKey, dateTime };
     const privateMulti = multi || this.getMulti();
@@ -477,8 +496,8 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   }
 
   /**
-   * returns custom search fields and values. The fields param
-   * should not prefix items with an underscore.
+   * Returns custom search fields and values.
+   * NOTE: The `fields` param should NOT prefix items with an underscore.
    */
   async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
     const key = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
@@ -520,7 +539,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       }
       return [state, status];
     } else {
-      throw new Error(`Job ${jobId} not found`);
+      throw new GetStateError(jobId);
     }
   }
 
@@ -745,7 +764,27 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     }
   }
 
-  async registerTimeHook(jobId: string, activityId: string, type: 'sleep'|'expire'|'cron', deletionTime: number, multi?: U): Promise<void> {
+  /**
+   * register the descendants of an expired origin flow to be 
+   * expired at a future date; options indicate whether this
+   * is a standard `expire` or an `interrupt`
+   */
+  async registerExpireJob(jobId: string, deletionTime: number, options: JobCompletionOptions): Promise<void> {
+    const depParams = { appId: this.appId, jobId };
+    const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, depParams);
+    const context = options.interrupt ? 'INTERRUPT' : 'EXPIRE';
+    const depKeyContext = `::${context}::${depKey}`;
+    const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
+    await this.zAdd(zsetKey, deletionTime.toString(), depKeyContext);
+  }
+
+  /**
+   * registers a hook activity to be awakened (uses ZSET to
+   * store the 'sleep group' and LIST to store the events
+   * for the given sleep group. Sleep groups are
+   * organized into 'n'-second blocks (LISTS))
+   */
+  async registerTimeHook(jobId: string, activityId: string, type: 'sleep'|'expire'|'interrupt', deletionTime: number, multi?: U): Promise<void> {
     const listKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId, timeValue: deletionTime });
     const timeEvent = `${type}::${activityId}::${jobId}`
     const len = await (multi || this.redisClient)[this.commands.rpush](listKey, timeEvent);
@@ -755,18 +794,87 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     }
   }
 
-  async getNextTimeJob(listKey?: string): Promise<[listKey: string, jobId: string, activityId: string] | void> {
+  async getNextTimeJob(listKey?: string): Promise<[listKey: string, jobId: string, activityId: string, type: 'sleep'|'expire'|'interrupt'] | void> {
     const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
-    const now = Date.now();
-    listKey = listKey || await this.zRangeByScore(zsetKey, 0, now);
+    listKey = listKey || await this.zRangeByScore(zsetKey, 0, Date.now());
     if (listKey) {
-      const timeEvent = await this.redisClient[this.commands.lpop](listKey);
+      const [pType, pKey] = this.resolveKeyContext(listKey);
+      const timeEvent = await this.redisClient[this.commands.lpop](pKey);
       if (timeEvent) {
-        //placeholder: there are 3 time-related event triggers: sleep, expire, cron
-        const [type, activityId, ...jobId] = timeEvent.split('::');
-        return [listKey, jobId.join('::'), activityId];
+        //there are 3 time-related event triggers: sleep, expire, interrupt
+        const [_type, activityId, ...jobId] = timeEvent.split('::');
+        return [listKey, jobId.join('::'), activityId, pType];
       }
       await this.redisClient[this.commands.zrem](zsetKey, listKey);
+    }
+  }
+
+  /**
+   * when processing time jobs, the target LIST ID returned
+   * from the ZSET query can be prefixed to denote what to
+   * do with the work list. (not everything is known in advance,
+   * so the ZSET key defines HOW to approach the work in the
+   * generic LIST (lists typically contain target job ids)
+   * @param {string} listKey - for example `::INTERRUPT::job123` or `job123`
+   */
+  resolveKeyContext(listKey: string): [('sleep'|'expire'|'interrupt'), string] {
+    if (listKey.startsWith('::INTERRUPT')) {
+      return ['interrupt', listKey.split('::')[2]];
+    } else if (listKey.startsWith('::EXPIRE')) {
+      return ['expire', listKey.split('::')[2]];
+    } else {
+      return ['sleep', listKey];
+    }
+  }
+
+  /**
+   * Interrupts a job and sets sets a job error (410), if 'throw'!=false.
+   * This method is called by the engine and not by an activity and is
+   * followed by a call to execute job completion/cleanup tasks
+   * associated with a job completion event.
+   */
+  async interrupt(topic: string, jobId: string, options: JobInterruptOptions = {}): Promise<void> {
+    try {
+      //verify job exists
+      const status = await this.getStatus(jobId, this.appId);
+      if (status <= 0) {
+        //verify still active; job already completed
+        throw new Error(`Job ${jobId} already completed`);
+      }
+      //decrement job status (:) by 1bil
+      const amount = -1_000_000_000;
+      const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+      const result = await this.redisClient[this.commands.hincrbyfloat](jobKey, ':', amount);
+      if (result <= amount) {
+        //verify active state; job already interrupted
+        throw new Error(`Job ${jobId} already completed`);
+      }
+      //persist the error unless specifically told not to
+      if (options.throw !== false) {
+        const errKey = `metadata/err`;       //job errors are stored at the path `metadata/err`
+        const symbolNames = [`$${topic}`];   //the symbol for `metadata/err` is in redis and stored using the job topic
+        const symKeys = await this.getSymbolKeys(symbolNames);
+        const symVals = await this.getSymbolValues();
+        this.serializer.resetSymbols(symKeys, symVals, {});
+
+        //persists the standard 410 error (job is `gone`)
+        const err = JSON.stringify({
+          code: STATUS_CODE_INTERRUPT,
+          message: options.reason ?? `job [${jobId}] interrupted`,
+          job_id: jobId
+        });
+
+        const payload = { [errKey]: amount.toString() }
+        const hashData = this.serializer.package(payload, symbolNames);
+        const errSymbol = Object.keys(hashData)[0];
+        await this.redisClient[this.commands.hset](jobKey, errSymbol, err);
+      }
+    } catch (e) {
+      if (!options.suppress) {
+        throw e;
+      } else {
+        this.logger.debug('suppressed-interrupt', { message: e.message })
+      }
     }
   }
 

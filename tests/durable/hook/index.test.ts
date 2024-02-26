@@ -4,11 +4,9 @@ import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
 import * as workflows from './src/workflows';
 import * as childWorkflows from './child/workflows';
-import { nanoid } from 'nanoid';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
-import { StreamSignaler } from '../../../services/signaler/stream';
 import { ClientService } from '../../../services/durable/client';
-import { sleepFor } from '../../../modules/utils';
+import { guid, sleepFor } from '../../../modules/utils';
 import { HMNS, KeyService, KeyType } from '../../../modules/key';
 
 const { Connection, Client, Worker } = Durable;
@@ -27,7 +25,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
     redisConnection.getClient().flushdb();
   });
 
@@ -52,7 +50,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         client = new Client({ connection: { class: Redis, options }});
-        workflowGuid = prefix + nanoid();
+        workflowGuid = prefix + guid();
 
         const handle = await client.workflow.start({
           namespace,

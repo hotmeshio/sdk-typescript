@@ -39,3 +39,6 @@ Temporal.io's TypeScript SDK was an inspiration for HotMesh's TypeScript SDK. Th
 In the initial, alpha release, I've included a module named `Durable` that emulates Temporal's standard `worker`, `client`, `activities`, and `workflows` files as well as `proxyActivity` and `executeChild` and other workflow-management methods methods, as these are crucial for validating the capabilities of HotMesh as a *drop-in serverless replacement* for Temporal.
 
 I've conducted performance tests comparing Temporal Cloud to Redis Enterprise Cloud, and my hypothesis is that a serverless, distributed architecture offers various advantages, including speed and cost. Import HotMesh instead of Temporal for a quick side-by-side comparison, using your own deployments.
+
+## Concluding Thoughts on Usability
+My favorite Durable SDK is [Pluck](https://github.com/hotmeshio/pluck-typescript). It's based on HotMesh but introduces durable workflows more intuitively. It has all the benefits of HotMesh with a much simpler SDK. And I think Temporal would benefit by adopting the approach as well.

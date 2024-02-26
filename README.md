@@ -1,9 +1,9 @@
 # HotMesh
 ![alpha release](https://img.shields.io/badge/release-alpha-yellow)
 
-Elevate Redis from an in-memory data cache, and turn your unpredictable functions into unbreakable workflows. HotMesh is a distributed orchestration engine that governs the execution of your functions, ensuring they always complete successfully.
+HotMesh elevates Redis from an in-memory data cache to a distributed orchestration engine.
 
-*Write functions in your own preferred style, and let Redis govern their execution.*
+*Write functions in your own preferred style, and let Redis govern their execution, reliably and durably.*
 
 ## Install
 [![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
@@ -11,7 +11,16 @@ Elevate Redis from an in-memory data cache, and turn your unpredictable function
 ```sh
 npm install @hotmeshio/hotmesh
 ```
+
+## Understanding HotMesh
+HotMesh inverts the relationship to Redis: those functions that once used Redis as a cache, are instead *cached and governed* by Redis. Consider the following. It's a typical microservices network, with a tangled mess of services and functions. There's important business logic in there (functions *A*, *B* and *C* are critical!), but they're hard to find and access.
+
+<img src="./docs/img/operational_data_layer.png" alt="A Tangled Microservices Network with 3 functions buried within" style="max-width:100%;width:600px;">
+
+HotMesh creates an *ad hoc*, Redis-backed network of functions and organizes them into a unified service mesh. *Any service with access to Redis can join in the network, bypassing the legacy clutter.*
+
 ## Design
+The simplest way to get started is to use the `Durable` module. It's organized using principles similar to temporal.io. If you're familiar with their SDK, the setup is similar.
 
 1. Start by defining **activities**. Activities can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise. *Note how the `saludar` example throws an error 50% of the time. It doesn't matter how unpredictable your functions are, HotMesh will retry as necessary until they succeed.*
     ```javascript
@@ -47,9 +56,8 @@ npm install @hotmeshio/hotmesh
 3. Instance a HotMesh **client** to invoke the workflow.
     ```javascript
     //client.ts
-    import { Durable } from '@hotmeshio/hotmesh';
+    import { Durable, HotMesh } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
-    import { nanoid } from 'nanoid';
 
     async function run(): Promise<string> {
       const client = new Durable.Client({
@@ -61,9 +69,9 @@ npm install @hotmeshio/hotmesh
 
       const handle = await client.workflow.start({
         args: ['HotMesh', 'es'],
-        taskQueue: 'hello-world',
+        taskQueue: 'default',
         workflowName: 'example',
-        workflowId: nanoid()
+        workflowId: HotMesh.guid()
       });
 
       return await handle.result();
@@ -83,7 +91,7 @@ npm install @hotmeshio/hotmesh
           class: Redis,
           options: { host: 'localhost', port: 6379 },
         },
-        taskQueue: 'hello-world',
+        taskQueue: 'default',
         workflow: workflows.example,
       });
 
@@ -92,7 +100,7 @@ npm install @hotmeshio/hotmesh
     ```
 
 ### Workflow Extensions
-Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `Durable.workflow` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
+Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `Durable` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
 
  - `waitForSignal` Pause your function and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once all signals have arrived.
    ```javascript
@@ -133,6 +141,10 @@ Redis governance delivers more than just reliability. Externalizing state fundam
       taskQueue: 'default',
       args: [{ id, user_id, etc }],
     });
+    ```
+ - `getContext` Get the current workflow context (workflowId, etc).
+    ```javascript
+    const context = await Durable.workflow.getContext();
     ```
  - `search` Instance a search session
     ```javascript

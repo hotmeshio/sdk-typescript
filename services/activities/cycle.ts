@@ -1,4 +1,4 @@
-import { GetStateError } from '../../modules/errors';
+import { GetStateError, InactiveJobError } from '../../modules/errors';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { Activity, ActivityType } from './activity';
@@ -10,6 +10,7 @@ import { JobState } from '../../types/job';
 import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData } from '../../types/stream';
 import { TelemetryService } from '../telemetry';
+import { guid } from '../../modules/utils';
 
 class Cycle extends Activity {
   config: CycleActivity;
@@ -34,6 +35,7 @@ class Cycle extends Activity {
       this.setLeg(1);
       await CollatorService.notarizeEntry(this);
       await this.getState();
+      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
@@ -60,15 +62,19 @@ class Cycle extends Activity {
 
       return this.context.metadata.aid;
     } catch (error) {
-      if (error instanceof GetStateError) {
+      if (error instanceof InactiveJobError) {
+        this.logger.error('cycle-inactive-job-error', { error });
+        return;
+      } else if (error instanceof GetStateError) {
         this.logger.error('cycle-get-state-error', { error });
+        return;
       } else {
         this.logger.error('cycle-process-error', { error });
       }
       telemetry.setActivityError(error.message);
       throw error;
     } finally {
-      telemetry.endActivitySpan();
+      telemetry?.endActivitySpan();
       this.logger.debug('cycle-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
     }
   }
@@ -88,6 +94,7 @@ class Cycle extends Activity {
     this.mapInputData();
     const streamData: StreamData = {
       metadata: {
+        guid: guid(),
         dad: CollatorService.resolveReentryDimension(this),
         jid: this.context.metadata.jid,
         aid: this.config.ancestor,

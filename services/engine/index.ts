@@ -1,7 +1,14 @@
 import { KeyType } from '../../modules/key';
 import {
+  OTT_WAIT_TIME,
+  STATUS_CODE_SUCCESS,
+  STATUS_CODE_PENDING,
+  STATUS_CODE_TIMEOUT, 
+  DURABLE_EXPIRE_SECONDS} from '../../modules/enums';
+import {
   formatISODate,
   getSubscriptionTopic,
+  guid,
   identifyRedisType,
   polyfill,
   restoreHierarchy } from '../../modules/utils';
@@ -9,6 +16,7 @@ import Activities from '../activities';
 import { Await } from '../activities/await';
 import { Cycle } from '../activities/cycle';
 import { Hook } from '../activities/hook';
+import { Interrupt } from '../activities/interrupt';
 import { Signal } from '../activities/signal';
 import { Worker } from '../activities/worker';
 import { Trigger } from '../activities/trigger';
@@ -41,7 +49,9 @@ import {
   JobMetadata,
   JobOutput,
   PartialJobState,
-  JobStatus } from '../../types/job';
+  JobStatus, 
+  JobInterruptOptions,
+  JobCompletionOptions } from '../../types/job';
 import {
   HotMeshApps,
   HotMeshConfig,
@@ -68,12 +78,6 @@ import {
   StreamError,
   StreamRole,
   StreamStatus } from '../../types/stream';
-
-//wait time to see if a job is complete
-const OTT_WAIT_TIME = 1000;
-const STATUS_CODE_SUCCESS = 200;
-const STATUS_CODE_PENDING = 202;
-const STATUS_CODE_TIMEOUT = 504;
 
 class EngineService {
   namespace: string;
@@ -239,7 +243,7 @@ class EngineService {
   }
 
   // ************* METADATA/MODEL METHODS *************
-  async initActivity(topic: string, data: JobData = {}, context?: JobState): Promise<Await|Cycle|Hook|Signal|Trigger|Worker> {
+  async initActivity(topic: string, data: JobData = {}, context?: JobState): Promise<Await|Cycle|Hook|Signal|Trigger|Worker|Interrupt> {
     const [activityId, schema] = await this.getSchema(topic);
     polyfill
     const ActivityHandler = Activities[polyfill.resolveActivityType(schema.type)];
@@ -329,6 +333,7 @@ class EngineService {
       aid: streamData.metadata.aid,
       status: streamData.status || StreamStatus.SUCCESS,
       code: streamData.code || 200,
+      type: streamData.type,
     });
     const context: PartialJobState = {
       metadata: {
@@ -380,6 +385,7 @@ class EngineService {
       const spn = context['$self']?.output?.metadata?.l2s || context['$self']?.output?.metadata?.l1s;
       const streamData: StreamData = {
         metadata: {
+          guid: guid(),
           jid: context.metadata.pj,
           dad: context.metadata.pd,
           aid: context.metadata.pa,
@@ -404,17 +410,28 @@ class EngineService {
     }
   }
   hasParentJob(context: JobState): boolean {
-    //todo: include the dimensional address (pd)
     return Boolean(context.metadata.pj && context.metadata.pa);
   }
   resolveError(metadata: JobMetadata): StreamError | undefined {
     if (metadata && metadata.err) {
       return JSON.parse(metadata.err) as StreamError;
-    }
+    } 
+  }
+
+  // ****************** `INTERRUPT` ACTIVE JOBS *****************
+  async interrupt(topic: string, jobId: string, options: JobInterruptOptions = {}): Promise<string> {
+    await this.store.interrupt(topic, jobId, options);
+    const context = await this.getState(topic, jobId) as JobState;
+    const completionOpts: JobCompletionOptions = {
+      interrupt: options.descend,
+      expire: options.expire,
+    };
+    return await this.runJobCompletionTasks(context, completionOpts) as string;
   }
 
   // ****************** `SCRUB` CLEAN COMPLETED JOBS *****************
   async scrub(jobId: string) {
+    //todo: do not allow scrubbing of non-existent or actively running job
     await this.store.scrub(jobId);
   }
 
@@ -427,6 +444,7 @@ class EngineService {
       status,
       code,
       metadata: {
+        guid: guid(),
         aid,
         topic
       },
@@ -434,13 +452,23 @@ class EngineService {
     };
     return await this.streamSignaler.publishMessage(null, streamData) as string;
   }
-  async hookTime(jobId: string, activityId: string): Promise<JobStatus | void> {
-    //the activityid is concatenated with its dimensional address (dad); split to resolve
+  async hookTime(jobId: string, activityId: string, type?: 'sleep'|'expire'|'interrupt'): Promise<string | void> {
+    if (type === 'interrupt') {
+      return await this.interrupt(
+        activityId, //note: 'activityId' is the actually job topic
+        jobId,
+        { suppress: true, expire: 1 },
+      );
+    } else if (type === 'expire') {
+      return await this.store.expireJob(jobId, 1);
+    }
+    //'sleep': parse the activityId into parts
     const [aid, ...dimensions] = activityId.split(',');
     const dad = `,${dimensions.join(',')}`;
     const streamData: StreamData = {
       type: StreamDataType.TIMEHOOK,
       metadata: {
+        guid: guid(),
         jid: jobId,
         aid,
         dad,
@@ -540,7 +568,7 @@ class EngineService {
       }, timeout);
     });
   }
-  async resolveOneTimeSubscription(context: JobState, jobOutput: JobOutput, emit = false) {
+  async pubOneTimeSubs(context: JobState, jobOutput: JobOutput, emit = false) {
     //todo: subscriber should query for the job...only publish minimum context needed
     if (this.hasOneTimeSubscription(context)) {
       const message: JobMessage = {
@@ -557,7 +585,7 @@ class EngineService {
     const schema = await this.store.getSchema(activityId, config);
     return schema.publishes;
   }
-  async resolvePersistentSubscriptions(context: JobState, jobOutput: JobOutput, emit = false) {
+  async pubPermSubs(context: JobState, jobOutput: JobOutput, emit = false) {
     const topic = await this.getPublishesTopic(context);
     if (topic) {
       const message: JobMessage = {
@@ -584,22 +612,42 @@ class EngineService {
 
 
   // ********** JOB COMPLETION/CLEANUP (AND JOB EMIT) ***********
-  async runJobCompletionTasks(context: JobState, emit = false) {
-    //if 'emit' is true, the job isn't done. it's just emitting
+  async runJobCompletionTasks(context: JobState, options: JobCompletionOptions = {}): Promise<string | void> {
+    //'emit' indicates the job is still active
     const isAwait = this.hasParentJob(context);
-    const isOneTimeSubscription = this.hasOneTimeSubscription(context);
+    const isOneTimeSub = this.hasOneTimeSubscription(context);
     const topic = await this.getPublishesTopic(context);
-    if (isAwait || isOneTimeSubscription || topic) {
-      const jobOutput = await this.getState(context.metadata.tpc, context.metadata.jid);
-      //always wait for stream pub/sub
-      await this.execAdjacentParent(context, jobOutput, emit);
-      //no need to wait for standard pub/sub
-      this.resolveOneTimeSubscription(context, jobOutput, emit);
-      this.resolvePersistentSubscriptions(context, jobOutput, emit);
+    let msgId: string;
+    if (isAwait || isOneTimeSub || topic) {
+      const jobOutput = await this.getState(
+        context.metadata.tpc,
+        context.metadata.jid,
+      );
+      msgId = await this.execAdjacentParent(
+        context,
+        jobOutput,
+        options.emit,
+       );
+      this.pubOneTimeSubs(context, jobOutput, options.emit);
+      this.pubPermSubs(context, jobOutput, options.emit);
     }
-    if (!emit) {
-      this.task.registerJobForCleanup(context.metadata.jid, context.metadata.expire);
+    if (!options.emit) {
+      this.task.registerJobForCleanup(
+        context.metadata.jid,
+        this.resolveExpires(context, options),
+        options,
+      );
     }
+    return msgId;
+  }
+
+  /**
+   * Job hash expiration is typically reliant on the metadata field
+   * if the activity concludes normally. However, if the job is `interrupted`,
+   * it will be expired immediately.
+   */
+  resolveExpires(context: JobState, options: JobCompletionOptions): number {
+    return context.metadata.expire ?? options.expire ?? DURABLE_EXPIRE_SECONDS;
   }
 
 

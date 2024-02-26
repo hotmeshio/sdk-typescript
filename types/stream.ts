@@ -27,10 +27,13 @@ export enum StreamDataType {
   WORKER = 'worker',
   RESPONSE = 'response', //worker response
   TRANSITION = 'transition',
+  SIGNAL = 'signal',
+  INTERRUPT = 'interrupt',
 }
 
 export interface StreamData {
   metadata: {
+    guid: string;   //every message is minted with a guid to distinguish retries from new messages
     topic?: string;
     jid?: string; //is optonal if type is WEBHOOK
     dad?: string; //dimensional address

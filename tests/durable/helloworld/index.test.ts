@@ -1,14 +1,11 @@
 import * as Redis from 'redis';
 
 import config from '../../$setup/config'
+import { deterministicRandom, guid, sleepFor } from '../../../modules/utils';
 import { Durable } from '../../../services/durable';
-import * as workflows from './src/workflows';
-import { nanoid } from 'nanoid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/redis';
-import { StreamSignaler } from '../../../services/signaler/stream';
-import { deterministicRandom, sleepFor } from '../../../modules/utils';
-
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -26,7 +23,7 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
     redisConnection.getClient().flushDb();
   });
 
@@ -57,7 +54,7 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
           args: ['HotMesh'],
           taskQueue: 'hello-world',
           workflowName: 'example',
-          workflowId: 'workflow-' + nanoid(),
+          workflowId: 'workflow-' + guid(),
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -85,12 +82,11 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
         const result = await handle.result();
-        //test the random number generator
+        //note: testing the deterministic random number generator
         const r1 = deterministicRandom(1);
         const r2 = deterministicRandom(3);
-        expect(result).toEqual(`${r1} Hello, HotMesh! ${r2}`);
-        await sleepFor(2500);
-      }, 10_000);
+        expect(result).toEqual(`${r1} Hello, HotMesh! ${r2} Hello, HotMesh!`);
+      });
     });
   });
 });

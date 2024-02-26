@@ -3,12 +3,10 @@ import Redis from 'ioredis';
 import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
 import * as workflows from './src/workflows';
-import { nanoid } from 'nanoid';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
-import { StreamSignaler } from '../../../services/signaler/stream';
 import { DurableFatalError } from '../../../modules/errors';
-import { sleepFor } from '../../../modules/utils';
+import { guid, sleepFor } from '../../../modules/utils';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -24,7 +22,7 @@ describe('DURABLE | fatal | `Workflow Promise.all proxyActivities`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
     redisConnection.getClient().flushdb();
   });
 
@@ -55,7 +53,7 @@ describe('DURABLE | fatal | `Workflow Promise.all proxyActivities`', () => {
           args: [{ name: NAME }],
           taskQueue: 'fatal-world',
           workflowName: 'example',
-          workflowId: nanoid(),
+          workflowId: guid(),
         });
         expect(handle.workflowId).toBeDefined();
       });

@@ -1,5 +1,5 @@
-import { nanoid } from 'nanoid';
 import { HMNS } from '../../modules/key';
+import { guid } from '../../modules/utils';
 import { RedisConnection } from '../connector/clients/redis';
 import { RedisConnection as IORedisConnection } from '../connector/clients/ioredis';
 import { EngineService } from '../engine';
@@ -11,7 +11,8 @@ import {
   JobState,
   JobData,
   JobOutput, 
-  JobStatus } from '../../types/job';
+  JobStatus, 
+  JobInterruptOptions} from '../../types/job';
 import {
   HotMeshConfig,
   HotMeshManifest } from '../../types/hotmesh';
@@ -58,7 +59,7 @@ class HotMeshService {
 
   static async init(config: HotMeshConfig) {
     const instance = new HotMeshService();
-    instance.guid = nanoid();
+    instance.guid = guid();
     instance.verifyAndSetNamespace(config.namespace);
     instance.verifyAndSetAppId(config.appId);
     instance.logger = new LoggerService(config.appId, instance.guid, config.name || '', config.logLevel);
@@ -69,7 +70,7 @@ class HotMeshService {
   }
 
   static guid(): string {
-    return nanoid();
+    return guid();
   }
 
   async initEngine(config: HotMeshConfig, logger: ILogger): Promise<void> {
@@ -146,6 +147,10 @@ class HotMeshService {
     //activation is a quorum operation
     return await this.quorum?.activate(version, delay);
   }
+  async inventory(version: string, delay?: number): Promise<number> {
+    //get count of all peers
+    return await this.quorum?.inventory(delay);
+  }
 
   // ************* REPORTER METHODS *************
   async getStats(topic: string, query: JobStatsInput): Promise<StatsResponse> {
@@ -165,6 +170,11 @@ class HotMeshService {
   }
   async resolveQuery(topic: string, query: JobStatsInput): Promise<GetStatsOptions> {
     return await this.engine?.resolveQuery(topic, query);
+  }
+
+  // ****************** `INTERRUPT` ACTIVE JOBS *****************
+  async interrupt(topic: string, jobId: string, options: JobInterruptOptions = {}): Promise<string> {
+    return await this.engine?.interrupt(topic, jobId, options);
   }
 
   // ****************** `SCRUB` CLEAN COMPLETED JOBS *****************

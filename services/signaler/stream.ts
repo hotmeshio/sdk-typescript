@@ -1,5 +1,16 @@
+import {
+  BLOCK_TIME_MS,
+  MAX_RETRIES,
+  MAX_TIMEOUT_MS,
+  GRADUATED_INTERVAL_MS,
+  STATUS_CODE_UNACKED,
+  STATUS_CODE_UNKNOWN,
+  STATUS_MESSAGE_UNKNOWN,
+  XCLAIM_COUNT,
+  XCLAIM_DELAY_MS,
+  XPENDING_COUNT } from '../../modules/enums';
 import { KeyType } from '../../modules/key';
-import { XSleepFor, sleepFor } from '../../modules/utils';
+import { XSleepFor, guid, sleepFor } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { StoreService } from '../store';
 import { StreamService } from '../stream';
@@ -15,19 +26,6 @@ import {
   StreamRole,
   StreamStatus
 } from '../../types/stream';
-
-const MAX_RETRIES = 3; //local retry; 10, 100, 1000ms
-const MAX_TIMEOUT_MS = 60000;
-const GRADUATED_INTERVAL_MS = 5000;
-const BLOCK_DURATION = 15000; //Set to `15` so SIGINT/SIGTERM can interrupt; set to `0` to BLOCK indefinitely
-const TEST_BLOCK_DURATION = 1000; //Set to `1000` so tests can interrupt quickly
-const BLOCK_TIME_MS = process.env.NODE_ENV === 'test' ? TEST_BLOCK_DURATION : BLOCK_DURATION;
-const SYSTEM_STATUS_CODE = 999;
-const UNKNOWN_STATUS_CODE = 500;
-const UNKNOWN_STATUS_MESSAGE = 'unknown';
-const XCLAIM_DELAY_MS = 1000 * 60; //max time a message can be unacked before it is claimed by another
-const XCLAIM_COUNT = 3; //max number of times a message can be claimed by another before it is dead-lettered
-const XPENDING_COUNT = 10;
 
 class StreamSignaler {
   static signalers: Set<StreamSignaler> = new Set();
@@ -131,7 +129,7 @@ class StreamSignaler {
       telemetry.startStreamSpan(input, this.role);  
       output = await this.execStreamLeg(input, stream, id, callback.bind(this));
       if (output?.status === StreamStatus.ERROR) {
-        telemetry.setStreamError(`Function Status Code ${ output.code || UNKNOWN_STATUS_CODE }`);
+        telemetry.setStreamError(`Function Status Code ${ output.code || STATUS_CODE_UNKNOWN }`);
       }
       this.errorCount = 0;
     } catch (err) {
@@ -171,12 +169,17 @@ class StreamSignaler {
           await sleepFor(timeout);
           return await this.publishMessage(input.metadata.topic, { 
             data: input.data,
+            //note: retain guid (this is a retry attempt)
             metadata: { ...input.metadata, try: (input.metadata.try || 0) + 1 },
             policies: input.policies,
           }) as string;
         } else {
           output = this.structureError(input, output);
         }
+      } else if (typeof output.metadata !== 'object') {
+        output.metadata = { ...input.metadata, guid: guid() };
+      } else {
+        output.metadata.guid = guid();
       }
       output.type = StreamDataType.RESPONSE;
       return await this.publishMessage(null, output as StreamDataResponse) as string;
@@ -203,7 +206,7 @@ class StreamSignaler {
     if (typeof err.message === 'string') {
       error.message = err.message;
     } else {
-      error.message = UNKNOWN_STATUS_MESSAGE;
+      error.message = STATUS_MESSAGE_UNKNOWN;
     }
     if (typeof err.stack === 'string') {
       error.stack = err.stack;
@@ -213,18 +216,18 @@ class StreamSignaler {
     }
     return {
       status: 'error',
-      code: UNKNOWN_STATUS_CODE,
-      metadata: { ...input.metadata },
+      code: STATUS_CODE_UNKNOWN,
+      metadata: { ...input.metadata, guid: guid() },
       data: error as StreamError
     } as StreamDataResponse;
   }
 
   structureUnacknowledgedError(input: StreamData) {
     const message = 'stream message max delivery count exceeded';
-    const code = SYSTEM_STATUS_CODE;
+    const code = STATUS_CODE_UNACKED;
     const data: StreamError = { message, code };
     const output: StreamDataResponse = { 
-      metadata: { ...input.metadata },
+      metadata: { ...input.metadata, guid: guid() },
       status: StreamStatus.ERROR,
       code,
       data,
@@ -235,9 +238,9 @@ class StreamSignaler {
   }
 
   structureError(input: StreamData, output: StreamDataResponse): StreamDataResponse {
-    const message = output.data?.message ? output.data?.message.toString() : UNKNOWN_STATUS_MESSAGE;
+    const message = output.data?.message ? output.data?.message.toString() : STATUS_MESSAGE_UNKNOWN;
     const statusCode = output.code || output.data?.code;
-    const code = isNaN(statusCode as number) ? UNKNOWN_STATUS_CODE : parseInt(statusCode.toString());
+    const code = isNaN(statusCode as number) ? STATUS_CODE_UNKNOWN : parseInt(statusCode.toString());
     const data: StreamError = { message, code };
     if (typeof output.data?.error === 'object') {
       data.error = { ...output.data.error };
@@ -245,7 +248,7 @@ class StreamSignaler {
     return {
       status: StreamStatus.ERROR,
       code,
-      metadata: { ...input.metadata },
+      metadata: { ...input.metadata, guid: guid() },
       data
     } as StreamDataResponse;
   }
@@ -307,7 +310,7 @@ class StreamSignaler {
     //     ii) corrupt hardware/network/transport/etc
     // 3b) system error: Redis unable to accept `xadd` request
     // 4c) system error: Redis unable to accept `xdel`/`xack` request
-    this.logger.error('stream-message-max-delivery-count-exceeded', { id, stream, group, consumer, code: SYSTEM_STATUS_CODE, count });
+    this.logger.error('stream-message-max-delivery-count-exceeded', { id, stream, group, consumer, code: STATUS_CODE_UNACKED, count });
     const streamData = reclaimedMessage[0]?.[1]?.[1];
 
     //fatal risk point 1 of 3): json is corrupt
