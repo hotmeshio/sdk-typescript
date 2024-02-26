@@ -22,7 +22,12 @@
         },
         "activities": {
           "t1": {
-            "type": "trigger"
+            "type": "trigger",
+            "job": {
+              "maps": {
+                "done": false
+              }
+            }
           },
           "w1": {
             "type": "worker",
@@ -46,7 +51,7 @@
           },
           "a1": {
             "type": "hook",
-            "sleep": 15,
+            "sleep": 5,
             "job": {
               "maps": {
                 "done": true

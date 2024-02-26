@@ -1,4 +1,4 @@
-import { GetStateError } from '../../modules/errors';
+import { GetStateError, InactiveJobError } from '../../modules/errors';
 import { Activity, ActivityType } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
@@ -37,6 +37,7 @@ class Signal extends Activity {
       this.setLeg(1);
       await CollatorService.notarizeEntry(this);
       await this.getState();
+      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
 
@@ -50,6 +51,7 @@ class Signal extends Activity {
       await this.setStatus(this.adjacencyList.length - 1, multi);
       const multiResponse = await multi.exec() as MultiResponseFlags;
 
+      //todo: this should execute BEFORE the status is decremented
       if (this.config.subtype === 'all') {
         await this.hookAll();
       } else {
@@ -68,15 +70,19 @@ class Signal extends Activity {
 
       return this.context.metadata.aid;
     } catch (error) {
-      if (error instanceof GetStateError) {
+      if (error instanceof InactiveJobError) {
+        this.logger.error('signal-inactive-job-error', { error });
+        return;
+      } else if (error instanceof GetStateError) {
         this.logger.error('signal-get-state-error', { error });
+        return;
       } else {
         this.logger.error('signal-process-error', { error });
       }
       telemetry.setActivityError(error.message);
       throw error;
     } finally {
-      telemetry.endActivitySpan();
+      telemetry?.endActivitySpan();
       this.logger.debug('signal-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
     }
   }

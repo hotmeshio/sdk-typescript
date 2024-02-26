@@ -1,11 +1,10 @@
-import { nanoid } from 'nanoid';
 import Redis from 'ioredis';
 
 import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { JobOutput } from '../../../types/job';
-import { sleepFor } from '../../../modules/utils';
+import { guid, sleepFor } from '../../../modules/utils';
 
 describe('FUNCTIONAL | Signal', () => {
   const options = {
@@ -19,7 +18,7 @@ describe('FUNCTIONAL | Signal', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
     redisConnection.getClient().flushdb();
 
     //init HotMesh

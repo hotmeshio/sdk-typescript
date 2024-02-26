@@ -143,9 +143,7 @@ class Deployer {
         if (graph.publishes) {
           activities[activityKey].publishes = graph.publishes;
         }
-        if (graph.expire) {
-          activities[activityKey].expire = graph.expire;
-        }
+        activities[activityKey].expire = graph.expire ?? undefined;
       }
     }
   }

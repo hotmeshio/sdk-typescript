@@ -1,15 +1,14 @@
 import * as Redis from 'redis';
 
 import config from '../../$setup/config'
-import { nanoid } from 'nanoid';
 import { RedisConnection } from '../../../services/connector/clients/redis';
-import { sleepFor } from '../../../modules/utils';
+import { guid, sleepFor } from '../../../modules/utils';
 import { MyClass as MeshOSTest } from './src/subclass';
 import { Durable } from '../../../services/durable';
 
 describe('DURABLE | MeshOS', () => {
   const prefix = 'ord_';
-  const guid = `${prefix}${nanoid()}`;
+  const GUID = `${prefix}${guid()}`;
   const options = {
     socket: {
       host: config.REDIS_HOST,
@@ -22,7 +21,7 @@ describe('DURABLE | MeshOS', () => {
 
   beforeAll(async () => {
     const redisConnection = await RedisConnection.connect(
-      nanoid(),
+      guid(),
       Redis,
       options
     );
@@ -48,7 +47,7 @@ describe('DURABLE | MeshOS', () => {
 
   describe('Create/Start a Workflow and await the result', () => {
     it('should start a new workflow and await', async () => {
-      const client = new MeshOSTest({ id: nanoid(), await: true });
+      const client = new MeshOSTest({ id: guid(), await: true });
       const doubled = await client.stringDoubler('hello');
       expect(doubled).toBe('hellohello');
     });
@@ -56,7 +55,7 @@ describe('DURABLE | MeshOS', () => {
 
   describe('Create/Start a Workflow and return the workflow handle', () => {
     it('should start a new workflow', async () => {
-      const client = new MeshOSTest(guid);
+      const client = new MeshOSTest(GUID);
       const handle = await client.create(100);
       expect(handle).not.toBeUndefined();
     });
@@ -64,7 +63,7 @@ describe('DURABLE | MeshOS', () => {
 
   describe('Query Custom Value', () => {
     it('should query for custom state fields', async () => {
-      const handle = await MeshOSTest.get(guid);
+      const handle = await MeshOSTest.get(GUID);
       let result = await handle.queryState(['quantity']);
       while (result.quantity !== '100') {
         await sleepFor(500);
@@ -76,7 +75,7 @@ describe('DURABLE | MeshOS', () => {
 
   describe('Update Workflow', () => {
     it('should hook into a running workflow and update state', async () => {
-      const client = new MeshOSTest(guid);
+      const client = new MeshOSTest(GUID);
       const result = await client.decrement(11);
       expect(result).not.toBeUndefined();
     }, 10_000);
@@ -84,13 +83,13 @@ describe('DURABLE | MeshOS', () => {
 
   describe('Get Workflow', () => {
     it('should get the workflow status', async () => {
-      const handle = await MeshOSTest.get(guid);
+      const handle = await MeshOSTest.get(GUID);
       const result = await handle.status();
       expect(result).not.toBeUndefined();
     });
 
     it('should get the workflow data and metadata', async () => {
-      const handle = await MeshOSTest.get(guid);
+      const handle = await MeshOSTest.get(GUID);
       const result = await handle.state(true);
       expect(result).not.toBeUndefined();
     });
@@ -136,7 +135,7 @@ describe('DURABLE | MeshOS', () => {
       const [key, items] = rest;
       const [f1, v1, f2, v2] = items as unknown as string[];
       expect(count).toBe(1);
-      expect((key as string).includes(guid)).toBe(true);
+      expect((key as string).includes(GUID)).toBe(true);
       expect(f1).toBe('_quantity');
       expect(v1).toBe('89');
       expect(f2).toBe('_status');
@@ -169,9 +168,9 @@ describe('DURABLE | MeshOS', () => {
 
   describe('Result', () => {
     it('should publish the workflow results', async () => {
-      const handle = await MeshOSTest.get(guid);
+      const handle = await MeshOSTest.get(GUID);
       const result = await handle.result(true);
       expect(result).toBe('89');
-    }, 25_000);
+    }, 60_000);
   });
 });

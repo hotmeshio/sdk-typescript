@@ -1,0 +1,335 @@
+app:
+  id: tree
+  version: '10'
+  graphs:
+    - subscribes: spring
+      publishes: fall
+      expire: 120
+
+      input:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+            throw:
+              type: boolean
+      output:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+            throw:
+              type: boolean
+            height:
+              type: number
+            shine:
+              type: string
+            graft:
+              type: string
+            water:
+              type: string
+            fertilize:
+              type: string
+            prune:
+              type: string
+
+      activities:
+        tree:
+          type: trigger
+          job:
+            maps:
+              seed: '{$self.output.data.seed}'
+              speed: '{$self.output.data.speed}'
+              throw: '{$self.output.data.throw}'
+              height:
+                '@pipe':
+                  - ['{$self.output.data.seed}', '{$self.output.data.speed}']
+                  - ['{@math.multiply}']
+        shine:
+          type: interrupt
+          throw: '{tree.output.data.throw}'
+          job:
+            maps:
+              shine:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        sleeper:
+          type: hook
+          sleep: 1
+          job:
+            maps:
+              sleeper:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        graft:
+          type: hook
+          job:
+            maps:
+              graft:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        water:
+          type: hook
+          job:
+            maps:
+              water:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        fertilize:
+          type: hook
+          job:
+            maps:
+              fertilize:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        prune:
+          type: hook
+          job:
+            maps:
+              prune:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+
+      transitions:
+        tree:
+          - to: shine
+          - to: sleeper
+        sleeper:
+          - to: graft
+          - to: water
+          - to: fertilize
+          - to: prune
+
+
+
+    - subscribes: winter
+      publishes: summer
+      expire: 120
+
+      input:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+            throw:
+              type: boolean
+            workflowId:
+              type: string
+      output:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+            throw:
+              type: boolean
+            height:
+              type: number
+
+      activities:
+        starty:
+          type: trigger
+        sleepy:
+          type: hook
+          sleep: 1
+          job:
+            maps:
+              sleepy:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        stoppy:
+          type: interrupt
+          throw: '{starty.output.data.throw}'
+          topic: morning
+          target: '{starty.output.data.workflowId}'
+          job:
+            maps:
+              stoppy:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        waity:
+          type: await
+          topic: morning
+          input:
+            schema:
+              type: object
+              properties:
+                seed:
+                  type: number
+                speed:
+                  type: number
+                workflowId:
+                  type: string
+            maps:
+              seed: '{starty.output.data.seed}'
+              speed: '{starty.output.data.speed}'
+              workflowId: '{starty.output.data.workflowId}'
+          output:
+            schema:
+              type: object
+              properties:
+                seed:
+                  type: number
+                speed:
+                  type: number
+                throw:
+                  type: boolean
+                height:
+                  type: number
+                sheer:
+                  type: string
+                shave:
+                  type: string
+                rinse:
+                  type: string
+                compost:
+                  type: string
+                trim:
+                  type: string
+          job:
+            maps:
+              seed: '{$self.output.data.seed}'
+              speed: '{$self.output.data.speed}'
+              throw: '{starty.output.data.throw}'
+              height: '{$self.output.data.height}'
+              sheer: '{$self.output.data.sheer}'
+              shave: '{$self.output.data.shave}'
+              rinse: '{$self.output.data.rinse}'
+              compost: '{$self.output.data.compost}'
+              trim: '{$self.output.data.trim}'
+
+      transitions:
+        starty:
+          - to: sleepy
+          - to: waity
+        sleepy:
+          - to: stoppy
+
+
+
+    - subscribes: morning
+      publishes: night
+      expire: 120
+
+      input:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+            workflowId:
+              type: string
+      output:
+        schema:
+          type: object
+          properties:
+            seed:
+              type: number
+            speed:
+              type: number
+            height:
+              type: number
+            sheer:
+              type: string
+            shave:
+              type: string
+            rinse:
+              type: string
+            compost:
+              type: string
+            trim:
+              type: string
+
+      activities:
+        bush:
+          type: trigger
+          stats:
+            id: '{$self.input.data.workflowId}'
+          job:
+            maps:
+              seed: '{$self.output.data.seed}'
+              speed: '{$self.output.data.speed}'
+              height:
+                '@pipe':
+                  - ['{$self.output.data.seed}', '{$self.output.data.speed}']
+                  - ['{@math.multiply}']
+        sheer:
+          type: hook
+          job:
+            maps:
+              sheer:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        pauser:
+          type: hook
+          sleep: 1
+          job:
+            maps:
+              pauser:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        shave:
+          type: hook
+          job:
+            maps:
+              shave:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        rinse:
+          type: hook
+          job:
+            maps:
+              rinse:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        compost:
+          type: hook
+          job:
+            maps:
+              compost:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+        trim:
+          type: hook
+          job:
+            maps:
+              trim:
+                '@pipe':
+                  - ['{@date.now}', 'en-US']
+                  - ['{@date.toLocaleString}']
+
+      transitions:
+        bush:
+          - to: sheer
+          - to: pauser
+        pauser:
+          - to: shave
+          - to: rinse
+          - to: compost
+          - to: trim

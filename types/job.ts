@@ -44,6 +44,19 @@ type JobState = {
   };
 };
 
+type JobInterruptOptions = {
+  /** Optional reason when throwing the error  */
+  reason?: string;
+  /** default is `true` when `undefined` (throw JobInterrupted/410 error) */
+  throw?: boolean;
+  /** default behavior is `false` when `undefined` (do NOT interrupt child jobs) */
+  descend?: boolean;
+  /** default is false; if true, errors related to inactivation (like overage...already inactive) are suppressed/ignored */
+  suppress?: boolean;
+  /** how long to wait in seconds before fully expiring/removing the hash from Redis; the job is inactive, but can remain in the cache indefinitely. minimum 1 second.*/
+  expire?: number;
+};
+
 //format when publishing job meta/data on the wire when it completes
 type JobOutput = {
   metadata: JobMetadata;
@@ -56,4 +69,20 @@ type PartialJobState = {
   data: JobData;
 };
 
-export { JobState, JobStatus, JobData, JobsData, JobMetadata, PartialJobState, JobOutput };
+type JobCompletionOptions = {
+  emit?: boolean;      //default false
+  interrupt?: boolean;  //default undefined
+  expire?: number;      // in seconds to wait before deleting/expiring job hash
+}
+
+export {
+  JobCompletionOptions,
+  JobInterruptOptions,
+  JobData,
+  JobsData,
+  JobMetadata,
+  JobOutput,
+  JobState,
+  JobStatus,
+  PartialJobState,
+};

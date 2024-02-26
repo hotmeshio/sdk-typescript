@@ -201,14 +201,21 @@ export class WorkerService {
         //incoming data payload has arguments and workflowId
         const workflowInput = data.data as unknown as WorkflowDataType;
         const context = new Map();
+        context.set('raw', data);
         context.set('namespace', config.namespace ?? APP_ID);
         context.set('counter', counter);
         context.set('workflowId', workflowInput.workflowId);
-        if (data.data.workflowDimension) {
+        context.set('workflowId', workflowInput.workflowId);
+        if (workflowInput.originJobId) {
+          //if present there is an origin job to which this job is subordinated; 
+          // garbage collect (expire) this job when originJobId is expired
+          context.set('originJobId', workflowInput.originJobId);
+        }
+        if (workflowInput.workflowDimension) {
           //every hook function runs in an isolated dimension controlled
           //by the index assigned when the signal was received; even if the
           //hook function re-runs, its scope will always remain constant
-          context.set('workflowDimension', data.data.workflowDimension);
+          context.set('workflowDimension', workflowInput.workflowDimension);
         }
         context.set('workflowTopic', workflowTopic);
         context.set('workflowName', workflowTopic.split('-').pop());

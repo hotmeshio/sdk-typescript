@@ -1,7 +1,8 @@
-import { CollationError } from '../../modules/errors';
+import { CollationError, GetStateError, InactiveJobError } from '../../modules/errors';
 import {
   formatISODate,
   getValueByPath,
+  guid,
   restoreHierarchy } from '../../modules/utils';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
@@ -29,6 +30,7 @@ import {
   StreamDataType,
   StreamStatus } from '../../types/stream';
 import { TransitionRule } from '../../types/transition';
+import { EXPIRE_DURATION } from '../../modules/enums';
 
 /**
  * The base class for all activities
@@ -84,6 +86,7 @@ class Activity {
     let telemetry: TelemetryService;
     try {
       await this.getState();
+      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
       const aState = await CollatorService.notarizeReentry(this);
       this.adjacentIndex = CollatorService.getDimensionalIndex(aState);
 
@@ -110,12 +113,18 @@ class Activity {
       if (error instanceof CollationError) {
         this.logger.info('process-event-inactive-error', { error });
         return;
+      } else if (error instanceof InactiveJobError) {
+        this.logger.info('process-event-inactive-job-error', { error });
+        return;
+      } else if (error instanceof GetStateError) {
+        this.logger.info('process-event-get-job-error', { error });
+        return;
       }
       this.logger.error('activity-process-event-error', { error });
       telemetry && telemetry.setActivityError(error.message);
       throw error;
     } finally {
-      telemetry && telemetry.endActivitySpan();
+      telemetry?.endActivitySpan();
       this.logger.debug('activity-process-event-end', { jid, aid });
     }
   }
@@ -159,6 +168,7 @@ class Activity {
     telemetry.mapActivityAttributes();
     const jobStatus = this.resolveStatus(multiResponse);
     const attrs: StringScalarType = { 'app.job.jss': jobStatus };
+    //adjacencyList membership has already been set at this point (according to activity status)
     const messageIds = await this.transition(this.adjacencyList, jobStatus);
     if (messageIds.length) {
       attrs['app.activity.mids'] = messageIds.join(',')
@@ -380,12 +390,16 @@ class Activity {
       self.hook = { };
     }
     context['$self'] = self;
-    context['$job'] = context; //NEVER call STRINGIFY! (circular)
+    context['$job'] = context; //NEVER call STRINGIFY! (now circular)
     return context as JobState;
   }
 
   initPolicies(context: JobState) {
-    context.metadata.expire = this.config.expire;
+    const expire = Pipe.resolve(
+      this.config.expire ?? EXPIRE_DURATION,
+      context
+    );
+    context.metadata.expire = expire;
   }
 
   bindActivityData(type: 'output' | 'hook'): void {
@@ -418,6 +432,7 @@ class Activity {
         if (MapperService.evaluate(transitionRule, this.context, this.code)) {
           adjacencyList.push({
             metadata: {
+              guid: guid(),
               jid: this.context.metadata.jid,
               dad: adjacentDad,
               aid: toActivityId,
@@ -434,17 +449,20 @@ class Activity {
   }
 
   async transition(adjacencyList: StreamData[], jobStatus: JobStatus): Promise<string[]> {
+    if (this.jobWasInterrupted(jobStatus)) {
+      return;
+    }
     let mIds: string[] = [];
     let emit: boolean = false;
     if (this.config.emit) {
       emit = Pipe.resolve(this.config.emit, this.context);
     }
     if (jobStatus <= 0 || emit) {
-      //activity should not send 'emit' if the job is truly over
-      const isTrueEmit = jobStatus > 0;
-      await this.engine.runJobCompletionTasks(this.context, isTrueEmit);
+      await this.engine.runJobCompletionTasks(
+        this.context,
+        { emit: jobStatus > 0 },
+      );
     }
-
     if (adjacencyList.length && jobStatus > 0) {
       const multi = this.store.getMulti();
       for (const execSignal of adjacencyList) {
@@ -453,6 +471,14 @@ class Activity {
       mIds = (await multi.exec()) as string[];
     }
     return mIds;
+  }
+
+  /**
+   * A job with a vale < -100_000_000 is considered interrupted,
+   * as the interruption event decrements the job status by 1billion.
+   */
+  jobWasInterrupted(jobStatus: JobStatus): boolean {
+    return jobStatus < -100_000_000;
   }
 }
 

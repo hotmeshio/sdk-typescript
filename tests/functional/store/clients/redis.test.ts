@@ -238,7 +238,7 @@ describe('FUNCTIONAL | RedisStoreService', () => {
       expect(jobList?.[0]).toEqual(`${type}::${activityId}::${jobId1}`);
       expect(jobList?.[1]).toEqual(`${type}::${activityId}::${jobId2}`);
       // Retrieve the next job to be triggered (to receive a time event)
-      const [nextListKey, nextJobId, nextActivityId] = (await redisStoreService.getNextTimeJob()) as [string, string, string];
+      const [nextListKey, nextJobId, nextActivityId] = (await redisStoreService.getNextTimeJob()) as [string, string, string, ('sleep' | 'expire' | 'interrupt')];
       expect(nextListKey).toEqual(listKey);
       expect(nextJobId).toEqual(jobId1);
       expect(nextActivityId).toEqual(activityId);

@@ -13,7 +13,8 @@ const { greet } = Durable.workflow
 
 export async function example(name: string): Promise<string> {
   const random1 = Durable.workflow.random();
-  const greeting = await greet(name);
+  const proxyGreeting = await greet(name);
   const random2 = Durable.workflow.random();
-  return `${random1} ${greeting} ${random2}`;
+  const oneTimeGreeting = await Durable.workflow.once<string>(activities.default, name)
+  return `${random1} ${proxyGreeting} ${random2} ${oneTimeGreeting}`;
 }

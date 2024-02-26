@@ -1,7 +1,7 @@
 import { MetricTypes } from "./stats";
 import { StreamRetryPolicy } from "./stream";
 
-type ActivityExecutionType = 'trigger' | 'await' | 'worker' | 'activity' | 'emit' | 'iterate' | 'cycle' | 'signal' | 'hook';
+type ActivityExecutionType = 'trigger' | 'await' | 'worker' | 'activity' | 'emit' | 'interrupt' | 'cycle' | 'signal' | 'hook';
 
 type Consumes = Record<string, string[]>;
 
@@ -17,7 +17,7 @@ interface BaseActivity {
   telemetry?: Record<string, any>;
   emit?: boolean;                      //if true, the activity will emit a message to the `publishes` topic immediately before transitioning to adjacent activities
   sleep?: number;                      //@pipe /in seconds
-  expire?: number;                     //-1 forever (15 seconds default); todo: make globally configurable
+  expire?: number;                     //-1 forever; 0 persists the flow until the parent flow that expired it is dismissed; 15 seconds is the default
   retry?: StreamRetryPolicy
   cycle?: boolean;                     //if true, the `notary` will leave leg 2 open, so it can be re/cycled
   collationInt?: number;               //compiler
@@ -37,10 +37,30 @@ interface Measure {
 }
 
 interface TriggerActivityStats {
+  /**
+   * parent job; including this allows the parent's 
+   * expiration/interruption events to cascade; set 
+   * `expire` in the YAML for the dependent graph 
+   * to 0 and provide the parent for dependent,
+   * cascading interruption and cleanup
+   */
+  parent?: string;
   id?: { [key: string]: unknown } | string;
   key?: { [key: string]: unknown } | string;
-  granularity?: string; //return 'infinity' to disable; default behavior is to always segment keys by time to ensure indexes (Redis LIST) never grow unbounded as a default behavior; for now, 5m is default and infinity can be set to override
-  measures?: Measure[]; //what to capture
+  /**
+   * @deprecated
+   * return 'infinity' to disable; default behavior
+   * is to always segment keys by time to ensure
+   * indexes (Redis LIST) never grow unbounded
+   * as a default behavior; for now, 5m is default
+   * and infinity can be set to override
+   */
+  granularity?: string;
+  /**
+   * @deprecated
+   * what to capture
+   */
+  measures?: Measure[];
 }
 
 interface TriggerActivity extends BaseActivity {
@@ -82,11 +102,21 @@ interface SignalActivity extends BaseActivity {
   code?: number;                  //202, 200 (default)
 }
 
-interface IterateActivity extends BaseActivity {
-  type: 'iterate';
+interface InterruptActivity extends BaseActivity {
+  type: 'interrupt';
+  /** Optional Reason; will be used as the error `message` when thrown; NOTE: 410 is the error `code` */
+  reason?: string;
+  /** default is `true` (throw JobInterrupted error upon interrupting) */
+  throw?: boolean;
+  /** TODO: // default is `false` (do not interrupt child jobs) */
+  descend?: boolean;
+  /** target job id (if not present the current job will be targeted) */
+  target?: string;
+  /** topic to publish the interrupt message (if not present the current job topic will be used) */
+  topic?: string;
 }
 
-type ActivityType = BaseActivity | TriggerActivity | AwaitActivity | WorkerActivity | IterateActivity | HookActivity;
+type ActivityType = BaseActivity | TriggerActivity | AwaitActivity | WorkerActivity | InterruptActivity | HookActivity | SignalActivity | CycleActivity;
 
 type ActivityData = Record<string, any>;
 type ActivityMetadata = {
@@ -133,7 +163,7 @@ export {
   HookActivity,
   SignalActivity,
   BaseActivity,
-  IterateActivity,
+  InterruptActivity,
   TriggerActivity,
   WorkerActivity
 };

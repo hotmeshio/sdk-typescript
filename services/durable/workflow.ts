@@ -19,7 +19,7 @@ import {
   ProxyType,
   WorkflowContext,
   WorkflowOptions } from "../../types/durable";
-import { JobOutput, JobState } from '../../types/job';
+import { JobInterruptOptions, JobOutput, JobState } from '../../types/job';
 import { StreamStatus } from '../../types/stream';
 import { deterministicRandom } from '../../modules/utils';
 
@@ -35,6 +35,7 @@ export class WorkflowService {
     const store = asyncLocalStorage.getStore();
     const namespace = store.get('namespace');
     const workflowId = store.get('workflowId');
+    const originJobId = store.get('originJobId');
     const workflowDimension = store.get('workflowDimension') ?? '';
     const workflowTrace = store.get('workflowTrace');
     const workflowSpan = store.get('workflowSpan');
@@ -65,6 +66,7 @@ export class WorkflowService {
         ...options,
         namespace,
         workflowId: childJobId,
+        originJobId: originJobId ?? workflowId, 
         parentWorkflowId,
         workflowTrace,
         workflowSpan,
@@ -289,6 +291,66 @@ export class WorkflowService {
     }
   }
 
+  static getLocalState() {
+    const store = asyncLocalStorage.getStore();
+    return {
+      workflowId: store.get('workflowId'),
+      namespace: store.get('namespace'),
+      workflowTopic: store.get('workflowTopic'),
+      workflowDimension: store.get('workflowDimension') ?? '',
+      counter: store.get('counter'),
+    }
+  }
+
+  /**
+   * Executes a function once and caches the result. If the function is called
+   * again, the cached result is returned. This is useful for wrapping
+   * expensive activity calls that should only be run once, but which might
+   * not require the configuration nuance/expense provided by proxyActivities.
+   * @template T - the result type
+   */
+  static async once<T>(fn: (...args: any[]) => Promise<T>, ...args: any[]): Promise<T> {
+    const {
+      workflowId,
+      namespace,
+      workflowTopic,
+      workflowDimension,
+      counter: COUNTER,
+    } = WorkflowService.getLocalState();
+    const execIndex = COUNTER.counter = COUNTER.counter + 1;
+    const sessionId = `-once${workflowDimension}-${execIndex}-`;
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    const keyParams = {
+      appId: hotMeshClient.appId,
+      jobId: workflowId
+    }
+    const workflowGuid = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+    const value = await hotMeshClient.engine.store.exec('HGET', workflowGuid, sessionId) as string;
+    if (value) {
+      return JSON.parse(value) as T;
+    }
+    const response = await fn(...args);
+    await hotMeshClient.engine.store.exec('HSET', workflowGuid, sessionId, JSON.stringify(response));
+    return response;
+  }
+
+  /** 
+   * Interrupts a running job
+   * 
+   * @param {string} jobId - the target job id
+   * @param {JobInterruptOptions} options - the interrupt options
+   * @returns {Promise<string>} - the stream id
+   */
+  static async interrupt(jobId: string, options: JobInterruptOptions = {}): Promise<string | void> {
+    const store = asyncLocalStorage.getStore();
+    const workflowTopic = store.get('workflowTopic');
+    const namespace = store.get('namespace');
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'interrupt')) {
+      return await hotMeshClient.interrupt(`${hotMeshClient.appId}.execute`, jobId, options);
+    }
+  }
+
   /**
    * Sleeps the workflow for a duration. As the function is reentrant, 
    * upon reentry, the function will traverse prior execution paths up
@@ -407,6 +469,7 @@ export class WorkflowService {
       //increment by state (not value) to avoid race conditions
       const execIndex = COUNTER.counter = COUNTER.counter + 1;
       const workflowId = store.get('workflowId');
+      const originJobId = store.get('originJobId');
       const workflowDimension = store.get('workflowDimension') ?? '';
       const workflowTopic = store.get('workflowTopic');
       const trc = store.get('workflowTrace');
@@ -439,7 +502,8 @@ export class WorkflowService {
         const duration = ms(options?.startToCloseTimeout || '1 minute');
         const payload = {
           arguments: Array.from(arguments),
-          //the parent id is provided to categorize this activity for later cleanup
+          //when the origin job is removed
+          originJobId: originJobId ?? workflowId,
           parentWorkflowId: `${workflowId}-a`,
           workflowId: activityJobId,
           workflowTopic: activityTopic,

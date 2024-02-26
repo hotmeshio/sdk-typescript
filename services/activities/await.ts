@@ -1,4 +1,4 @@
-import { GetStateError } from '../../modules/errors';
+import { GetStateError, InactiveJobError } from '../../modules/errors';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
@@ -12,6 +12,7 @@ import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData, StreamDataType } from '../../types/stream';
 import { TelemetryService } from '../telemetry';
 import { Pipe } from '../pipe';
+import { guid } from '../../modules/utils';
 
 class Await extends Activity {
   config: AwaitActivity;
@@ -35,6 +36,7 @@ class Await extends Activity {
       this.setLeg(1);
       await CollatorService.notarizeEntry(this);
       await this.getState();
+      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
@@ -57,15 +59,19 @@ class Await extends Activity {
       });
       return this.context.metadata.aid;
     } catch (error) {
-      telemetry.setActivityError(error.message);
-      if (error instanceof GetStateError) {
+      if (error instanceof InactiveJobError) {
+        this.logger.error('await-inactive-job-error', { error });
+        return;
+      } else if (error instanceof GetStateError) {
         this.logger.error('await-get-state-error', { error });
+        return;
       } else {
         this.logger.error('await-process-error', { error });
       }
+      telemetry.setActivityError(error.message);
       throw error;
     } finally {
-      telemetry.endActivitySpan();
+      telemetry?.endActivitySpan();
       this.logger.debug('await-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
     }
   }
@@ -74,6 +80,7 @@ class Await extends Activity {
     const topic = Pipe.resolve(this.config.subtype, this.context);
     const streamData: StreamData = {
       metadata: {
+        guid: guid(),
         jid: this.context.metadata.jid,
         dad: this.metadata.dad,
         aid: this.metadata.aid,

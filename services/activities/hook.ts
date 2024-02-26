@@ -1,4 +1,4 @@
-import { GetStateError } from '../../modules/errors';
+import { GetStateError, InactiveJobError } from '../../modules/errors';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
@@ -43,6 +43,7 @@ class Hook extends Activity {
       await CollatorService.notarizeEntry(this);
 
       await this.getState();
+      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
       let multiResponse: MultiResponseFlags;
@@ -81,15 +82,19 @@ class Hook extends Activity {
 
       return this.context.metadata.aid;
     } catch (error) {
-      if (error instanceof GetStateError) {
+      if (error instanceof InactiveJobError) {
+        this.logger.error('hook-inactive-job-error', { error });
+        return;
+      } else if (error instanceof GetStateError) {
         this.logger.error('hook-get-state-error', { error });
+        return;
       } else {
         this.logger.error('hook-process-error', { error });
       }
       telemetry.setActivityError(error.message);
       throw error;
     } finally {
-      telemetry.endActivitySpan();
+      telemetry?.endActivitySpan();
       this.logger.debug('hook-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
     }
   }

@@ -117,6 +117,8 @@ class QuorumService {
         self.engine.processWebHooks()
       } else if (message.type === 'job') {
         self.engine.routeToSubscribers(message.topic, message.job)
+      } else if (message.type === 'cron') {
+        self.engine.processTimeHooks();
       }
       //if there are any callbacks, call them
       if (self.callbacks.length > 0) {
@@ -164,6 +166,13 @@ class QuorumService {
 
 
   // ************* COMPILER METHODS *************
+  async inventory(delay = QUORUM_DELAY): Promise<number> {
+    await this.requestQuorum(delay);
+    const q1 = await this.requestQuorum(delay);
+    const q2 = await this.requestQuorum(delay);
+    const q3 = await this.requestQuorum(delay);
+    return Math.round((q1 + q2 + q3) / 3);
+  }
   async activate(version: string, delay = QUORUM_DELAY): Promise<boolean> {
     version = version.toString();
     const config = await this.engine.getVID();

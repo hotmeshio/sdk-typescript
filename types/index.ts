@@ -12,7 +12,7 @@ export {
   CycleActivity,
   HookActivity,
   WorkerActivity,
-  IterateActivity,
+  InterruptActivity,
   SignalActivity,
   TriggerActivity,
   TriggerActivityStats } from './activity';

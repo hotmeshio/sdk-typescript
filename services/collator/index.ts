@@ -1,4 +1,4 @@
-import { CollationError } from '../../modules/errors';
+import { CollationError, InactiveJobError } from '../../modules/errors';
 import { RedisMulti } from '../../types/redis';
 import { CollationFaultType, CollationStage } from '../../types/collator';
 import { ActivityDuplex } from '../../types/activity';
@@ -10,6 +10,15 @@ class CollatorService {
 
   //max int digit count that supports `hincrby`
   static targetLength = 15;
+
+  /**
+   * Upon re/entry, verify that the job status is active
+   */
+  static assertJobActive(status: number, jobId: string, activityId: string): void {
+    if (status <= 0) {
+      throw new InactiveJobError(jobId, status, activityId);
+    }
+  }
 
   /**
    * returns the dimensional address (dad) for the target; due

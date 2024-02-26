@@ -1,9 +1,8 @@
-import { nanoid } from 'nanoid';
 import Redis from 'ioredis';
 
 import config from '../../$setup/config';
 import { HMNS } from '../../../modules/key';
-import { sleepFor } from '../../../modules/utils';
+import { guid, sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { MathHandler } from '../../../services/pipe/functions/math';
@@ -67,7 +66,7 @@ describe('FUNCTIONAL | Retry', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(nanoid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
     redisConnection.getClient().flushdb();
 
     const config: HotMeshConfig = {
@@ -196,7 +195,7 @@ describe('FUNCTIONAL | Retry', () => {
         await hotMesh.getState('calculate', jobId);
         expect(true).toBe(false);
       } catch (e) {
-        expect(e.message).toContain('not found');
+        expect(e.message).toBe(`${jobId} Not Found`);
       }
     });
 

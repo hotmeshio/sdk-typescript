@@ -11,6 +11,7 @@ import { JobState } from '../../types/job';
 import { KeyService, KeyType } from '../../modules/key';
 import { Search } from './search';
 import { StreamStatus } from '../../types';
+import { DURABLE_EXPIRE_SECONDS } from '../../modules/enums';
 
 export class ClientService {
 
@@ -96,12 +97,15 @@ export class ClientService {
       const workflowName = options.entity ?? options.workflowName;
       const trc = options.workflowTrace;
       const spn = options.workflowSpan;
-      //topic is concat of taskQueue and workflowName
+      //NOTE: HotMesh 'workflowTopic' is a created by concatenating
+      //     the taskQueue and workflowName used by the Durable module
       const workflowTopic = `${taskQueueName}-${workflowName}`;
       const hotMeshClient = await this.getHotMeshClient(workflowTopic, options.namespace);
-      this.configureSearchIndex(hotMeshClient, options.search)
+      this.configureSearchIndex(hotMeshClient, options.search);
       const payload = {
         arguments: [...options.args],
+        originJobId: options.originJobId,
+        expire: options.expire ?? DURABLE_EXPIRE_SECONDS,
         parentWorkflowId: options.parentWorkflowId,
         workflowId: options.workflowId || HotMesh.guid(),
         workflowTopic: workflowTopic,
@@ -113,12 +117,12 @@ export class ClientService {
         payload,
         context as JobState
       );
-      // Seed search data if present
+      // Seed search data
       if (jobId && options.search?.data) {
         const searchSessionId = `-search-0`;
         const search = new Search(jobId, hotMeshClient, searchSessionId);
         const entries = Object.entries(options.search.data).flat();
-        search.set(...entries);
+        await search.set(...entries);
       }
       return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
     },

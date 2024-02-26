@@ -1,13 +1,12 @@
+import {
+  EXPIRE_DURATION,
+  FIDELITY_SECONDS } from '../../modules/enums';
+import { XSleepFor, sleepFor } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { StoreService } from '../store';
-import { RedisClient, RedisMulti } from '../../types/redis';
 import { HookInterface } from '../../types/hook';
-import { XSleepFor, sleepFor } from '../../modules/utils';
-
-//system timer granularity limit (task queues organize)
-const FIDELITY_SECONDS = 15; //note: this can be reduced using 'watch' or scout role
-//default resolution/fidelity when expiring
-const EXPIRATION_FIDELITY_SECONDS = 60;
+import { JobCompletionOptions } from '../../types/job';
+import { RedisClient, RedisMulti } from '../../types/redis';
 
 class TaskService {
   store: StoreService<RedisClient, RedisMulti>;
@@ -43,25 +42,26 @@ class TaskService {
     await this.store.addTaskQueues(keys);
   }
 
-  async registerJobForCleanup(jobId: string, inSeconds = EXPIRATION_FIDELITY_SECONDS): Promise<void> {
-    if (inSeconds > -1) {
+  async registerJobForCleanup(jobId: string, inSeconds = EXPIRE_DURATION, options: JobCompletionOptions): Promise<void> {
+    if (inSeconds > 0) {
       await this.store.expireJob(jobId, inSeconds);
+      const expireTimeSlot = Math.floor((Date.now() + (inSeconds * 1000)) / (FIDELITY_SECONDS * 1000)) * (FIDELITY_SECONDS * 1000); //n second awaken groups
+      await this.store.registerExpireJob(jobId, expireTimeSlot, options);
     }
   }
 
-  async registerTimeHook(jobId: string, activityId: string, type: 'sleep'|'expire'|'cron', inSeconds = FIDELITY_SECONDS, multi?: RedisMulti): Promise<void> {
-    const awakenTimeSlot = Math.floor((Date.now() + inSeconds * 1000) / (FIDELITY_SECONDS * 1000)) * (FIDELITY_SECONDS * 1000); //n second awaken groups
+  async registerTimeHook(jobId: string, activityId: string, type: 'sleep'|'expire'|'interrupt', inSeconds = FIDELITY_SECONDS, multi?: RedisMulti): Promise<void> {
+    const awakenTimeSlot = Math.floor((Date.now() + (inSeconds * 1000)) / (FIDELITY_SECONDS * 1000)) * (FIDELITY_SECONDS * 1000); //n second awaken groups
     await this.store.registerTimeHook(jobId, activityId, type, awakenTimeSlot, multi);
   }
 
-  //todo: need 'scout' role in quorum to check for this and then alert the quorum to get to work
-  async processTimeHooks(timeEventCallback: (jobId: string, activityId: string) => Promise<void>, listKey?: string): Promise<void> {
+  async processTimeHooks(timeEventCallback: (jobId: string, activityId: string, type: 'sleep'|'expire'|'interrupt') => Promise<void>, listKey?: string): Promise<void> {
     try {
-      const job = await this.store.getNextTimeJob(listKey);
-      if (job) {
-        const [listKey, jobId, activityId] = job;
-        await timeEventCallback(jobId, activityId);
-        await sleepFor(0);
+      const timeJob = await this.store.getNextTimeJob(listKey);
+      if (timeJob) {
+        const [listKey, jobId, activityId, type] = timeJob;
+        await timeEventCallback(jobId, activityId, type);
+        await sleepFor(0);          
         this.processTimeHooks(timeEventCallback, listKey);
       } else {
         let sleep = XSleepFor(FIDELITY_SECONDS * 1000);

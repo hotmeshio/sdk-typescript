@@ -43,7 +43,7 @@ export class MyClass extends MeshOSTest {
     console.log(greeting, salud);
 
     //sleep for 1 second (or week, or year, or whatever)
-    await MyClass.MeshOS.sleep('1 second');
+    await MyClass.MeshOS.sleepFor('1 second');
 
     const receipt = await this.updateStatus('ordered', val);
     console.log('updateStatus receipt=>', receipt);
@@ -75,7 +75,7 @@ export class MyClass extends MeshOSTest {
       await search.set('quantity', quantity.toString());
     }
 
-    await MyClass.MeshOS.sleep('2 seconds');
+    await MyClass.MeshOS.sleepFor('2 seconds');
 
     console.log('sending the abc signal');
     const random = MyClass.MeshOS.random(); //0.20008059867222983
