@@ -176,6 +176,11 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       expect(setResponse).toEqual('OK');
       const getResponse = await redisStoreService.exec('get', 'exec:test:val');
       expect(getResponse).toEqual('25');
+      //test hset commands
+      const resp = await redisStoreService.exec('hset', 'exec:test:hset', 'a', '25', 'b', '50');
+      expect(resp).toEqual(2);
+      const delResp = await redisStoreService.exec('hdel', 'exec:test:hset', 'a', 'b');
+      expect(delResp).toEqual(2);
     });
   });
 

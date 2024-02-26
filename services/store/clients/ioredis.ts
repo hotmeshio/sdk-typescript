@@ -32,6 +32,7 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
       }
       return response as string[];
     }
+    return response;
   }
 
   hGetAllResult(result: any) {
