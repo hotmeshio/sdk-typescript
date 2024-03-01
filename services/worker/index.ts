@@ -14,6 +14,7 @@ import { RedisClientType as IORedisClientType } from '../../types/ioredisclient'
 import { HotMeshConfig, HotMeshWorker } from "../../types/hotmesh";
 import {
   QuorumMessage,
+  QuorumProfile,
   SubscriptionCallback } from "../../types/quorum";
 import { RedisClient, RedisMulti } from "../../types/redis";
 import { RedisClientType } from '../../types/redisclient';
@@ -153,8 +154,37 @@ class WorkerService {
       self.logger.debug('worker-event-received', { topic, type: message.type });
       if (message.type === 'throttle') {
         self.throttle(message.throttle);
+      } else if(message.type === 'ping') {
+        self.sayPong(self.appId, self.guid, message.originator, message.details);
       }
     };
+  }
+
+  async sayPong(appId: string, guid: string, originator: string, details = false) {
+    let profile: QuorumProfile;
+    if (details) {
+      const params = {
+        appId: this.appId,
+        topic: this.topic,
+      };
+
+      profile = {
+        engine_id: this.guid,
+        namespace: this.namespace,
+        app_id: this.appId,
+        worker_topic: this.topic,
+        stream: this.stream.mintKey(KeyType.STREAMS, params),
+      };
+    }
+    this.store.publish(
+      KeyType.QUORUM, 
+      {
+        type: 'pong',
+        guid, originator,
+        profile,
+      },
+      appId,
+    );
   }
 
   async throttle(delayInMillis: number) {

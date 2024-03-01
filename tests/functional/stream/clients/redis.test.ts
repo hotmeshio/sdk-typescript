@@ -58,7 +58,9 @@ describe('FUNCTIONAL | RedisStreamService', () => {
       const multi = redisStreamService.getMulti();
       await redisStreamService.xadd(key, msgId, field, value, multi);
       await redisStreamService.xadd(key, msgId, field, value, multi);
-      await multi.exec();
+      await redisStreamService.xlen(key, multi);
+      const rslt = await multi.exec();
+      expect(rslt[2]).toBe(2);
       const messages = await redisClient.sendCommand(['XRANGE', key, '-', '+']) as [string, string[]][];
       const addedMessages = messages.find(([messageId, fields]) => fields.includes(field) && fields.includes(value));
       expect(addedMessages?.length).toBe(2);

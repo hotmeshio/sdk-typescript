@@ -1,9 +1,20 @@
 import { JobOutput } from "./job";
 
-//used for coordination like version activation
+//used for coordination (like version activation)
+
+export interface QuorumProfile {
+  namespace: string;
+  app_id: string;
+  engine_id: string;
+  worker_topic?: string;
+  stream?: string;
+  stream_depth?: number;
+}
+
 export interface PingMessage {
   type: 'ping';
   originator: string; //guid
+  details?: boolean;  //if true, all endpoints will include their profile
 }
 
 export interface WorkMessage {
@@ -16,11 +27,11 @@ export interface CronMessage {
   originator: string; //guid
 }
 
-//used for coordination like version activation
 export interface PongMessage {
   type: 'pong';
-  originator: string; //clone of originator guid passed in ping
-  guid: string;
+  guid: string;            //call initiator
+  originator: string;      //clone of originator guid passed in ping
+  profile?: QuorumProfile; //contains details about the engine/worker
 }
 
 export interface ActivateMessage {

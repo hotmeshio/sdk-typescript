@@ -139,6 +139,20 @@ class RedisStreamService extends StreamService<RedisClientType, RedisMultiType> 
       throw err;
     }
   }
+
+  async xlen(key: string, multi? : RedisMultiType): Promise<number|RedisMultiType> {
+    try {
+      if (multi) {
+        multi.XLEN(key);
+        return multi;
+      } else {
+        return await this.redisClient.XLEN(key);
+      }
+    } catch (error) {
+      this.logger.error(`Error getting stream depth: ${key}`, { error });
+      throw error;
+    }
+  }
 }
 
 export { RedisStreamService };

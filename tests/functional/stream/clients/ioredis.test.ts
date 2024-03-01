@@ -59,7 +59,11 @@ describe('FUNCTIONAL | IORedisStreamService', () => {
       const multi = redisStreamService.getMulti();
       await redisStreamService.xadd(key, msgId, field, value, multi);
       await redisStreamService.xadd(key, msgId, field, value, multi);
-      await multi.exec();
+      await redisStreamService.xlen(key, multi);
+      const rslt = await multi.exec() as unknown as number[];
+      expect(rslt[2][1]).toBe(2);
+      const rslt2 = await redisStreamService.xlen(key);
+      expect(rslt2).toBe(2);
       const messages = await redisClient.xrange(key, '-', '+');
       const addedMessages = messages.find(([messageId, fields]) => fields.includes(field) && fields.includes(value));
       expect(addedMessages?.length).toBe(2);

@@ -6,6 +6,7 @@ interface RedisMultiType {
   XADD(key: string, id: string, fields: any): this;
   XACK(key: string, group: string, id: string): this;
   XDEL(key: string, id: string): this;
+  XLEN(key: string): this;
   HDEL(key: string, itemId: string): this;
   HGET(key: string, itemId: string): this;
   HGETALL(key: string): this;
