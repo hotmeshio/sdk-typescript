@@ -1,17 +1,20 @@
 import {
   EXPIRE_DURATION,
-  FIDELITY_SECONDS } from '../../modules/enums';
+  FIDELITY_SECONDS, 
+  SCOUT_INTERVAL_SECONDS} from '../../modules/enums';
 import { XSleepFor, sleepFor } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { StoreService } from '../store';
-import { HookInterface } from '../../types/hook';
-import { JobCompletionOptions } from '../../types/job';
+import { HookInterface, HookRule, HookSignal } from '../../types/hook';
+import { JobCompletionOptions, JobState } from '../../types/job';
 import { RedisClient, RedisMulti } from '../../types/redis';
+import { Pipe } from '../pipe';
 
 class TaskService {
   store: StoreService<RedisClient, RedisMulti>;
   logger: ILogger;
   cleanupTimeout: NodeJS.Timeout | null = null;
+  isScout: boolean = false;
 
   constructor(
     store: StoreService<RedisClient, RedisMulti>,
@@ -50,28 +53,59 @@ class TaskService {
     }
   }
 
-  async registerTimeHook(jobId: string, activityId: string, type: 'sleep'|'expire'|'interrupt', inSeconds = FIDELITY_SECONDS, multi?: RedisMulti): Promise<void> {
+  async registerTimeHook(jobId: string, gId: string, activityId: string, type: 'sleep'|'expire'|'interrupt', inSeconds = FIDELITY_SECONDS, multi?: RedisMulti): Promise<void> {
     const awakenTimeSlot = Math.floor((Date.now() + (inSeconds * 1000)) / (FIDELITY_SECONDS * 1000)) * (FIDELITY_SECONDS * 1000); //n second awaken groups
-    await this.store.registerTimeHook(jobId, activityId, type, awakenTimeSlot, multi);
+    await this.store.registerTimeHook(jobId, gId, activityId, type, awakenTimeSlot, multi);
   }
 
-  async processTimeHooks(timeEventCallback: (jobId: string, activityId: string, type: 'sleep'|'expire'|'interrupt') => Promise<void>, listKey?: string): Promise<void> {
-    try {
-      const timeJob = await this.store.getNextTimeJob(listKey);
-      if (timeJob) {
-        const [listKey, jobId, activityId, type] = timeJob;
-        await timeEventCallback(jobId, activityId, type);
-        await sleepFor(0);          
-        this.processTimeHooks(timeEventCallback, listKey);
-      } else {
-        let sleep = XSleepFor(FIDELITY_SECONDS * 1000);
-        this.cleanupTimeout = sleep.timerId;
-        await sleep.promise;
-        this.processTimeHooks(timeEventCallback)
+  /**
+   * Should this engine instance play the role of 'scout' for the quorum.
+   */
+  async shouldScout() {
+    const wasScout = this.isScout;
+    const isScout = wasScout || (this.isScout = await this.store.reserveScoutRole('time'));
+    if (isScout) {
+      if (!wasScout) {
+        setTimeout(() => {
+          this.isScout = false;
+        }, SCOUT_INTERVAL_SECONDS * 1_000);
       }
-    } catch (err) {
-      //todo: retry connect to redis
-      this.logger.error('task-process-timehooks-error', err);
+      return true;
+    }
+    return false;
+  }
+
+  async processTimeHooks(timeEventCallback: (jobId: string, gId: string, activityId: string, type: 'sleep'|'expire'|'interrupt') => Promise<void>, listKey?: string): Promise<void> {
+    if (await this.shouldScout()) {
+      try {
+        const timeJob = await this.store.getNextTimeJob(listKey);
+        if (Array.isArray(timeJob)) {
+          //a queue had a job; try again immediately
+          const [listKey, jobId, gId, activityId, type] = timeJob;
+          await timeEventCallback(jobId, gId, activityId, type);
+          await sleepFor(0);
+          this.processTimeHooks(timeEventCallback, listKey);
+        } else if (timeJob) {
+          //a queue was just emptied; try again immediately
+          await sleepFor(0);
+          this.processTimeHooks(timeEventCallback);
+        } else {
+          //all queues are empty; sleep before checking
+          let sleep = XSleepFor(FIDELITY_SECONDS * 1000);
+          this.cleanupTimeout = sleep.timerId;
+          await sleep.promise;
+          this.processTimeHooks(timeEventCallback);
+        }
+      } catch (err) {
+        //todo: retry connect to redis
+        this.logger.error('task-process-timehooks-error', err);
+      }
+    } else {
+      //didn't get the scout role; try again in 'one-ish' minutes
+      let sleep = XSleepFor(SCOUT_INTERVAL_SECONDS * 1_000 * 2 * Math.random());
+      this.cleanupTimeout = sleep.timerId;
+      await sleep.promise;
+      this.processTimeHooks(timeEventCallback);
     }
   }
 
@@ -79,6 +113,71 @@ class TaskService {
     if (this.cleanupTimeout !== undefined) {
       clearTimeout(this.cleanupTimeout);
       this.cleanupTimeout = undefined;
+    }
+  }
+
+  async getHookRule(topic: string): Promise<HookRule | undefined> {
+    const rules = await this.store.getHookRules();
+    return rules?.[topic]?.[0] as HookRule;
+  }
+
+  async registerWebHook(topic: string, context: JobState, dad: string, multi?: RedisMulti): Promise<string> {
+    const hookRule = await this.getHookRule(topic);
+    if (hookRule) {
+      const mapExpression = hookRule.conditions.match[0].expected;
+      const resolved = Pipe.resolve(mapExpression, context);
+      const jobId = context.metadata.jid;
+      const gId = context.metadata.gid;
+      const activityId = hookRule.to;
+      const hook: HookSignal = {
+        topic,
+        resolved,
+        jobId: `${activityId}::${dad}::${gId}::${jobId}`,
+      }
+      await this.store.setHookSignal(hook, multi);
+      return jobId;
+    } else {
+      throw new Error('signaler.registerWebHook:error: hook rule not found');
+    }
+  }
+
+  async processWebHookSignal(topic: string, data: Record<string, unknown>): Promise<[string, string, string, string] | undefined> {
+    const hookRule = await this.getHookRule(topic);
+    if (hookRule) {
+      //NOTE: both formats are supported by the mapping engine:
+      //      `$self.hook.data` OR `$hook.data`
+      const context = { $self: { hook: { data }}, $hook: { data }};
+      const mapExpression = hookRule.conditions.match[0].actual;
+      const resolved = Pipe.resolve(mapExpression, context);
+      const hookSignalId = await this.store.getHookSignal(topic, resolved);
+      if (!hookSignalId) {
+        //messages can be double-processed; not an issue; return undefined
+        //users can also provide a bogus topic; not an issue; return undefined
+        return undefined;
+      }
+      //`aid` is part of composit key, but the hook `topic` is its public interface;
+      // this means that a new version of the graph can be deployed and the
+      // topic can be re-mapped to a different activity id. Outside callers
+      // can adhere to the unchanged contract (calling the same topic),
+      // while the internal system can be updated in real time as necessary.
+      const [_aid, dad, gid, ...jid] = hookSignalId.split('::');
+      return [jid.join('::'), hookRule.to, dad, gid];
+    } else {
+      throw new Error('signal-not-found');
+    }
+  }
+
+  async deleteWebHookSignal(topic: string, data: Record<string, unknown>): Promise<number> {
+    const hookRule = await this.getHookRule(topic);
+    if (hookRule) {
+      //NOTE: both formats are supported by the mapping engine:
+      //      `$self.hook.data` OR `$hook.data`
+      const context = { $self: { hook: { data }}, $hook: { data }};
+      const mapExpression = hookRule.conditions.match[0].actual;
+      const resolved = Pipe.resolve(mapExpression, context);
+      return await this.store.deleteHookSignal(topic, resolved);
+    } else {
+      throw new Error('signaler.process:error: hook rule not found');
     }
   }
 }

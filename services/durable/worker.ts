@@ -7,7 +7,7 @@ import {
   DurableSleepForError,
   DurableTimeoutError, 
   DurableWaitForSignalError} from '../../modules/errors';
-import { asyncLocalStorage } from './asyncLocalStorage';
+import { asyncLocalStorage } from '../../modules/storage';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './factory';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {

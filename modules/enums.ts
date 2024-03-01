@@ -30,3 +30,6 @@ export const FIDELITY_SECONDS = process.env.NODE_ENV === 'test' ? TEST_FIDELITY_
 
 // DURABLE CONSTANTS
 export const DURABLE_EXPIRE_SECONDS = 1;
+
+// TASK CONSTANTS
+export const SCOUT_INTERVAL_SECONDS = 60;

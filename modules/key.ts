@@ -31,25 +31,25 @@ const HMNS = "hmsh";
 
 //these are the entity types that are stored in the key/value store
 enum KeyType {
-  APP,
-  ENGINE_ID,
-  HOOKS,
-  JOB_DEPENDENTS,
-  JOB_STATE,
-  JOB_STATS_GENERAL,
-  JOB_STATS_MEDIAN,
-  JOB_STATS_INDEX,
-  HOTMESH,
-  QUORUM,
-  SCHEMAS,
-  SIGNALS,
-  STREAMS,
-  SUBSCRIPTIONS,
-  SUBSCRIPTION_PATTERNS,
-  SYMKEYS,
-  SYMVALS,
-  TIME_RANGE,
-  WORK_ITEMS,
+  APP = 'APP',
+  ENGINE_ID = 'ENGINE',
+  HOOKS = 'HOOKS',
+  JOB_DEPENDENTS = 'JOB_DEPENDENTS',
+  JOB_STATE = 'JOB_STATE',
+  JOB_STATS_GENERAL = 'JOB_STATS_GENERAL',
+  JOB_STATS_MEDIAN = 'JOB_STATS_MEDIAN',
+  JOB_STATS_INDEX = 'JOB_STATS_INDEX',
+  HOTMESH = 'HOTMESH',
+  QUORUM = 'QUORUM',
+  SCHEMAS = 'SCHEMAS',
+  SIGNALS = 'SIGNALS',
+  STREAMS = 'STREAMS',
+  SUBSCRIPTIONS = 'SUBSCRIPTIONS',
+  SUBSCRIPTION_PATTERNS = 'SUBSCRIPTION_PATTERNS',
+  SYMKEYS = 'SYMKEYS',
+  SYMVALS = 'SYMVALS',
+  TIME_RANGE = 'TIME_RANGE',
+  WORK_ITEMS = 'WORK_ITEMS',
 }
 
 //when minting a key, the following parameters are used to create a unique key per entity
@@ -64,6 +64,7 @@ type KeyStoreParams = {
   facet?: string;       //data path starting at root with values separated by colons (e.g. "object/type:bar")
   topic?: string;       //topic name (e.g., "foo" or "" for top-level)
   timeValue?: number;   //time value (rounded to minute) (for delete range)
+  scoutType?: 'signal' | 'time'; //a single member of the quorum serves as the 'scout' for the group, triaging tasks for the collective
 };
 
 class KeyService {
@@ -86,7 +87,7 @@ class KeyService {
       case KeyType.ENGINE_ID:
         return `${namespace}:${params.appId}:e:${params.engineId}`;
       case KeyType.WORK_ITEMS:
-        return `${namespace}:${params.appId}:w:`;
+        return `${namespace}:${params.appId}:w:${params.scoutType || ''}`;
       case KeyType.TIME_RANGE:
         return `${namespace}:${params.appId}:t:${params.timeValue || ''}`;
       case KeyType.APP:

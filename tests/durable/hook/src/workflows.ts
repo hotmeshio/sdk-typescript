@@ -28,7 +28,7 @@ export async function example(name: string): Promise<string> {
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
-  console.log('childWorkflowOutput is=>', childWorkflowOutput);
+  //console.log('childWorkflowOutput is=>', childWorkflowOutput);
 
   //start a child workflow and only confirm it started (don't wait for result)
   const childWorkflowId = await Durable.workflow.startChild<string>({
@@ -36,7 +36,7 @@ export async function example(name: string): Promise<string> {
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
-  console.log('childWorkflowId is=>', childWorkflowId);
+  //console.log('childWorkflowId is=>', childWorkflowId);
 
   //call a few activities in parallel (proxyActivities)
   const [hello, goodbye] = await Promise.all([greet(name), bye(name)]);
@@ -51,8 +51,8 @@ export async function example(name: string): Promise<string> {
 
   //wait for the `abcdefg` signal ('exampleHook' will send it)
   const [signal1] = await Durable.workflow.waitForSignal(['abcdefg']);
-  console.log('awakened with signal=>', signal1);
-  console.log('jimbo should be jackson=>', await search.get('jimbo'));
+  //console.log('awakened with signal=>', signal1);
+  //console.log('jimbo should be jackson=>', await search.get('jimbo'));
 
   //sleep for 5 and then return
   await Durable.workflow.sleepFor('5 seconds');
@@ -80,7 +80,7 @@ export async function exampleHook(name: string): Promise<void> {
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
-  console.log('Hook Spawn: childWorkflowOutput is=>', childWorkflowOutput);
+  //console.log('Hook Spawn: childWorkflowOutput is=>', childWorkflowOutput);
 
   //start a child workflow and only confirm it started (don't wait for result)
   const childWorkflowId = await Durable.workflow.startChild<string>({
@@ -88,7 +88,7 @@ export async function exampleHook(name: string): Promise<void> {
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
-  console.log('Hook Spawn: childWorkflowId is=>', childWorkflowId);
+  //console.log('Hook Spawn: childWorkflowId is=>', childWorkflowId);
 
   //test out sleeping
   await Durable.workflow.sleepFor('1 second');

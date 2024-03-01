@@ -1,4 +1,7 @@
-import { GetStateError, InactiveJobError } from '../../modules/errors';
+import {
+  GenerationalError,
+  GetStateError,
+  InactiveJobError } from '../../modules/errors';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
@@ -29,14 +32,11 @@ class Worker extends Activity {
 
   //********  INITIAL ENTRY POINT (A)  ********//
   async process(): Promise<string> {
-    this.logger.debug('worker-process', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+    this.logger.debug('worker-process', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
     let telemetry: TelemetryService;
     try {
-      //confirm entry is allowed and restore state
-      this.setLeg(1);
-      await CollatorService.notarizeEntry(this);
-      await this.getState();
-      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
+      await this.verifyEntry();
+
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
@@ -63,6 +63,9 @@ class Worker extends Activity {
       if (error instanceof InactiveJobError) {
         this.logger.error('await-inactive-job-error', { error });
         return;
+      } else if (error instanceof GenerationalError) {
+        this.logger.info('process-event-generational-job-error', { error });
+        return;
       } else if (error instanceof GetStateError) {
         this.logger.error('worker-get-state-error', { error });
         return;
@@ -73,7 +76,7 @@ class Worker extends Activity {
       throw error;
     } finally {
       telemetry?.endActivitySpan();
-      this.logger.debug('worker-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+      this.logger.debug('worker-process-end', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
     }
   }
 
@@ -83,6 +86,7 @@ class Worker extends Activity {
       metadata: {
         guid: guid(),
         jid: this.context.metadata.jid,
+        gid: this.context.metadata.gid,
         dad: this.metadata.dad,
         aid: this.metadata.aid,
         topic,
@@ -96,7 +100,7 @@ class Worker extends Activity {
         retry: this.config.retry
       };
     }
-    return (await this.engine.streamSignaler?.publishMessage(topic, streamData, multi)) as string;
+    return (await this.engine.router?.publishMessage(topic, streamData, multi)) as string;
   }
 }
 

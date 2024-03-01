@@ -1,10 +1,13 @@
+import {
+  GenerationalError,
+  GetStateError,
+  InactiveJobError } from '../../modules/errors';
 import { EngineService } from '../engine';
 import { Activity, ActivityType } from './activity';
 import {
   ActivityData,
   ActivityMetadata,
   InterruptActivity } from '../../types/activity';
-import { GetStateError, InactiveJobError } from '../../modules/errors';
 import { MultiResponseFlags } from '../../types';
 import { CollatorService } from '../collator';
 import { JobInterruptOptions, JobState } from '../../types/job';
@@ -28,24 +31,25 @@ class Interrupt extends Activity {
 
   //********  LEG 1 ENTRY  ********//
   async process(): Promise<string> {
-    this.logger.debug('interrupt-process', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+    this.logger.debug('interrupt-process', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
     let telemetry: TelemetryService;
     try {
-      this.setLeg(1);
-      await CollatorService.notarizeEntry(this);
-      await this.getState();
-      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid); // Ensure job active
+      await this.verifyEntry();
+
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
   
       if (this.isInterruptingSelf()) {
-        return await this.interruptSelf(telemetry);
+        await this.interruptSelf(telemetry);
       } else {
-        return await this.interruptAnother(telemetry);
+        await this.interruptAnother(telemetry);
       }
     } catch (error) {
       if (error instanceof InactiveJobError) {
         this.logger.error('interrupt-inactive-job-error', { error });
+        return;
+      } else if (error instanceof GenerationalError) {
+        this.logger.info('process-event-generational-job-error', { error });
         return;
       } else if (error instanceof GetStateError) {
         this.logger.error('interrupt-get-state-error', { error });
@@ -57,7 +61,7 @@ class Interrupt extends Activity {
       throw error;
     } finally {
       telemetry?.endActivitySpan();
-      this.logger.debug('interrupt-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+      this.logger.debug('interrupt-process-end', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
     }
   }
 
@@ -118,7 +122,6 @@ class Interrupt extends Activity {
   
     return this.context.metadata.aid;
   }
-  
 
   isInterruptingSelf(): boolean {
     if (!this.config.target) {

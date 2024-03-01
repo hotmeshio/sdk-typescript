@@ -1,9 +1,12 @@
-import { GetStateError, InactiveJobError } from '../../modules/errors';
+import {
+  GenerationalError,
+  GetStateError,
+  InactiveJobError } from '../../modules/errors';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
-import { StoreSignaler } from '../signaler/store';
+import { TaskService } from '../task';
 import { TelemetryService } from '../telemetry';
 import { 
   ActivityData,
@@ -19,7 +22,7 @@ import { StringScalarType } from '../../types/serializer';
 import { StreamCode, StreamStatus } from '../../types/stream';
 
 /**
- * Listens for `webhook`, `timehook`, and `cycle` (repeat) signals
+ * Supports `signal hook`, `time hook`, and `cycle hook` patterns
  */
 class Hook extends Activity {
   config: HookActivity;
@@ -36,54 +39,34 @@ class Hook extends Activity {
 
   //********  INITIAL ENTRY POINT (A)  ********//
   async process(): Promise<string> {
-    this.logger.debug('hook-process', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+    this.logger.debug('hook-process', {
+      jid: this.context.metadata.jid,
+      gid: this.context.metadata.gid,
+      aid: this.metadata.aid,
+    });
     let telemetry: TelemetryService;
-    try {
-      this.setLeg(1);
-      await CollatorService.notarizeEntry(this);
 
-      await this.getState();
-      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
+    try {
+      await this.verifyEntry();
+
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
-      let multiResponse: MultiResponseFlags;
 
-      const multi = this.store.getMulti();
       if (this.doesHook()) {
         //sleep and wait to awaken upon a signal
-        await this.registerHook(multi);
-        this.mapOutputData();
-        this.mapJobData();
-        await this.setState(multi);
-        await CollatorService.authorizeReentry(this, multi);
-
-        await this.setStatus(0, multi);
-        await multi.exec();
-        telemetry.mapActivityAttributes();
+        await this.doHook(telemetry);
       } else {
         //end the activity and transition to its children
-        this.adjacencyList = await this.filterAdjacent();
-        this.mapOutputData();
-        this.mapJobData();
-        await this.setState(multi);
-        await CollatorService.notarizeEarlyCompletion(this, multi);
-
-        await this.setStatus(this.adjacencyList.length - 1, multi);
-        multiResponse = await multi.exec() as MultiResponseFlags;
-        telemetry.mapActivityAttributes();
-        const jobStatus = this.resolveStatus(multiResponse);
-        const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-        const messageIds = await this.transition(this.adjacencyList, jobStatus);
-        if (messageIds.length) {
-          attrs['app.activity.mids'] = messageIds.join(',')
-        }
-        telemetry.setActivityAttributes(attrs);
+        await this.doPassThrough(telemetry);
       }
 
       return this.context.metadata.aid;
     } catch (error) {
       if (error instanceof InactiveJobError) {
         this.logger.error('hook-inactive-job-error', { error });
+        return;
+      } else if (error instanceof GenerationalError) {
+        this.logger.info('process-event-generational-job-error', { error });
         return;
       } else if (error instanceof GetStateError) {
         this.logger.error('hook-get-state-error', { error });
@@ -95,14 +78,50 @@ class Hook extends Activity {
       throw error;
     } finally {
       telemetry?.endActivitySpan();
-      this.logger.debug('hook-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+      this.logger.debug('hook-process-end', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
     }
   }
 
-  //********  SIGNAL RE-ENTRY POINT  ********//
+  /**
+   * does this activity use a time-hook or web-hook
+   */
   doesHook(): boolean {
-    //does this activity use a time-hook or web-hook
     return !!(this.config.hook?.topic || this.config.sleep);
+  }
+
+  async doHook(telemetry: TelemetryService) {
+    const multi = this.store.getMulti();
+    await this.registerHook(multi);
+    this.mapOutputData();
+    this.mapJobData();
+    await this.setState(multi);
+    await CollatorService.authorizeReentry(this, multi);
+
+    await this.setStatus(0, multi);
+    await multi.exec();
+    telemetry.mapActivityAttributes();
+  }
+
+  async doPassThrough(telemetry: TelemetryService) {
+    const multi = this.store.getMulti();
+    let multiResponse: MultiResponseFlags;
+    
+    this.adjacencyList = await this.filterAdjacent();
+    this.mapOutputData();
+    this.mapJobData();
+    await this.setState(multi);
+    await CollatorService.notarizeEarlyCompletion(this, multi);
+
+    await this.setStatus(this.adjacencyList.length - 1, multi);
+    multiResponse = await multi.exec() as MultiResponseFlags;
+    telemetry.mapActivityAttributes();
+    const jobStatus = this.resolveStatus(multiResponse);
+    const attrs: StringScalarType = { 'app.job.jss': jobStatus };
+    const messageIds = await this.transition(this.adjacencyList, jobStatus);
+    if (messageIds.length) {
+      attrs['app.activity.mids'] = messageIds.join(',')
+    }
+    telemetry.setActivityAttributes(attrs);
   }
 
   async getHookRule(topic: string): Promise<HookRule | undefined> {
@@ -112,18 +131,20 @@ class Hook extends Activity {
 
   async registerHook(multi?: RedisMulti): Promise<string | void> {
     if (this.config.hook?.topic) {
-      const signaler = new StoreSignaler(this.store, this.logger);
-      return await signaler.registerWebHook(this.config.hook.topic, this.context, this.resolveDad(), multi);
+      const taskService = new TaskService(this.store, this.logger);
+      return await taskService.registerWebHook(this.config.hook.topic, this.context, this.resolveDad(), multi);
     } else if (this.config.sleep) {
       const durationInSeconds = Pipe.resolve(this.config.sleep, this.context);
       const jobId = this.context.metadata.jid;
+      const gId = this.context.metadata.gid;
       const activityId = this.metadata.aid;
       const dId = this.metadata.dad;
-      await this.engine.task.registerTimeHook(jobId, `${activityId}${dId||''}`, 'sleep', durationInSeconds);
+      await this.engine.taskService.registerTimeHook(jobId, gId, `${activityId}${dId||''}`, 'sleep', durationInSeconds);
       return jobId;
     }
   }
 
+  //********  SIGNAL RE-ENTRY POINT  ********//
   async processWebHookEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200): Promise<JobStatus | void> {
     this.logger.debug('hook-process-web-hook-event', {
       topic: this.config.hook.topic,
@@ -131,23 +152,25 @@ class Hook extends Activity {
       status,
       code,
     });
-    const signaler = new StoreSignaler(this.store, this.logger);
+    const taskService = new TaskService(this.store, this.logger);
     const data = { ...this.data };
-    const signal = await signaler.processWebHookSignal(this.config.hook.topic, data);
+    const signal = await taskService.processWebHookSignal(this.config.hook.topic, data);
     if (signal) {
-      const [jobId, aid, dad] = signal;
+      const [jobId, _aid, dad, gId] = signal;
       this.context.metadata.jid = jobId;
+      this.context.metadata.gid = gId;
       this.context.metadata.dad = dad;
       await this.processEvent(status, code, 'hook');
-      if (code === 200) { //otherwise 202 for pending/keepalive
-        await signaler.deleteWebHookSignal(this.config.hook.topic, data);
-      }
+      if (code === 200) {
+        await taskService.deleteWebHookSignal(this.config.hook.topic, data);
+      } //else => 202/keep alive
     } //else => already resolved
   }
 
   async processTimeHookEvent(jobId: string): Promise<JobStatus | void> {
     this.logger.debug('hook-process-time-hook-event', {
       jid: jobId,
+      gid: this.context.metadata.gid,
       aid: this.metadata.aid
     });
     await this.processEvent(StreamStatus.SUCCESS, 200, 'hook');

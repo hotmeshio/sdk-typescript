@@ -234,25 +234,28 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       // Register jobs to be awakened/triggered
       const jobId1 = 'job-id-1';
       const jobId2 = 'job-id-2';
+      const gId1 = 'gid-1';
+      const gId2 = 'gid-2';
       const activityId = 'activity-id';
       const awakenTime = Date.now();
       const type = 'sleep';
-      await redisStoreService.registerTimeHook(jobId1, activityId, type, awakenTime);
-      await redisStoreService.registerTimeHook(jobId2, activityId, type, awakenTime);
+      await redisStoreService.registerTimeHook(jobId1, gId1, activityId, type, awakenTime);
+      await redisStoreService.registerTimeHook(jobId2, gId2,  activityId, type, awakenTime);
       // Check that the jobs were added to the correct list
       const listKey = redisStoreService.mintKey(KeyType.TIME_RANGE, { appId: appConfig.id, timeValue: awakenTime });
       const jobList = await redisClient.lrange(listKey, 0, -1);
-      expect(jobList?.[0]).toEqual(`${type}::${activityId}::${jobId1}`);
-      expect(jobList?.[1]).toEqual(`${type}::${activityId}::${jobId2}`);
+      expect(jobList?.[0]).toEqual(`${type}::${activityId}::${gId1}::${jobId1}`);
+      expect(jobList?.[1]).toEqual(`${type}::${activityId}::${gId2}::${jobId2}`);
       // Retrieve the next job to be triggered (to receive a time event)
-      const [nextListKey, nextJobId, nextActivityId] = (await redisStoreService.getNextTimeJob()) as [string, string, string, ('sleep' | 'expire' | 'interrupt')];
+      const [nextListKey, nextJobId, nextGID, nextActivityId] = (await redisStoreService.getNextTimeJob()) as [string, string, string, string, ('sleep' | 'expire' | 'interrupt')];
       expect(nextListKey).toEqual(listKey);
       expect(nextJobId).toEqual(jobId1);
+      expect(nextGID).toEqual(gId1);
       expect(nextActivityId).toEqual(activityId);
       // Check that jobId1 was removed from the list
       const updatedJobList = await redisClient.lrange(listKey, 0, -1);
       expect(updatedJobList.length).toEqual(1);
-      expect(updatedJobList[0]).toEqual(`${type}::${activityId}::${jobId2}`);
+      expect(updatedJobList[0]).toEqual(`${type}::${activityId}::${gId2}::${jobId2}`);
     });
   });
 

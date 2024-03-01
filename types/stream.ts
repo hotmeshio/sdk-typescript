@@ -35,12 +35,13 @@ export interface StreamData {
   metadata: {
     guid: string;   //every message is minted with a guid to distinguish retries from new messages
     topic?: string;
-    jid?: string; //is optonal if type is WEBHOOK
-    dad?: string; //dimensional address
+    jid?: string;   //is optional if type is WEBHOOK (system assigned or user assigned)
+    gid?: string;   //is optional if type is WEBHOOK (system assigned job guid)
+    dad?: string;   //dimensional address
     aid: string;
-    trc?: string; //trace id
-    spn?: string; //span id
-    try?: number; //current try count
+    trc?: string;   //trace id
+    spn?: string;   //span id
+    try?: number;   //current try count
   };
   type?: StreamDataType;
   data: Record<string, unknown>;
