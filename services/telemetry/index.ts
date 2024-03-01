@@ -126,20 +126,20 @@ class TelemetryService {
           return result;
         }, {})
       };
-      this.span.setAttributes(namespacedAtts as StringScalarType);
+      this.span?.setAttributes(namespacedAtts as StringScalarType);
     }
   }
 
   setActivityAttributes(attributes: StringScalarType): void {
-    this.span.setAttributes(attributes);
+    this.span?.setAttributes(attributes);
   }
 
   setStreamAttributes(attributes: StringScalarType): void {
-    this.span.setAttributes(attributes);
+    this.span?.setAttributes(attributes);
   }
 
   setJobAttributes(attributes: StringScalarType): void {
-    this.jobSpan.setAttributes(attributes);
+    this.jobSpan?.setAttributes(attributes);
   }
 
   endJobSpan(): void {
@@ -216,11 +216,11 @@ class TelemetryService {
   }
 
   setActivityError(message: string) {
-    this.span.setStatus({ code: SpanStatusCode.ERROR, message });
+    this.span?.setStatus({ code: SpanStatusCode.ERROR, message });
   }
 
   setStreamError(message: string) {
-    this.span.setStatus({ code: SpanStatusCode.ERROR, message });
+    this.span?.setStatus({ code: SpanStatusCode.ERROR, message });
   }
 
   /**

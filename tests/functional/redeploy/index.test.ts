@@ -184,6 +184,7 @@ describe('FUNCTIONAL | Redeploy', () => {
       expect(result.metadata.js).toBe(0);
       expect(result.metadata.tpc).toBe('spring');
       expect(result.metadata.vrs).toBe('6');
+      expect(result.metadata.gid).not.toBeUndefined();
     }, 2_500);
   });
 
@@ -201,6 +202,7 @@ describe('FUNCTIONAL | Redeploy', () => {
       expect(result.metadata.js).toBe(0);
       expect(result.metadata.tpc).toBe('spring');
       expect(result.metadata.vrs).toBe('7');
+      expect(result.metadata.gid).not.toBeUndefined();
     }, 2_500);
   });
 
@@ -218,6 +220,7 @@ describe('FUNCTIONAL | Redeploy', () => {
       expect(result.metadata.js).toBe(0);
       expect(result.metadata.tpc).toBe('spring');
       expect(result.metadata.vrs).toBe('8');
+      expect(result.metadata.gid).not.toBeUndefined();
     }, 2_500);
   });
 

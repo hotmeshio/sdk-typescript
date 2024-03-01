@@ -1,6 +1,6 @@
 import { KeyType } from "../../modules/key";
 import { ILogger } from "../logger";
-import { StreamSignaler } from "../signaler/stream";
+import { Router } from "../router";
 import { StoreService } from '../store';
 import { RedisStoreService as RedisStore } from '../store/clients/redis';
 import { IORedisStoreService as IORedisStore } from '../store/clients/ioredis';
@@ -30,7 +30,7 @@ class WorkerService {
   store: StoreService<RedisClient, RedisMulti> | null;
   stream: StreamService<RedisClient, RedisMulti> | null;
   subscribe: SubService<RedisClient, RedisMulti> | null;
-  streamSignaler: StreamSignaler | null;
+  router: Router | null;
   logger: ILogger;
   reporting = false;
 
@@ -66,10 +66,10 @@ class WorkerService {
         await service.subscribe.subscribe(KeyType.QUORUM, service.subscriptionHandler(), appId, service.topic);
         await service.subscribe.subscribe(KeyType.QUORUM, service.subscriptionHandler(), appId, service.guid);
         await service.initStreamChannel(service, worker.stream);
-        service.streamSignaler = service.initStreamSignaler(worker, logger);
+        service.router = service.initRouter(worker, logger);
 
         const key = service.stream.mintKey(KeyType.STREAMS, { appId: service.appId, topic: worker.topic });
-        await service.streamSignaler.consumeMessages(
+        await service.router.consumeMessages(
           key,
           'WORKER',
           service.guid,
@@ -130,8 +130,8 @@ class WorkerService {
     );
   }
 
-  initStreamSignaler(worker: HotMeshWorker, logger: ILogger): StreamSignaler {
-    return new StreamSignaler(
+  initRouter(worker: HotMeshWorker, logger: ILogger): Router {
+    return new Router(
       {
         namespace: this.namespace,
         appId: this.appId,
@@ -158,7 +158,7 @@ class WorkerService {
   }
 
   async throttle(delayInMillis: number) {
-    this.streamSignaler.setThrottle(delayInMillis);
+    this.router.setThrottle(delayInMillis);
   }
 }
 

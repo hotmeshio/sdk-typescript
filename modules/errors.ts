@@ -122,6 +122,23 @@ class InactiveJobError extends Error {
     this.status = status;
   }
 }
+class GenerationalError extends Error {
+  expected: string;
+  actual: string;
+  jobId: string;
+  activityId: string;
+  dimensionalAddress: string;
+
+  constructor(expected: string, actual: string, jobId: string, activityId: string, dimensionalAddress: string) {
+    super("Generational Error");
+    this.expected = expected;
+    this.actual = actual;
+    this.jobId = jobId;
+    this.activityId = activityId;
+    this.dimensionalAddress = dimensionalAddress;
+  }
+}
+
 class ExecActivityError extends Error {
   constructor() {
     super("Error occurred while executing activity");
@@ -155,6 +172,7 @@ export {
   DurableWaitForSignalError,
   DuplicateJobError,
   ExecActivityError,
+  GenerationalError,
   GetStateError,
   InactiveJobError,
   MapDataError,

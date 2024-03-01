@@ -1,7 +1,11 @@
-import { GetStateError, InactiveJobError } from '../../modules/errors';
+import {
+  GenerationalError,
+  GetStateError,
+  InactiveJobError } from '../../modules/errors';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
+import { TelemetryService } from '../telemetry';
 import {
   ActivityData,
   ActivityMetadata,
@@ -10,7 +14,6 @@ import {
 import { JobState } from '../../types/job';
 import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData, StreamDataType } from '../../types/stream';
-import { TelemetryService } from '../telemetry';
 import { Pipe } from '../pipe';
 import { guid } from '../../modules/utils';
 
@@ -29,14 +32,11 @@ class Await extends Activity {
 
   //********  INITIAL ENTRY POINT (A)  ********//
   async process(): Promise<string> {
-    this.logger.debug('await-process', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+    this.logger.debug('await-process', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
     let telemetry: TelemetryService;
     try {
-      //confirm entry is allowed and restore state
-      this.setLeg(1);
-      await CollatorService.notarizeEntry(this);
-      await this.getState();
-      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
+      await this.verifyEntry();
+
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
@@ -62,6 +62,9 @@ class Await extends Activity {
       if (error instanceof InactiveJobError) {
         this.logger.error('await-inactive-job-error', { error });
         return;
+      } else if (error instanceof GenerationalError) {
+        this.logger.info('process-event-generational-job-error', { error });
+        return;
       } else if (error instanceof GetStateError) {
         this.logger.error('await-get-state-error', { error });
         return;
@@ -72,7 +75,7 @@ class Await extends Activity {
       throw error;
     } finally {
       telemetry?.endActivitySpan();
-      this.logger.debug('await-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+      this.logger.debug('await-process-end', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
     }
   }
 
@@ -82,6 +85,7 @@ class Await extends Activity {
       metadata: {
         guid: guid(),
         jid: this.context.metadata.jid,
+        gid: this.context.metadata.gid,
         dad: this.metadata.dad,
         aid: this.metadata.aid,
         topic,
@@ -96,7 +100,7 @@ class Await extends Activity {
         retry: this.config.retry
       };
     }
-    return (await this.engine.streamSignaler?.publishMessage(null, streamData, multi)) as string;
+    return (await this.engine.router?.publishMessage(null, streamData, multi)) as string;
   }
 }
 

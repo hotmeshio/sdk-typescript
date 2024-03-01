@@ -1,5 +1,5 @@
 import { Durable } from '.';
-import { asyncLocalStorage } from './asyncLocalStorage';
+import { asyncLocalStorage } from '../../modules/storage';
 import { ClientService as Client } from './client';
 import { WorkflowHandleService } from './handle';
 import { Search } from './search';

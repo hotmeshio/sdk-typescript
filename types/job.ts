@@ -8,10 +8,12 @@ type ActivityData = {
 
 type JobMetadata = {
   key?: string; //job_key
+  gid: string;  //system assigned guid; ensured created/deleted/created jobs are unique
   jid: string;  //job_id (jid+dad+aid) is composite key for activity
   dad: string;  //dimensional address for the activity (,0,0,1)
   aid: string;  //activity_id as in the YAML file
   pj?: string;  //parent_job_id (pj+pd+pa) is composite key for parent activity
+  pg?: string;  //parent_generational_id (system assigned at trigger inception); pg is the parent job's gid (just in case user created/deleted/created a job with same jid)
   pd?: string;  //parent_dimensional_address
   pa?: string;  //parent_activity_id
   ngn?: string; //engine guid (one time subscriptions)

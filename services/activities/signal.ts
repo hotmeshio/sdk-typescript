@@ -1,4 +1,7 @@
-import { GetStateError, InactiveJobError } from '../../modules/errors';
+import {
+  GenerationalError,
+  GetStateError,
+  InactiveJobError } from '../../modules/errors';
 import { Activity, ActivityType } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
@@ -30,14 +33,11 @@ class Signal extends Activity {
 
   //********  LEG 1 ENTRY  ********//
   async process(): Promise<string> {
-    this.logger.debug('signal-process', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+    this.logger.debug('signal-process', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
     let telemetry: TelemetryService;
     try {
-      //verify entry is allowed
-      this.setLeg(1);
-      await CollatorService.notarizeEntry(this);
-      await this.getState();
-      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
+      await this.verifyEntry();
+
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startActivitySpan(this.leg);
 
@@ -73,6 +73,9 @@ class Signal extends Activity {
       if (error instanceof InactiveJobError) {
         this.logger.error('signal-inactive-job-error', { error });
         return;
+      } else if (error instanceof GenerationalError) {
+        this.logger.info('process-event-generational-job-error', { error });
+        return;
       } else if (error instanceof GetStateError) {
         this.logger.error('signal-get-state-error', { error });
         return;
@@ -83,7 +86,7 @@ class Signal extends Activity {
       throw error;
     } finally {
       telemetry?.endActivitySpan();
-      this.logger.debug('signal-process-end', { jid: this.context.metadata.jid, aid: this.metadata.aid });
+      this.logger.debug('signal-process-end', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
     }
   }
 

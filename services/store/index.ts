@@ -29,7 +29,7 @@ import { Transitions } from '../../types/transition';
 import { formatISODate, getSymKey } from '../../modules/utils';
 import { ReclaimedMessageType } from '../../types/stream';
 import { JobCompletionOptions, JobInterruptOptions } from '../../types/job';
-import { STATUS_CODE_INTERRUPT } from '../../modules/enums';
+import { SCOUT_INTERVAL_SECONDS, STATUS_CODE_INTERRUPT } from '../../modules/enums';
 import { GetStateError } from '../../modules/errors';
 
 interface AbstractRedisClient {
@@ -168,10 +168,19 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     this.cache.invalidate();
   }
 
-  async reserveEngineId(engineId: string): Promise<boolean> {
-    const key = this.mintKey(KeyType.ENGINE_ID, { engineId });
-    const success = await this.redisClient[this.commands.setnx](key, 'id', 1);
-    return this.isSuccessful(success);
+  /**
+   * At any given time only a single engine will
+   * check for and process work items in the
+   * time and signal task queues.
+   */
+  async reserveScoutRole(scoutType: 'time' | 'signal', delay = SCOUT_INTERVAL_SECONDS): Promise<boolean> {
+    const key = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId, scoutType });
+    const success = await this.redisClient[this.commands.setnx](key, `${scoutType}:${formatISODate(new Date())}`);
+    if (this.isSuccessful(success)) {
+      await this.redisClient[this.commands.expire](key, delay - 1);
+      return true;
+    }
+    return false;
   }
 
   async getSettings(bCreate = false): Promise<HotMeshSettings> {
@@ -380,11 +389,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * list (added via RPUSH) are LPOPed. If origin was expired, then
    * LPOPed items from the list are likewise expired;
    */
-  async setDependency(originJobId: string, topic: string, jobId: string, multi? : U): Promise<any> {
+  async setDependency(originJobId: string, topic: string, jobId: string, gId: string, multi? : U): Promise<any> {
     const privateMulti = multi || this.getMulti();
     const depParams = { appId: this.appId, jobId: originJobId };
     const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, depParams);
-    privateMulti[this.commands.rpush](depKey, `expire::${topic}::${jobId}`);
+    privateMulti[this.commands.rpush](depKey, `expire::${topic}::${gId}::${jobId}`);
     if (!multi) {
       return await privateMulti.exec();
     }
@@ -784,9 +793,9 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * for the given sleep group. Sleep groups are
    * organized into 'n'-second blocks (LISTS))
    */
-  async registerTimeHook(jobId: string, activityId: string, type: 'sleep'|'expire'|'interrupt', deletionTime: number, multi?: U): Promise<void> {
+  async registerTimeHook(jobId: string, gId: string, activityId: string, type: 'sleep'|'expire'|'interrupt', deletionTime: number, multi?: U): Promise<void> {
     const listKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId, timeValue: deletionTime });
-    const timeEvent = `${type}::${activityId}::${jobId}`
+    const timeEvent = `${type}::${activityId}::${gId}::${jobId}`;
     const len = await (multi || this.redisClient)[this.commands.rpush](listKey, timeEvent);
     if (multi || len === 1) {
       const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
@@ -794,7 +803,8 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     }
   }
 
-  async getNextTimeJob(listKey?: string): Promise<[listKey: string, jobId: string, activityId: string, type: 'sleep'|'expire'|'interrupt'] | void> {
+  async getNextTimeJob(listKey?: string): Promise<[listKey: string, jobId: string, gId: string, activityId: string, type: 'sleep'|'expire'|'interrupt'] | boolean> {
+    const existing = Boolean(listKey);
     const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
     listKey = listKey || await this.zRangeByScore(zsetKey, 0, Date.now());
     if (listKey) {
@@ -802,11 +812,12 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       const timeEvent = await this.redisClient[this.commands.lpop](pKey);
       if (timeEvent) {
         //there are 3 time-related event triggers: sleep, expire, interrupt
-        const [_type, activityId, ...jobId] = timeEvent.split('::');
-        return [listKey, jobId.join('::'), activityId, pType];
+        const [_type, activityId, gId, ...jobId] = timeEvent.split('::');
+        return [listKey, jobId.join('::'), gId, activityId, pType];
       }
       await this.redisClient[this.commands.zrem](zsetKey, listKey);
     }
+    return existing;
   }
 
   /**

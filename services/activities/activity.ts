@@ -1,4 +1,9 @@
-import { CollationError, GetStateError, InactiveJobError } from '../../modules/errors';
+import { EXPIRE_DURATION } from '../../modules/enums';
+import {
+  CollationError,
+  GenerationalError,
+  GetStateError,
+  InactiveJobError } from '../../modules/errors';
 import {
   formatISODate,
   getValueByPath,
@@ -30,7 +35,6 @@ import {
   StreamDataType,
   StreamStatus } from '../../types/stream';
 import { TransitionRule } from '../../types/transition';
-import { EXPIRE_DURATION } from '../../modules/enums';
 
 /**
  * The base class for all activities
@@ -69,6 +73,21 @@ class Activity {
 
   setLeg(leg: ActivityLeg): void {
     this.leg = leg;
+  }
+
+  /**
+   * Upon entering leg 1 of a duplexed activty, verify
+   * all aspects of the entry including job and activty state
+   */
+  async verifyEntry() {
+    this.setLeg(1);
+    await this.getState();
+    CollatorService.assertJobActive(
+      this.context.metadata.js,
+      this.context.metadata.jid,
+      this.metadata.aid
+    );
+    await CollatorService.notarizeEntry(this);
   }
 
   //********  DUPLEX RE-ENTRY POINT  ********//
@@ -115,6 +134,9 @@ class Activity {
         return;
       } else if (error instanceof InactiveJobError) {
         this.logger.info('process-event-inactive-job-error', { error });
+        return;
+      } else if (error instanceof GenerationalError) {
+        this.logger.info('process-event-generational-job-error', { error });
         return;
       } else if (error instanceof GetStateError) {
         this.logger.info('process-event-get-job-error', { error });
@@ -337,7 +359,7 @@ class Activity {
   }
 
   async getState() {
-    //assemble list of paths necessary to create 'job state' from the 'symbol hash'
+    const gid = this.context.metadata.gid;
     const jobSymbolHashName = `$${this.config.subscribes}`;
     const consumes: Consumes = {
       [jobSymbolHashName]: MDATA_SYMBOLS.JOB.KEYS.map((key) => `metadata/${key}`)
@@ -365,9 +387,26 @@ class Activity {
     //`state` is a flat hash; context is a tree
     const [state, status] = await this.store.getState(jid, consumes, dIds);
     this.context = restoreHierarchy(state) as JobState;
+    this.assertGenerationalId(this.context.metadata.gid, gid);
     this.initDimensionalAddress(dad);
     this.initSelf(this.context);
     this.initPolicies(this.context);
+  }
+
+  /**
+   * if the job is created/deleted/created with the same key,
+   * the 'gid' ensures no stale messages enter the stream
+   */
+  assertGenerationalId(jobGID: string, msgGID?: string) {
+    if (msgGID !== jobGID) {
+      throw new GenerationalError(
+        jobGID,
+        msgGID,
+        this.context.metadata.jid,
+        this.context.metadata.aid,
+        this.context.metadata.dad
+      );
+    }
   }
 
   initDimensionalAddress(dad: string): void {
@@ -434,6 +473,7 @@ class Activity {
             metadata: {
               guid: guid(),
               jid: this.context.metadata.jid,
+              gid: this.context.metadata.gid,
               dad: adjacentDad,
               aid: toActivityId,
               spn: this.context['$self'].output.metadata?.l2s,
@@ -466,7 +506,7 @@ class Activity {
     if (adjacencyList.length && jobStatus > 0) {
       const multi = this.store.getMulti();
       for (const execSignal of adjacencyList) {
-        await this.engine.streamSignaler?.publishMessage(null, execSignal, multi);
+        await this.engine.router?.publishMessage(null, execSignal, multi);
       }
       mIds = (await multi.exec()) as string[];
     }

@@ -52,6 +52,9 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
           taskQueue: 'parent-world',
           workflowName: 'parentExample',
           workflowId: guid(),
+          config: {
+
+          }
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -65,6 +68,9 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
           connection: { class: Redis, options },
           taskQueue: 'parent-world',
           workflow: parentWorkflows.parentExample,
+          options: {
+            logLevel: 'debug',
+          },
         });
         await worker.run();
         expect(worker).toBeDefined();
@@ -75,6 +81,9 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
           connection: { class: Redis, options },
           taskQueue: 'child-world',
           workflow: childWorkflows.childExample,
+          options: {
+            logLevel: 'debug',
+          },
         });
         await worker.run();
         expect(worker).toBeDefined();

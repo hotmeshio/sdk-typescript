@@ -4,7 +4,7 @@ import {
   STATUS_CODE_SUCCESS,
   STATUS_CODE_PENDING,
   STATUS_CODE_TIMEOUT, 
-  DURABLE_EXPIRE_SECONDS} from '../../modules/enums';
+  DURABLE_EXPIRE_SECONDS } from '../../modules/enums';
 import {
   formatISODate,
   getSubscriptionTopic,
@@ -23,9 +23,8 @@ import { Trigger } from '../activities/trigger';
 import { CompilerService } from '../compiler';
 import { ILogger } from '../logger';
 import { ReporterService } from '../reporter';
+import { Router } from '../router';
 import { SerializerService } from '../serializer';
-import { StoreSignaler } from '../signaler/store';
-import { StreamSignaler } from '../signaler/stream';
 import { StoreService } from '../store';
 import { RedisStoreService as RedisStore } from '../store/clients/redis';
 import { IORedisStoreService as IORedisStore } from '../store/clients/ioredis';
@@ -84,12 +83,11 @@ class EngineService {
   apps: HotMeshApps | null;
   appId: string;
   guid: string;
+  router: Router | null;
   store: StoreService<RedisClient, RedisMulti> | null;
   stream: StreamService<RedisClient, RedisMulti> | null;
   subscribe: SubService<RedisClient, RedisMulti> | null;
-  storeSignaler: StoreSignaler | null;
-  streamSignaler: StreamSignaler | null;
-  task: TaskService | null;
+  taskService: TaskService | null;
   logger: ILogger;
   cacheMode: CacheMode = 'cache';
   untilVersion: string | null = null;
@@ -110,9 +108,9 @@ class EngineService {
       await instance.initStoreChannel(config.engine.store);
       await instance.initSubChannel(config.engine.sub);
       await instance.initStreamChannel(config.engine.stream);
-      instance.streamSignaler = instance.initStreamSignaler(config);
+      instance.router = instance.initRouter(config);
 
-      instance.streamSignaler.consumeMessages(
+      instance.router.consumeMessages(
         instance.stream.mintKey(
           KeyType.STREAMS,
           { appId: instance.appId },
@@ -122,12 +120,8 @@ class EngineService {
         instance.processStreamMessage.bind(instance)
       );
 
-      //the storeSignaler service is used by the engine to create `webhooks`
-      //todo: unify/move to the task service (it manages all `signal` types)
-      instance.storeSignaler = new StoreSignaler(instance.store, logger);
-
       //the task service is used by the engine to process `webhooks` and `timehooks`
-      instance.task = new TaskService(instance.store, logger);
+      instance.taskService = new TaskService(instance.store, logger);
 
       return instance;
     }
@@ -181,8 +175,8 @@ class EngineService {
     );
   }
 
-  initStreamSignaler(config: HotMeshConfig): StreamSignaler {
-    return new StreamSignaler(
+  initRouter(config: HotMeshConfig): Router {
+    return new Router(
       {
         namespace: this.namespace,
         appId: this.appId,
@@ -231,21 +225,20 @@ class EngineService {
   }
 
   async processWebHooks() {
-    this.task.processWebHooks((this.hook).bind(this));
+    this.taskService.processWebHooks((this.hook).bind(this));
   }
 
   async processTimeHooks() {
-    this.task.processTimeHooks((this.hookTime).bind(this));
+    this.taskService.processTimeHooks((this.hookTime).bind(this));
   }
 
   async throttle(delayInMillis: number) {
-    this.streamSignaler.setThrottle(delayInMillis);
+    this.router.setThrottle(delayInMillis);
   }
 
   // ************* METADATA/MODEL METHODS *************
   async initActivity(topic: string, data: JobData = {}, context?: JobState): Promise<Await|Cycle|Hook|Signal|Trigger|Worker|Interrupt> {
     const [activityId, schema] = await this.getSchema(topic);
-    polyfill
     const ActivityHandler = Activities[polyfill.resolveActivityType(schema.type)];
     if (ActivityHandler) {
       const utc = formatISODate(new Date());
@@ -329,6 +322,7 @@ class EngineService {
   async processStreamMessage(streamData: StreamDataResponse): Promise<void> {
     this.logger.debug('engine-process-stream-message', {
       jid: streamData.metadata.jid,
+      gid: streamData.metadata.gid,
       dad: streamData.metadata.dad,
       aid: streamData.metadata.aid,
       status: streamData.status || StreamStatus.SUCCESS,
@@ -338,41 +332,83 @@ class EngineService {
     const context: PartialJobState = {
       metadata: {
         jid: streamData.metadata.jid,
+        gid: streamData.metadata.gid,
         dad: streamData.metadata.dad,
         aid: streamData.metadata.aid,
       },
       data: streamData.data,
     };
-    if (streamData.type === StreamDataType.TIMEHOOK || streamData.type === StreamDataType.WEBHOOK || streamData.type === StreamDataType.TRANSITION) {
-      const activityHandler = await this.initActivity(`.${streamData.metadata.aid}`, context.data, context as JobState) as Hook;
-      if (streamData.type === StreamDataType.TIMEHOOK) {
-        await activityHandler.processTimeHookEvent(streamData.metadata.jid);
-      } else if (streamData.type === StreamDataType.TRANSITION) {
-        await activityHandler.process();
-      } else {
-        //a 202 code keeps the hook alive (hooks are single-use by default)
-        await activityHandler.processWebHookEvent(streamData.status, streamData.code);
-      }
+    if (streamData.type === StreamDataType.TIMEHOOK) {
+      //TIMEHOOK AWAKEN
+      const activityHandler = await this.initActivity(
+        `.${streamData.metadata.aid}`,
+        context.data,
+        context as JobState,
+        ) as Hook;
+      await activityHandler.processTimeHookEvent(streamData.metadata.jid);
+    } else if (streamData.type === StreamDataType.WEBHOOK) {
+      //WEBHOOK AWAKEN (SIGNAL IN)
+      const activityHandler = await this.initActivity(
+        `.${streamData.metadata.aid}`,
+        context.data,
+        context as JobState,
+        ) as Hook;
+      await activityHandler.processWebHookEvent(
+        streamData.status,
+        streamData.code
+      );
+    } else if (streamData.type === StreamDataType.TRANSITION) {
+      //TRANSITION (ADJACENT ACTIVITY)
+      const activityHandler = await this.initActivity(
+        `.${streamData.metadata.aid}`,
+        context.data,
+        context as JobState,
+      ) as Hook; //todo: `as Activity` (type is more generic)
+      await activityHandler.process();
     } else if (streamData.type === StreamDataType.AWAIT) {
+      //TRIGGER JOB
       context.metadata = {
         ...context.metadata,
         pj: streamData.metadata.jid,
+        pg: streamData.metadata.gid,
         pd: streamData.metadata.dad,
         pa: streamData.metadata.aid,
         trc: streamData.metadata.trc,
         spn: streamData.metadata.spn,
        };
-      const activityHandler = await this.initActivity(streamData.metadata.topic, streamData.data, context as JobState) as Trigger;
+      const activityHandler = await this.initActivity(
+        streamData.metadata.topic,
+        streamData.data,
+        context as JobState
+      ) as Trigger;
       await activityHandler.process();
     } else if (streamData.type === StreamDataType.RESULT) {
-      const activityHandler = await this.initActivity(`.${context.metadata.aid}`, streamData.data, context as JobState) as Await;
-      await activityHandler.processEvent(streamData.status, streamData.code);
+      //AWAIT RESULT
+      const activityHandler = await this.initActivity(
+        `.${context.metadata.aid}`,
+        streamData.data,
+        context as JobState,
+      ) as Await;
+      await activityHandler.processEvent(
+        streamData.status,
+        streamData.code,
+      );
     } else {
-      const activityHandler = await this.initActivity(`.${streamData.metadata.aid}`, streamData.data, context as JobState) as Worker;
-      await activityHandler.processEvent(streamData.status, streamData.code, 'output');
+      //WORKER RESULT
+      const activityHandler = await this.initActivity(
+        `.${streamData.metadata.aid}`,
+        streamData.data,
+        context as JobState,
+      ) as Worker;
+      await activityHandler.processEvent(
+        streamData.status,
+        streamData.code,
+        'output'
+      );
     }
     this.logger.debug('engine-process-stream-message-end', {
       jid: streamData.metadata.jid,
+      gid: streamData.metadata.gid,
       aid: streamData.metadata.aid
     });
   }
@@ -387,6 +423,7 @@ class EngineService {
         metadata: {
           guid: guid(),
           jid: context.metadata.pj,
+          gid: context.metadata.pg,
           dad: context.metadata.pd,
           aid: context.metadata.pa,
           trc: context.metadata.trc,
@@ -406,7 +443,7 @@ class EngineService {
         streamData.status = StreamStatus.SUCCESS;
         streamData.code = STATUS_CODE_SUCCESS;
       }
-      return (await this.streamSignaler?.publishMessage(null, streamData)) as string;
+      return (await this.router?.publishMessage(null, streamData)) as string;
     }
   }
   hasParentJob(context: JobState): boolean {
@@ -437,7 +474,7 @@ class EngineService {
 
   // ****************** `HOOK` ACTIVITY RE-ENTRY POINT *****************
   async hook(topic: string, data: JobData, status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200): Promise<string> {
-    const hookRule = await this.storeSignaler.getHookRule(topic);
+    const hookRule = await this.taskService.getHookRule(topic);
     const [aid] = await this.getSchema(`.${hookRule.to}`);
     const streamData: StreamData = {
       type: StreamDataType.WEBHOOK,
@@ -450,9 +487,9 @@ class EngineService {
       },
       data,
     };
-    return await this.streamSignaler.publishMessage(null, streamData) as string;
+    return await this.router.publishMessage(null, streamData) as string;
   }
-  async hookTime(jobId: string, activityId: string, type?: 'sleep'|'expire'|'interrupt'): Promise<string | void> {
+  async hookTime(jobId: string, gId: string, activityId: string, type?: 'sleep'|'expire'|'interrupt'): Promise<string | void> {
     if (type === 'interrupt') {
       return await this.interrupt(
         activityId, //note: 'activityId' is the actually job topic
@@ -470,16 +507,17 @@ class EngineService {
       metadata: {
         guid: guid(),
         jid: jobId,
-        aid,
+        gid: gId,
         dad,
+        aid,
       },
       data: { timestamp: Date.now() },
     };
-    await this.streamSignaler.publishMessage(null, streamData);
+    await this.router.publishMessage(null, streamData);
   }
   async hookAll(hookTopic: string, data: JobData, keyResolver: JobStatsInput, queryFacets: string[] = []): Promise<string[]> {
     const config = await this.getVID();
-    const hookRule = await this.storeSignaler.getHookRule(hookTopic);
+    const hookRule = await this.taskService.getHookRule(hookTopic);
     if (hookRule) {
       const subscriptionTopic = await getSubscriptionTopic(hookRule.to, this.store, config)
       const resolvedQuery = await this.resolveQuery(subscriptionTopic, keyResolver);
@@ -597,7 +635,7 @@ class EngineService {
     }
   }
   async add(streamData: StreamData|StreamDataResponse): Promise<string> {
-    return await this.streamSignaler.publishMessage(null, streamData) as string;
+    return await this.router.publishMessage(null, streamData) as string;
   }
 
   registerJobCallback(jobId: string, jobCallback: JobMessageCallback) {
@@ -632,7 +670,7 @@ class EngineService {
       this.pubPermSubs(context, jobOutput, options.emit);
     }
     if (!options.emit) {
-      this.task.registerJobForCleanup(
+      this.taskService.registerJobForCleanup(
         context.metadata.jid,
         this.resolveExpires(context, options),
         options,
@@ -647,7 +685,7 @@ class EngineService {
    * it will be expired immediately.
    */
   resolveExpires(context: JobState, options: JobCompletionOptions): number {
-    return context.metadata.expire ?? options.expire ?? DURABLE_EXPIRE_SECONDS;
+    return options.expire ?? context.metadata.expire ?? DURABLE_EXPIRE_SECONDS;
   }
 
 

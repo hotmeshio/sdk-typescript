@@ -6,7 +6,7 @@ import {
   DurableSleepForError,
   DurableWaitForSignalError } from '../../modules/errors';
 import { KeyService, KeyType } from '../../modules/key';
-import { asyncLocalStorage } from './asyncLocalStorage';
+import { asyncLocalStorage } from '../../modules/storage';
 import { ClientService as Client } from './client';
 import { ConnectionService as Connection } from './connection';
 import { DEFAULT_COEFFICIENT } from './factory';

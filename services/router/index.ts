@@ -27,8 +27,8 @@ import {
   StreamStatus
 } from '../../types/stream';
 
-class StreamSignaler {
-  static signalers: Set<StreamSignaler> = new Set();
+class Router {
+  static instances: Set<Router> = new Set();
   appId: string;
   guid: string;
   role: StreamRole;
@@ -70,7 +70,7 @@ class StreamSignaler {
 
   async consumeMessages(stream: string, group: string, consumer: string, callback: (streamData: StreamData) => Promise<StreamDataResponse|void>): Promise<void> {
     this.logger.info(`stream-consumer-starting`, { group, consumer, stream });
-    StreamSignaler.signalers.add(this);
+    Router.instances.add(this);
     this.shouldConsume = true;
     await this.createGroup(stream, group);
     let lastCheckedPendingMessagesAt = Date.now();
@@ -254,7 +254,7 @@ class StreamSignaler {
   }
   
   static async stopConsuming() {
-    for (const instance of [...StreamSignaler.signalers]) {
+    for (const instance of [...Router.instances]) {
       instance.stopConsuming();
     }
     await sleepFor(BLOCK_TIME_MS);
@@ -356,4 +356,4 @@ class StreamSignaler {
   }
 }
 
-export { StreamSignaler };
+export { Router };

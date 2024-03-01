@@ -35,6 +35,7 @@ class Trigger extends Activity {
     try {
       this.setLeg(2);
       await this.getState();
+
       telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
       telemetry.startJobSpan();
       telemetry.startActivitySpan(this.leg);
@@ -70,7 +71,7 @@ class Trigger extends Activity {
     } finally {
       telemetry?.endJobSpan();
       telemetry?.endActivitySpan();
-      this.logger.debug('trigger-process-end', { subscribes: this.config.subscribes, jid: this.context.metadata.jid });
+      this.logger.debug('trigger-process-end', { subscribes: this.config.subscribes, jid: this.context.metadata.jid, gid: this.context.metadata.gid });
     }
   }
 
@@ -108,8 +109,10 @@ class Trigger extends Activity {
     this.context = {
       metadata: {
         ...this.metadata,
+        gid: guid(),
         ngn: this.context.metadata.ngn,
         pj: this.context.metadata.pj,
+        pg: this.context.metadata.pg,
         pd: this.context.metadata.pd,
         pa: this.context.metadata.pa,
         app: id,
@@ -187,6 +190,7 @@ class Trigger extends Activity {
         resolvedDepKey,
         this.context.metadata.tpc,
         this.context.metadata.jid,
+        this.context.metadata.gid,
         multi,
       );
     }
