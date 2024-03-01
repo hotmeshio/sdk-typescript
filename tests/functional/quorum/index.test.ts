@@ -140,10 +140,18 @@ describe('FUNCTIONAL | Quorum', () => {
       hotMesh.quorum?.unsub(callback);
     });
 
-    it('requests a quorum rollcall count', async () => {
+    it('requests quorum count', async () => {
       (hotMesh.quorum as QuorumService).quorum = 0;
-      await hotMesh.quorum?.requestQuorum(1000);
-      expect(hotMesh.quorum?.quorum).toBe(1);
+      await hotMesh.quorum?.requestQuorum(1_000, true);
+      expect(hotMesh.quorum?.quorum).toBe(2);
+      expect(hotMesh.quorum?.profiles.length).toBe(2);
     });
+
+    it('requests a quorum rollCall', async () => {
+      (hotMesh.quorum as QuorumService).quorum = 0;
+      await hotMesh.rollCall(1_000);
+      expect(hotMesh.quorum?.profiles.length).toBe(2);
+    });
+
   });
 });

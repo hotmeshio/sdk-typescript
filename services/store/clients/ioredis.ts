@@ -131,6 +131,15 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
       throw error;
     }
   }
+
+  async xlen(key: string, multi? : RedisMultiType): Promise<number|RedisMultiType> {
+    try {
+      return await (multi || this.redisClient).xlen(key);
+    } catch (error) {
+      this.logger.error(`Error getting stream depth: ${key}`, { error });
+      throw error;
+    }
+  }
 }
 
 export { IORedisStoreService };

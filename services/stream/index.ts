@@ -52,6 +52,7 @@ abstract class StreamService<T, U> {
     ...args: string[]): Promise<ReclaimedMessageType>;
   abstract xack(key: string, group: string, id: string, multi?: U): Promise<number|U>;
   abstract xdel(key: string, id: string, multi?: U): Promise<number|U>;
+  abstract xlen(key: string, multi?: U): Promise<number|U>;
 }
 
 export { StreamService };

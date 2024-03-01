@@ -118,6 +118,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     id: string,
     multi?: U
   ): Promise<number|U>;
+  abstract xlen(
+    key: string,
+    multi?: U
+  ): Promise<number|U>;
 
   constructor(redisClient: T) {
     this.redisClient = redisClient;

@@ -16,7 +16,7 @@ import {
 import {
   HotMeshConfig,
   HotMeshManifest } from '../../types/hotmesh';
-import { JobMessageCallback } from '../../types/quorum';
+import { JobMessageCallback, QuorumProfile } from '../../types/quorum';
 import {
   JobStatsInput,
   GetStatsOptions,
@@ -137,6 +137,9 @@ class HotMeshService {
   }
 
   // ************* COMPILER METHODS *************
+  async rollCall(delay?: number): Promise<QuorumProfile[]> {
+    return await this.quorum?.rollCall(delay);
+  }
   async plan(path: string): Promise<HotMeshManifest> {
     return await this.engine?.plan(path);
   }
@@ -146,10 +149,6 @@ class HotMeshService {
   async activate(version: string, delay?: number): Promise<boolean> {
     //activation is a quorum operation
     return await this.quorum?.activate(version, delay);
-  }
-  async inventory(version: string, delay?: number): Promise<number> {
-    //get count of all peers
-    return await this.quorum?.inventory(delay);
   }
 
   // ************* REPORTER METHODS *************

@@ -14,6 +14,7 @@ import { RedisClientType as IORedisClientType } from '../../types/ioredisclient'
 import {
   QuorumMessage,
   QuorumMessageCallback,
+  QuorumProfile,
   SubscriptionCallback,
   ThrottleMessage
 } from '../../types/quorum';
@@ -26,10 +27,10 @@ const QUORUM_DELAY = 250;
 
 class QuorumService {
   namespace: string;
-  apps: HotMeshApps | null;
   appId: string;
   guid: string;
   engine: EngineService;
+  profiles: QuorumProfile[] = [];
   store: StoreService<RedisClient, RedisMulti> | null;
   subscribe: SubService<RedisClient, RedisMulti> | null;
   logger: ILogger;
@@ -108,9 +109,12 @@ class QuorumService {
       if (message.type === 'activate') {
         self.engine.setCacheMode(message.cache_mode, message.until_version);
       } else if (message.type === 'ping') {
-        this.sayPong(self.appId, self.guid, message.originator);
+        self.sayPong(self.appId, self.guid, message.originator, message.details);
       } else if (message.type === 'pong' && self.guid === message.originator) {
         self.quorum = self.quorum + 1;
+        if (message.profile) {
+          self.profiles.push(message.profile);
+        }
       } else if (message.type === 'throttle') {
         self.engine.throttle(message.throttle);
       } else if (message.type === 'work') {
@@ -127,20 +131,38 @@ class QuorumService {
     };
   }
 
-  async sayPong(appId: string, guid: string, originator: string) {
+  async sayPong(appId: string, guid: string, originator: string, details = false) {
+    let profile: QuorumProfile;
+    if (details) {
+      profile = {
+        engine_id: this.guid,
+        namespace: this.namespace,
+        app_id: this.appId,
+        stream: this.engine.stream.mintKey(KeyType.STREAMS, { appId: this.appId })
+      };
+    }
     this.store.publish(
       KeyType.QUORUM, 
-      { type: 'pong', guid, originator },
+      {
+        type: 'pong',
+        guid, originator,
+        profile,
+      },
       appId,
     );
   }
 
-  async requestQuorum(delay = QUORUM_DELAY): Promise<number> {
+  async requestQuorum(delay = QUORUM_DELAY, details = false): Promise<number> {
     const quorum = this.quorum;
     this.quorum = 0;
+    this.profiles.length = 0;
     await this.store.publish(
       KeyType.QUORUM,
-      { type: 'ping', originator: this.guid },
+      { 
+        type: 'ping',
+        originator: this.guid,
+        details,
+      },
       this.appId,
     );
     await sleepFor(delay);
@@ -166,12 +188,26 @@ class QuorumService {
 
 
   // ************* COMPILER METHODS *************
-  async inventory(delay = QUORUM_DELAY): Promise<number> {
-    await this.requestQuorum(delay);
-    const q1 = await this.requestQuorum(delay);
-    const q2 = await this.requestQuorum(delay);
-    const q3 = await this.requestQuorum(delay);
-    return Math.round((q1 + q2 + q3) / 3);
+  async rollCall(delay = QUORUM_DELAY): Promise<QuorumProfile[]> {
+    await this.requestQuorum(delay, true);
+    const targetStreams = [];
+    const multi = this.store.getMulti();
+    this.profiles.forEach((profile: QuorumProfile) => {
+      if (!targetStreams.includes(profile.stream)) {
+        targetStreams.push(profile.stream);
+        this.store.xlen(profile.stream, multi);
+      }
+    });
+    const stream_depths = await multi.exec() as number[];
+    this.profiles.forEach(async (profile: QuorumProfile) => {
+      const index = targetStreams.indexOf(profile.stream);
+      if (index != -1) {
+        profile.stream_depth = Array.isArray(stream_depths[index]) ?
+          stream_depths[index][1] :
+          stream_depths[index];
+      }
+    });
+    return this.profiles;
   }
   async activate(version: string, delay = QUORUM_DELAY): Promise<boolean> {
     version = version.toString();
