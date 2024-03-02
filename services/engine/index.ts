@@ -332,6 +332,7 @@ class EngineService {
     });
     const context: PartialJobState = {
       metadata: {
+        guid: streamData.metadata.guid,
         jid: streamData.metadata.jid,
         gid: streamData.metadata.gid,
         dad: streamData.metadata.dad,
@@ -490,17 +491,15 @@ class EngineService {
     };
     return await this.router.publishMessage(null, streamData) as string;
   }
-  async hookTime(jobId: string, gId: string, activityId: string, type?: WorkListTaskType): Promise<string | void> {
-    if (type === 'interrupt') {
+  async hookTime(jobId: string, gId: string, topicOrActivity: string, type?: WorkListTaskType): Promise<string | void> {
+    if (type === 'interrupt' || type === 'expire') {
       return await this.interrupt(
-        activityId, //note: 'activityId' is the actually job topic
+        topicOrActivity,
         jobId,
         { suppress: true, expire: 1 },
       );
-    } else if (type === 'expire') {
-      return await this.store.expireJob(jobId, 1);
     }
-    const [aid, ...dimensions] = activityId.split(',');
+    const [aid, ...dimensions] = topicOrActivity.split(',');
     const dad = `,${dimensions.join(',')}`;
     const streamData: StreamData = {
       type: StreamDataType.TIMEHOOK,

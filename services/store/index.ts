@@ -586,6 +586,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     }
   }
 
+  /**
+   * collate is a generic method for incrementing a value in a hash
+   * in order to track their progress during processing.
+   */
   async collate(jobId: string, activityId: string, amount: number, dIds: StringStringType, multi? : U): Promise<number> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
     const collationKey = `${activityId}/output/metadata/as`; //activity state
@@ -598,6 +602,17 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     const hashData = this.serializer.package(payload, symbolNames);
     const targetId = Object.keys(hashData)[0];
     return await (multi || this.redisClient)[this.commands.hincrbyfloat](jobKey, targetId, amount);
+  }
+
+  /**
+   * synthentic collation affects those activities in the graph
+   * that represent the synthetic DAG that was materialized during compilation;
+   * Synthetic targeting ensures that re-entry due to failure can be distinguished from
+   * purposeful re-entry.
+   */
+  async collateSynthetic(jobId: string, guid: string, amount: number, multi? : U): Promise<number> {
+    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+    return await (multi || this.redisClient)[this.commands.hincrbyfloat](jobKey, guid, amount);
   }
 
   async setStateNX(jobId: string, appId: string): Promise<boolean> {

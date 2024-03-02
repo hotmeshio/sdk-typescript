@@ -2,7 +2,6 @@ import ms from 'ms';
 
 import {
   DurableIncompleteSignalError,
-  DurableSleepError,
   DurableSleepForError,
   DurableWaitForSignalError } from '../../modules/errors';
 import { KeyService, KeyType } from '../../modules/key';
@@ -374,37 +373,6 @@ export class WorkflowService {
       throw new DurableSleepForError(workflowId, seconds, execIndex, workflowDimension);
     }
     return seconds;
-  }
-
-  /**
-   * Sleeps the workflow for a duration. As the function is reentrant, 
-   * upon reentry, the function will traverse prior execution paths up
-   * until the sleep command and then resume execution from that point.
-   * @param {string} duration - for example: '1 minute', '2 hours', '3 days'
-   * @returns {Promise<number>}
-   * @deprecated - use `sleepFor` instead
-   */
-  static async sleep(duration: string): Promise<number> {
-    const seconds = ms(duration) / 1000;
-
-    const store = asyncLocalStorage.getStore();
-    const COUNTER = store.get('counter');
-    const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const workflowId = store.get('workflowId');
-    const workflowTopic = store.get('workflowTopic');
-    const workflowDimension = store.get('workflowDimension') ?? '';
-    const namespace = store.get('namespace');
-    const sleepJobId = `-${workflowId}-$sleep${workflowDimension}-${execIndex}`;
-
-    try {
-      const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
-      await hotMeshClient.getState(`${hotMeshClient.appId}.sleep.execute`, sleepJobId);
-      //if no error is thrown, we've already slept, return the delay
-      return seconds;
-    } catch (e) {
-      // spawn a new sleep job if error code 595 is thrown by the worker)
-      throw new DurableSleepError(workflowId, seconds, execIndex, workflowDimension);
-    }
   }
 
   /**

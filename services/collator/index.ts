@@ -78,11 +78,28 @@ class CollatorService {
     return await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1_000_001 - decrement, this.getDimensionalAddress(activity), multi);
   };
 
-  static async notarizeReentry(activity: Activity, multi?: RedisMulti): Promise<number> {
+  /**
+   * verifies both the concrete and synthetic keys for the activity; concrete keys
+   * exist in the original model and are effectively the 'real' keys. In reality,
+   * hook activities are atomized during compilation to create a synthetic DAG that
+   * is used to track the status of the graph in a distributed environment. The
+   * synthetic key represents different dimensional realities and is used to
+   * track re-entry overages (it distinguishes between the original and re-entry).
+   * The essential challenge is: is this a re-entry that is purposeful in
+   * order to induce cycles, or is the re-entry due to a failure in the system?
+   */
+  static async notarizeReentry(activity: Activity, guid: string, multi?: RedisMulti): Promise<number> {
+    const jid = activity.context.metadata.jid;
+    const localMulti = multi || activity.store.getMulti();
     //increment by 1_000_000 (indicates re-entry and is used to drive the 'dimensional address' for adjacent activities (minus 1))
-    const amount = await activity.store.collate(activity.context.metadata.jid, activity.metadata.aid, 1_000_000, this.getDimensionalAddress(activity, true), multi);
-    this.verifyInteger(amount, 2, 'enter');
-    return amount;
+    await activity.store.collate(jid, activity.metadata.aid, 1_000_000, this.getDimensionalAddress(activity, true), localMulti);
+    await activity.store.collateSynthetic(jid, guid, 1_000_000, localMulti);
+    const [_amountConcrete, _amountSynthetic] = await localMulti.exec();
+    const amountConcrete = Array.isArray(_amountConcrete) ? _amountConcrete[1] : _amountConcrete;
+    const amountSynthetic = Array.isArray(_amountSynthetic) ? _amountSynthetic[1] : _amountSynthetic;
+    this.verifyInteger(amountConcrete as number, 2, 'enter');
+    this.verifySyntheticInteger(amountSynthetic as number);
+    return amountConcrete as number;
   };
 
   static async notarizeContinuation(activity: Activity, multi?: RedisMulti): Promise<number> {
@@ -131,6 +148,26 @@ class CollatorService {
     } else {
       return this.getDigitAtIndex(amount, 0) < 9 &&
         this.getDigitAtIndex(amount, 1) < 9;
+    }
+  }
+
+  /**
+   * During compilation, the graphs are compiled into structures necessary
+   * for distributed processing; these are referred to as 'synthetic DAGs',
+   * because they are not part of the original graph, but are used to track
+   * the status of the graph in a distributed environment. This check ensures
+   * that the 'synthetic key' is not a duplicate. (which is different than
+   * saying the 'key' is not a duplicate)
+   */
+  static verifySyntheticInteger(amount: number): void {
+    const samount = amount.toString();
+    const isCompletedValue = parseInt(samount[samount.length - 1], 10);
+    if (isCompletedValue > 0) {
+      //already done error (ack/delete clearly failed; this is a duplicate)
+      throw new CollationError(amount, 2, 'enter', CollationFaultType.INACTIVE);
+    } else if (amount >= 2_000_000) {
+      //duplicate synthetic key (todo: need to resolve/fix this!!)
+      throw new CollationError(amount, 2, 'enter', CollationFaultType.DUPLICATE);
     }
   }
 
@@ -237,10 +274,6 @@ class CollatorService {
       // Start the DFS traversal
       dfs(startingNode, []);
     });
-  }
-
-  static isActivityComplete(status: number): boolean {
-    return (status - 0) <= 0;
   }
 
   /**

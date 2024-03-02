@@ -8,6 +8,7 @@ type ActivityData = {
 
 type JobMetadata = {
   key?: string; //job_key
+  guid?: string; //system assigned guid that corresponds to the transition message guid that spawned reentry
   gid: string;  //system assigned guid; ensured created/deleted/created jobs are unique
   jid: string;  //job_id (jid+dad+aid) is composite key for activity
   dad: string;  //dimensional address for the activity (,0,0,1)

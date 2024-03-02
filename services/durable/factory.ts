@@ -7,7 +7,6 @@
  * ERROR CODES:
  *      594: waitforsignal
  *      592: sleepFor
- *      595: sleep (deprecated)
  *      596, 597, 598: fatal
  *      599: retry
  */
@@ -122,19 +121,6 @@ const getWorkflowYAML = (app: string, version: string) => {
               maps:
                 index: '{$self.output.data.index}'
                 signals: '{$self.output.data.signals}'
-            595:
-              schema:
-                type: object
-                properties:
-                  duration:
-                    type: number
-                    description: sleep duration in seconds
-                  index:
-                    type: number
-                    description: the current index
-              maps:
-                duration: '{$self.output.data.duration}'
-                index: '{$self.output.data.index}'
             592:
               schema:
                 type: object
@@ -229,19 +215,6 @@ const getWorkflowYAML = (app: string, version: string) => {
               maps:
                 index: '{$self.output.data.index}'
                 signals: '{$self.output.data.signals}'
-            595:
-              schema:
-                type: object
-                properties:
-                  duration:
-                    type: number
-                    description: sleep duration in seconds
-                  index:
-                    type: number
-                    description: the current index
-              maps:
-                duration: '{$self.output.data.duration}'
-                index: '{$self.output.data.index}'
             592:
               schema:
                 type: object
@@ -313,57 +286,6 @@ const getWorkflowYAML = (app: string, version: string) => {
               done: '{sigw1.output.data.done}'
 
         sigc594:
-          title: Signal In - Goto Activity siga1
-          type: cycle
-          ancestor: siga1
-          input:
-            maps:
-              duration: '{siga1.output.data.duration}'
-
-        siga595:
-          title: Signal In - Sleep before trying again
-          type: await
-          topic: ${app}.sleep.execute
-          input:
-            schema:
-              type: object
-              properties:
-                duration:
-                  type: number
-                index:
-                  type: number
-                workflowId:
-                  type: string
-                parentWorkflowId:
-                  type: string
-                originJobId:
-                  type: string
-            maps:
-              duration: '{sigw1.output.data.duration}'
-              index: '{sigw1.output.data.index}'
-              parentWorkflowId:
-                '@pipe':
-                  - ['{$job.metadata.jid}', '-s']
-                  - ['{@string.concat}']
-              originJobId:
-                '@pipe':
-                  - ['{t1.output.data.originJobId}', '{t1.output.data.originJobId}', '{$job.metadata.jid}']
-                  - ['{@conditional.ternary}']
-
-              workflowId:
-                '@pipe':
-                  - ['-', '{$job.metadata.jid}', '-$sleep', '{sig.output.metadata.dad}', '-', '{sigw1.output.data.index}']
-                  - ['{@string.concat}']
-          output:
-            schema:
-              type: object
-              properties:
-                done:
-                  type: boolean
-            maps:
-              done: '{sigw1.output.data.done}'
-
-        sigc595:
           title: Signal In - Goto Activity siga1
           type: cycle
           ancestor: siga1
@@ -464,56 +386,6 @@ const getWorkflowYAML = (app: string, version: string) => {
             maps:
               duration: '{a1.output.data.duration}'
 
-        a595:
-          title: Sleep before trying again
-          type: await
-          topic: ${app}.sleep.execute
-          input:
-            schema:
-              type: object
-              properties:
-                duration:
-                  type: number
-                index:
-                  type: number
-                workflowId:
-                  type: string
-                parentWorkflowId:
-                  type: string
-                originJobId:
-                  type: string
-            maps:
-              duration: '{w1.output.data.duration}'
-              index: '{w1.output.data.index}'
-              parentWorkflowId:
-                '@pipe':
-                  - ['{$job.metadata.jid}', '-s']
-                  - ['{@string.concat}']
-              originJobId:
-                '@pipe':
-                  - ['{t1.output.data.originJobId}', '{t1.output.data.originJobId}', '{$job.metadata.jid}']
-                  - ['{@conditional.ternary}']
-              workflowId:
-                '@pipe':
-                  - ['-', '{$job.metadata.jid}', '-$sleep-', '{w1.output.data.index}']
-                  - ['{@string.concat}']
-          output:
-            schema:
-              type: object
-              properties:
-                done:
-                  type: boolean
-            maps:
-              done: '{w1.output.data.done}'
-
-        c595:
-          title: Goto Activity a1
-          type: cycle
-          ancestor: a1
-          input:
-            maps:
-              duration: '{a1.output.data.duration}'
-
         a592:
           title: Sleep For a duration and then cycle/goto
           type: hook
@@ -571,9 +443,6 @@ const getWorkflowYAML = (app: string, version: string) => {
           - to: siga594
             conditions:
               code: 594
-          - to: siga595
-            conditions:
-              code: 595
           - to: siga592
             conditions:
               code: 592
@@ -582,8 +451,6 @@ const getWorkflowYAML = (app: string, version: string) => {
               code: 599
         siga594:
           - to: sigc594
-        siga595:
-          - to: sigc595
         siga592:
           - to: sigc592
         siga599:
@@ -594,9 +461,6 @@ const getWorkflowYAML = (app: string, version: string) => {
           - to: a594
             conditions:
               code: 594
-          - to: a595
-            conditions:
-              code: 595
           - to: a592
             conditions:
               code: 592
@@ -608,8 +472,6 @@ const getWorkflowYAML = (app: string, version: string) => {
               code: [200, 598, 597, 596]
         a594:
           - to: c594
-        a595:
-          - to: c595
         a592:
           - to: c592
         a599:
