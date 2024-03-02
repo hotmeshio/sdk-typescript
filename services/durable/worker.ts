@@ -3,7 +3,6 @@ import {
   DurableIncompleteSignalError,
   DurableMaxedError,
   DurableRetryError,
-  DurableSleepError,
   DurableSleepForError,
   DurableTimeoutError, 
   DurableWaitForSignalError} from '../../modules/errors';
@@ -236,21 +235,6 @@ export class WorkerService {
 
         //not an error...just a trigger to sleep
         if (err instanceof DurableSleepForError) {
-          return {
-            status: StreamStatus.SUCCESS,
-            code: err.code,
-            metadata: { ...data.metadata },
-            data: {
-              code: err.code,
-              message: JSON.stringify({ duration: err.duration, index: err.index, dimension: err.dimension }),
-              duration: err.duration,
-              index: err.index,
-              dimension: err.dimension
-            }
-          } as StreamDataResponse;
-
-        //deprecated format; not an error...just a trigger to sleep
-        } else if (err instanceof DurableSleepError) {
           return {
             status: StreamStatus.SUCCESS,
             code: err.code,

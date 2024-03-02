@@ -90,6 +90,22 @@ class Activity {
     await CollatorService.notarizeEntry(this);
   }
 
+  /**
+   * Upon entering leg 2 of a duplexed activty, verify
+   * all aspects of the re-entry including job and activty state
+   */
+  async verifyReentry(): Promise<number> {
+    const guid = this.context.metadata.guid;
+    this.setLeg(2);
+    await this.getState();
+    CollatorService.assertJobActive(
+      this.context.metadata.js,
+      this.context.metadata.jid,
+      this.metadata.aid
+    );
+    return await CollatorService.notarizeReentry(this, guid);
+  }
+
   //********  DUPLEX RE-ENTRY POINT  ********//
   async processEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200, type: 'hook' | 'output' = 'output'): Promise<void> {
     this.setLeg(2);
@@ -103,23 +119,20 @@ class Activity {
     this.code = code;
     this.logger.debug('activity-process-event', { topic: this.config.subtype, jid, aid, status, code });
     let telemetry: TelemetryService;
+
     try {
-      await this.getState();
-      CollatorService.assertJobActive(this.context.metadata.js, this.context.metadata.jid, this.metadata.aid);
-      const aState = await CollatorService.notarizeReentry(this);
-      this.adjacentIndex = CollatorService.getDimensionalIndex(aState);
+      const collationKey = await this.verifyReentry();
 
-      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
-      let isComplete = CollatorService.isActivityComplete(this.context.metadata.js);
-
-      if (isComplete) {
-        this.logger.warn('activity-process-event-duplicate', { jid, aid });
-        this.logger.debug('activity-process-event-duplicate-resolution', { resolution: 'Increase HotMesh config `reclaimDelay` timeout.' });
-        return;
-      }
-
+      this.adjacentIndex = CollatorService.getDimensionalIndex(collationKey);
+      telemetry = new TelemetryService(
+        this.engine.appId,
+        this.config,
+        this.metadata,
+        this.context,
+      );
       telemetry.startActivitySpan(this.leg);
       let multiResponse: MultiResponseFlags;
+
       if (status === StreamStatus.PENDING) {
         multiResponse = await this.processPending(telemetry, type);
       } else if (status === StreamStatus.SUCCESS) {
@@ -384,7 +397,7 @@ class Activity {
     TelemetryService.addTargetTelemetryPaths(consumes, this.config, this.metadata, this.leg);
     let { dad, jid } = this.context.metadata;
     const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], dad || '');
-    //`state` is a flat hash; context is a tree
+    //`state` is a unidimensional hash; context is a tree
     const [state, status] = await this.store.getState(jid, consumes, dIds);
     this.context = restoreHierarchy(state) as JobState;
     this.assertGenerationalId(this.context.metadata.gid, gid);
@@ -395,7 +408,9 @@ class Activity {
 
   /**
    * if the job is created/deleted/created with the same key,
-   * the 'gid' ensures no stale messages enter the stream
+   * the 'gid' ensures no stale messages (such as sleep delays)
+   * enter the workstream. Any message with a mismatched gid
+   * belongs to a prior job and can safely be ignored/dropped.
    */
   assertGenerationalId(jobGID: string, msgGID?: string) {
     if (msgGID !== jobGID) {
