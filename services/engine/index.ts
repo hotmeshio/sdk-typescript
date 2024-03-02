@@ -1,10 +1,10 @@
 import { KeyType } from '../../modules/key';
 import {
-  OTT_WAIT_TIME,
-  STATUS_CODE_SUCCESS,
-  STATUS_CODE_PENDING,
-  STATUS_CODE_TIMEOUT, 
-  DURABLE_EXPIRE_SECONDS } from '../../modules/enums';
+  HMSH_OTT_WAIT_TIME,
+  HMSH_CODE_SUCCESS,
+  HMSH_CODE_PENDING,
+  HMSH_CODE_TIMEOUT, 
+  HMSH_EXPIRE_JOB_SECONDS } from '../../modules/enums';
 import {
   formatISODate,
   getSubscriptionTopic,
@@ -77,6 +77,7 @@ import {
   StreamError,
   StreamRole,
   StreamStatus } from '../../types/stream';
+import { WorkListTaskType } from '../../types/task';
 
 class EngineService {
   namespace: string;
@@ -438,10 +439,10 @@ class EngineService {
         streamData.code = error.code;
       } else if (emit) {
         streamData.status = StreamStatus.PENDING;
-        streamData.code = STATUS_CODE_PENDING;
+        streamData.code = HMSH_CODE_PENDING;
       } else {
         streamData.status = StreamStatus.SUCCESS;
-        streamData.code = STATUS_CODE_SUCCESS;
+        streamData.code = HMSH_CODE_SUCCESS;
       }
       return (await this.router?.publishMessage(null, streamData)) as string;
     }
@@ -489,7 +490,7 @@ class EngineService {
     };
     return await this.router.publishMessage(null, streamData) as string;
   }
-  async hookTime(jobId: string, gId: string, activityId: string, type?: 'sleep'|'expire'|'interrupt'): Promise<string | void> {
+  async hookTime(jobId: string, gId: string, activityId: string, type?: WorkListTaskType): Promise<string | void> {
     if (type === 'interrupt') {
       return await this.interrupt(
         activityId, //note: 'activityId' is the actually job topic
@@ -499,7 +500,6 @@ class EngineService {
     } else if (type === 'expire') {
       return await this.store.expireJob(jobId, 1);
     }
-    //'sleep': parse the activityId into parts
     const [aid, ...dimensions] = activityId.split(',');
     const dad = `,${dimensions.join(',')}`;
     const streamData: StreamData = {
@@ -575,7 +575,7 @@ class EngineService {
     return await this.subscribe.punsubscribe(KeyType.QUORUM, this.appId, wild);
   }
   //publish and await (returns the job and data (if ready)); throws error with jobid if not
-  async pubsub(topic: string, data: JobData, context?: JobState | null, timeout = OTT_WAIT_TIME): Promise<JobOutput> {
+  async pubsub(topic: string, data: JobData, context?: JobState | null, timeout = HMSH_OTT_WAIT_TIME): Promise<JobOutput> {
     context = {
       metadata: {
         ngn: this.guid,
@@ -597,9 +597,10 @@ class EngineService {
         }
       });
       setTimeout(() => {
+        //note: job is still active (the subscriber timed out)
         this.delistJobCallback(jobId);
         reject({
-          code: STATUS_CODE_TIMEOUT,
+          code: HMSH_CODE_TIMEOUT,
           message: 'timeout',
           job_id: jobId
         } as StreamError);
@@ -685,7 +686,7 @@ class EngineService {
    * it will be expired immediately.
    */
   resolveExpires(context: JobState, options: JobCompletionOptions): number {
-    return options.expire ?? context.metadata.expire ?? DURABLE_EXPIRE_SECONDS;
+    return options.expire ?? context.metadata.expire ?? HMSH_EXPIRE_JOB_SECONDS;
   }
 
 

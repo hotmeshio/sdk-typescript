@@ -1,9 +1,18 @@
 import { ActivityDuplex } from "../types/activity";
 import { CollationFaultType, CollationStage } from "../types/collator";
+import {
+  HMSH_CODE_DURABLE_MAXED,
+  HMSH_CODE_DURABLE_TIMEOUT,
+  HMSH_CODE_DURABLE_FATAL,
+  HMSH_CODE_DURABLE_INCOMPLETE,
+  HMSH_CODE_NOTFOUND,
+  HMSH_CODE_DURABLE_RETRYABLE,
+  HMSH_CODE_DURABLE_SLEEPFOR,
+  HMSH_CODE_DURABLE_WAITFOR } from "./enums";
 
 class GetStateError extends Error {
   jobId: string;
-  code: 404;
+  code = HMSH_CODE_NOTFOUND;
   constructor(jobId: string) {
     super(`${jobId} Not Found`);
     this.jobId = jobId;
@@ -21,7 +30,7 @@ class DurableIncompleteSignalError extends Error {
   code: number;
   constructor(message: string) {
     super(message);
-    this.code = 593;
+    this.code = HMSH_CODE_DURABLE_INCOMPLETE;
   }
 }
 
@@ -32,7 +41,7 @@ class DurableWaitForSignalError extends Error {
   constructor(message: string, signals: {signal: string, index: number}[]) {
     super(message);
     this.signals = signals;
-    this.code = 594;
+    this.code = HMSH_CODE_DURABLE_WAITFOR;
   }
 }
 
@@ -60,35 +69,35 @@ class DurableSleepForError extends Error {
     this.duration = duration;
     this.index = index;
     this.dimension = dimension;
-    this.code = 592;
+    this.code = HMSH_CODE_DURABLE_SLEEPFOR;
   }
 }
 class DurableTimeoutError extends Error {
   code: number;
   constructor(message: string) {
     super(message);
-    this.code = 596;
+    this.code = HMSH_CODE_DURABLE_TIMEOUT;
   }
 }
 class DurableMaxedError extends Error {
   code: number;
   constructor(message: string) {
     super(message);
-    this.code = 597;
+    this.code = HMSH_CODE_DURABLE_MAXED;
   }
 }
 class DurableFatalError extends Error {
   code: number;
   constructor(message: string) {
     super(message);
-    this.code = 598;
+    this.code = HMSH_CODE_DURABLE_FATAL;
   }
 }
 class DurableRetryError extends Error {
   code: number;
   constructor(message: string) {
     super(message);
-    this.code = 599;
+    this.code = HMSH_CODE_DURABLE_RETRYABLE;
   }
 }
 

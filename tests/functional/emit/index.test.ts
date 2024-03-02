@@ -10,6 +10,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | EMIT', () => {
   const appConfig = { id: 'emit', version: '1' };
@@ -29,7 +30,7 @@ describe('FUNCTIONAL | EMIT', () => {
     const config: HotMeshConfig = {
       appId: appConfig.id,
       namespace: HMNS,
-      logLevel: 'debug',
+      logLevel: HMSH_LOGLEVEL,
 
       engine: {
         redis: { class: Redis, options }

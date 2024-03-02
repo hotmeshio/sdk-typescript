@@ -8,6 +8,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
+  import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Redeploy', () => {
   const appConfig = { id: 'tree' };
@@ -27,7 +28,7 @@ describe('FUNCTIONAL | Redeploy', () => {
     //init/activate HotMesh (test both `engine` and `worker` roles)
     const config: HotMeshConfig = {
       appId: appConfig.id,
-      logLevel: 'debug',
+      logLevel: HMSH_LOGLEVEL,
       engine: {
         redis: { class: Redis, options }
       },
@@ -229,7 +230,7 @@ describe('FUNCTIONAL | Redeploy', () => {
       //NOTE: this is the quick start tutorial run as a functional test
       const config: HotMeshConfig = {
         appId: 'abc',
-        logLevel: 'debug',
+        logLevel: HMSH_LOGLEVEL,
         engine: {
           redis: { class: Redis, options }
         },

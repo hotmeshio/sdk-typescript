@@ -1,4 +1,4 @@
-import { STATUS_CODE_INTERRUPT } from '../../modules/enums';
+import { HMSH_CODE_INTERRUPT } from '../../modules/enums';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import { JobInterruptOptions, JobOutput } from '../../types/job';
 import { StreamError } from '../../types/stream';
@@ -101,7 +101,7 @@ export class WorkflowHandleService {
           const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
           if (state.metadata.err) {
             const error = JSON.parse(state.metadata.err) as StreamError;
-            if (error.code === STATUS_CODE_INTERRUPT || !state.data) {
+            if (error.code === HMSH_CODE_INTERRUPT || !state.data) {
               return reject({ ...error, job_id: this.workflowId });
             }
           }
@@ -117,7 +117,7 @@ export class WorkflowHandleService {
       this.hotMesh.sub(topic, async (topic: string, state: JobOutput) => {
         if (state.metadata.err) {
           const error = JSON.parse(state.metadata.err) as StreamError;
-          if (error.code === STATUS_CODE_INTERRUPT || !state.data) {
+          if (error.code === HMSH_CODE_INTERRUPT || !state.data) {
             return await complete(null, state.metadata.err);
           }
         }

@@ -10,6 +10,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Reclaim', () => {
   const appConfig = { id: 'calc', version: '1' };
@@ -58,7 +59,7 @@ describe('FUNCTIONAL | Reclaim', () => {
       const config: HotMeshConfig = {
         appId: appConfig.id,
         namespace: HMNS,
-        logLevel: 'debug',
+        logLevel: HMSH_LOGLEVEL,
         engine: {
           redis: { class: Redis, options },
           reclaimDelay: 1_500,  //default 5_000

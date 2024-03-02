@@ -1,14 +1,16 @@
 import {
-  EXPIRE_DURATION,
-  FIDELITY_SECONDS, 
-  SCOUT_INTERVAL_SECONDS} from '../../modules/enums';
+  HMSH_EXPIRE_DURATION,
+  HMSH_FIDELITY_SECONDS, 
+  HMSH_SCOUT_INTERVAL_SECONDS} from '../../modules/enums';
 import { XSleepFor, sleepFor } from '../../modules/utils';
 import { ILogger } from '../logger';
+import { Pipe } from '../pipe';
 import { StoreService } from '../store';
 import { HookInterface, HookRule, HookSignal } from '../../types/hook';
+import { KeyType } from '../../types/hotmesh';
 import { JobCompletionOptions, JobState } from '../../types/job';
 import { RedisClient, RedisMulti } from '../../types/redis';
-import { Pipe } from '../pipe';
+import { WorkListTaskType } from '../../types/task';
 
 class TaskService {
   store: StoreService<RedisClient, RedisMulti>;
@@ -35,7 +37,12 @@ class TaskService {
         //todo: don't use 'id', make configurable using hook rule
         await hookEventCallback(topic, { ...data, id: jobId });
       } else {
-        await this.store.deleteProcessedTaskQueue(workItemKey, sourceKey, destinationKey, scrub === 'true');
+        await this.store.deleteProcessedTaskQueue(
+          workItemKey,
+          sourceKey,
+          destinationKey,
+          scrub === 'true'
+        );
       }
       setImmediate(() => this.processWebHooks(hookEventCallback));
     }
@@ -45,21 +52,45 @@ class TaskService {
     await this.store.addTaskQueues(keys);
   }
 
-  async registerJobForCleanup(jobId: string, inSeconds = EXPIRE_DURATION, options: JobCompletionOptions): Promise<void> {
+  async registerJobForCleanup(jobId: string, inSeconds = HMSH_EXPIRE_DURATION, options: JobCompletionOptions): Promise<void> {
     if (inSeconds > 0) {
       await this.store.expireJob(jobId, inSeconds);
-      const expireTimeSlot = Math.floor((Date.now() + (inSeconds * 1000)) / (FIDELITY_SECONDS * 1000)) * (FIDELITY_SECONDS * 1000); //n second awaken groups
-      await this.store.registerExpireJob(jobId, expireTimeSlot, options);
+      const fromNow = Date.now() + (inSeconds * 1000);
+      const fidelityMS = HMSH_FIDELITY_SECONDS * 1000;
+      const timeSlot = Math.floor(fromNow / fidelityMS) * fidelityMS;
+      await this.store.registerDependenciesForCleanup(
+        jobId,
+        timeSlot,
+        options,
+      );
     }
   }
 
-  async registerTimeHook(jobId: string, gId: string, activityId: string, type: 'sleep'|'expire'|'interrupt', inSeconds = FIDELITY_SECONDS, multi?: RedisMulti): Promise<void> {
-    const awakenTimeSlot = Math.floor((Date.now() + (inSeconds * 1000)) / (FIDELITY_SECONDS * 1000)) * (FIDELITY_SECONDS * 1000); //n second awaken groups
-    await this.store.registerTimeHook(jobId, gId, activityId, type, awakenTimeSlot, multi);
+  async registerTimeHook(
+    jobId: string,
+    gId: string,
+    activityId: string,
+    type: WorkListTaskType,
+    inSeconds = HMSH_FIDELITY_SECONDS,
+    multi?: RedisMulti,
+  ): Promise<void> {
+    const fromNow = Date.now() + (inSeconds * 1000);
+    const fidelityMS = HMSH_FIDELITY_SECONDS * 1000;
+    const awakenTimeSlot = Math.floor(fromNow / fidelityMS) * fidelityMS;
+    await this.store.registerTimeHook(
+      jobId,
+      gId,
+      activityId,
+      type,
+      awakenTimeSlot,
+      multi,
+    );
   }
 
   /**
-   * Should this engine instance play the role of 'scout' for the quorum.
+   * Should this engine instance play the role of 'scout' on behalf
+   * of the entire quorum? The scout role is responsible for processing
+   * task lists on behalf of the collective.
    */
   async shouldScout() {
     const wasScout = this.isScout;
@@ -68,30 +99,41 @@ class TaskService {
       if (!wasScout) {
         setTimeout(() => {
           this.isScout = false;
-        }, SCOUT_INTERVAL_SECONDS * 1_000);
+        }, HMSH_SCOUT_INTERVAL_SECONDS * 1_000);
       }
       return true;
     }
     return false;
   }
 
-  async processTimeHooks(timeEventCallback: (jobId: string, gId: string, activityId: string, type: 'sleep'|'expire'|'interrupt') => Promise<void>, listKey?: string): Promise<void> {
+  /**
+   * Callback handler that takes an item from a work list and
+   * processes according to its type
+   */
+  async processTimeHooks(timeEventCallback: (jobId: string, gId: string, activityId: string, type: WorkListTaskType) => Promise<void>, listKey?: string): Promise<void> {
     if (await this.shouldScout()) {
       try {
-        const timeJob = await this.store.getNextTimeJob(listKey);
-        if (Array.isArray(timeJob)) {
-          //a queue had a job; try again immediately
-          const [listKey, jobId, gId, activityId, type] = timeJob;
-          await timeEventCallback(jobId, gId, activityId, type);
+        const workListTask = await this.store.getNextTask(listKey);
+
+        if (Array.isArray(workListTask)) {
+          const [listKey, target, gId, activityId, type] = workListTask;
+          if (type === 'delist') {
+            //delist the signalKey (target)
+            const key = this.store.mintKey(KeyType.SIGNALS, { appId: this.store.appId });
+            await this.store.redisClient[this.store.commands.hdel](key, target);
+          } else {
+            //awaken/expire/interrupt
+            await timeEventCallback(target, gId, activityId, type);
+          }
           await sleepFor(0);
           this.processTimeHooks(timeEventCallback, listKey);
-        } else if (timeJob) {
-          //a queue was just emptied; try again immediately
+        } else if (workListTask) {
+          //a worklist was just emptied; try again immediately
           await sleepFor(0);
           this.processTimeHooks(timeEventCallback);
         } else {
-          //all queues are empty; sleep before checking
-          let sleep = XSleepFor(FIDELITY_SECONDS * 1000);
+          //no worklists exist; sleep before checking
+          let sleep = XSleepFor(HMSH_FIDELITY_SECONDS * 1000);
           this.cleanupTimeout = sleep.timerId;
           await sleep.promise;
           this.processTimeHooks(timeEventCallback);
@@ -102,7 +144,7 @@ class TaskService {
       }
     } else {
       //didn't get the scout role; try again in 'one-ish' minutes
-      let sleep = XSleepFor(SCOUT_INTERVAL_SECONDS * 1_000 * 2 * Math.random());
+      let sleep = XSleepFor(HMSH_SCOUT_INTERVAL_SECONDS * 1_000 * 2 * Math.random());
       this.cleanupTimeout = sleep.timerId;
       await sleep.promise;
       this.processTimeHooks(timeEventCallback);

@@ -11,11 +11,12 @@ import { JobState } from '../../types/job';
 import { KeyService, KeyType } from '../../modules/key';
 import { Search } from './search';
 import { StreamStatus } from '../../types';
-import { DURABLE_EXPIRE_SECONDS } from '../../modules/enums';
+import { HMSH_LOGLEVEL, HMSH_EXPIRE_JOB_SECONDS } from '../../modules/enums';
 
 export class ClientService {
 
   connection: Connection;
+  topics: string[] = [];
   options: WorkflowOptions;
   static instances = new Map<string, HotMesh | Promise<HotMesh>>();
 
@@ -23,14 +24,22 @@ export class ClientService {
     this.connection = config.connection;
   }
 
-  getHotMeshClient = async (worflowTopic: string, namespace?: string) => {
-    //NOTE: every unique topic inits a new engine
-    if (ClientService.instances.has(worflowTopic)) {
-      return await ClientService.instances.get(worflowTopic);
+  getHotMeshClient = async (workflowTopic: string, namespace?: string) => {
+    //use the cached instance
+    const instanceId = 'SINGLETON';
+    if (ClientService.instances.has(instanceId)) {
+      const hotMeshClient = await ClientService.instances.get(instanceId);
+      if (!this.topics.includes(workflowTopic)) {
+        this.topics.push(workflowTopic);
+        await this.createStream(hotMeshClient, workflowTopic, namespace);
+      }
+      return hotMeshClient;
     }
 
+    //create and cache an instance
     const hotMeshClient = HotMesh.init({
       appId: namespace ?? APP_ID,
+      logLevel: HMSH_LOGLEVEL,
       engine: {
         redis: {
           class: this.connection.class,
@@ -38,19 +47,27 @@ export class ClientService {
         }
       }
     });
-    ClientService.instances.set(worflowTopic, hotMeshClient);
+    ClientService.instances.set(instanceId, hotMeshClient);
+    await this.createStream(await hotMeshClient, workflowTopic, namespace);
+    await this.activateWorkflow(await hotMeshClient, namespace ?? APP_ID);
+    return hotMeshClient;
+  }
 
-    //since the YAML topic is dynamic, it MUST be manually created before use
-    const store = (await hotMeshClient).engine.store;
-    const params = { appId: namespace ?? APP_ID, topic: worflowTopic };
+  /**
+   * Creates a stream (Redis `XGROUP.CREATE`) where events can be published (XADD).
+   * It is possible that the worker that will read from this stream channel
+   * has not yet been initialized, so this call ensures that the channel
+   * exists and is ready to serve as a container for events.
+   */
+  createStream = async(hotMeshClient: HotMesh, workflowTopic: string, namespace?: string) => {
+    const store = hotMeshClient.engine.store;
+    const params = { appId: namespace ?? APP_ID, topic: workflowTopic };
     const streamKey = store.mintKey(KeyType.STREAMS, params);
     try {
       await store.xgroup('CREATE', streamKey, 'WORKER', '$', 'MKSTREAM');
     } catch (err) {
       //ignore if already exists
     }
-    await this.activateWorkflow(await hotMeshClient, namespace ?? APP_ID);
-    return hotMeshClient;
   }
 
   /**
@@ -105,7 +122,7 @@ export class ClientService {
       const payload = {
         arguments: [...options.args],
         originJobId: options.originJobId,
-        expire: options.expire ?? DURABLE_EXPIRE_SECONDS,
+        expire: options.expire ?? HMSH_EXPIRE_JOB_SECONDS,
         parentWorkflowId: options.parentWorkflowId,
         workflowId: options.workflowId || HotMesh.guid(),
         workflowTopic: workflowTopic,
@@ -155,9 +172,8 @@ export class ClientService {
       if (options.search?.data) {
         const searchSessionId = `-search-${HotMesh.guid()}-0`;
         const search = new Search(options.workflowId, hotMeshClient, searchSessionId);
-        for (const [key, value] of Object.entries(options.search.data)) {
-          search.set(key, value);
-        }
+        const entries = Object.entries(options.search.data).flat();
+        await search.set(...entries);
       }
       return msgId;
     },

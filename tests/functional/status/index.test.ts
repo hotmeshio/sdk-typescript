@@ -8,6 +8,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Status Codes', () => {
   const options = {
@@ -28,7 +29,7 @@ describe('FUNCTIONAL | Status Codes', () => {
     //init HotMesh
     const hmshConfig: HotMeshConfig = {
       appId: appConfig.id,
-      logLevel: 'debug',
+      logLevel: HMSH_LOGLEVEL,
 
       engine: {
         redis: { class: Redis, options }

@@ -5,6 +5,7 @@ import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { JobOutput } from '../../../types/job';
 import { guid, sleepFor } from '../../../modules/utils';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Hook', () => {
   const options = {
@@ -24,7 +25,7 @@ describe('FUNCTIONAL | Hook', () => {
     //init HotMesh
     const hmshConfig: HotMeshConfig = {
       appId: appConfig.id,
-      logLevel: 'debug',
+      logLevel: HMSH_LOGLEVEL,
 
       engine: {
         redis: { class: Redis, options }

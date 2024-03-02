@@ -21,7 +21,8 @@ The HotMesh model is a YAML-based alternative to WSDL/SOAP, offering a flexible 
     - [4.1.3. Await](#413-await)
     - [4.1.4. Worker](#414-worker)
     - [4.1.5. Cycle](#415-cycle)
-    - [4.1.6. Signal](#415-signal)
+    - [4.1.6. Signal](#416-signal)
+    - [4.1.7. Interrupt](#417-signal)
   - [4.2. Input and Output Schemas](#42-input-and-output-schemas)
   - [4.3. Activity Mapping](#43-activity-mapping)
 - [5. Transitions](#5-transitions)
@@ -447,9 +448,10 @@ app:
           - to: c1
 ```
 #### 4.1.6. Signal
-The signal activity allows any flow to send a signal to any other flow, regardless of the relationship between the flows.
+The signal activity allows any flow to send a signal to any other flow, regardless of the relationship between the flows (including itself).
 
-[TODO]
+#### 4.1.7. Interrupt
+The interrupt activity allows any flow to send an interrupt signal to any other flow, regardless of the relationship between the flows (including itself).
 
 ### 4.2. Input and Output Schemas
 Input and output schemas are used in activities to define the structure and data types of the data that is being passed between activities. They ensure that the data is validated and transformed correctly, improving the reliability and maintainability of the workflow.

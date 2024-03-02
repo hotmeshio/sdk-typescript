@@ -90,7 +90,9 @@ export {
   HotMeshGraph,
   HotMeshManifest,
   HotMeshSettings,
-  HotMeshWorker } from './hotmesh';
+  HotMeshWorker,
+  KeyStoreParams,
+  KeyType } from './hotmesh';
 export {
   ActivateMessage,
   JobMessage,
@@ -98,6 +100,8 @@ export {
   PingMessage,
   PongMessage,
   QuorumMessage,
+  QuorumMessageCallback,
+  QuorumProfile,
   SubscriptionCallback,
   ThrottleMessage,
   WorkMessage } from './quorum';
@@ -162,6 +166,9 @@ export {
   Tracer,
   ValueType } from './telemetry';
 export {
+  WorkListTaskType } from './task'
+export {
   TransitionMatch,
   TransitionRule,
   Transitions } from './transition';
+      

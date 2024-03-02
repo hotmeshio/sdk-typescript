@@ -7,6 +7,7 @@ import * as childWorkflows from './child/workflows';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -69,7 +70,7 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
           taskQueue: 'parent-world',
           workflow: parentWorkflows.parentExample,
           options: {
-            logLevel: 'debug',
+            logLevel: HMSH_LOGLEVEL,
           },
         });
         await worker.run();
@@ -82,7 +83,7 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
           taskQueue: 'child-world',
           workflow: childWorkflows.childExample,
           options: {
-            logLevel: 'debug',
+            logLevel: HMSH_LOGLEVEL,
           },
         });
         await worker.run();

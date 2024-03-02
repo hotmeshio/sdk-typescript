@@ -11,6 +11,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Retry', () => {
   const appConfig = { id: 'calc', version: '1' };
@@ -72,7 +73,7 @@ describe('FUNCTIONAL | Retry', () => {
     const config: HotMeshConfig = {
       appId: appConfig.id,
       namespace: HMNS,
-      logLevel: 'debug',
+      logLevel: HMSH_LOGLEVEL,
 
       engine: {
         redis: { class: Redis, options }
