@@ -1,9 +1,9 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.0.39",
+  "version": "0.0.40",
   "description": "Unbreakable Workflows",
-  "main": "build/index.js",
-  "types": "build/index.d.ts",
+  "main": "./build/index.js",
+  "types": "./build/types/index.d.ts",
   "repository": {
     "type": "git",
     "url": "https://github.com/hotmeshio/sdk-typescript.git"
