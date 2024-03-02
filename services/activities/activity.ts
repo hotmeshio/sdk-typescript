@@ -1,4 +1,4 @@
-import { EXPIRE_DURATION } from '../../modules/enums';
+import { HMSH_EXPIRE_DURATION } from '../../modules/enums';
 import {
   CollationError,
   GenerationalError,
@@ -435,7 +435,7 @@ class Activity {
 
   initPolicies(context: JobState) {
     const expire = Pipe.resolve(
-      this.config.expire ?? EXPIRE_DURATION,
+      this.config.expire ?? HMSH_EXPIRE_DURATION,
       context
     );
     context.metadata.expire = expire;

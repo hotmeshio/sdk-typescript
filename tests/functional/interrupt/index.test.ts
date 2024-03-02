@@ -4,6 +4,7 @@ import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid } from '../../../modules/utils';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Interrupt', () => {
   const appConfig = { id: 'tree' };
@@ -23,7 +24,7 @@ describe('FUNCTIONAL | Interrupt', () => {
     //init/activate HotMesh
     const config: HotMeshConfig = {
       appId: appConfig.id,
-      logLevel: 'debug',
+      logLevel: HMSH_LOGLEVEL,
       engine: {
         redis: { class: Redis, options }
       },

@@ -8,6 +8,7 @@ import {
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
 import { guid } from '../../../modules/utils';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Sequence', () => {
   const appConfig = { id: 'tree' };
@@ -27,7 +28,7 @@ describe('FUNCTIONAL | Sequence', () => {
     //init/activate HotMesh (test both `engine` and `worker` roles)
     const config: HotMeshConfig = {
       appId: appConfig.id,
-      logLevel: 'debug',
+      logLevel: HMSH_LOGLEVEL,
       engine: {
         redis: { class: Redis, options }
       },

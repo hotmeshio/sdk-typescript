@@ -131,16 +131,25 @@ class Hook extends Activity {
 
   async registerHook(multi?: RedisMulti): Promise<string | void> {
     if (this.config.hook?.topic) {
-      const taskService = new TaskService(this.store, this.logger);
-      return await taskService.registerWebHook(this.config.hook.topic, this.context, this.resolveDad(), multi);
+      return await this.engine.taskService.registerWebHook(
+        this.config.hook.topic,
+        this.context,
+        this.resolveDad(),
+        multi
+      );
     } else if (this.config.sleep) {
-      const durationInSeconds = Pipe.resolve(this.config.sleep, this.context);
-      const jobId = this.context.metadata.jid;
-      const gId = this.context.metadata.gid;
-      const activityId = this.metadata.aid;
-      const dId = this.metadata.dad;
-      await this.engine.taskService.registerTimeHook(jobId, gId, `${activityId}${dId||''}`, 'sleep', durationInSeconds);
-      return jobId;
+      const duration = Pipe.resolve(
+        this.config.sleep,
+        this.context,
+      );
+      await this.engine.taskService.registerTimeHook(
+        this.context.metadata.jid,
+        this.context.metadata.gid,
+        `${this.metadata.aid}${this.metadata.dad || ''}`,
+        'sleep',
+        duration,
+      );
+      return this.context.metadata.jid;
     }
   }
 

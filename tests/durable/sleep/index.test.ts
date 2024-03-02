@@ -7,7 +7,7 @@ import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
 import { StreamError } from '../../../types';
-import { STATUS_CODE_INTERRUPT } from '../../../modules/enums';
+import { HMSH_CODE_INTERRUPT } from '../../../modules/enums';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -106,7 +106,7 @@ describe('DURABLE | sleep | `Durable.workflow.sleepFor`', () => {
           await localHandle.result();
         } catch (e: any) {
           expect((e as StreamError).job_id).toEqual(interruptedWorkflowGuid);
-          expect((e as StreamError).code).toEqual(STATUS_CODE_INTERRUPT);
+          expect((e as StreamError).code).toEqual(HMSH_CODE_INTERRUPT);
         }
       });
 

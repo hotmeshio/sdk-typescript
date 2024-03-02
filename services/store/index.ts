@@ -29,8 +29,9 @@ import { Transitions } from '../../types/transition';
 import { formatISODate, getSymKey } from '../../modules/utils';
 import { ReclaimedMessageType } from '../../types/stream';
 import { JobCompletionOptions, JobInterruptOptions } from '../../types/job';
-import { SCOUT_INTERVAL_SECONDS, STATUS_CODE_INTERRUPT } from '../../modules/enums';
+import { HMSH_SCOUT_INTERVAL_SECONDS, HMSH_CODE_INTERRUPT } from '../../modules/enums';
 import { GetStateError } from '../../modules/errors';
+import { WorkListTaskType } from '../../types/task';
 
 interface AbstractRedisClient {
   exec(): any;
@@ -177,7 +178,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * check for and process work items in the
    * time and signal task queues.
    */
-  async reserveScoutRole(scoutType: 'time' | 'signal', delay = SCOUT_INTERVAL_SECONDS): Promise<boolean> {
+  async reserveScoutRole(scoutType: 'time' | 'signal', delay = HMSH_SCOUT_INTERVAL_SECONDS): Promise<boolean> {
     const key = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId, scoutType });
     const success = await this.redisClient[this.commands.setnx](key, `${scoutType}:${formatISODate(new Date())}`);
     if (this.isSuccessful(success)) {
@@ -388,16 +389,45 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   }
 
   /**
-   * Registers jobId with the originJobId that spawned it. In the future,
-   * when originJobId is interrupted or expired, the items in the
-   * list (added via RPUSH) are LPOPed. If origin was expired, then
-   * LPOPed items from the list are likewise expired;
+   * Registers the job, `jobId`, with `originJobId`. In the future,
+   * when `originJobId` is interrupted/expired, the items in the
+   * list (added via RPUSH) will be interrupted/expired (removed via LPOPed).
    */
-  async setDependency(originJobId: string, topic: string, jobId: string, gId: string, multi? : U): Promise<any> {
+  async registerJobDependency(originJobId: string, topic: string, jobId: string, gId: string, multi? : U): Promise<any> {
     const privateMulti = multi || this.getMulti();
-    const depParams = { appId: this.appId, jobId: originJobId };
-    const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, depParams);
-    privateMulti[this.commands.rpush](depKey, `expire::${topic}::${gId}::${jobId}`);
+    const dependencyParams = {
+      appId: this.appId,
+      jobId: originJobId,
+    };
+    const depKey = this.mintKey(
+      KeyType.JOB_DEPENDENTS,
+      dependencyParams,
+    );
+    //tasks have '4' segments
+    const expireTask = `expire::${topic}::${gId}::${jobId}`;
+    privateMulti[this.commands.rpush](depKey, expireTask);
+    if (!multi) {
+      return await privateMulti.exec();
+    }
+  }
+
+  /**
+   * Ensures a `hook signal` is delisted when its parent activity/job
+   * is interrupted/expired.
+   */
+  async registerSignalDependency(jobId: string, signalKey: string, multi? : U): Promise<any> {
+    const privateMulti = multi || this.getMulti();
+    const dependencyParams = { appId: this.appId, jobId };
+    const dependencyKey = this.mintKey(
+      KeyType.JOB_DEPENDENTS,
+      dependencyParams,
+    );
+    //tasks have '4' segments
+    const delistTask = `delist::signal::${jobId}::${signalKey}`;
+    privateMulti[this.commands.rpush](
+      dependencyKey,
+      delistTask,
+    );
     if (!multi) {
       return await privateMulti.exec();
     }
@@ -710,11 +740,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
 
   async setHookSignal(hook: HookSignal, multi?: U): Promise<any> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-    const { topic, resolved, jobId} = hook;
-    const payload = {
-      [`${topic}:${resolved}`]: jobId
-    };
-    return await (multi || this.redisClient)[this.commands.hset](key, payload);
+    const { topic, resolved, jobId} = hook; //`${activityId}::${dad}::${gId}::${jobId}`
+    const signalKey = `${topic}:${resolved}`;
+    const payload = { [signalKey]: jobId };
+    await (multi || this.redisClient)[this.commands.hset](key, payload);
+    return await this.registerSignalDependency(jobId.split('::')[3], signalKey, multi);
   }
 
   async getHookSignal(topic: string, resolved: string): Promise<string | undefined> {
@@ -782,7 +812,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * expired at a future date; options indicate whether this
    * is a standard `expire` or an `interrupt`
    */
-  async registerExpireJob(jobId: string, deletionTime: number, options: JobCompletionOptions): Promise<void> {
+  async registerDependenciesForCleanup(jobId: string, deletionTime: number, options: JobCompletionOptions): Promise<void> {
     const depParams = { appId: this.appId, jobId };
     const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, depParams);
     const context = options.interrupt ? 'INTERRUPT' : 'EXPIRE';
@@ -797,7 +827,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * for the given sleep group. Sleep groups are
    * organized into 'n'-second blocks (LISTS))
    */
-  async registerTimeHook(jobId: string, gId: string, activityId: string, type: 'sleep'|'expire'|'interrupt', deletionTime: number, multi?: U): Promise<void> {
+  async registerTimeHook(jobId: string, gId: string, activityId: string, type: WorkListTaskType, deletionTime: number, multi?: U): Promise<void> {
     const listKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId, timeValue: deletionTime });
     const timeEvent = `${type}::${activityId}::${gId}::${jobId}`;
     const len = await (multi || this.redisClient)[this.commands.rpush](listKey, timeEvent);
@@ -807,21 +837,25 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     }
   }
 
-  async getNextTimeJob(listKey?: string): Promise<[listKey: string, jobId: string, gId: string, activityId: string, type: 'sleep'|'expire'|'interrupt'] | boolean> {
-    const existing = Boolean(listKey);
+  async getNextTask(listKey?: string): Promise<[listKey: string, jobId: string, gId: string, activityId: string, type: WorkListTaskType] | boolean> {
     const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
     listKey = listKey || await this.zRangeByScore(zsetKey, 0, Date.now());
     if (listKey) {
-      const [pType, pKey] = this.resolveKeyContext(listKey);
+      let [pType, pKey] = this.resolveTaskKeyContext(listKey);
       const timeEvent = await this.redisClient[this.commands.lpop](pKey);
       if (timeEvent) {
-        //there are 3 time-related event triggers: sleep, expire, interrupt
-        const [_type, activityId, gId, ...jobId] = timeEvent.split('::');
+        //there are 4 time-related task
+        //1) sleep (awaken), 2) expire, 3) interrupt, 4) delist
+        const [type, activityId, gId, ...jobId] = timeEvent.split('::');
+        if (type === 'delist') {
+          pType = 'delist';
+        }
         return [listKey, jobId.join('::'), gId, activityId, pType];
       }
       await this.redisClient[this.commands.zrem](zsetKey, listKey);
+      return true;
     }
-    return existing;
+    return false;
   }
 
   /**
@@ -832,7 +866,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * generic LIST (lists typically contain target job ids)
    * @param {string} listKey - for example `::INTERRUPT::job123` or `job123`
    */
-  resolveKeyContext(listKey: string): [('sleep'|'expire'|'interrupt'), string] {
+  resolveTaskKeyContext(listKey: string): [('sleep'|'expire'|'interrupt'|'delist'), string] {
     if (listKey.startsWith('::INTERRUPT')) {
       return ['interrupt', listKey.split('::')[2]];
     } else if (listKey.startsWith('::EXPIRE')) {
@@ -874,7 +908,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
 
         //persists the standard 410 error (job is `gone`)
         const err = JSON.stringify({
-          code: STATUS_CODE_INTERRUPT,
+          code: HMSH_CODE_INTERRUPT,
           message: options.reason ?? `job [${jobId}] interrupted`,
           job_id: jobId
         });

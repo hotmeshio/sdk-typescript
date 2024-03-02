@@ -1,14 +1,14 @@
 import {
-  BLOCK_TIME_MS,
-  MAX_RETRIES,
-  MAX_TIMEOUT_MS,
-  GRADUATED_INTERVAL_MS,
-  STATUS_CODE_UNACKED,
-  STATUS_CODE_UNKNOWN,
-  STATUS_MESSAGE_UNKNOWN,
-  XCLAIM_COUNT,
-  XCLAIM_DELAY_MS,
-  XPENDING_COUNT } from '../../modules/enums';
+  HMSH_BLOCK_TIME_MS,
+  HMSH_MAX_RETRIES,
+  HMSH_MAX_TIMEOUT_MS,
+  HMSH_GRADUATED_INTERVAL_MS,
+  HMSH_CODE_UNACKED,
+  HMSH_CODE_UNKNOWN,
+  HMSH_STATUS_UNKNOWN,
+  HMSH_XCLAIM_COUNT,
+  HMSH_XCLAIM_DELAY_MS,
+  HMSH_XPENDING_COUNT } from '../../modules/enums';
 import { KeyType } from '../../modules/key';
 import { XSleepFor, guid, sleepFor } from '../../modules/utils';
 import { ILogger } from '../logger';
@@ -50,8 +50,8 @@ class Router {
     this.topic = config.topic;
     this.stream = stream;
     this.store = store;
-    this.reclaimDelay = config.reclaimDelay || XCLAIM_DELAY_MS;
-    this.reclaimCount = config.reclaimCount || XCLAIM_COUNT;
+    this.reclaimDelay = config.reclaimDelay || HMSH_XCLAIM_DELAY_MS;
+    this.reclaimCount = config.reclaimCount || HMSH_XCLAIM_COUNT;
     this.logger = logger;
   }
 
@@ -85,7 +85,9 @@ class Router {
       }
 
       try {
-        const result = await this.stream.xreadgroup('GROUP', group, consumer, 'BLOCK', BLOCK_TIME_MS, 'STREAMS', stream, '>');
+        //randomizer that asymptotes at 150% of `HMSH_BLOCK_TIME_MS`
+        const streamDuration = HMSH_BLOCK_TIME_MS + Math.round((HMSH_BLOCK_TIME_MS * Math.random()));
+        const result = await this.stream.xreadgroup('GROUP', group, consumer, 'BLOCK', streamDuration, 'STREAMS', stream, '>');
         if (this.isStreamMessage(result)) {
           const [[, messages]] = result;
           for (const [id, message] of messages) {
@@ -107,7 +109,7 @@ class Router {
         if (this.shouldConsume && process.env.NODE_ENV !== 'test') {
         this.logger.error(`stream-consume-message-error`, { err, stream, group, consumer });
           this.errorCount++;
-          const timeout = Math.min(GRADUATED_INTERVAL_MS * (2 ** this.errorCount), MAX_TIMEOUT_MS);
+          const timeout = Math.min(HMSH_GRADUATED_INTERVAL_MS * (2 ** this.errorCount), HMSH_MAX_TIMEOUT_MS);
           setTimeout(consume.bind(this), timeout);
         }
       }
@@ -129,7 +131,7 @@ class Router {
       telemetry.startStreamSpan(input, this.role);  
       output = await this.execStreamLeg(input, stream, id, callback.bind(this));
       if (output?.status === StreamStatus.ERROR) {
-        telemetry.setStreamError(`Function Status Code ${ output.code || STATUS_CODE_UNKNOWN }`);
+        telemetry.setStreamError(`Function Status Code ${ output.code || HMSH_CODE_UNKNOWN }`);
       }
       this.errorCount = 0;
     } catch (err) {
@@ -191,7 +193,7 @@ class Router {
     const errorCode = output.code.toString();
     const policy = policies?.[errorCode];
     const maxRetries = policy?.[0];
-    const tryCount = Math.min(input.metadata.try || 0,  MAX_RETRIES);
+    const tryCount = Math.min(input.metadata.try || 0,  HMSH_MAX_RETRIES);
     //only possible values for maxRetries are 1, 2, 3
     //only possible values for tryCount are 0, 1, 2
     if (maxRetries > tryCount) {
@@ -206,7 +208,7 @@ class Router {
     if (typeof err.message === 'string') {
       error.message = err.message;
     } else {
-      error.message = STATUS_MESSAGE_UNKNOWN;
+      error.message = HMSH_STATUS_UNKNOWN;
     }
     if (typeof err.stack === 'string') {
       error.stack = err.stack;
@@ -216,7 +218,7 @@ class Router {
     }
     return {
       status: 'error',
-      code: STATUS_CODE_UNKNOWN,
+      code: HMSH_CODE_UNKNOWN,
       metadata: { ...input.metadata, guid: guid() },
       data: error as StreamError
     } as StreamDataResponse;
@@ -224,7 +226,7 @@ class Router {
 
   structureUnacknowledgedError(input: StreamData) {
     const message = 'stream message max delivery count exceeded';
-    const code = STATUS_CODE_UNACKED;
+    const code = HMSH_CODE_UNACKED;
     const data: StreamError = { message, code };
     const output: StreamDataResponse = { 
       metadata: { ...input.metadata, guid: guid() },
@@ -238,9 +240,9 @@ class Router {
   }
 
   structureError(input: StreamData, output: StreamDataResponse): StreamDataResponse {
-    const message = output.data?.message ? output.data?.message.toString() : STATUS_MESSAGE_UNKNOWN;
+    const message = output.data?.message ? output.data?.message.toString() : HMSH_STATUS_UNKNOWN;
     const statusCode = output.code || output.data?.code;
-    const code = isNaN(statusCode as number) ? STATUS_CODE_UNKNOWN : parseInt(statusCode.toString());
+    const code = isNaN(statusCode as number) ? HMSH_CODE_UNKNOWN : parseInt(statusCode.toString());
     const data: StreamError = { message, code };
     if (typeof output.data?.error === 'object') {
       data.error = { ...output.data.error };
@@ -257,7 +259,7 @@ class Router {
     for (const instance of [...Router.instances]) {
       instance.stopConsuming();
     }
-    await sleepFor(BLOCK_TIME_MS);
+    await sleepFor(HMSH_BLOCK_TIME_MS * 2);
   }
   
   async stopConsuming() {
@@ -281,7 +283,7 @@ class Router {
     this.logger.info(`stream-throttle-reset`, { delay: this.throttle, topic: this.topic });
   }
 
-  async claimUnacknowledged(stream: string, group: string, consumer: string, idleTimeMs = this.reclaimDelay, limit = XPENDING_COUNT): Promise<[string, [string, string]][]> {
+  async claimUnacknowledged(stream: string, group: string, consumer: string, idleTimeMs = this.reclaimDelay, limit = HMSH_XPENDING_COUNT): Promise<[string, [string, string]][]> {
     let pendingMessages = [];
     const pendingMessagesInfo = await this.stream.xpending(stream, group, '-', '+', limit); //[[ '1688768134881-0', 'testConsumer1', 1017, 1 ]]
     for (const pendingMessageInfo of pendingMessagesInfo) {
@@ -310,7 +312,7 @@ class Router {
     //     ii) corrupt hardware/network/transport/etc
     // 3b) system error: Redis unable to accept `xadd` request
     // 4c) system error: Redis unable to accept `xdel`/`xack` request
-    this.logger.error('stream-message-max-delivery-count-exceeded', { id, stream, group, consumer, code: STATUS_CODE_UNACKED, count });
+    this.logger.error('stream-message-max-delivery-count-exceeded', { id, stream, group, consumer, code: HMSH_CODE_UNACKED, count });
     const streamData = reclaimedMessage[0]?.[1]?.[1];
 
     //fatal risk point 1 of 3): json is corrupt

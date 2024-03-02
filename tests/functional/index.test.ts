@@ -10,6 +10,7 @@ import {
 import { RedisConnection } from '../../services/connector/clients/ioredis';
 import { JobOutput } from '../../types/job';
 import { guid, sleepFor } from '../../modules/utils';
+import { HMSH_LOGLEVEL } from '../../modules/enums';
 
 describe('FUNCTIONAL | HotMesh', () => {
   const options = {
@@ -36,7 +37,7 @@ describe('FUNCTIONAL | HotMesh', () => {
     it('should initialize HotMesh', async () => {
       const config: HotMeshConfig = {
         appId: appConfig.id,
-        logLevel: 'debug',
+        logLevel: HMSH_LOGLEVEL,
 
         engine: {
           redis: { class: Redis, options }

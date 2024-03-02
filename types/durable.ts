@@ -1,3 +1,4 @@
+import { LogLevel } from './logger';
 import { RedisClass, RedisOptions } from './redis';
 
 type WorkflowConfig = {
@@ -173,16 +174,16 @@ type MeshOSActivityOptions = {
 }
 
 type MeshOSWorkerOptions = {
-  taskQueue?: string; //change the default task queue
+  taskQueue?: string;          //change the default task queue
   allowList?: Array<MeshOSOptions | string>; //limit which `hook` and `workflow` workers start
-  logLevel?: string; //debug, info, warn, error
-  maxSystemRetries?: number; //1-3 (10ms, 100ms, 1_000ms)
+  logLevel?: LogLevel;         //debug, info, warn, error
+  maxSystemRetries?: number;   //1-3 (10ms, 100ms, 1_000ms)
   backoffCoefficient?: number; //2-10ish
 }
 
 type WorkerOptions = {
-  logLevel?: string; //debug, info, warn, error
-  maxSystemRetries?: number; //1-3 (10ms, 100ms, 1_000ms)
+  logLevel?: LogLevel;         //debug, info, warn, error
+  maxSystemRetries?: number;   //1-3 (10ms, 100ms, 1_000ms)
   backoffCoefficient?: number; //2-10ish
 }
 

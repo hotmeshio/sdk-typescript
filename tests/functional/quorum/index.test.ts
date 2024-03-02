@@ -12,6 +12,7 @@ import {
   StreamStatus } from '../../../types/stream';
 import { QuorumMessage, ThrottleMessage } from '../../../types/quorum';
 import { QuorumService } from '../../../services/quorum';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Quorum', () => {
   const appConfig = { id: 'calc', version: '1' };
@@ -32,7 +33,7 @@ describe('FUNCTIONAL | Quorum', () => {
     const config: HotMeshConfig = {
       appId: appConfig.id,
       namespace: HMNS,
-      logLevel: 'debug',
+      logLevel: HMSH_LOGLEVEL,
       engine: {
         redis: { class: Redis, options }
       },

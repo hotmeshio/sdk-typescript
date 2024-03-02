@@ -23,6 +23,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../types/stream';
+import { HMSH_LOGLEVEL } from '../../modules/enums';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
@@ -36,7 +37,7 @@ export class WorkerService {
       return await WorkerService.instances.get(workflowTopic);
     }
     const hotMeshClient = HotMesh.init({
-      logLevel: options?.logLevel as 'debug' ?? 'info',
+      logLevel: options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
       engine: { redis: { ...WorkerService.connection } }
     });
@@ -121,7 +122,7 @@ export class WorkerService {
       options: config.connection.options as RedisOptions
     };
     const hotMeshWorker = await HotMesh.init({
-      logLevel: config.options?.logLevel as 'debug' ?? 'info',
+      logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
       engine: { redis: redisConfig },
       workers: [
@@ -172,7 +173,7 @@ export class WorkerService {
       options: config.connection.options as RedisOptions
     };
     const hotMeshWorker = await HotMesh.init({
-      logLevel: config.options?.logLevel as 'debug' ?? 'info',
+      logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
       engine: { redis: redisConfig },
       workers: [{

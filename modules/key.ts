@@ -1,3 +1,5 @@
+import { KeyStoreParams, KeyType } from '../types/hotmesh';
+
 /**
  * Keys
  * 
@@ -26,46 +28,7 @@
  * hmsh:<appid>:sym:vals: ->                          {hash}    list of symbols for job values across all app versions
  */
 
-//default namespace for hotmesh
-const HMNS = "hmsh";
-
-//these are the entity types that are stored in the key/value store
-enum KeyType {
-  APP = 'APP',
-  ENGINE_ID = 'ENGINE',
-  HOOKS = 'HOOKS',
-  JOB_DEPENDENTS = 'JOB_DEPENDENTS',
-  JOB_STATE = 'JOB_STATE',
-  JOB_STATS_GENERAL = 'JOB_STATS_GENERAL',
-  JOB_STATS_MEDIAN = 'JOB_STATS_MEDIAN',
-  JOB_STATS_INDEX = 'JOB_STATS_INDEX',
-  HOTMESH = 'HOTMESH',
-  QUORUM = 'QUORUM',
-  SCHEMAS = 'SCHEMAS',
-  SIGNALS = 'SIGNALS',
-  STREAMS = 'STREAMS',
-  SUBSCRIPTIONS = 'SUBSCRIPTIONS',
-  SUBSCRIPTION_PATTERNS = 'SUBSCRIPTION_PATTERNS',
-  SYMKEYS = 'SYMKEYS',
-  SYMVALS = 'SYMVALS',
-  TIME_RANGE = 'TIME_RANGE',
-  WORK_ITEMS = 'WORK_ITEMS',
-}
-
-//when minting a key, the following parameters are used to create a unique key per entity
-type KeyStoreParams = {
-  appId?: string;       //app id is a uuid for a hotmesh app
-  engineId?: string;    //unique auto-generated guid for an ephemeral engine instance
-  appVersion?: string;  //(e.g. "1.0.0", "1", "1.0")
-  jobId?: string;       //a customer-defined id for job; must be unique for the entire app
-  activityId?: string;  //activity id is a uuid for a given hotmesh app
-  jobKey?: string;      //a customer-defined label for a job that serves to categorize events 
-  dateTime?: string;    //UTC date time: YYYY-MM-DDTHH:MM (20203-04-12T00:00); serves as a time-series bucket for the job_key
-  facet?: string;       //data path starting at root with values separated by colons (e.g. "object/type:bar")
-  topic?: string;       //topic name (e.g., "foo" or "" for top-level)
-  timeValue?: number;   //time value (rounded to minute) (for delete range)
-  scoutType?: 'signal' | 'time'; //a single member of the quorum serves as the 'scout' for the group, triaging tasks for the collective
-};
+const HMNS = "hmsh"; //default
 
 class KeyService {
 

@@ -47,7 +47,7 @@ class Trigger extends Activity {
       const multi = this.store.getMulti();
       await this.setState(multi);
       await this.setStats(multi);
-      await this.setDependency(multi);
+      await this.registerJobDependency(multi);
       await multi.exec();
 
       telemetry.mapActivityAttributes();
@@ -180,13 +180,17 @@ class Trigger extends Activity {
   }
 
   /**
-   * Registers this job as a dependent of the parent job
+   * Registers this job as a dependent of the parent job; when the
+   * parent job is interrupted, this job will be interrupted
    */
-  async setDependency(multi?: RedisMulti): Promise<void> {
-    const depKey = this.config.stats?.parent;
-    const resolvedDepKey = depKey ? Pipe.resolve(depKey, this.context) : '';
+  async registerJobDependency(multi?: RedisMulti): Promise<void> {
+    const depKey = this.config.stats?.parent ?? this.context.metadata.pj;
+    let resolvedDepKey = depKey ? Pipe.resolve(depKey, this.context) : '';
+    if (!resolvedDepKey) {
+      resolvedDepKey = this.context.metadata.pj;
+    }
     if (resolvedDepKey) {
-      await this.store.setDependency(
+      await this.store.registerJobDependency(
         resolvedDepKey,
         this.context.metadata.tpc,
         this.context.metadata.jid,

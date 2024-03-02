@@ -1,35 +1,49 @@
-// Engine Constants
-export const STATUS_CODE_SUCCESS = 200;
-export const STATUS_CODE_PENDING = 202;
-export const STATUS_CODE_TIMEOUT = 504;
-export const STATUS_CODE_INTERRUPT = 410;
-export const OTT_WAIT_TIME = 1000;
+import { LogLevel } from "../types/logger";
 
-// Stream Constants
-export const MAX_RETRIES = 3; //local retry; 10, 100, 1000ms
-export const MAX_TIMEOUT_MS = 60000;
-export const GRADUATED_INTERVAL_MS = 5000;
+// HOTMESH SYSTEM
+export const HMSH_LOGLEVEL = process.env.HMSH_LOGLEVEL as LogLevel || 'info';
 
-export const BLOCK_DURATION = 15000; //Set to `15` so SIGINT/SIGTERM can interrupt; set to `0` to BLOCK indefinitely
-export const TEST_BLOCK_DURATION = 1000; //Set to `1000` so tests can interrupt quickly
-export const BLOCK_TIME_MS = process.env.NODE_ENV === 'test' ? TEST_BLOCK_DURATION : BLOCK_DURATION;
+// STATUS CODES AND MESSAGES
+export const HMSH_CODE_SUCCESS = 200;
+export const HMSH_CODE_PENDING = 202;
+export const HMSH_CODE_NOTFOUND = 404;
+export const HMSH_CODE_INTERRUPT = 410;
+export const HMSH_CODE_UNKNOWN = 500;
+export const HMSH_CODE_TIMEOUT = 504;
+export const HMSH_CODE_UNACKED = 999;
 
-export const XCLAIM_DELAY_MS = 1000 * 60; //max time a message can be unacked before it is claimed by another
-export const XCLAIM_COUNT = 3; //max number of times a message can be claimed by another before it is dead-lettered
-export const XPENDING_COUNT = 10;
+export const HMSH_CODE_DURABLE_SLEEPFOR = 592;
+export const HMSH_CODE_DURABLE_INCOMPLETE = 593;
+export const HMSH_CODE_DURABLE_WAITFOR = 594;
+export const HMSH_CODE_DURABLE_TIMEOUT = 596;
+export const HMSH_CODE_DURABLE_MAXED = 597;
+export const HMSH_CODE_DURABLE_FATAL = 598;
+export const HMSH_CODE_DURABLE_RETRYABLE = 599;
 
-export const STATUS_CODE_UNACKED = 999;
-export const STATUS_CODE_UNKNOWN = 500;
-export const STATUS_MESSAGE_UNKNOWN = 'unknown';
+export const HMSH_STATUS_UNKNOWN = 'unknown';
 
-// HotMesh Constants
-export const EXPIRE_DURATION = 15;        // default expire in seconds; once job state semaphore reaches '0', this is applied to set Redis to expire the job HASH
-export const BASE_FIDELITY_SECONDS = 15;  // granularity resolution window size
-export const TEST_FIDELITY_SECONDS = 5;
-export const FIDELITY_SECONDS = process.env.NODE_ENV === 'test' ? TEST_FIDELITY_SECONDS : BASE_FIDELITY_SECONDS
+// ENGINE
+export const HMSH_OTT_WAIT_TIME = parseInt(process.env.HMSH_OTT_WAIT_TIME, 10) || 1000;
+export const HMSH_EXPIRE_JOB_SECONDS = parseInt(process.env.HMSH_EXPIRE_JOB_SECONDS, 10) || 1;
 
-// DURABLE CONSTANTS
-export const DURABLE_EXPIRE_SECONDS = 1;
+// STREAM ROUTER
+export const HMSH_MAX_RETRIES = parseInt(process.env.HMSH_MAX_RETRIES, 10) || 3;
+export const HMSH_MAX_TIMEOUT_MS = parseInt(process.env.HMSH_MAX_TIMEOUT_MS, 10) || 60000;
+export const HMSH_GRADUATED_INTERVAL_MS = parseInt(process.env.HMSH_GRADUATED_INTERVAL_MS, 10) || 5000;
 
-// TASK CONSTANTS
-export const SCOUT_INTERVAL_SECONDS = 60;
+const BASE_BLOCK_DURATION = 10000; // Modified for clarity
+const TEST_BLOCK_DURATION = 1000; // Modified for clarity
+export const HMSH_BLOCK_TIME_MS = process.env.HMSH_BLOCK_TIME_MS ? parseInt(process.env.HMSH_BLOCK_TIME_MS, 10) : (process.env.NODE_ENV === 'test' ? TEST_BLOCK_DURATION : BASE_BLOCK_DURATION);
+
+export const HMSH_XCLAIM_DELAY_MS = parseInt(process.env.HMSH_XCLAIM_DELAY_MS, 10) || 1000 * 60;
+export const HMSH_XCLAIM_COUNT = parseInt(process.env.HMSH_XCLAIM_COUNT, 10) || 3;
+export const HMSH_XPENDING_COUNT = parseInt(process.env.HMSH_XPENDING_COUNT, 10) || 10;
+
+// TASK WORKER
+export const HMSH_EXPIRE_DURATION = parseInt(process.env.HMSH_EXPIRE_DURATION, 10) || 1;
+
+const BASE_FIDELITY_SECONDS = 5;
+const TEST_FIDELITY_SECONDS = 5;
+export const HMSH_FIDELITY_SECONDS = process.env.HMSH_FIDELITY_SECONDS ? parseInt(process.env.HMSH_FIDELITY_SECONDS, 10) : (process.env.NODE_ENV === 'test' ? TEST_FIDELITY_SECONDS : BASE_FIDELITY_SECONDS);
+
+export const HMSH_SCOUT_INTERVAL_SECONDS = parseInt(process.env.HMSH_SCOUT_INTERVAL_SECONDS, 10) || 60;

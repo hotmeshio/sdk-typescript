@@ -15,12 +15,21 @@ npm install @hotmeshio/hotmesh
 ## Understanding HotMesh
 HotMesh inverts the relationship to Redis: those functions that once used Redis as a cache, are instead *cached and governed* by Redis. Consider the following. It's a typical microservices network, with a tangled mess of services and functions. There's important business logic in there (functions *A*, *B* and *C* are critical!), but they're hard to find and access.
 
-<img src="./docs/img/operational_data_layer.png" alt="A Tangled Microservices Network with 3 functions buried within" style="max-width:100%;width:600px;">
+<img src="./docs/img/operational_data_layer.png" alt="A Tangled Microservices Network with 3 valuable functions buried within" style="max-width:100%;width:600px;">
 
 HotMesh creates an *ad hoc*, Redis-backed network of functions and organizes them into a unified service mesh. *Any service with access to Redis can join in the network, bypassing the legacy clutter.*
 
+<img src="./docs/img/hotmesh_emergent_properties.png" alt="HotMesh elevates Redis to a Service Mesh, Message Router, Integration Bus, and Business Process Engine." style="max-width:100%;width:600px;">
+
+
 ## Design
-The simplest way to get started is to use the `Durable` module. It's organized using principles similar to temporal.io. If you're familiar with their SDK, the setup is similar.
+HotMesh uses your existing Redis installation. If you already have an instance available, you have all the infrastructure you'll ever need.
+
+### Design | Pluck
+The simplest way to get started is to use the [HotMesh Pluck](https://github.com/hotmeshio/pluck-typescript) package. It's designed for usability, and is backed by the HotMesh system if you need advanced features. It includes a detailed [SDK](https://hotmeshio.github.io/pluck-typescript/) and a wide variety of examples.
+
+### Design | Durable
+HotMesh's *Durable* module is a TypeScript Library modeled after Temporal.io. If you're familiar with their SDK, the principles are the same.
 
 1. Start by defining **activities**. Activities can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise. *Note how the `saludar` example throws an error 50% of the time. It doesn't matter how unpredictable your functions are, HotMesh will retry as necessary until they succeed.*
     ```javascript
@@ -99,7 +108,7 @@ The simplest way to get started is to use the `Durable` module. It's organized u
     }
     ```
 
-### Workflow Extensions
+#### Workflow Extensions
 Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `Durable` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
 
  - `waitForSignal` Pause your function and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once all signals have arrived.
@@ -177,8 +186,8 @@ Redis governance delivers more than just reliability. Externalizing state fundam
 
 Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) repo for usage examples. 
 
-## Advanced Design
-HotMesh's TypeScript SDK is the easiest way to make your functions durable. But if you need full control over your function lifecycles (including high-volume, high-speed use cases), you can use HotMesh's underlying YAML models to optimize your durable workflows. The following model depicts a sequence of activities orchestrated by HotMesh. Any function you associate with a `topic` in your YAML definition is guaranteed to be durable.
+### Design | Advanced
+The *Pluck* and *Durable* modules are the easiest way to use HotMesh. But if you need full control over your function lifecycles (including high-volume, high-speed use cases), you can use HotMesh's underlying YAML models to optimize your durable workflows. The following model depicts a sequence of activities orchestrated by HotMesh. Any function you associate with a `topic` in your YAML definition is guaranteed to be durable.
 
 ```yaml
 app:
@@ -310,6 +319,3 @@ HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchest
 
 ## System Lifecycle
 Gain insight into HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](./docs/system_lifecycle.md).
-
-## Alpha Release
-So what exacty is an [alpha release](./docs/alpha.md)?
