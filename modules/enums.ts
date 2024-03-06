@@ -22,6 +22,10 @@ export const HMSH_CODE_DURABLE_RETRYABLE = 599;
 
 export const HMSH_STATUS_UNKNOWN = 'unknown';
 
+// QUORUM
+export const HMSH_QUORUM_DELAY_MS = 250;
+export const HMSH_ACTIVATION_MAX_RETRY = 3;
+
 // ENGINE
 export const HMSH_OTT_WAIT_TIME = parseInt(process.env.HMSH_OTT_WAIT_TIME, 10) || 1000;
 export const HMSH_EXPIRE_JOB_SECONDS = parseInt(process.env.HMSH_EXPIRE_JOB_SECONDS, 10) || 1;

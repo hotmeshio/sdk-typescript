@@ -45,6 +45,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   appId: string
   logger: ILogger;
   commands: Record<string, string> = {
+    set: 'set',
     setnx: 'setnx',
     del: 'del',
     expire: 'expire',
@@ -178,14 +179,16 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * check for and process work items in the
    * time and signal task queues.
    */
-  async reserveScoutRole(scoutType: 'time' | 'signal', delay = HMSH_SCOUT_INTERVAL_SECONDS): Promise<boolean> {
+  async reserveScoutRole(scoutType: 'time' | 'signal' | 'activate', delay = HMSH_SCOUT_INTERVAL_SECONDS): Promise<boolean> {
     const key = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId, scoutType });
-    const success = await this.redisClient[this.commands.setnx](key, `${scoutType}:${formatISODate(new Date())}`);
-    if (this.isSuccessful(success)) {
-      await this.redisClient[this.commands.expire](key, delay - 1);
-      return true;
-    }
-    return false;
+    const success = await this.exec('SET', key, `${scoutType}:${formatISODate(new Date())}`, 'NX', 'EX', `${delay - 1}`);
+    return this.isSuccessful(success);
+  }
+
+  async releaseScoutRole(scoutType: 'time' | 'signal' | 'activate'): Promise<boolean> {
+    const key = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId, scoutType });
+    const success = await this.exec('DEL', key);
+    return this.isSuccessful(success);
   }
 
   async getSettings(bCreate = false): Promise<HotMeshSettings> {

@@ -295,6 +295,9 @@ export class MeshOSService {
   }
 
   static generateSearchQuery(query: FindWhereQuery[]) {
+    if (!Array.isArray(query) || query.length === 0) {
+      return '*';
+    }
     const my = new this();
     let queryString = query.map(q => {
       const { field, is, value, type } = q;

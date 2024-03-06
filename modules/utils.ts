@@ -10,7 +10,7 @@ export async function sleepFor(ms: number) {
 }
 
 export function guid(): string {
-  return nanoid();
+  return nanoid().replace(/[_-]/g, '0');
 }
 
 export function deterministicRandom(seed: number): number {

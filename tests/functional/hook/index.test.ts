@@ -33,8 +33,13 @@ describe('FUNCTIONAL | Hook', () => {
     };
 
     hotMesh = await HotMesh.init(hmshConfig);
+    const path = '/app/tests/$setup/apps/hook/v1/hotmesh.yaml';
+    const hotMesh2 = await HotMesh.init(hmshConfig);
     await hotMesh.deploy('/app/tests/$setup/apps/hook/v1/hotmesh.yaml');
-    await hotMesh.activate('1');
+    //test simultaneous/colliding app deployments
+    await Promise.all([hotMesh.deploy(path), hotMesh2.deploy(path)]);
+    //test simultaneous/colliding app activations
+    await Promise.all([hotMesh.activate('1'), hotMesh2.activate('1')]);
   }, 15_000);
 
   afterAll(async () => {

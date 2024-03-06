@@ -11,13 +11,14 @@ import { JobState } from '../../types/job';
 import { KeyService, KeyType } from '../../modules/key';
 import { Search } from './search';
 import { StreamStatus } from '../../types';
-import { HMSH_LOGLEVEL, HMSH_EXPIRE_JOB_SECONDS } from '../../modules/enums';
+import { HMSH_LOGLEVEL, HMSH_EXPIRE_JOB_SECONDS, HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
+import { sleepFor } from '../../modules/utils';
 
 export class ClientService {
 
   connection: Connection;
-  topics: string[] = [];
   options: WorkflowOptions;
+  static topics: string[] = [];
   static instances = new Map<string, HotMesh | Promise<HotMesh>>();
 
   constructor(config: ClientConfig) {
@@ -29,8 +30,9 @@ export class ClientService {
     const instanceId = 'SINGLETON';
     if (ClientService.instances.has(instanceId)) {
       const hotMeshClient = await ClientService.instances.get(instanceId);
-      if (!this.topics.includes(workflowTopic)) {
-        this.topics.push(workflowTopic);
+      await this.verifyWorkflowActive(hotMeshClient, namespace ?? APP_ID);
+      if (!ClientService.topics.includes(workflowTopic)) {
+        ClientService.topics.push(workflowTopic);
         await this.createStream(hotMeshClient, workflowTopic, namespace);
       }
       return hotMeshClient;
@@ -194,6 +196,19 @@ export class ClientService {
         throw err;
       }
     }
+  }
+
+  async verifyWorkflowActive(hotMesh: HotMesh, appId = APP_ID, count = 0): Promise<boolean> {
+    const app = await hotMesh.engine.store.getApp(appId);
+    const appVersion = app?.version as unknown as number;
+    if(isNaN(appVersion)) {
+      if (count > 10) {
+        throw new Error('Workflow failed to activate');
+      }
+      await sleepFor(HMSH_QUORUM_DELAY_MS * 2);
+      return await this.verifyWorkflowActive(hotMesh, appId, count + 1);
+    }
+    return true;
   }
 
   async activateWorkflow(hotMesh: HotMesh, appId = APP_ID, version = APP_VERSION): Promise<void> {

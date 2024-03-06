@@ -1,4 +1,4 @@
-import { KeyType } from '../../modules/key';
+import { HMSH_ACTIVATION_MAX_RETRY, HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
 import { identifyRedisType, sleepFor } from '../../modules/utils';
 import { CompilerService } from '../compiler';
 import { EngineService } from '../engine';
@@ -10,6 +10,7 @@ import { SubService } from '../sub';
 import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
 import { RedisSubService as RedisSub } from '../sub/clients/redis';
 import { CacheMode } from '../../types/cache';
+import { HotMeshConfig, KeyType } from '../../types/hotmesh';
 import { RedisClientType as IORedisClientType } from '../../types/ioredisclient';
 import {
   QuorumMessage,
@@ -18,12 +19,8 @@ import {
   SubscriptionCallback,
   ThrottleMessage
 } from '../../types/quorum';
-import { HotMeshApps, HotMeshConfig } from '../../types/hotmesh';
 import { RedisClient, RedisMulti } from '../../types/redis';
 import { RedisClientType } from '../../types/redisclient';
-
-//wait time to see if quorum is reached
-const QUORUM_DELAY = 250;
 
 class QuorumService {
   namespace: string;
@@ -59,8 +56,18 @@ class QuorumService {
       //note: `quorum` shares/re-uses the engine's `store`/`sub` Redis clients
       await instance.initStoreChannel(config.engine.store);
       await instance.initSubChannel(config.engine.sub);
-      await instance.subscribe.subscribe(KeyType.QUORUM, instance.subscriptionHandler(), appId); //general quorum subscription
-      await instance.subscribe.subscribe(KeyType.QUORUM, instance.subscriptionHandler(), appId, instance.guid); //app-specific quorum subscription (used for pubsub one-time request/response)
+      //general quorum subscription
+      await instance.subscribe.subscribe(
+        KeyType.QUORUM,
+        instance.subscriptionHandler(),
+        appId
+      );
+      //app-specific quorum subscription (used for pubsub one-time request/response)
+      await instance.subscribe.subscribe(
+        KeyType.QUORUM,
+        instance.subscriptionHandler(),
+        appId, instance.guid
+      );
       
       instance.engine.processWebHooks();
       instance.engine.processTimeHooks();
@@ -152,7 +159,7 @@ class QuorumService {
     );
   }
 
-  async requestQuorum(delay = QUORUM_DELAY, details = false): Promise<number> {
+  async requestQuorum(delay = HMSH_QUORUM_DELAY_MS, details = false): Promise<number> {
     const quorum = this.quorum;
     this.quorum = 0;
     this.profiles.length = 0;
@@ -188,7 +195,7 @@ class QuorumService {
 
 
   // ************* COMPILER METHODS *************
-  async rollCall(delay = QUORUM_DELAY): Promise<QuorumProfile[]> {
+  async rollCall(delay = HMSH_QUORUM_DELAY_MS): Promise<QuorumProfile[]> {
     await this.requestQuorum(delay, true);
     const targetStreams = [];
     const multi = this.store.getMulti();
@@ -209,10 +216,20 @@ class QuorumService {
     });
     return this.profiles;
   }
-  async activate(version: string, delay = QUORUM_DELAY): Promise<boolean> {
+  /**
+   * request a quorum; if successful activate the app version
+   */
+  async activate(version: string, delay = HMSH_QUORUM_DELAY_MS, count = 0): Promise<boolean> {
     version = version.toString();
+    const canActivate = await this.store.reserveScoutRole('activate', Math.ceil(delay * 6 / 1000) + 1);
+    if (!canActivate) {
+      //another engine is already activating the app version
+      this.logger.debug('quorum-activation-awaiting', { version });
+      await sleepFor(delay * 6);
+      const app = await this.store.getApp(this.appId, true);
+      return app?.active == true && app?.version === version;
+    }
     const config = await this.engine.getVID();
-    //request a quorum to activate the version
     await this.requestQuorum(delay);
     const q1 = await this.requestQuorum(delay);
     const q2 = await this.requestQuorum(delay);
@@ -225,6 +242,7 @@ class QuorumService {
         this.appId
       );
       await new Promise(resolve => setTimeout(resolve, delay));
+      await this.store.releaseScoutRole('activate');
       //confirm we received the activation message
       if (this.engine.untilVersion === version) {
         this.logger.info('quorum-activation-succeeded', { version });
@@ -236,7 +254,12 @@ class QuorumService {
         throw new Error(`UntilVersion Not Received. Version ${version} not activated`);
       }
     } else {
-      this.logger.info('quorum-rollcall-error', { q1, q2, q3 });
+      this.logger.warn('quorum-rollcall-error', { q1, q2, q3, count });
+      this.store.releaseScoutRole('activate');
+      if (count < HMSH_ACTIVATION_MAX_RETRY) {
+        //increase the delay (give the quorum time to respond) and try again
+        return await this.activate(version, delay * 2, count + 1);
+      }
       throw new Error(`Quorum not reached. Version ${version} not activated.`);
     }
   }

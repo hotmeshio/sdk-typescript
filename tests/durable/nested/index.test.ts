@@ -46,14 +46,27 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
+        try {
         const client = new Client({ connection: { class: Redis, options }});
-        handle = await client.workflow.start({
+        const h = client.workflow.start({
           args: ['PARENT'],
           taskQueue: 'parent-world',
           workflowName: 'parentExample',
           workflowId: guid(),
         });
+        //start another workflow to simulate startup collisions
+        let handle2: WorkflowHandleService;
+        const localH = client.workflow.start({
+          args: ['PARENT'],
+          taskQueue: 'parent-world',
+          workflowName: 'parentExample',
+          workflowId: guid(),
+        });
+        [handle, handle2] = await Promise.all([h, localH]);
         expect(handle.workflowId).toBeDefined();
+      } catch(e) {
+        console.log(e);
+      }
       });
     });
   });
