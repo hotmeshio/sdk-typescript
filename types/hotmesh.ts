@@ -44,7 +44,7 @@ type KeyStoreParams = {
   facet?: string;       //data path starting at root with values separated by colons (e.g. "object/type:bar")
   topic?: string;       //topic name (e.g., "foo" or "" for top-level)
   timeValue?: number;   //time value (rounded to minute) (for delete range)
-  scoutType?: 'signal' | 'time'; //a single member of the quorum serves as the 'scout' for the group, triaging tasks for the collective
+  scoutType?: 'signal' | 'time' | 'activate'; //a single member of the quorum serves as the 'scout' for the group, triaging tasks for the collective
 };
 
 type HotMesh = typeof HotMeshService;

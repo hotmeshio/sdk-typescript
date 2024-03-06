@@ -7,7 +7,7 @@ import { ActivityType, Consumes } from '../../../../types/activity';
 import { HookSignal } from '../../../../types/hook';
 import { StatsType } from '../../../../types/stats';
 import { StringAnyType, StringStringType, Symbols } from '../../../../types/serializer';
-import { getSymKey } from '../../../../modules/utils';
+import { getSymKey, sleepFor } from '../../../../modules/utils';
 
 describe('FUNCTIONAL | RedisStoreService', () => {
   const appConfig = { id: 'test-app', version: '1' };
@@ -303,6 +303,26 @@ describe('FUNCTIONAL | RedisStoreService', () => {
       };
       const result = await redisStoreService.setSchemas(schemas, appConfig);
       expect(result).toEqual(2);
+    });
+  });
+
+  describe('reserveScoutRole', () => {
+    it('should reserve an expirable role when available', async () => {
+      const role = 'time';
+      const result = await redisStoreService.reserveScoutRole(role, 3);
+      expect(result).toEqual(true);
+      const key = redisStoreService.mintKey(KeyType.WORK_ITEMS, { appId: appConfig.id, scoutType: role });
+      const reservedRole = await redisClient.get(key);
+      expect(reservedRole).not.toBeNull();
+
+      const result2 = await redisStoreService.reserveScoutRole(role, 3);
+      expect(result2).toEqual(false);
+      const reservedRole2 = await redisClient.get(key);
+      expect(reservedRole2).not.toBeNull();
+
+      await sleepFor(2000);
+      const reservedRole3 = await redisClient.get(key);
+      expect(reservedRole3).toBeNull();
     });
   });
 
