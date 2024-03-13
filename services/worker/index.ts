@@ -1,5 +1,5 @@
 import { KeyType } from "../../modules/key";
-import { identifyRedisType } from "../../modules/utils";
+import { formatISODate, identifyRedisType } from "../../modules/utils";
 import { ConnectorService } from "../connector";
 import { ILogger } from "../logger";
 import { Router } from "../router";
@@ -175,6 +175,7 @@ class WorkerService {
         worker_topic: this.topic,
         stream: this.stream.mintKey(KeyType.STREAMS, params),
         counts: this.router.counts,
+        timestamp: formatISODate(new Date()),
       };
     }
     this.store.publish(

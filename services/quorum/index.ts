@@ -1,5 +1,5 @@
 import { HMSH_ACTIVATION_MAX_RETRY, HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
-import { identifyRedisType, sleepFor } from '../../modules/utils';
+import { formatISODate, identifyRedisType, sleepFor } from '../../modules/utils';
 import { CompilerService } from '../compiler';
 import { EngineService } from '../engine';
 import { ILogger } from '../logger';
@@ -141,12 +141,17 @@ class QuorumService {
   async sayPong(appId: string, guid: string, originator: string, details = false) {
     let profile: QuorumProfile;
     if (details) {
+      const stream = this.engine.stream.mintKey(
+        KeyType.STREAMS,
+        { appId: this.appId }
+      );
       profile = {
         engine_id: this.guid,
         namespace: this.namespace,
         app_id: this.appId,
-        stream: this.engine.stream.mintKey(KeyType.STREAMS, { appId: this.appId }),
+        stream,
         counts: this.engine.router.counts,
+        timestamp: formatISODate(new Date()),
       };
     }
     this.store.publish(

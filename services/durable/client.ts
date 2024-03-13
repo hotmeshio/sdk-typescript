@@ -26,11 +26,10 @@ export class ClientService {
   }
 
   getHotMeshClient = async (workflowTopic: string, namespace?: string) => {
-    //use the cached instance
-    const instanceId = 'SINGLETON';
-    if (ClientService.instances.has(instanceId)) {
-      const hotMeshClient = await ClientService.instances.get(instanceId);
-      await this.verifyWorkflowActive(hotMeshClient, namespace ?? APP_ID);
+    const targetNS = namespace ?? APP_ID;
+    if (ClientService.instances.has(targetNS)) {
+      const hotMeshClient = await ClientService.instances.get(targetNS);
+      await this.verifyWorkflowActive(hotMeshClient, targetNS);
       if (!ClientService.topics.includes(workflowTopic)) {
         ClientService.topics.push(workflowTopic);
         await this.createStream(hotMeshClient, workflowTopic, namespace);
@@ -40,7 +39,7 @@ export class ClientService {
 
     //create and cache an instance
     const hotMeshClient = HotMesh.init({
-      appId: namespace ?? APP_ID,
+      appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
         redis: {
@@ -49,9 +48,9 @@ export class ClientService {
         }
       }
     });
-    ClientService.instances.set(instanceId, hotMeshClient);
+    ClientService.instances.set(targetNS, hotMeshClient);
     await this.createStream(await hotMeshClient, workflowTopic, namespace);
-    await this.activateWorkflow(await hotMeshClient, namespace ?? APP_ID);
+    await this.activateWorkflow(await hotMeshClient, targetNS);
     return hotMeshClient;
   }
 
