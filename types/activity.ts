@@ -38,13 +38,18 @@ interface Measure {
 
 interface TriggerActivityStats {
   /**
-   * parent job; including this allows the parent's 
+   * dependent parent job id; including this allows the parent's 
    * expiration/interruption events to cascade; set 
    * `expire` in the YAML for the dependent graph 
    * to 0 and provide the parent for dependent,
    * cascading interruption and cleanup
    */
   parent?: string;
+  /**
+   * adjacent parent job id; this is the actual adjacent
+   * parent in the graph, but it is not used for cascading expiration
+   */
+  adjacent?: string;
   id?: { [key: string]: unknown } | string;
   key?: { [key: string]: unknown } | string;
   /**

@@ -145,7 +145,8 @@ class QuorumService {
         engine_id: this.guid,
         namespace: this.namespace,
         app_id: this.appId,
-        stream: this.engine.stream.mintKey(KeyType.STREAMS, { appId: this.appId })
+        stream: this.engine.stream.mintKey(KeyType.STREAMS, { appId: this.appId }),
+        counts: this.engine.router.counts,
       };
     }
     this.store.publish(

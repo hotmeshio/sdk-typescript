@@ -102,6 +102,8 @@ describe('FUNCTIONAL | Activity Cycles', () => {
       const result = await hotMesh.pubsub('cycle.test', {}, null, 10_000);
       const data = result?.data as { counter: number };
       expect(data.counter).toBe(5);
+      const exported = await hotMesh.export(result.metadata.jid);
+      expect(exported?.status).toBe('0');
     }, 10_000);
   });
 });

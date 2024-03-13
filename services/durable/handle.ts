@@ -1,9 +1,12 @@
 import { HMSH_CODE_INTERRUPT } from '../../modules/enums';
+import { ExporterService } from './exporter';
 import { HotMeshService as HotMesh } from '../hotmesh';
+import { DurableJobExport } from '../../types/exporter';
 import { JobInterruptOptions, JobOutput } from '../../types/job';
 import { StreamError } from '../../types/stream';
 
 export class WorkflowHandleService {
+  exporter: ExporterService
   hotMesh: HotMesh;
   workflowTopic: string;
   workflowId: string;
@@ -12,6 +15,15 @@ export class WorkflowHandleService {
     this.workflowTopic = workflowTopic;
     this.workflowId = workflowId;
     this.hotMesh = hotMesh;
+    this.exporter = new ExporterService(
+      this.hotMesh.appId,
+      this.hotMesh.engine.store,
+      this.hotMesh.engine.logger,
+    );
+  }
+
+  async export(): Promise<DurableJobExport>  {
+    return this.exporter.export(this.workflowId);
   }
 
   /**

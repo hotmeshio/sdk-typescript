@@ -24,7 +24,8 @@ import {
   StatsResponse } from '../../types/stats';
 import { ConnectorService } from '../connector';
 import { StreamCode, StreamData, StreamDataResponse, StreamStatus } from '../../types/stream';
-import { StringAnyType } from '../../types/serializer';
+import { StringAnyType, StringStringType } from '../../types/serializer';
+import { JobExport } from '../../types/exporter';
 
 class HotMeshService {
   namespace: string;
@@ -152,6 +153,12 @@ class HotMeshService {
   }
 
   // ************* REPORTER METHODS *************
+  async export(jobId: string): Promise<JobExport> {
+    return await this.engine?.export(jobId);
+  }
+  async getRaw(jobId: string): Promise<StringStringType> {
+    return await this.engine?.getRaw(jobId);
+  }
   async getStats(topic: string, query: JobStatsInput): Promise<StatsResponse> {
     return await this.engine?.getStats(topic, query);
   }
