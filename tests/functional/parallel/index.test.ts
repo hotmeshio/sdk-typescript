@@ -76,6 +76,8 @@ describe('FUNCTIONAL | Parallel', () => {
       expect(data.seed).toBe(payload.seed);
       expect(data.speed).toBe(payload.speed);
       expect(data.height).toBe(payload.seed * payload.speed);
+      const exported = await hotMesh.export(result.metadata.jid);
+      expect(exported.status).toBe('0');
     }, 2_000);
   });
 });

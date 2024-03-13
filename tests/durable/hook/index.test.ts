@@ -159,6 +159,10 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
         );
         const result = await handle.result(true);
         expect(result).toEqual('Hello, HookMesh! - Goodbye, HookMesh!');
+        const exported = await handle.export();
+        expect(exported.status).not.toBeUndefined();
+        expect(exported.data.fred).toBe('flintstone');
+        expect(exported.state.data.done).toBe(true);
 
         //call the FT search module to locate the workflow via fuzzy search
         //NOTE: always include an underscore prefix before your search term (e.g., `_custom1`).

@@ -57,6 +57,7 @@ const getWorkflowYAML = (app: string, version: string) => {
             id: '{$self.input.data.workflowId}'
             key: '{$self.input.data.parentWorkflowId}'
             parent: '{$self.input.data.originJobId}'
+            adjacent: '{$self.input.data.parentWorkflowId}'
           job:
             maps:
               done: false
@@ -260,10 +261,7 @@ const getWorkflowYAML = (app: string, version: string) => {
                   description: index will be appended later
             maps:
               signals: '{sigw1.output.data.signals}'
-              parentWorkflowId:
-                '@pipe':
-                  - ['{$job.metadata.jid}', '-w']
-                  - ['{@string.concat}']
+              parentWorkflowId: '{$job.metadata.jid}'
               originJobId:
                 '@pipe':
                   - ['{t1.output.data.originJobId}', '{t1.output.data.originJobId}', '{$job.metadata.jid}']
@@ -353,10 +351,7 @@ const getWorkflowYAML = (app: string, version: string) => {
                   description: index will be appended later
             maps:
               signals: '{w1.output.data.signals}'
-              parentWorkflowId:
-                '@pipe':
-                  - ['{$job.metadata.jid}', '-w']
-                  - ['{@string.concat}']
+              parentWorkflowId: '{$job.metadata.jid}'
               originJobId:
                 '@pipe':
                   - ['{t1.output.data.originJobId}', '{t1.output.data.originJobId}', '{$job.metadata.jid}']
@@ -523,6 +518,7 @@ const getWorkflowYAML = (app: string, version: string) => {
             id: '{$self.input.data.workflowId}'
             key: '{$self.input.data.parentWorkflowId}'
             parent: '{$self.input.data.originJobId}'
+            adjacent: '{$self.input.data.parentWorkflowId}'
 
         w1a:
           title: Activity Worker - Calls Activity Functions
@@ -562,61 +558,6 @@ const getWorkflowYAML = (app: string, version: string) => {
       transitions:
         t1a:
           - to: w1a
-
-    - subscribes: ${app}.sleep.execute
-      publishes: ${app}.sleep.executed
-
-      expire: 0
-
-      input:
-        schema:
-          type: object
-          properties:
-            parentWorkflowId:
-              type: string
-            originJobId:
-              type: string
-            workflowId:
-              type: string
-            duration:
-              type: number
-              description: in seconds
-            index:
-              type: number
-      output:
-        schema:
-          type: object
-          properties:
-            done:
-              type: boolean
-            duration:
-              type: number
-            index:
-              type: number
-
-      activities:
-        t1s:
-          title: Sleep Flow Trigger
-          type: trigger
-          stats:
-            id: '{$self.input.data.workflowId}'
-            key: '{$self.input.data.parentWorkflowId}'
-            parent: '{$self.input.data.originJobId}'
-
-        a1s:
-          title: Sleep for a duration
-          type: hook
-          sleep: '{t1s.output.data.duration}'
-          job:
-            maps:
-              done: true
-              duration: '{t1s.output.data.duration}'
-              index: '{t1s.output.data.index}'
-              workflowId: '{t1s.output.data.workflowId}'
-
-      transitions:
-        t1s:
-          - to: a1s
 
     - subscribes: ${app}.wfsc.execute
       publishes: ${app}.wfsc.executed
@@ -662,6 +603,7 @@ const getWorkflowYAML = (app: string, version: string) => {
           stats:
             id: '{$self.input.data.cycleWorkflowId}'
             parent: '{$self.input.data.originJobId}'
+            adjacent: '{$self.input.data.parentWorkflowId}'
 
         a1wc:
           title: Pivot - All Cycling Descendants Point Here
@@ -833,6 +775,7 @@ const getWorkflowYAML = (app: string, version: string) => {
             id: '{$self.input.data.workflowId}'
             key: '{$self.input.data.parentWorkflowId}'
             parent: '{$self.input.data.originJobId}'
+            adjacent: '{$self.input.data.parentWorkflowId}'
 
         a1ww:
           title: WFS - signal entry point

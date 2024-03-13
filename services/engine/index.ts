@@ -21,6 +21,7 @@ import { Signal } from '../activities/signal';
 import { Worker } from '../activities/worker';
 import { Trigger } from '../activities/trigger';
 import { CompilerService } from '../compiler';
+import { ExporterService } from '../exporter';
 import { ILogger } from '../logger';
 import { ReporterService } from '../reporter';
 import { Router } from '../router';
@@ -78,12 +79,14 @@ import {
   StreamRole,
   StreamStatus } from '../../types/stream';
 import { WorkListTaskType } from '../../types/task';
+import { JobExport } from '../../types/exporter';
 
 class EngineService {
   namespace: string;
   apps: HotMeshApps | null;
   appId: string;
   guid: string;
+  exporter: ExporterService | null;
   router: Router | null;
   store: StoreService<RedisClient, RedisMulti> | null;
   stream: StreamService<RedisClient, RedisMulti> | null;
@@ -109,8 +112,8 @@ class EngineService {
       await instance.initStoreChannel(config.engine.store);
       await instance.initSubChannel(config.engine.sub);
       await instance.initStreamChannel(config.engine.stream);
-      instance.router = instance.initRouter(config);
 
+      instance.router = instance.initRouter(config);
       instance.router.consumeMessages(
         instance.stream.mintKey(
           KeyType.STREAMS,
@@ -121,9 +124,15 @@ class EngineService {
         instance.processStreamMessage.bind(instance)
       );
 
-      //the task service is used by the engine to process `webhooks` and `timehooks`
-      instance.taskService = new TaskService(instance.store, logger);
-
+      instance.taskService = new TaskService(
+        instance.store,
+        logger
+      );
+      instance.exporter = new ExporterService(
+        instance.appId,
+        instance.store,
+        logger,
+      );
       return instance;
     }
   }
@@ -690,9 +699,15 @@ class EngineService {
 
 
   // ****** GET JOB STATE/COLLATION STATUS BY ID *********
+  async export(jobId: string): Promise<JobExport> {
+    return await this.exporter.export(jobId);
+  } 
+  async getRaw(jobId: string): Promise<StringStringType> {
+    return await this.store.getRaw(jobId);
+  }
   async getStatus(jobId: string): Promise<JobStatus> {
     const { id: appId } = await this.getVID();
-    return this.store.getStatus(jobId, appId);
+    return await this.store.getStatus(jobId, appId);
   }
   //todo: add 'options' parameter;
   //      (e.g, if {dimensions:true}, use hscan to deliver

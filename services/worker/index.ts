@@ -1,17 +1,19 @@
 import { KeyType } from "../../modules/key";
+import { identifyRedisType } from "../../modules/utils";
+import { ConnectorService } from "../connector";
 import { ILogger } from "../logger";
 import { Router } from "../router";
 import { StoreService } from '../store';
-import { RedisStoreService as RedisStore } from '../store/clients/redis';
 import { IORedisStoreService as IORedisStore } from '../store/clients/ioredis';
+import { RedisStoreService as RedisStore } from '../store/clients/redis';
 import { StreamService } from '../stream';
-import { RedisStreamService as RedisStream } from '../stream/clients/redis';
 import { IORedisStreamService as IORedisStream } from '../stream/clients/ioredis';
+import { RedisStreamService as RedisStream } from '../stream/clients/redis';
 import { SubService } from '../sub';
 import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
 import { RedisSubService as RedisSub } from '../sub/clients/redis';
-import { RedisClientType as IORedisClientType } from '../../types/ioredisclient';
 import { HotMeshConfig, HotMeshWorker } from "../../types/hotmesh";
+import { RedisClientType as IORedisClientType } from '../../types/ioredisclient';
 import {
   QuorumMessage,
   QuorumProfile,
@@ -19,8 +21,6 @@ import {
 import { RedisClient, RedisMulti } from "../../types/redis";
 import { RedisClientType } from '../../types/redisclient';
 import { StreamRole } from "../../types/stream";
-import { identifyRedisType } from "../../modules/utils";
-import { ConnectorService } from "../connector";
 
 class WorkerService {
   namespace: string;
@@ -174,6 +174,7 @@ class WorkerService {
         app_id: this.appId,
         worker_topic: this.topic,
         stream: this.stream.mintKey(KeyType.STREAMS, params),
+        counts: this.router.counts,
       };
     }
     this.store.publish(

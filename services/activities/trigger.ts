@@ -186,12 +186,26 @@ class Trigger extends Activity {
   async registerJobDependency(multi?: RedisMulti): Promise<void> {
     const depKey = this.config.stats?.parent ?? this.context.metadata.pj;
     let resolvedDepKey = depKey ? Pipe.resolve(depKey, this.context) : '';
+    const adjKey = this.config.stats?.adjacent;
+    let resolvedAdjKey = depKey ? Pipe.resolve(adjKey, this.context) : '';
     if (!resolvedDepKey) {
       resolvedDepKey = this.context.metadata.pj;
     }
     if (resolvedDepKey) {
+      const isParentOrigin = (resolvedDepKey === this.context.metadata.pj) || (resolvedDepKey === resolvedAdjKey);
       await this.store.registerJobDependency(
+        isParentOrigin ? 'expire-child' : 'expire',
         resolvedDepKey,
+        this.context.metadata.tpc,
+        this.context.metadata.jid,
+        this.context.metadata.gid,
+        multi,
+      );
+    }
+    if (resolvedAdjKey && resolvedAdjKey !== resolvedDepKey) {
+      await this.store.registerJobDependency(
+        'child',
+        resolvedAdjKey,
         this.context.metadata.tpc,
         this.context.metadata.jid,
         this.context.metadata.gid,

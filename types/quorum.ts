@@ -9,6 +9,7 @@ export interface QuorumProfile {
   worker_topic?: string;
   stream?: string;
   stream_depth?: number;
+  counts?: Record<string, number>;
 }
 
 export interface PingMessage {

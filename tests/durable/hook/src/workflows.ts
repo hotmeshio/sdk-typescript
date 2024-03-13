@@ -14,48 +14,41 @@ const { greet, bye } = Durable.workflow
  * @returns {Promise<string>}
  */
 export async function example(name: string): Promise<string> {
-  //create a search session and add some values
+  //create a search session and add some job data (this is NOT the same as job state)
   const search = await Durable.workflow.search();
   await search.set('custom1', 'durable');
   await search.set('custom2', '55');
-
-  //note: the `exampleHook` function below will change this to 'jackson'
+  //note: `exampleHook` function will change to 'jackson'
   await search.set('jimbo', 'jones');
+  await search.incr('counter', 10);
+  await search.incr('counter', 1);
+  await search.mult('multer', 12);
+  await search.mult('multer', 10);
 
   //start a child workflow and wait for the result
-  const childWorkflowOutput = await Durable.workflow.executeChild<string>({
+  await Durable.workflow.executeChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
-  //console.log('childWorkflowOutput is=>', childWorkflowOutput);
 
   //start a child workflow and only confirm it started (don't wait for result)
-  const childWorkflowId = await Durable.workflow.startChild<string>({
+  await Durable.workflow.startChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
-  //console.log('childWorkflowId is=>', childWorkflowId);
 
   //call a few activities in parallel (proxyActivities)
   const [hello, goodbye] = await Promise.all([greet(name), bye(name)]);
 
-  //bind some more search data to workflow state (multiply, increment)
-  await search.get('jimbo');
-  await search.incr('counter', 10);
-  await search.incr('counter', 1);
-  await search.get('counter');
-  await search.mult('multer', 12);
-  await search.mult('multer', 10);
-
   //wait for the `abcdefg` signal ('exampleHook' will send it)
-  const [signal1] = await Durable.workflow.waitForSignal(['abcdefg']);
-  //console.log('awakened with signal=>', signal1);
-  //console.log('jimbo should be jackson=>', await search.get('jimbo'));
+  await Durable.workflow.waitForSignal(['abcdefg']);
 
-  //sleep for 5 and then return
+  //sleep for 5
   await Durable.workflow.sleepFor('5 seconds');
+
+  //return the result (the job state)
   return `${hello} - ${goodbye}`;
 }
 
@@ -72,23 +65,23 @@ export async function exampleHook(name: string): Promise<void> {
   const search = await Durable.workflow.search();
   await search.incr('counter', 100);
   await search.set('jimbo', 'jackson');
+
+  //proxyActivities
   const greeting = await bye(name);
 
   //start a child workflow and wait for the result
-  const childWorkflowOutput = await Durable.workflow.executeChild<string>({
+  await Durable.workflow.executeChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
-  //console.log('Hook Spawn: childWorkflowOutput is=>', childWorkflowOutput);
 
-  //start a child workflow and only confirm it started (don't wait for result)
-  const childWorkflowId = await Durable.workflow.startChild<string>({
+  // //start a child workflow and only confirm it started (don't wait for result)
+  await Durable.workflow.startChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
-  //console.log('Hook Spawn: childWorkflowId is=>', childWorkflowId);
 
   //test out sleeping
   await Durable.workflow.sleepFor('1 second');

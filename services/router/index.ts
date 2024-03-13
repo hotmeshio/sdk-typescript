@@ -40,6 +40,7 @@ class Router {
   logger: ILogger;
   throttle = 0;
   errorCount = 0;
+  counts: { [key: string]: number } = {};
   currentTimerId: NodeJS.Timeout | null = null;
   shouldConsume: boolean;
 
@@ -183,6 +184,8 @@ class Router {
       } else {
         output.metadata.guid = guid();
       }
+      const code = output.code || 200;
+      this.counts[code] = (this.counts[code] || 0) + 1;
       output.type = StreamDataType.RESPONSE;
       return await this.publishMessage(null, output as StreamDataResponse) as string;
     }

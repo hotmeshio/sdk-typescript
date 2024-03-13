@@ -244,6 +244,10 @@ describe('FUNCTIONAL | Retry', () => {
       while (!bAtLeastOne) {
         await sleepFor(100);
       }
+      const exported = await hotMesh.export(jobId);
+      expect(exported.dependencies.length).toBe(1);
+      expect(exported.process['0'].calculate).not.toBeUndefined();
+
       await hotMesh.punsub(`calculated.${jobId}`);
     });
 

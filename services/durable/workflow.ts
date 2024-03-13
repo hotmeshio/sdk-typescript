@@ -45,7 +45,7 @@ export class WorkflowService {
     const entityOrEmptyString = options.entity ?? '';
     //If the workflowId is not provided, it is generated from the entity and the workflow name
     const childJobId = options.workflowId ?? `${entityOrEmptyString}-${workflowId}-$${options.entity ?? options.workflowName}${workflowDimension}-${execIndex}`;
-    const parentWorkflowId = `${workflowId}-f`;
+    const parentWorkflowId = workflowId;
 
     const client = new Client({
       connection: await Connection.connect(WorkerService.connection),
@@ -91,33 +91,35 @@ export class WorkflowService {
     const workflowSpan = store.get('workflowSpan');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
+    const sessionId = `-start${workflowDimension}-${execIndex}-`;
     //NOTE: this is the hash prefix; necessary for the search index to locate the entity
     const entityOrEmptyString = options.entity ?? '';
     //If the workflowId is not provided, it is generated from the entity and the workflow name
-    const childJobId = options.workflowId ?? `${entityOrEmptyString}-${workflowId}-$${options.entity ?? options.workflowName}${workflowDimension}-${execIndex}`;
-    const parentWorkflowId = `${workflowId}-f`;
+    const parentWorkflowId = workflowId;
     const workflowTopic = `${options.entity ?? options.taskQueue}-${options.entity ?? options.workflowName}`;
 
-    try {
-      //get the status; if there is no error, return childJobId (what was spawned)
-      const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
-      await hotMeshClient.getStatus(childJobId);
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    const keyParams = { appId: hotMeshClient.appId, jobId: workflowId }
+    const workflowGuid = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+    let childJobId = await hotMeshClient.engine.store.exec('HGET', workflowGuid, sessionId) as string;
+    if (childJobId) {
       return childJobId;
-    } catch (error) {
-      const client = new Client({
-        connection: await Connection.connect(WorkerService.connection),
-      });
-  
-      await client.workflow.start({
-        ...options,
-        namespace,
-        workflowId: childJobId,
-        parentWorkflowId,
-        workflowTrace,
-        workflowSpan,
-      });
-      return childJobId;
+    } else {
+      childJobId = options.workflowId ?? `${entityOrEmptyString}-${workflowId}-$${options.entity ?? options.workflowName}${workflowDimension}-${execIndex}`;
     }
+    const client = new Client({
+      connection: await Connection.connect(WorkerService.connection),
+    });
+    await client.workflow.start({
+      ...options,
+      namespace,
+      workflowId: childJobId,
+      parentWorkflowId,
+      workflowTrace,
+      workflowSpan,
+    });
+    await hotMeshClient.engine.store.exec('HSET', workflowGuid, sessionId, childJobId);
+    return childJobId;
   }
 
   /**
@@ -472,7 +474,7 @@ export class WorkflowService {
           arguments: Array.from(arguments),
           //when the origin job is removed
           originJobId: originJobId ?? workflowId,
-          parentWorkflowId: `${workflowId}-a`,
+          parentWorkflowId: workflowId,
           workflowId: activityJobId,
           workflowTopic: activityTopic,
           activityName,

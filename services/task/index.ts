@@ -117,7 +117,10 @@ class TaskService {
 
         if (Array.isArray(workListTask)) {
           const [listKey, target, gId, activityId, type] = workListTask;
-          if (type === 'delist') {
+          if (type === 'child') {
+            //continue; this child is listed here for convenience, but
+            //  will be expired by an origin ancestor and is listed there
+          } else if (type === 'delist') {
             //delist the signalKey (target)
             const key = this.store.mintKey(KeyType.SIGNALS, { appId: this.store.appId });
             await this.store.redisClient[this.store.commands.hdel](key, target);
