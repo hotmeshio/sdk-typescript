@@ -10,6 +10,7 @@ export interface QuorumProfile {
   stream?: string;
   stream_depth?: number;
   counts?: Record<string, number>;
+  timestamp?: string;
 }
 
 export interface PingMessage {

@@ -65,6 +65,9 @@ class Router {
   }
 
   async publishMessage(topic: string, streamData: StreamData|StreamDataResponse, multi?: RedisMulti): Promise<string | RedisMulti> {
+    const code = streamData?.code || '200';
+    this.counts[code] = (this.counts[code] || 0) + 1;
+
     const stream = this.store.mintKey(KeyType.STREAMS, { appId: this.store.appId, topic });
     return await this.store.xadd(stream, '*', 'message', JSON.stringify(streamData), multi);
   }
@@ -184,8 +187,6 @@ class Router {
       } else {
         output.metadata.guid = guid();
       }
-      const code = output.code || 200;
-      this.counts[code] = (this.counts[code] || 0) + 1;
       output.type = StreamDataType.RESPONSE;
       return await this.publishMessage(null, output as StreamDataResponse) as string;
     }
