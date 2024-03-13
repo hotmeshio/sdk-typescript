@@ -53,7 +53,19 @@ export {
     WorkflowSearchOptions,
     WorkflowDataType,
     WorkflowOptions,
-  } from './durable'
+  } from './durable';
+export {
+  ActivityAction,
+  DependencyExport,
+  DurableJobExport,
+  ExportCycles,
+  ExportItem,
+  ExportOptions,
+  ExportTransitions,
+  JobAction,
+  JobExport,
+  JobActionExport,
+  JobTimeline } from './exporter';
 export {
   HookCondition,
   HookConditions,
