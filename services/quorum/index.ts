@@ -158,6 +158,10 @@ class QuorumService {
         stream,
         counts: this.engine.router.counts,
         timestamp: formatISODate(new Date()),
+        inited: this.engine.inited,
+        throttle: this.engine.router.throttle,
+        reclaimDelay: this.engine.router.reclaimDelay,
+        reclaimCount: this.engine.router.reclaimCount,
         system: await getSystemHealth(),
       };
     }

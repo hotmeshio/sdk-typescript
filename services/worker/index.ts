@@ -34,6 +34,7 @@ class WorkerService {
   router: Router | null;
   logger: ILogger;
   reporting = false;
+  inited: string;
 
   static async init(
     namespace: string,
@@ -76,6 +77,7 @@ class WorkerService {
           service.guid,
           worker.callback
         );
+        service.inited = formatISODate(new Date());
         services.push(service);
       }
     }
@@ -176,6 +178,10 @@ class WorkerService {
         stream: this.stream.mintKey(KeyType.STREAMS, params),
         counts: this.router.counts,
         timestamp: formatISODate(new Date()),
+        inited: this.inited,
+        throttle: this.router.throttle,
+        reclaimDelay: this.router.reclaimDelay,
+        reclaimCount: this.router.reclaimCount,
         system: await getSystemHealth(),
       };
     }

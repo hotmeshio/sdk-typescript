@@ -153,6 +153,5 @@ describe('FUNCTIONAL | Quorum', () => {
       await hotMesh.rollCall(1_000);
       expect(hotMesh.quorum?.profiles.length).toBe(2);
     });
-
   });
 });
