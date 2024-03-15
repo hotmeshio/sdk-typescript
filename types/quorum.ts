@@ -1,6 +1,40 @@
 import { JobOutput } from "./job";
 
-//used for coordination (like version activation)
+interface CPULoad {
+  [cpu: string]: string;
+}
+
+interface NetworkStat {
+  iface: string;
+  operstate: string;
+  rx_bytes: number;
+  rx_dropped: number;
+  rx_errors: number;
+  tx_bytes: number;
+  tx_dropped: number;
+  tx_errors: number;
+  rx_sec: number;
+  tx_sec: number;
+  ms: number;
+}
+
+/** reveals: memory, cpu, network */
+export interface SystemHealth {
+  TotalMemoryGB: string;
+  FreeMemoryGB: string;
+  UsedMemoryGB: string;
+  CPULoad: CPULoad[];
+  NetworkStats: NetworkStat[];
+}
+
+export type ThrottleOptions = {
+  /** target an engine OR worker by GUID */
+  guid?: string;
+  /** target a worker quorum */
+  topic?: string;
+  /** in milliseconds; default is 0 */
+  throttle: number;
+};
 
 export interface QuorumProfile {
   namespace: string;
@@ -11,8 +45,10 @@ export interface QuorumProfile {
   stream_depth?: number;
   counts?: Record<string, number>;
   timestamp?: string;
+  system?: SystemHealth;
 }
 
+//used for coordination (like version activation)
 export interface PingMessage {
   type: 'ping';
   originator: string; //guid

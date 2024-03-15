@@ -16,7 +16,7 @@ import {
 import {
   HotMeshConfig,
   HotMeshManifest } from '../../types/hotmesh';
-import { JobMessageCallback, QuorumProfile } from '../../types/quorum';
+import { JobMessageCallback, QuorumProfile, ThrottleMessage, ThrottleOptions } from '../../types/quorum';
 import {
   JobStatsInput,
   GetStatsOptions,
@@ -137,10 +137,25 @@ class HotMeshService {
     return await this.engine.add(streamData) as string;
   }
 
-  // ************* COMPILER METHODS *************
+
+  // ************* QUORUM METHODS *************
   async rollCall(delay?: number): Promise<QuorumProfile[]> {
     return await this.quorum?.rollCall(delay);
   }
+  async throttle(options: ThrottleOptions): Promise<boolean> {
+    const throttleMessage: ThrottleMessage = {
+      type: 'throttle',
+      throttle: options.throttle,
+    };
+    if (options.guid) {
+      throttleMessage.guid = options.guid;
+    } else if (options.topic) {
+      throttleMessage.topic = options.topic;
+    }
+    return await this.quorum?.pub(throttleMessage);
+  }
+
+  // ************* COMPILER METHODS *************
   async plan(path: string): Promise<HotMeshManifest> {
     return await this.engine?.plan(path);
   }

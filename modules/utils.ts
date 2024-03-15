@@ -1,9 +1,50 @@
+import os from 'os';
+import si from 'systeminformation';
 import { nanoid } from "nanoid";
 import { StoreService } from "../services/store";
 import { AppSubscriptions, AppTransitions, AppVID } from "../types/app";
 import { RedisClient, RedisMulti } from "../types/redis";
 import { StringAnyType } from "../types/serializer";
 import { StreamCode, StreamStatus } from "../types/stream";
+import { SystemHealth } from '../types/quorum';
+
+async function safeExecute<T>(operation: Promise<T>, defaultValue: T): Promise<T> {
+  try {
+    return await operation;
+  } catch (error) {
+    console.error(`Operation Error: ${error}`);
+    return defaultValue;
+  }
+}
+
+export async function getSystemHealth(): Promise<SystemHealth> {
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
+  const usedMemory = totalMemory - freeMemory;
+  const cpus = os.cpus();
+
+  // CPU load calculation remains unchanged
+  const cpuLoad = cpus.map((cpu, i) => {
+    const total = Object.values(cpu.times).reduce((acc, tv) => acc + tv, 0);
+    const idle = cpu.times.idle;
+    const usage = ((total - idle) / total) * 100;
+    return { [`CPU ${i} Usage`]: `${usage.toFixed(2)}%` };
+  });
+
+  // Wrap each systeminformation call with safeExecute
+  const networkStats = await safeExecute(si.networkStats(), []);
+
+  // Construct the system health object with error handling in mind
+  const systemHealth = {
+    TotalMemoryGB: `${(totalMemory / 1024 / 1024 / 1024).toFixed(2)} GB`,
+    FreeMemoryGB: `${(freeMemory / 1024 / 1024 / 1024).toFixed(2)} GB`,
+    UsedMemoryGB: `${(usedMemory / 1024 / 1024 / 1024).toFixed(2)} GB`,
+    CPULoad: cpuLoad,
+    NetworkStats: networkStats,
+  };
+
+  return systemHealth as SystemHealth;
+}
 
 export async function sleepFor(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

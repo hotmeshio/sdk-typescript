@@ -1,11 +1,17 @@
-import { HMSH_ACTIVATION_MAX_RETRY, HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
-import { formatISODate, identifyRedisType, sleepFor } from '../../modules/utils';
+import {
+  HMSH_ACTIVATION_MAX_RETRY,
+  HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
+import {
+  formatISODate,
+  getSystemHealth,
+  identifyRedisType,
+  sleepFor } from '../../modules/utils';
 import { CompilerService } from '../compiler';
 import { EngineService } from '../engine';
 import { ILogger } from '../logger';
 import { StoreService } from '../store';
-import { RedisStoreService as RedisStore } from '../store/clients/redis';
 import { IORedisStoreService as IORedisStore } from '../store/clients/ioredis';
+import { RedisStoreService as RedisStore } from '../store/clients/redis';
 import { SubService } from '../sub';
 import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
 import { RedisSubService as RedisSub } from '../sub/clients/redis';
@@ -152,6 +158,7 @@ class QuorumService {
         stream,
         counts: this.engine.router.counts,
         timestamp: formatISODate(new Date()),
+        system: await getSystemHealth(),
       };
     }
     this.store.publish(
