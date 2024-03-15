@@ -98,6 +98,7 @@ class EngineService {
   jobCallbacks: Record<string, JobMessageCallback> = {};
   reporting = false;
   jobId = 1;
+  inited: string;
 
   static async init(namespace: string, appId: string, guid: string, config: HotMeshConfig, logger: ILogger): Promise<EngineService> {
     if (config.engine) {
@@ -133,6 +134,7 @@ class EngineService {
         instance.store,
         logger,
       );
+      instance.inited = formatISODate(new Date());
       return instance;
     }
   }

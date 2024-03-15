@@ -44,7 +44,11 @@ export interface QuorumProfile {
   stream?: string;
   stream_depth?: number;
   counts?: Record<string, number>;
+  inited?: string;
   timestamp?: string;
+  throttle?: number;
+  reclaimDelay?: number;
+  reclaimCount?: number;
   system?: SystemHealth;
 }
 
