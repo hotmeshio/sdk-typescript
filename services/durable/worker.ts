@@ -93,7 +93,7 @@ export class WorkerService {
     const worker = new WorkerService();
     worker.activityRunner = await worker.initActivityWorker(config, activityTopic);
     worker.workflowRunner = await worker.initWorkflowWorker(config, workflowTopic, workflowFunction);
-    Search.configureSearchIndex(worker.workflowRunner, config.search)
+    Search.configureSearchIndex(worker.workflowRunner, config.search);
     await WorkerService.activateWorkflow(worker.workflowRunner);
     return worker;
   }

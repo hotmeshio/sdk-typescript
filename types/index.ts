@@ -115,7 +115,9 @@ export {
   QuorumMessageCallback,
   QuorumProfile,
   SubscriptionCallback,
+  SystemHealth,
   ThrottleMessage,
+  ThrottleOptions,
   WorkMessage } from './quorum';
 export {
   MultiResponseFlags,

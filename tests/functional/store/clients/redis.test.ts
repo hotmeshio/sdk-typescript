@@ -179,7 +179,6 @@ describe('FUNCTIONAL | RedisStoreService', () => {
       expect(resp).toEqual(2);
       const delResp = await redisStoreService.exec('hdel', 'exec:test:hset', 'a', 'b');
       expect(delResp).toEqual(2);
-
     });
   });
 

@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.0.46",
+  "version": "0.0.47",
   "description": "Unbreakable Workflows",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -57,7 +57,14 @@
     "test:durable:loopactivity": "NODE_ENV=test jest ./tests/durable/loopactivity/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:nested": "NODE_ENV=test jest ./tests/durable/nested/index.test.ts --detectOpenHandles --forceExit --verbose"
   },
-  "keywords": ["durable workflow", "hotmesh", "service mesh", "workflows", "operational data", "redis"],
+  "keywords": [
+    "durable workflow",
+    "hotmesh",
+    "service mesh",
+    "workflows",
+    "operational data",
+    "redis"
+  ],
   "author": "luke.birdeau@gmail.com",
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
@@ -66,6 +73,7 @@
     "js-yaml": "^4.1.0",
     "ms": "^2.1.3",
     "nanoid": "^3.3.6",
+    "systeminformation": "^5.22.2",
     "winston": "^3.8.2"
   },
   "devDependencies": {

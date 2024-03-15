@@ -43,6 +43,11 @@ describe('DURABLE | MeshOS', () => {
     it('should create a search index', async () => {
       await MeshOSTest.createIndex();
     });
+
+    it('should list search indexes', async () => {
+      const indexes = await MeshOSTest.listIndexes();
+      expect(indexes).toContain('inventory-orders');
+    });
   });
 
   describe('Create/Start a Workflow and await the result', () => {

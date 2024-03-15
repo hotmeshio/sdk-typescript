@@ -11,8 +11,18 @@ export class Search {
   hotMeshClient: HotMesh;
   store: StoreService<RedisClient, RedisMulti> | null;
 
+  constructor(workflowId: string, hotMeshClient: HotMesh, searchSessionId: string) {
+    const keyParams = {
+      appId: hotMeshClient.appId,
+      jobId: workflowId
+    }
+    this.jobId = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+    this.searchSessionId = searchSessionId;
+    this.hotMeshClient = hotMeshClient;
+    this.store = hotMeshClient.engine.store as StoreService<RedisClient, RedisMulti>;
+  }
+
   safeKey(key:string): string {
-    //note: protect the execution namespace with a prefix
     return `_${key}`;
   }
 
@@ -49,15 +59,16 @@ export class Search {
     }
   }
 
-  constructor(workflowId: string, hotMeshClient: HotMesh, searchSessionId: string) {
-    const keyParams = {
-      appId: hotMeshClient.appId,
-      jobId: workflowId
-    }
-    this.jobId = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
-    this.searchSessionId = searchSessionId;
-    this.hotMeshClient = hotMeshClient;
-    this.store = hotMeshClient.engine.store as StoreService<RedisClient, RedisMulti>;
+  /**
+   * For those deployments with a redis stack backend (with the FT module),
+   * this method will list all search indexes.
+   * @param {HotMesh} hotMeshClient - the hotmesh client
+   * @returns {Promise<string[]>} - the list of search indexes
+   */
+  static async listSearchIndexes(hotMeshClient: HotMesh): Promise<string[]> {
+    const store = hotMeshClient.engine.store;
+    const searchIndexes = await store.exec('FT._LIST');
+    return searchIndexes as string[];
   }
 
   /**

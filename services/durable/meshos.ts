@@ -125,7 +125,16 @@ export class MeshOSService {
   static async createIndex() {
     const my = new this();
     const hmClient = await MeshOSService.getHotMeshClient(my.redisClass, my.redisOptions, my.namespace, my.taskQueue);
-    Search.configureSearchIndex(hmClient, my.search)
+    await Search.configureSearchIndex(hmClient, my.search);
+  }
+
+  /**
+   * Lists FT search indexes
+   */
+  static async listIndexes() {
+    const my = new this();
+    const hmClient = await MeshOSService.getHotMeshClient(my.redisClass, my.redisOptions, my.namespace, my.taskQueue);
+    return await Search.listSearchIndexes(hmClient)
   }
 
   /**

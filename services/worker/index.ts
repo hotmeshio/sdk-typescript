@@ -1,5 +1,5 @@
 import { KeyType } from "../../modules/key";
-import { formatISODate, identifyRedisType } from "../../modules/utils";
+import { formatISODate, getSystemHealth, identifyRedisType } from "../../modules/utils";
 import { ConnectorService } from "../connector";
 import { ILogger } from "../logger";
 import { Router } from "../router";
@@ -176,6 +176,7 @@ class WorkerService {
         stream: this.stream.mintKey(KeyType.STREAMS, params),
         counts: this.router.counts,
         timestamp: formatISODate(new Date()),
+        system: await getSystemHealth(),
       };
     }
     this.store.publish(
