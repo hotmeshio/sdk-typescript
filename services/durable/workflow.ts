@@ -198,6 +198,8 @@ export class WorkflowService {
   static getContext(): WorkflowContext {
     const store = asyncLocalStorage.getStore();
     const workflowId = store.get('workflowId');
+    const replay = store.get('replay');
+    const cursor = store.get('cursor');
     const workflowDimension = store.get('workflowDimension') ?? '';
     const workflowTopic = store.get('workflowTopic');
     const namespace = store.get('namespace');
@@ -206,7 +208,9 @@ export class WorkflowService {
     const COUNTER = store.get('counter');
     return {
       counter: COUNTER.counter,
+      cursor,
       namespace,
+      replay,
       workflowId,
       workflowDimension,
       workflowTopic,
