@@ -74,7 +74,7 @@ describe('FUNCTIONAL | Interrupt', () => {
   });
 
   describe('Deploy and Activate', () => {
-    it('deploys and activates new versions additively and safely', async () => {
+    it('deploys and activates a new version additively and safely', async () => {
       await hotMesh.deploy('/app/tests/$setup/apps/tree/v10/hotmesh.yaml');
       const isActivated = await hotMesh.activate('10');
       expect(isActivated).toBe(true);

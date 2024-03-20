@@ -288,13 +288,17 @@ export class MeshOSService {
       args.push('LIMIT', '0', '0');
     } else {
       //limit which hash fields to return
-      if (options.return?.length) {
-        args.push('RETURN');
-        args.push(options.return.length.toString());
-        options.return.forEach(returnField => {
+      args.push('RETURN');
+      args.push(((options.return?.length ?? 0) + 1).toString());
+      args.push('$');
+      options.return?.forEach(returnField => {
+        if (returnField.startsWith('"')) {
+          //allow literal values to be requested
+          args.push(returnField.slice(1, -1));
+        } else {
           args.push(`_${returnField}`);
-        });
-      }
+        }
+      });
       //paginate
       if (options.limit) {
         args.push('LIMIT', options.limit.start.toString(), options.limit.size.toString());

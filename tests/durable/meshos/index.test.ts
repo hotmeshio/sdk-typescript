@@ -133,18 +133,20 @@ describe('DURABLE | MeshOS', () => {
               { field: 'quality', is: '=', value: 'great'},
               { field: 'status', is: '=', value: 'ordered' }
             ],
-            return: ['quantity', 'status']
+            return: ['quantity', 'status', '":"'] //quotes denote a literal value
           });
         await sleepFor(500);
       } while (count as number === 0);
       const [key, items] = rest;
-      const [f1, v1, f2, v2] = items as unknown as string[];
+      const [f1, v1, f2, v2, f3, v3] = items as unknown as string[];
       expect(count).toBe(1);
       expect((key as string).includes(GUID)).toBe(true);
       expect(f1).toBe('_quantity');
       expect(v1).toBe('89');
       expect(f2).toBe('_status');
       expect(v2).toBe('ordered');
+      expect(f3).toBe(':'); //literal value
+      expect(v3).toBe('3');
     }, 15_000);
 
     it('should count workflows using `findWhere` convenience method', async () => {
@@ -163,7 +165,7 @@ describe('DURABLE | MeshOS', () => {
         { query: [
             { field: 'quantity', is: '[]', value: [88, 90] } //between 88 and 90
           ],
-          return: ['status'],
+          return: ['status', '":"'],
           limit: { start: 0, size: 1 } 
         });
       expect(count).toBe(1);

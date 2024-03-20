@@ -66,9 +66,14 @@ export class Search {
    * @returns {Promise<string[]>} - the list of search indexes
    */
   static async listSearchIndexes(hotMeshClient: HotMesh): Promise<string[]> {
-    const store = hotMeshClient.engine.store;
-    const searchIndexes = await store.exec('FT._LIST');
-    return searchIndexes as string[];
+    try {
+      const store = hotMeshClient.engine.store;
+      const searchIndexes = await store.exec('FT._LIST');
+      return searchIndexes as string[];
+    } catch (err) {
+      hotMeshClient.engine.logger.info('durable-client-search-list-err', { err });
+      return [];
+    }
   }
 
   /**
