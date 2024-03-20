@@ -211,16 +211,29 @@ export class WorkerService {
           // garbage collect (expire) this job when originJobId is expired
           context.set('originJobId', workflowInput.originJobId);
         }
+        let replayQuery = '';
         if (workflowInput.workflowDimension) {
           //every hook function runs in an isolated dimension controlled
           //by the index assigned when the signal was received; even if the
           //hook function re-runs, its scope will always remain constant
           context.set('workflowDimension', workflowInput.workflowDimension);
+          replayQuery = `-*${workflowInput.workflowDimension}-*`;
+        } else {
+          //last letter of words like 'hook', 'sleep', 'wait', 'signal', 'search', 'start'
+          replayQuery = '-*[ehklpt]-*';
         }
         context.set('workflowTopic', workflowTopic);
         context.set('workflowName', workflowTopic.split('-').pop());
         context.set('workflowTrace', data.metadata.trc);
         context.set('workflowSpan', data.metadata.spn);
+        const store = this.workflowRunner.engine.store;
+        const [cursor, replay] = await store.findJobFields(
+          workflowInput.workflowId,
+          replayQuery,
+          50_000,
+          5_000,);
+        context.set('replay', replay);
+        context.set('cursor', cursor); // if != 0, more remain
         const workflowResponse = await asyncLocalStorage.run(context, async () => {
           return await workflowFunction.apply(this, workflowInput.arguments);
         });
@@ -232,7 +245,6 @@ export class WorkerService {
           data: { response: workflowResponse, done: true }
         };
       } catch (err) {
-
         //not an error...just a trigger to sleep
         if (err instanceof DurableSleepForError) {
           return {

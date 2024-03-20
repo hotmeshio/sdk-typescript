@@ -50,6 +50,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     del: 'del',
     expire: 'expire',
     hset: 'hset',
+    hscan: 'hscan',
     hsetnx: 'hsetnx',
     hincrby: 'hincrby',
     hdel: 'hdel',
@@ -68,6 +69,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     lrange: 'lrange',
     rename: 'rename',
     rpush: 'rpush',
+    scan: 'scan',
     xack: 'xack',
     xdel: 'xdel',
   };
@@ -998,6 +1000,63 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
     await this.redisClient[this.commands.del](jobKey);
   }
+
+  async findJobs(queryString: string = '*', limit: number = 1000, batchSize: number = 1000): Promise<string[]> {
+    const matchKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId: queryString });
+    let cursor = '0';
+    let keys: string[];
+    const matchingKeys: string[] = [];
+    do {
+      const output = await this.exec(
+        'SCAN',
+        cursor,
+        'MATCH',
+        matchKey,
+        'COUNT',
+        batchSize.toString(),
+      ) as unknown as [string, string[]];
+      if (Array.isArray(output)) {
+        [cursor, keys] = output;
+        for (let key of [...keys]) {
+          matchingKeys.push(key);
+        }
+        if (matchingKeys.length >= limit) {
+          break;
+        }
+      } else {
+        break;
+      }
+    } while (cursor !== '0');
+    return matchingKeys;
+  }
+
+  async findJobFields(jobId: string, fieldMatchPattern: string = '*', limit: number = 1000, batchSize: number = 1000, cursor = '0'): Promise<[string, StringStringType]> {
+    let fields: string[] = [];
+    const matchingFields: StringStringType = {};
+    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+    let len = 0;
+    do {
+      const output = await this.exec(
+        'HSCAN',
+        jobKey,
+        cursor,
+        'MATCH',
+        fieldMatchPattern,
+        'COUNT',
+        batchSize.toString(),
+      ) as unknown as [string, string[]];
+      if (Array.isArray(output)) {
+        [cursor, fields] = output;
+        for (let i = 0; i < fields.length; i += 2) {
+          len++;
+          matchingFields[fields[i]] = fields[i + 1];
+        }
+      } else {
+        break;
+      }
+    } while (cursor !== '0' && len < limit);
+    return [cursor, matchingFields];
+  }  
 }
 
 export { StoreService };

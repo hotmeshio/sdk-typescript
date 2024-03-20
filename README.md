@@ -1,7 +1,7 @@
 # HotMesh
 ![alpha release](https://img.shields.io/badge/release-alpha-yellow)
 
-HotMesh elevates Redis from an in-memory data cache to a distributed orchestration engine.
+HotMesh transforms Redis into a distributed orchestration engine.
 
 *Write functions in your own preferred style, and let Redis govern their execution, reliably and durably.*
 

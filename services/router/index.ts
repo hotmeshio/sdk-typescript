@@ -10,7 +10,7 @@ import {
   HMSH_XCLAIM_DELAY_MS,
   HMSH_XPENDING_COUNT } from '../../modules/enums';
 import { KeyType } from '../../modules/key';
-import { XSleepFor, guid, sleepFor } from '../../modules/utils';
+import { guid, sleepFor } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { StoreService } from '../store';
 import { StreamService } from '../stream';
@@ -43,6 +43,10 @@ class Router {
   counts: { [key: string]: number } = {};
   currentTimerId: NodeJS.Timeout | null = null;
   shouldConsume: boolean;
+  sleepPromiseResolve: (() => void) | null = null;
+  innerPromiseResolve: (() => void) | null = null;
+  isSleeping: boolean = false;
+  sleepTimout: NodeJS.Timeout | null = null;
 
   constructor(config: StreamConfig, stream: StreamService<RedisClient, RedisMulti>, store: StoreService<RedisClient, RedisMulti>, logger: ILogger) {
     this.appId = config.appId;
@@ -54,6 +58,14 @@ class Router {
     this.reclaimDelay = config.reclaimDelay || HMSH_XCLAIM_DELAY_MS;
     this.reclaimCount = config.reclaimCount || HMSH_XCLAIM_COUNT;
     this.logger = logger;
+    this.resetThrottleState();
+  }
+
+  private resetThrottleState() {
+    this.sleepPromiseResolve = null;
+    this.innerPromiseResolve = null;
+    this.isSleeping = false;
+    this.sleepTimout = null;
   }
 
   async createGroup(stream: string, group: string) {
@@ -72,6 +84,36 @@ class Router {
     return await this.store.xadd(stream, '*', 'message', JSON.stringify(streamData), multi);
   }
 
+  /**
+   * An adjustable throttle that will interrupt a sleeping
+   * router if the throttle is reduced and the sleep time
+   * has elapsed. If the throttle is increased, or if
+   * the sleep time has not elapsed, the router will continue
+   * to sleep until the new termination point. This
+   * allows for dynamic, elastic throttling with smooth
+   * acceleration and deceleration.
+   */
+  public async customSleep(): Promise<void> {
+    if (this.throttle === 0) return;
+    if (this.isSleeping) return;
+    this.isSleeping = true;
+    let startTime = Date.now(); //anchor the origin
+
+    await new Promise<void>(async (outerResolve) => {
+      this.sleepPromiseResolve = outerResolve;
+      let elapsedTime = Date.now() - startTime;
+      while (elapsedTime < this.throttle) {
+        await new Promise<void>((innerResolve) => {
+          this.innerPromiseResolve = innerResolve;
+          this.sleepTimout = setTimeout(innerResolve, this.throttle - elapsedTime);
+        });
+        elapsedTime = Date.now() - startTime;
+      }
+      this.resetThrottleState();
+      outerResolve();
+    });
+  }
+
   async consumeMessages(stream: string, group: string, consumer: string, callback: (streamData: StreamData) => Promise<StreamDataResponse|void>): Promise<void> {
     this.logger.info(`stream-consumer-starting`, { group, consumer, stream });
     Router.instances.add(this);
@@ -80,9 +122,7 @@ class Router {
     let lastCheckedPendingMessagesAt = Date.now();
 
     async function consume() {
-      let sleep = XSleepFor(this.throttle);
-      this.currentTimerId = sleep.timerId;
-      await sleep.promise;
+      await this.customSleep();
       if (!this.shouldConsume) {
         this.logger.info(`stream-consumer-stopping`, { group, consumer, stream });
         return;
@@ -273,18 +313,28 @@ class Router {
   }
 
   cancelThrottle() {
-    if (this.currentTimerId !== undefined) {
-      clearTimeout(this.currentTimerId);
-      this.currentTimerId = undefined;
+    if (this.sleepTimout) {
+      clearTimeout(this.sleepTimout);
     }
+    this.resetThrottleState();
   }
 
-  setThrottle(delayInMillis: number) {
+  public setThrottle(delayInMillis: number): void {
     if (!Number.isInteger(delayInMillis) || delayInMillis < 0) {
       throw new Error('Throttle must be a non-negative integer');
     }
+    const wasDecreased = delayInMillis < this.throttle;
     this.throttle = delayInMillis;
-    this.logger.info(`stream-throttle-reset`, { delay: this.throttle, topic: this.topic });
+
+    // If the throttle was decreased, and we're in the middle of a sleep cycle, adjust immediately
+    if (wasDecreased) {
+      if (this.sleepTimout)  {
+        clearTimeout(this.sleepTimout);
+      }
+      if (this.innerPromiseResolve) {
+        this.innerPromiseResolve();
+      }
+    }
   }
 
   async claimUnacknowledged(stream: string, group: string, consumer: string, idleTimeMs = this.reclaimDelay, limit = HMSH_XPENDING_COUNT): Promise<[string, [string, string]][]> {

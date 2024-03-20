@@ -1,5 +1,6 @@
 import { LogLevel } from './logger';
 import { RedisClass, RedisOptions } from './redis';
+import { StringStringType } from './serializer';
 
 type WorkflowConfig = {
   backoffCoefficient?: number; //default 10
@@ -14,6 +15,16 @@ type WorkflowContext = {
    * the reentrant semaphore, incremented in real-time as idempotent statements are re-traversed upon reentry. Indicates the current semaphore count.
    */
   counter: number;
+
+  /**
+   * number as string for the replay cursor
+   */
+  cursor: string;
+
+  /**
+   * the replay hash of name/value pairs representing prior executions
+   */
+  replay: StringStringType;
 
   /**
    * the HotMesh App namespace. `durable` is the default.

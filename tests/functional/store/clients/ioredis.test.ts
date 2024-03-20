@@ -184,6 +184,32 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
     });
   });
 
+  describe('findJobs', () => {
+    it('should find hashes matching the query string', async () => {
+      const hashKey = redisStoreService.mintKey(KeyType.JOB_STATE, { appId: appConfig.id, jobId: '' });
+      for (let i = 0; i < 10; i++) {
+        await redisStoreService.exec('hset', `${hashKey}${i}`, 'a', '25');
+      }
+      const result = await redisStoreService.findJobs(`*`, 4, 4);
+      expect(result.length).toBeGreaterThanOrEqual(4);
+      const result2 = await redisStoreService.findJobs('xxx', 15, 15);
+      expect(result2.length).toEqual(0);
+    });
+  });
+
+  describe('findJobFields', () => {
+    it('should find hash fields matching the query string', async () => {
+      const hashKey = redisStoreService.mintKey(KeyType.JOB_STATE, { appId: appConfig.id, jobId: 'test' });
+      for (let i = 0; i < 10; i++) {
+        await redisStoreService.exec('hset', hashKey, 'b1', '1', 'a1', '1', 'a2', '2', 'a3', '3', 'a4', '4', 'a5', '5', 'a6', '6', 'a7', '7', 'a8', '8', 'a9', '9');
+      }
+      const [_cursor, result] = await redisStoreService.findJobFields('test', 'a*', 8, 2);
+      expect(Object.keys(result).length).toBeGreaterThanOrEqual(8);
+      const [_cursor2, result2] = await redisStoreService.findJobFields('test', 'b*', 20, 10);
+      expect(Object.keys(result2).length).toEqual(1);
+    });
+  });
+
   describe('setStateNX', () => {
     it('should set the job data in the store with NX behavior', async () => {
       const jobId = 'job-1';

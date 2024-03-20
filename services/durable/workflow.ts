@@ -21,6 +21,7 @@ import {
 import { JobInterruptOptions, JobOutput, JobState } from '../../types/job';
 import { StreamStatus } from '../../types/stream';
 import { deterministicRandom } from '../../modules/utils';
+import { StringStringType } from '../../types';
 
 export class WorkflowService {
 
@@ -92,6 +93,10 @@ export class WorkflowService {
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
     const sessionId = `-start${workflowDimension}-${execIndex}-`;
+    const replay = store.get('replay') as StringStringType;
+    if (sessionId in replay) {
+      return replay[sessionId];
+    }
     //NOTE: this is the hash prefix; necessary for the search index to locate the entity
     const entityOrEmptyString = options.entity ?? '';
     //If the workflowId is not provided, it is generated from the entity and the workflow name
@@ -193,6 +198,8 @@ export class WorkflowService {
   static getContext(): WorkflowContext {
     const store = asyncLocalStorage.getStore();
     const workflowId = store.get('workflowId');
+    const replay = store.get('replay');
+    const cursor = store.get('cursor');
     const workflowDimension = store.get('workflowDimension') ?? '';
     const workflowTopic = store.get('workflowTopic');
     const namespace = store.get('namespace');
@@ -201,7 +208,9 @@ export class WorkflowService {
     const COUNTER = store.get('counter');
     return {
       counter: COUNTER.counter,
+      cursor,
       namespace,
+      replay,
       workflowId,
       workflowDimension,
       workflowTopic,
@@ -223,6 +232,10 @@ export class WorkflowService {
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
     const sessionId = `-${prefix}${workflowDimension}-${execIndex}-`;
+    const replay = store.get('replay') as StringStringType;
+    if (sessionId in replay) {
+      return false;
+    }
     const keyParams = {
       appId: hotMeshClient.appId,
       jobId: workflowId
@@ -300,6 +313,7 @@ export class WorkflowService {
       workflowTopic: store.get('workflowTopic'),
       workflowDimension: store.get('workflowDimension') ?? '',
       counter: store.get('counter'),
+      replay: store.get('replay'),
     }
   }
 
@@ -317,9 +331,13 @@ export class WorkflowService {
       workflowTopic,
       workflowDimension,
       counter: COUNTER,
+      replay,
     } = WorkflowService.getLocalState();
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
     const sessionId = `-once${workflowDimension}-${execIndex}-`;
+    if (sessionId in replay) {
+      return JSON.parse(replay[sessionId]);
+    }
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
     const keyParams = {
       appId: hotMeshClient.appId,
