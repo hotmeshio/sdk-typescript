@@ -1030,11 +1030,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return matchingKeys;
   }
 
-  async findJobFields(jobId: string, fieldMatchPattern: string = '*', limit: number = 1000, batchSize: number = 1000): Promise<string[]> {
-    let cursor = '0';
+  async findJobFields(jobId: string, fieldMatchPattern: string = '*', limit: number = 1000, batchSize: number = 1000, cursor = '0'): Promise<[string, StringStringType]> {
     let fields: string[] = [];
-    const matchingFields: string[] = [];
+    const matchingFields: StringStringType = {};
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+    let len = 0;
     do {
       const output = await this.exec(
         'HSCAN',
@@ -1045,20 +1045,17 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
         'COUNT',
         batchSize.toString(),
       ) as unknown as [string, string[]];
-      console.log(output);
       if (Array.isArray(output)) {
         [cursor, fields] = output;
         for (let i = 0; i < fields.length; i += 2) {
-          matchingFields.push(fields[i]);
-          if (matchingFields.length >= limit) {
-            break;
-          }
+          len++;
+          matchingFields[fields[i]] = fields[i + 1];
         }
       } else {
         break;
       }
-    } while (cursor !== '0' && matchingFields.length < limit);
-    return matchingFields;
+    } while (cursor !== '0' && len < limit);
+    return [cursor, matchingFields];
   }  
 }
 

@@ -3,6 +3,7 @@ import { RedisClient, RedisMulti } from '../../types/redis';
 import { StoreService } from '../store';
 import { KeyService, KeyType } from '../../modules/key';
 import { WorkflowSearchOptions } from '../../types/durable';
+import { asyncLocalStorage } from '../../modules/storage';
 
 export class Search {
   jobId: string;
@@ -85,18 +86,28 @@ export class Search {
     return `${this.searchSessionId}-${this.searchSessionIndex++}-`;
   }
 
-  async set(...args: string[]): Promise<void> {
+  /**
+   * Sets the fields listed in args. Returns the
+   * count of new fields that were set (does not
+   * count fields that were updated)
+   */
+  async set(...args: string[]): Promise<number> {
     const ssGuid = this.getSearchSessionGuid();
-    const ssGuidValue = Number(await this.store.exec('HINCRBYFLOAT', this.jobId, ssGuid, '1') as string);
-    if (ssGuidValue === 1) {
-      const safeArgs: string[] = [];
-      for (let i = 0; i < args.length; i += 2) {
-        const key = this.safeKey(args[i]);
-        const value = args[i+1].toString();
-        safeArgs.push(key, value);
-      }
-      await this.store.exec('HSET', this.jobId, ...safeArgs);
+    const store = asyncLocalStorage.getStore();
+    const replay = store?.get('replay') ?? {};
+    if (ssGuid in replay) {
+      return Number(replay[ssGuid]);
     }
+    const safeArgs: string[] = [];
+    for (let i = 0; i < args.length; i += 2) {
+      const key = this.safeKey(args[i]);
+      const value = args[i+1].toString();
+      safeArgs.push(key, value);
+    }
+    const fieldCount = await this.store.exec('HSET', this.jobId, ...safeArgs);
+    //no need to wait; set this interim value in the replay
+    this.store.exec('HSET', this.jobId, ssGuid, fieldCount.toString());
+    return Number(fieldCount);
   }
 
   async get(key: string): Promise<string> {
@@ -121,34 +132,65 @@ export class Search {
     }
   }
 
+  /**
+   * Deletes the fields listed in args. Returns the
+   * count of fields that were deleted.
+   */
   async del(...args: string[]): Promise<number | void> {
     const ssGuid = this.getSearchSessionGuid();
-    const ssGuidValue = Number(await this.store.exec('HINCRBYFLOAT', this.jobId, ssGuid, '1') as string);
-    if (ssGuidValue === 1) {
-      const safeArgs: string[] = [];
-      for (let i = 0; i < args.length; i++) {
-        safeArgs.push(this.safeKey(args[i]));
-      }
-      const response = await this.store.exec('HDEL', this.jobId, ...safeArgs);
-      return isNaN(response as unknown as number) ? undefined : Number(response);
+    const store = asyncLocalStorage.getStore();
+    const replay = store?.get('replay') ?? {};
+    if (ssGuid in replay) {
+      return Number(replay[ssGuid]);
     }
+    const safeArgs: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      safeArgs.push(this.safeKey(args[i]));
+    }
+    const response = await this.store.exec('HDEL', this.jobId, ...safeArgs);
+    const formattedResponse = isNaN(response as unknown as number) ? 0 : Number(response);
+    //no need to wait; set this interim value in the replay
+    this.store.exec('HSET', this.jobId, ssGuid, formattedResponse.toString());
+    return formattedResponse;
   }
 
+  /**
+   * Increments the value of a field by the given amount. Returns the
+   * new value of the field after the increment. Can be
+   * used to decrement the value of a field by specifying a negative.
+   */
   async incr(key: string, val: number): Promise<number> {
     const ssGuid = this.getSearchSessionGuid();
-    const ssGuidValue = Number(await this.store.exec('HINCRBYFLOAT', this.jobId, ssGuid, '1') as string);
-    if (ssGuidValue === 1) {
-      return Number(await this.store.exec('HINCRBYFLOAT', this.jobId, this.safeKey(key), val.toString()) as string);
+    const store = asyncLocalStorage.getStore();
+    const replay = store?.get('replay') ?? {};
+    if (ssGuid in replay) {
+      return Number(replay[ssGuid]);
     }
+    const num = await this.store.exec('HINCRBYFLOAT', this.jobId, this.safeKey(key), val.toString()) as string;
+    //no need to wait; set this interim value in the replay
+    this.store.exec('HSET', this.jobId, ssGuid, num.toString());
+    return Number(num);
   }
 
+  /**
+   * Multiplies the value of a field by the given amount. Returns the
+   * new value of the field after the multiplication. NOTE:
+   * this is exponential multiplication.
+   */
   async mult(key: string, val: number): Promise<number> {
     const ssGuid = this.getSearchSessionGuid();
+    const store = asyncLocalStorage.getStore();
+    const replay = store?.get('replay') ?? {};
+    if (ssGuid in replay) {
+      return Math.exp(Number(replay[ssGuid]));
+    }
     const ssGuidValue = Number(await this.store.exec('HINCRBYFLOAT', this.jobId, ssGuid, '1') as string);
     if (ssGuidValue === 1) {
       const log = Math.log(val);
-      const logTotal = Number(await this.store.exec('HINCRBYFLOAT', this.jobId, this.safeKey(key), log.toString()) as string);
-      return Math.exp(logTotal);
+      const logTotal = await this.store.exec('HINCRBYFLOAT', this.jobId, this.safeKey(key), log.toString()) as string;
+      //no need to wait; set this interim value in the replay
+      this.store.exec('HSET', this.jobId, ssGuid, logTotal.toString());
+      return Math.exp(Number(logTotal));
     }
   }
 }
