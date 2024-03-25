@@ -107,6 +107,7 @@ export {
   KeyType } from './hotmesh';
 export {
   ActivateMessage,
+  CronMessage,
   JobMessage,
   JobMessageCallback,
   PingMessage,
@@ -114,6 +115,7 @@ export {
   QuorumMessage,
   QuorumMessageCallback,
   QuorumProfile,
+  RollCallMessage,
   SubscriptionCallback,
   SystemHealth,
   ThrottleMessage,

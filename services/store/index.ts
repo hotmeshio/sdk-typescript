@@ -1028,9 +1028,8 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     await this.redisClient[this.commands.del](jobKey);
   }
 
-  async findJobs(queryString: string = '*', limit: number = 1000, batchSize: number = 1000): Promise<[string, string[]]> {
+  async findJobs(queryString: string = '*', limit: number = 1000, batchSize: number = 1000, cursor = '0'): Promise<[string, string[]]> {
     const matchKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId: queryString });
-    let cursor = '0';
     let keys: string[];
     const matchingKeys: string[] = [];
     do {
