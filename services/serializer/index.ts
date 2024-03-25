@@ -19,7 +19,7 @@ export const MDATA_SYMBOLS = {
     KEYS: ['au', 'err', 'l2s']
   },
   JOB: {
-    KEYS: ['ngn', 'tpc', 'pj', 'pg', 'pd', 'pa', 'key', 'app', 'vrs', 'jid', 'gid', 'aid', 'ts', 'jc', 'ju', 'js', 'err', 'trc']
+    KEYS: ['ngn', 'tpc', 'pj', 'pg', 'pd', 'px', 'pa', 'key', 'app', 'vrs', 'jid', 'gid', 'aid', 'ts', 'jc', 'ju', 'js', 'err', 'trc']
   },
   JOB_UPDATE: {
     KEYS: ['ju', 'err']

@@ -91,7 +91,6 @@ describe('FUNCTIONAL | Interrupt', () => {
       //    (the final state is the state at the time of interruption)
       const payload = { seed: 4, speed: 6, throw: false, workflowId: 'abcSuccess' };
       const result = await hotMesh.pubsub('winter', payload, null, 30_000);
-      //console.log(result);
       //subset of output data model for job as defined in YAML (/v10/hotmesh.yaml)
       const data = result?.data as {
         seed: number;

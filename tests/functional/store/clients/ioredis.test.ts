@@ -1,4 +1,4 @@
-import { KeyType, HMNS } from '../../../../modules/key';
+import { KeyType, HMNS, VALSEP } from '../../../../modules/key';
 import { LoggerService } from '../../../../services/logger';
 import { IORedisStoreService } from '../../../../services/store/clients/ioredis';
 import { ActivityType, Consumes } from '../../../../types/activity';
@@ -190,9 +190,9 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       for (let i = 0; i < 10; i++) {
         await redisStoreService.exec('hset', `${hashKey}${i}`, 'a', '25');
       }
-      const result = await redisStoreService.findJobs(`*`, 4, 4);
-      expect(result.length).toBeGreaterThanOrEqual(4);
-      const result2 = await redisStoreService.findJobs('xxx', 15, 15);
+      const [cursor, result] = await redisStoreService.findJobs('*', 15, 15);
+      expect(result.length).toEqual(10);
+      const [cursor2, result2] = await redisStoreService.findJobs('xxx', 15, 15);
       expect(result2.length).toEqual(0);
     });
   });
@@ -262,16 +262,18 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       const jobId2 = 'job-id-2';
       const gId1 = 'gid-1';
       const gId2 = 'gid-2';
+      const dad1 = ',0,1'
+      const dad2 = ',0,2'
       const activityId = 'activity-id';
       const awakenTime = Date.now();
       const type = 'sleep';
-      await redisStoreService.registerTimeHook(jobId1, gId1, activityId, type, awakenTime);
-      await redisStoreService.registerTimeHook(jobId2, gId2,  activityId, type, awakenTime);
+      await redisStoreService.registerTimeHook(jobId1, gId1, activityId, type, awakenTime, dad1);
+      await redisStoreService.registerTimeHook(jobId2, gId2,  activityId, type, awakenTime, dad2);
       // Check that the jobs were added to the correct list
       const listKey = redisStoreService.mintKey(KeyType.TIME_RANGE, { appId: appConfig.id, timeValue: awakenTime });
       const jobList = await redisClient.lrange(listKey, 0, -1);
-      expect(jobList?.[0]).toEqual(`${type}::${activityId}::${gId1}::${jobId1}`);
-      expect(jobList?.[1]).toEqual(`${type}::${activityId}::${gId2}::${jobId2}`);
+      expect(jobList?.[0]).toEqual(`${type}${VALSEP}${activityId}${VALSEP}${gId1}${VALSEP}${dad1}${VALSEP}${jobId1}`);
+      expect(jobList?.[1]).toEqual(`${type}${VALSEP}${activityId}${VALSEP}${gId2}${VALSEP}${dad2}${VALSEP}${jobId2}`);
       // Retrieve the next job to be triggered (to receive a time event)
       const [nextListKey, nextJobId, nextGID, nextActivityId] = (await redisStoreService.getNextTask()) as [string, string, string, string, ('sleep' | 'expire' | 'interrupt')];
       expect(nextListKey).toEqual(listKey);
@@ -281,7 +283,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       // Check that jobId1 was removed from the list
       const updatedJobList = await redisClient.lrange(listKey, 0, -1);
       expect(updatedJobList.length).toEqual(1);
-      expect(updatedJobList[0]).toEqual(`${type}::${activityId}::${gId2}::${jobId2}`);
+      expect(updatedJobList[0]).toEqual(`${type}${VALSEP}${activityId}${VALSEP}${gId2}${VALSEP}${dad2}${VALSEP}${jobId2}`);
     });
   });
 

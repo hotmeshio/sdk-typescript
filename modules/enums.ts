@@ -23,6 +23,7 @@ export const HMSH_CODE_DURABLE_RETRYABLE = 599;
 export const HMSH_STATUS_UNKNOWN = 'unknown';
 
 // QUORUM
+export const HMSH_QUORUM_ROLLCALL_CYCLES = 12; //max iterations
 export const HMSH_QUORUM_DELAY_MS = 250;
 export const HMSH_ACTIVATION_MAX_RETRY = 3;
 

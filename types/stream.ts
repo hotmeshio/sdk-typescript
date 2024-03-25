@@ -42,6 +42,7 @@ export interface StreamData {
     trc?: string;   //trace id
     spn?: string;   //span id
     try?: number;   //current try count
+    await?: boolean;  //(waitfor) if explicitly false, do not await; sever the connection
   };
   type?: StreamDataType;
   data: Record<string, unknown>;

@@ -95,6 +95,12 @@ class Await extends Activity {
       type: StreamDataType.AWAIT,
       data: this.context.data
     };
+    if (this.config.await !== true) {
+      const doAwait = Pipe.resolve(this.config.await, this.context);
+      if (doAwait === false) {
+        streamData.metadata.await = false;
+      }
+    }
     if (this.config.retry) {
       streamData.policies = {
         retry: this.config.retry

@@ -28,7 +28,12 @@ import { KeyStoreParams, KeyType } from '../types/hotmesh';
  * hmsh:<appid>:sym:vals: ->                          {hash}    list of symbols for job values across all app versions
  */
 
-const HMNS = "hmsh"; //default
+const HMNS = "hmsh";
+
+const KEYSEP = ':';  //default delimiter for keys 
+const VALSEP = '::'; //default delimiter for vals
+const WEBSEP = '::'; //default delimiter for webhook vals
+const TYPSEP = '::'; //delimiter for ZSET task typing (how should a list be used?)
 
 class KeyService {
 
@@ -93,4 +98,4 @@ class KeyService {
   }
 }
 
-export { KeyService, KeyType, KeyStoreParams, HMNS };
+export { KeyService, KeyType, KeyStoreParams, HMNS, KEYSEP, TYPSEP, WEBSEP, VALSEP };

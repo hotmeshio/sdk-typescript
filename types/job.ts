@@ -17,6 +17,7 @@ type JobMetadata = {
   pg?: string;  //parent_generational_id (system assigned at trigger inception); pg is the parent job's gid (just in case user created/deleted/created a job with same jid)
   pd?: string;  //parent_dimensional_address
   pa?: string;  //parent_activity_id
+  px?: boolean; //sever the dependency chain if true (startChild/vs/executeChild)
   ngn?: string; //engine guid (one time subscriptions)
   app: string;  //app_id
   vrs: string;  //app version

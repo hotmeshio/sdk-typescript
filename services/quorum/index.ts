@@ -1,7 +1,9 @@
 import {
   HMSH_ACTIVATION_MAX_RETRY,
-  HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
+  HMSH_QUORUM_DELAY_MS, 
+  HMSH_QUORUM_ROLLCALL_CYCLES} from '../../modules/enums';
 import {
+  XSleepFor,
   formatISODate,
   getSystemHealth,
   identifyRedisType,
@@ -22,6 +24,7 @@ import {
   QuorumMessage,
   QuorumMessageCallback,
   QuorumProfile,
+  RollCallMessage,
   SubscriptionCallback,
   ThrottleMessage
 } from '../../types/quorum';
@@ -41,6 +44,7 @@ class QuorumService {
   untilVersion: string | null = null;
   quorum: number | null = null;
   callbacks: QuorumMessageCallback[] = [];
+  rollCallInterval: NodeJS.Timeout;
 
   static async init(
     namespace: string,
@@ -136,6 +140,8 @@ class QuorumService {
         self.engine.routeToSubscribers(message.topic, message.job)
       } else if (message.type === 'cron') {
         self.engine.processTimeHooks();
+      } else if (message.type === 'rollcall') {
+        self.doRollCall(message);
       }
       //if there are any callbacks, call them
       if (self.callbacks.length > 0) {
@@ -193,10 +199,40 @@ class QuorumService {
     return quorum;
   }
 
+  /**
+   * A quorum-wide command to broadcaset system details.
+   * 
+   */
+  async doRollCall(message: RollCallMessage) {
+    let iteration = 0;
+    let max = !isNaN(message.max) ? message.max : HMSH_QUORUM_ROLLCALL_CYCLES;
+    if (this.rollCallInterval) clearTimeout(this.rollCallInterval);
+    const base = (message.interval / 2);
+    const amount = base + Math.ceil(Math.random() * base);
+    do {
+      await sleepFor(Math.ceil(Math.random() * 1000));
+      await this.sayPong(this.appId, this.guid, null, true);
+      if (!message.interval) return;
+      const { promise, timerId } = XSleepFor(amount * 1000);
+      this.rollCallInterval = timerId;
+      await promise;
+    } while (this.rollCallInterval && iteration++ < max - 1);
+  }
+
+  cancelRollCall() {
+    if (this.rollCallInterval) {
+      clearTimeout(this.rollCallInterval);
+      delete this.rollCallInterval;
+    }
+  }
+
+  stop() {
+    this.cancelRollCall();
+  }
 
   // ************* PUB/SUB METHODS *************
   //publish a message to the quorum
-  async pub(quorumMessage: ThrottleMessage) {
+  async pub(quorumMessage: QuorumMessage) {
     return await this.store.publish(KeyType.QUORUM, quorumMessage, this.appId, quorumMessage.topic || quorumMessage.guid);
   }
   //subscribe user to quorum messages

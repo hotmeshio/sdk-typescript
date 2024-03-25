@@ -11,12 +11,14 @@ import { KeyType } from '../../types/hotmesh';
 import { JobCompletionOptions, JobState } from '../../types/job';
 import { RedisClient, RedisMulti } from '../../types/redis';
 import { WorkListTaskType } from '../../types/task';
+import { VALSEP, WEBSEP } from '../../modules/key';
 
 class TaskService {
   store: StoreService<RedisClient, RedisMulti>;
   logger: ILogger;
   cleanupTimeout: NodeJS.Timeout | null = null;
   isScout: boolean = false;
+  errorCount = 0;
 
   constructor(
     store: StoreService<RedisClient, RedisMulti>,
@@ -29,8 +31,8 @@ class TaskService {
   async processWebHooks(hookEventCallback: HookInterface): Promise<void> {
     const workItemKey = await this.store.getActiveTaskQueue();
     if (workItemKey) {
-      const [topic, sourceKey, scrub, ...sdata] = workItemKey.split('::');
-      const data = JSON.parse(sdata.join('::'));
+      const [topic, sourceKey, scrub, ...sdata] = workItemKey.split(WEBSEP);
+      const data = JSON.parse(sdata.join(WEBSEP));
       const destinationKey = `${sourceKey}:processed`;
       const jobId = await this.store.processTaskQueue(sourceKey, destinationKey);
       if (jobId) {
@@ -72,6 +74,7 @@ class TaskService {
     activityId: string,
     type: WorkListTaskType,
     inSeconds = HMSH_FIDELITY_SECONDS,
+    dad: string,
     multi?: RedisMulti,
   ): Promise<void> {
     const fromNow = Date.now() + (inSeconds * 1000);
@@ -83,6 +86,7 @@ class TaskService {
       activityId,
       type,
       awakenTimeSlot,
+      dad,
       multi,
     );
   }
@@ -129,21 +133,29 @@ class TaskService {
             await timeEventCallback(target, gId, activityId, type);
           }
           await sleepFor(0);
+          this.errorCount = 0;
           this.processTimeHooks(timeEventCallback, listKey);
         } else if (workListTask) {
           //a worklist was just emptied; try again immediately
           await sleepFor(0);
+          this.errorCount = 0;
           this.processTimeHooks(timeEventCallback);
         } else {
           //no worklists exist; sleep before checking
           let sleep = XSleepFor(HMSH_FIDELITY_SECONDS * 1000);
           this.cleanupTimeout = sleep.timerId;
           await sleep.promise;
+          this.errorCount = 0;
           this.processTimeHooks(timeEventCallback);
         }
       } catch (err) {
-        //todo: retry connect to redis
-        this.logger.error('task-process-timehooks-error', err);
+        //most common reasons: deleted job not found; container stopping; test stopping
+        //less common: redis/cluster down; retry with fallback (5s max main reassignment)
+        this.logger.warn('task-process-timehooks-error', err);
+        await sleepFor(1_000 * this.errorCount++);
+        if (this.errorCount < 5) {
+          this.processTimeHooks(timeEventCallback);
+        }
       }
     } else {
       //didn't get the scout role; try again in 'one-ish' minutes
@@ -174,10 +186,18 @@ class TaskService {
       const jobId = context.metadata.jid;
       const gId = context.metadata.gid;
       const activityId = hookRule.to;
+      //composite keys are used to fully describe the task target
+      const compositeJobKey = [
+        activityId,
+        dad,
+        gId,
+        jobId
+      ].join(WEBSEP);
+
       const hook: HookSignal = {
         topic,
         resolved,
-        jobId: `${activityId}::${dad}::${gId}::${jobId}`,
+        jobId: compositeJobKey,
       }
       await this.store.setHookSignal(hook, multi);
       return jobId;
@@ -196,17 +216,17 @@ class TaskService {
       const resolved = Pipe.resolve(mapExpression, context);
       const hookSignalId = await this.store.getHookSignal(topic, resolved);
       if (!hookSignalId) {
-        //messages can be double-processed; not an issue; return undefined
-        //users can also provide a bogus topic; not an issue; return undefined
+        //messages can be double-processed; not an issue; return `undefined`
+        //users can also provide a bogus topic; not an issue; return `undefined`
         return undefined;
       }
-      //`aid` is part of composit key, but the hook `topic` is its public interface;
+      //`aid` is part of composite key, but the hook `topic` is its public interface;
       // this means that a new version of the graph can be deployed and the
       // topic can be re-mapped to a different activity id. Outside callers
       // can adhere to the unchanged contract (calling the same topic),
-      // while the internal system can be updated in real time as necessary.
-      const [_aid, dad, gid, ...jid] = hookSignalId.split('::');
-      return [jid.join('::'), hookRule.to, dad, gid];
+      // while the internal system can be updated in real-time as necessary.
+      const [_aid, dad, gid, ...jid] = hookSignalId.split(WEBSEP);
+      return [jid.join(WEBSEP), hookRule.to, dad, gid];
     } else {
       throw new Error('signal-not-found');
     }

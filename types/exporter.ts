@@ -26,6 +26,8 @@ export interface JobTimeline {
   dimension: string; //dimensional isolate path
   duplex: 'entry' | 'exit'; //activity entry or exit
   timestamp: string; //actually a number but too many digits for JS
+  created?: string; //actually a number but too many digits for JS
+  updated?: string; //actually a number but too many digits for JS
   actions?: ActivityAction[];
 }
 

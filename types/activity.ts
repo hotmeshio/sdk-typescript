@@ -77,6 +77,7 @@ interface AwaitActivity extends BaseActivity {
   type: 'await';
   eventName: string;
   timeout: number;
+  await?: boolean; //if exlicitly false do not await the response
 }
 
 interface WorkerActivity extends BaseActivity {
