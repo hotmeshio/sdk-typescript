@@ -222,6 +222,10 @@ class HotMeshService {
 
   stop() {
     this.engine?.taskService.cancelCleanup();
+    this.quorum?.stop();
+    this.workers?.forEach((worker: WorkerService) => {
+      worker.stop();
+    });
   }
 
   async compress(terms: string[]): Promise<boolean> {

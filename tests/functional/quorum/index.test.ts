@@ -10,7 +10,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
-import { QuorumMessage, ThrottleMessage } from '../../../types/quorum';
+import { PongMessage, QuorumMessage, RollCallMessage, ThrottleMessage } from '../../../types/quorum';
 import { QuorumService } from '../../../services/quorum';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
@@ -140,6 +140,52 @@ describe('FUNCTIONAL | Quorum', () => {
       await sleepFor(500);
       hotMesh.quorum?.unsub(callback);
     });
+
+    it('sends a `rollcall` message to WORKER quorum members', async () => {
+      let count = 0;
+      const callback = (topic: string, message: QuorumMessage) => {
+        if (message.type === 'pong' && message.profile?.worker_topic === 'calculation.execute') {
+          if (message.originator === null) {
+            //make sure rollcall pong message doesn't have an originator
+            expect(message.profile.signature).not.toBeUndefined();
+          }
+          count++;
+        }
+      };
+      hotMesh.quorum?.sub(callback);
+      const rollCallMessage: RollCallMessage = {
+        type: 'rollcall',
+        interval: 6,
+        topic: 'calculation.execute',
+        guid: hotMesh.guid,
+        signature: true,
+        max: 2,
+      };
+      await hotMesh.quorum?.pub(rollCallMessage);
+      await sleepFor(12_000);
+      expect(count).toBe(2);
+      hotMesh.quorum?.unsub(callback);
+    }, 20_000);
+
+    it('sends a `rollcall` message to ENGINE quorum members', async () => {
+      let count = 0;
+      const callback = (topic: string, message: QuorumMessage) => {
+        if (message.type === 'pong') {
+          count++;
+        }
+      };
+      hotMesh.quorum?.sub(callback);
+      const rollCallMessage: RollCallMessage = {
+        type: 'rollcall',
+        interval: 6,
+        topic: null,
+        guid: hotMesh.guid,
+      };
+      await hotMesh.quorum?.pub(rollCallMessage);
+      await sleepFor(12_000);
+      expect(count).toBeGreaterThanOrEqual(2);
+      hotMesh.quorum?.unsub(callback);
+    }, 20_000);
 
     it('requests quorum count', async () => {
       (hotMesh.quorum as QuorumService).quorum = 0;

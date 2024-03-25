@@ -1,0 +1,73 @@
+app:
+  id: awaiter
+  version: '1'
+  graphs:
+    - subscribes: awaiter.test
+
+      input:
+        schema:
+          type: object
+          properties:
+            do_await:
+              type: boolean
+
+      output:
+        schema:
+          type: object
+          properties:
+            child_job_id:
+              type: string
+            child_some_data:
+              type: boolean
+            do_await:
+              type: boolean
+
+      activities:
+        t1:
+          type: trigger
+          job:
+            maps:
+              do_await: '{t1.output.data.do_await}'
+        a1:
+          type: await
+          topic: awaiter.target
+          await: '{t1.output.data.do_await}'
+          input:
+            maps:
+              do_await: '{t1.output.data.do_await}'
+          job:
+            maps:
+              child_job_id: '{a1.output.data.job_id}'
+              child_some_data: '{a1.output.data.some_data}'
+        h1:
+          type: hook
+          sleep: 1
+
+      transitions:
+        t1:
+          - to: a1
+        a1:
+          - to: h1
+
+    - subscribes: awaiter.target
+
+      input:
+        schema:
+          type: object
+          properties:
+            do_await:
+              type: boolean
+      output:
+        schema:
+          type: object
+          properties:
+            some_data:
+              type: boolean
+
+      activities:
+        t2:
+          type: trigger
+          job:
+            maps:
+              some_data: true
+              do_await: true

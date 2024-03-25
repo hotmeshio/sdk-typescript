@@ -13,6 +13,7 @@ import {
   JobTimeline } from '../../types/exporter';
 import { SerializerService } from '../serializer';
 import { restoreHierarchy } from '../../modules/utils';
+import { VALSEP } from '../../modules/key';
 
 /**
  * Downloads job data from Redis (hscan, hmget, hgetall)
@@ -116,19 +117,31 @@ class ExporterService {
       const activityName = item[1].split('/')[0];
       const duplex = item[1].endsWith('/ac') ? 'entry' : 'exit';
       const timestamp = item[2];
-      const event: JobTimeline = {
+      let event: JobTimeline = {
         activity: activityName,
         duplex: duplex as 'entry' | 'exit',
         dimension: dimensions,
         timestamp,
+        created: timestamp,
+        updated: timestamp,
       };
-      timeline.push(event);
+      const prior = timeline[timeline.length - 1];
+      if (prior && prior.activity === event.activity && prior.duplex !== event.duplex && prior.dimension === event.dimension) {
+        if (event.duplex === 'exit') {
+          prior.updated = event.timestamp;
+        } else {
+          prior.created = event.timestamp;
+        }
+        event = prior;
+      } else {
+        timeline.push(event);
+      }
 
       if (this.isMainEntry(item[1])) {
         event.actions = [] as ActivityAction[];
         this.interleaveActions(actions.main, event.actions);
       } else if (this.isHookEntry(item[1])) {
-        const hookDimension =  `/${parts[1]}/${parts[2]}`;
+        const hookDimension = `/${parts[1]}/${parts[2]}`;
         const hookActions = actions.hooks[hookDimension];
         event.actions = [] as ActivityAction[];
         this.interleaveActions(hookActions, event.actions);
@@ -191,17 +204,15 @@ class ExporterService {
    * @returns - the organized dependency data
    */
   inflateDependencyData(data: string[], actions: JobActionExport): DependencyExport[] {
-    //console.log('dependency data>', data);
     const hookReg = /([0-9,]+)-(\d+)$/;
     const flowReg = /-(\d+)$/;
     return data.map((dependency, index: number): DependencyExport => {
-      const [action, topic, gid, ...jid] = dependency.split('::');
-      const jobId = jid.join('::');
+      const [action, topic, gid, _pd, ...jid] = dependency.split(VALSEP);
+      const jobId = jid.join(VALSEP);
       const match = jobId.match(hookReg);
       let prefix: string;
       let type: 'hook' | 'flow' | 'other';
       let dimensionKey: string = '';
-
       if (match) {
         //hook-originating dependency
         const [_, dimension, counter] = match;

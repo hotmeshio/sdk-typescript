@@ -1,4 +1,4 @@
-import { KeyType } from '../../modules/key';
+import { KeyType, VALSEP } from '../../modules/key';
 import {
   HMSH_OTT_WAIT_TIME,
   HMSH_CODE_SUCCESS,
@@ -386,9 +386,10 @@ class EngineService {
         pg: streamData.metadata.gid,
         pd: streamData.metadata.dad,
         pa: streamData.metadata.aid,
+        px: streamData.metadata.await === false, //sever the parent connection (px)
         trc: streamData.metadata.trc,
         spn: streamData.metadata.spn,
-       };
+      };
       const activityHandler = await this.initActivity(
         streamData.metadata.topic,
         streamData.data,
@@ -459,7 +460,10 @@ class EngineService {
       return (await this.router?.publishMessage(null, streamData)) as string;
     }
   }
-  hasParentJob(context: JobState): boolean {
+  hasParentJob(context: JobState, checkSevered = false): boolean {
+    if (checkSevered) {
+      return Boolean(context.metadata.pj && context.metadata.pa && !context.metadata.px);
+    }
     return Boolean(context.metadata.pj && context.metadata.pa);
   }
   resolveError(metadata: JobMetadata): StreamError | undefined {
@@ -537,7 +541,11 @@ class EngineService {
         const taskService = new TaskService(this.store, this.logger);
         await taskService.enqueueWorkItems(
           workItems.map(
-            workItem => `${hookTopic}::${workItem}::${keyResolver.scrub || false}::${JSON.stringify(data)}`
+            workItem => [
+              hookTopic,
+              workItem,
+              keyResolver.scrub || false,
+              JSON.stringify(data)].join(VALSEP)
         ));
         this.store.publish(
           KeyType.QUORUM,
@@ -663,7 +671,7 @@ class EngineService {
   // ********** JOB COMPLETION/CLEANUP (AND JOB EMIT) ***********
   async runJobCompletionTasks(context: JobState, options: JobCompletionOptions = {}): Promise<string | void> {
     //'emit' indicates the job is still active
-    const isAwait = this.hasParentJob(context);
+    const isAwait = this.hasParentJob(context, true);
     const isOneTimeSub = this.hasOneTimeSubscription(context);
     const topic = await this.getPublishesTopic(context);
     let msgId: string;

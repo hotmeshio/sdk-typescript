@@ -148,6 +148,7 @@ class Hook extends Activity {
         `${this.metadata.aid}${this.metadata.dad || ''}`,
         'sleep',
         duration,
+        this.metadata.dad || '',
       );
       return this.context.metadata.jid;
     }

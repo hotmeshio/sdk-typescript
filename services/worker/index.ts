@@ -1,5 +1,5 @@
 import { KeyType } from "../../modules/key";
-import { formatISODate, getSystemHealth, identifyRedisType } from "../../modules/utils";
+import { XSleepFor, formatISODate, getSystemHealth, identifyRedisType, sleepFor } from "../../modules/utils";
 import { ConnectorService } from "../connector";
 import { ILogger } from "../logger";
 import { Router } from "../router";
@@ -17,10 +17,12 @@ import { RedisClientType as IORedisClientType } from '../../types/ioredisclient'
 import {
   QuorumMessage,
   QuorumProfile,
+  RollCallMessage,
   SubscriptionCallback } from "../../types/quorum";
 import { RedisClient, RedisMulti } from "../../types/redis";
 import { RedisClientType } from '../../types/redisclient';
-import { StreamRole } from "../../types/stream";
+import { StreamData, StreamRole, StreamDataResponse } from "../../types/stream";
+import { HMSH_QUORUM_ROLLCALL_CYCLES } from "../../modules/enums";
 
 class WorkerService {
   namespace: string;
@@ -28,6 +30,7 @@ class WorkerService {
   guid: string;
   topic: string;
   config: HotMeshConfig;
+  callback: (streamData: StreamData) => Promise<StreamDataResponse|void>;
   store: StoreService<RedisClient, RedisMulti> | null;
   stream: StreamService<RedisClient, RedisMulti> | null;
   subscribe: SubService<RedisClient, RedisMulti> | null;
@@ -35,6 +38,7 @@ class WorkerService {
   logger: ILogger;
   reporting = false;
   inited: string;
+  rollCallInterval: NodeJS.Timeout;
 
   static async init(
     namespace: string,
@@ -58,6 +62,7 @@ class WorkerService {
         service.namespace = namespace;
         service.appId = appId;
         service.guid = guid;
+        service.callback = worker.callback;
         service.topic = worker.topic;
         service.config = config;
         service.logger = logger;
@@ -155,14 +160,51 @@ class WorkerService {
     return async (topic: string, message: QuorumMessage) => {
       self.logger.debug('worker-event-received', { topic, type: message.type });
       if (message.type === 'throttle') {
-        self.throttle(message.throttle);
+        if (message.topic !== null) { //undefined allows passthrough
+          self.throttle(message.throttle);
+        }
       } else if(message.type === 'ping') {
         self.sayPong(self.appId, self.guid, message.originator, message.details);
+      } else if(message.type === 'rollcall') {
+        if (message.topic !== null) { //undefined allows passthrough
+          self.doRollCall(message);
+        }
       }
     };
   }
 
-  async sayPong(appId: string, guid: string, originator: string, details = false) {
+  /**
+   * A quorum-wide command to broadcaset system details.
+   * 
+   */
+  async doRollCall(message: RollCallMessage) {
+    let iteration = 0;
+    let max = !isNaN(message.max) ? message.max : HMSH_QUORUM_ROLLCALL_CYCLES;
+    if (this.rollCallInterval) clearTimeout(this.rollCallInterval);
+    const base = (message.interval / 2);
+    const amount = base + Math.ceil(Math.random() * base);
+    do {
+      await sleepFor(Math.ceil(Math.random() * 1000));
+      await this.sayPong(this.appId, this.guid, null, true, message.signature);
+      if (!message.interval) return;
+      const { promise, timerId } = XSleepFor(amount * 1000);
+      this.rollCallInterval = timerId;
+      await promise;
+    } while (this.rollCallInterval && iteration++ < max - 1);
+  }
+
+  cancelRollCall() {
+    if (this.rollCallInterval) {
+      clearTimeout(this.rollCallInterval);
+      delete this.rollCallInterval;
+    }
+  }
+
+  stop() {
+    this.cancelRollCall();
+  }
+
+  async sayPong(appId: string, guid: string, originator?: string, details = false, signature = false) {
     let profile: QuorumProfile;
     if (details) {
       const params = {
@@ -183,13 +225,15 @@ class WorkerService {
         reclaimDelay: this.router.reclaimDelay,
         reclaimCount: this.router.reclaimCount,
         system: await getSystemHealth(),
+        signature: signature ? this.callback.toString() : undefined,
       };
     }
     this.store.publish(
       KeyType.QUORUM, 
       {
         type: 'pong',
-        guid, originator,
+        guid,
+        originator,
         profile,
       },
       appId,

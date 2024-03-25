@@ -15,6 +15,7 @@ import {
 import { JobState } from '../../types/job';
 import { RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
+import { WorkListTaskType } from '../../types/task';
 
 class Trigger extends Activity {
   config: TriggerActivity;
@@ -50,6 +51,10 @@ class Trigger extends Activity {
       await this.registerJobDependency(multi);
       await multi.exec();
 
+      //if the parent (spawner) chose not to await,
+      // emit the job_id as the data payload { job_id }
+      this.execAdjacentParent();
+
       telemetry.mapActivityAttributes();
       const jobStatus = Number(this.context.metadata.js);
       telemetry.setJobAttributes({ 'app.job.jss': jobStatus });
@@ -77,6 +82,12 @@ class Trigger extends Activity {
 
   async setStatus(amount: number): Promise<void> {
     this.context.metadata.js = amount;
+  }
+
+  async execAdjacentParent() {
+    if (this.context.metadata.px) {
+      await this.engine.execAdjacentParent(this.context, {metadata: this.context.metadata, data: { job_id: this.context.metadata.jid }});
+    }
   }
 
   createInputContext(): Partial<JobState> {
@@ -115,6 +126,7 @@ class Trigger extends Activity {
         pg: this.context.metadata.pg,
         pd: this.context.metadata.pd,
         pa: this.context.metadata.pa,
+        px: this.context.metadata.px,
         app: id,
         vrs: version,
         tpc: this.config.subscribes,
@@ -193,12 +205,23 @@ class Trigger extends Activity {
     }
     if (resolvedDepKey) {
       const isParentOrigin = (resolvedDepKey === this.context.metadata.pj) || (resolvedDepKey === resolvedAdjKey);
+      let type: WorkListTaskType;
+      if (isParentOrigin) {
+        if (this.context.metadata.px) {
+          type = 'child'
+        } else {
+          type = 'expire-child'
+        }
+      } else {
+        type = 'expire';
+      }
       await this.store.registerJobDependency(
-        isParentOrigin ? 'expire-child' : 'expire',
+        type,
         resolvedDepKey,
         this.context.metadata.tpc,
         this.context.metadata.jid,
         this.context.metadata.gid,
+        this.context.metadata.pd,
         multi,
       );
     }
@@ -209,6 +232,7 @@ class Trigger extends Activity {
         this.context.metadata.tpc,
         this.context.metadata.jid,
         this.context.metadata.gid,
+        this.context.metadata.pd,
         multi,
       );
     }

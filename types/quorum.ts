@@ -50,50 +50,65 @@ export interface QuorumProfile {
   reclaimDelay?: number;
   reclaimCount?: number;
   system?: SystemHealth;
+  signature?: string; //stringified function
 }
 
-//used for coordination (like version activation)
-export interface PingMessage {
+interface QuorumMessageBase {
+  guid?: string;
+  topic?: string;
+  type?: string;
+}
+
+// Messages extending QuorumMessageBase
+export interface PingMessage extends QuorumMessageBase {
   type: 'ping';
   originator: string; //guid
   details?: boolean;  //if true, all endpoints will include their profile
 }
 
-export interface WorkMessage {
+export interface WorkMessage extends QuorumMessageBase {
   type: 'work';
   originator: string; //guid
 }
 
-export interface CronMessage {
+export interface CronMessage extends QuorumMessageBase {
   type: 'cron';
   originator: string; //guid
 }
 
-export interface PongMessage {
+export interface PongMessage extends QuorumMessageBase {
   type: 'pong';
   guid: string;            //call initiator
   originator: string;      //clone of originator guid passed in ping
   profile?: QuorumProfile; //contains details about the engine/worker
 }
 
-export interface ActivateMessage {
+export interface ActivateMessage extends QuorumMessageBase {
   type: 'activate';
   cache_mode: 'nocache' | 'cache';
   until_version: string;
 }
 
-export interface JobMessage {
+export interface JobMessage extends QuorumMessageBase {
   type: 'job';
   topic: string; //this comes from the 'publishes' field in the YAML
   job: JobOutput
 }
 
-//delay in ms between fetches from the buffered stream (speed/slow down entire network)
-export interface ThrottleMessage {
+export interface ThrottleMessage extends QuorumMessageBase {
   type: 'throttle';
-  guid?: string; //target the engine quorum
-  topic?: string;  //target a worker quorum
-  throttle: number; //0-n
+  guid?: string; //target engine AND workers with this guid
+  topic?: string;  //target worker(s) matching this topic (pass null to only target the engine, pass undefined to target engine and workers)
+  throttle: number; //0-n; millis
+}
+
+export interface RollCallMessage extends QuorumMessageBase {
+  type: 'rollcall';
+  guid?: string;    //target the engine quorum
+  topic?: string | null;   //target a worker if string; suppress if `null`;
+  interval: number; //every 'n' seconds
+  max?: number;     //max broadcasts
+  signature?: boolean; //include bound worker function in broadcast   
 }
 
 export interface JobMessageCallback {
@@ -114,4 +129,4 @@ export interface QuorumMessageCallback {
  * These messages serve to coordinate the cache invalidation and switch-over
  * to the new version without any downtime and a coordinating parent server.
  */
-export type QuorumMessage = PingMessage | PongMessage | ActivateMessage | WorkMessage | JobMessage | ThrottleMessage | CronMessage;
+export type QuorumMessage = PingMessage | PongMessage | ActivateMessage | WorkMessage | JobMessage | ThrottleMessage | RollCallMessage | CronMessage;

@@ -12,6 +12,7 @@ import {
   JobExport } from '../../types/exporter';
 import { SerializerService } from '../serializer';
 import { restoreHierarchy } from '../../modules/utils';
+import { VALSEP } from '../../modules/key';
 
 /**
  * Downloads job data from Redis (hscan, hmget, hgetall)
@@ -108,8 +109,8 @@ class ExporterService {
     const hookReg = /([0-9,]+)-(\d+)$/;
     const flowReg = /-(\d+)$/;
     return data.map((dependency, index: number): DependencyExport => {
-      const [action, topic, gid, ...jid] = dependency.split('::');
-      const jobId = jid.join('::');
+      const [action, topic, gid, _pd, ...jid] = dependency.split(VALSEP);
+      const jobId = jid.join(VALSEP);
       const match = jobId.match(hookReg);
       let prefix: string;
       let type: 'hook' | 'flow' | 'other';
