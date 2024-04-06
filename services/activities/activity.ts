@@ -400,7 +400,7 @@ class Activity {
     //`state` is a unidimensional hash; context is a tree
     const [state, status] = await this.store.getState(jid, consumes, dIds);
     this.context = restoreHierarchy(state) as JobState;
-    this.assertGenerationalId(this.context.metadata.gid, gid);
+    this.assertGenerationalId(this.context?.metadata?.gid, gid);
     this.initDimensionalAddress(dad);
     this.initSelf(this.context);
     this.initPolicies(this.context);
@@ -417,9 +417,9 @@ class Activity {
       throw new GenerationalError(
         jobGID,
         msgGID,
-        this.context.metadata.jid,
-        this.context.metadata.aid,
-        this.context.metadata.dad
+        this.context?.metadata?.jid ?? '',
+        this.context?.metadata?.aid ?? '',
+        this.context?.metadata?.dad ?? ''
       );
     }
   }
