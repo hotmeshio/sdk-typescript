@@ -23,7 +23,7 @@ import {
   ActivityMetadata,
   ActivityType,
   Consumes } from '../../types/activity';
-import { JobState, JobStatus } from '../../types/job';
+import { JobData, JobState, JobStatus } from '../../types/job';
 import {
   MultiResponseFlags,
   RedisClient,
@@ -143,19 +143,19 @@ class Activity {
       this.transitionAdjacent(multiResponse, telemetry);
     } catch (error) {
       if (error instanceof CollationError) {
-        this.logger.info('process-event-inactive-error', { error });
+        this.logger.info('process-event-inactive-error', { ...error });
         return;
       } else if (error instanceof InactiveJobError) {
-        this.logger.info('process-event-inactive-job-error', { error });
+        this.logger.info('process-event-inactive-job-error', { ...error });
         return;
       } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
+        this.logger.info('process-event-generational-job-error', { ...error });
         return;
       } else if (error instanceof GetStateError) {
-        this.logger.info('process-event-get-job-error', { error });
+        this.logger.info('process-event-get-job-error', {  ...error  });
         return;
       }
-      this.logger.error('activity-process-event-error', { error });
+      this.logger.error('activity-process-event-error', { ...error, message: error.message, stack: error.stack, name: error.name });
       telemetry && telemetry.setActivityError(error.message);
       throw error;
     } finally {
@@ -223,7 +223,30 @@ class Activity {
   mapJobData(): void {
     if(this.config.job?.maps) {
       const mapper = new MapperService(this.config.job.maps, this.context);
-      this.context.data = mapper.mapRules();
+      const output = mapper.mapRules();
+      if (output) {
+        for (const key in output) {
+          const f1 = key.indexOf('[');
+          //keys with array notation [#] are moved to the root
+          //the value MUST be an object
+          //the object MUST have with a single key
+          if (f1 > -1) {
+            const amount = key.substring(f1 + 1).split(']')[0];
+            if (!isNaN(Number(amount))) {
+              //todo: can multiple keys be moved to the root
+              const left = key.substring(0, f1);
+              output[left] = output[key]; //output[key] should be an object with numeric keys
+              delete output[key];
+            } else if (amount === '-' || amount === '_') {
+              const obj = output[key];
+              Object.keys(obj).forEach((newKey) => {
+                output[newKey] = obj[newKey];
+              });
+            }
+          }
+        }
+      }
+      this.context.data = output;
     }
   }
 
@@ -342,6 +365,11 @@ class Activity {
       const value = getValueByPath(this.context, path);
       if (value !== undefined) {
         state[path] = value;
+      }
+    }
+    for (let key in this.context?.data ?? {}) {
+      if (key.startsWith('-') || key.startsWith('_')) {
+        state[key] = this.context.data[key];
       }
     }
     TelemetryService.bindJobTelemetryToState(state, this.config, this.context);

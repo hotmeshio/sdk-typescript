@@ -136,7 +136,10 @@ export class SerializerService {
           let shortKey = abbreviationMap.get(key) || key;
           const shortDimensionalKey = `${shortKey}${dimensionalIndex}`;
           result[shortDimensionalKey] = source[key];
-          }
+        } else if (!(key in result) && this.isLiteralKeyType(key)) {
+          //marker (-) and search (_)
+          result[key] = source[key];
+        }  
       }
     };
     for (let id of ids) {
@@ -146,6 +149,10 @@ export class SerializerService {
       }
     }
     return result;
+  }
+
+  isLiteralKeyType(key: string): boolean {
+    return key.startsWith('-') || key.startsWith('_');
   }
 
   decompress(document: StringStringType, ids: string[]): StringStringType {
@@ -179,7 +186,7 @@ export class SerializerService {
   stringify(document: Record<string, any>): StringStringType {
     let result: StringStringType = {};
     for (let key in document) {
-      let value = this.toString(document[key]);
+      let value = SerializerService.toString(document[key]);
       if (value) {
         if (/^:*[a-zA-Z]{2}$/.test(value)) {
           value = ':' + value;
@@ -203,13 +210,13 @@ export class SerializerService {
         if (value?.length === 2 && this.symValMaps.has(value)) {
           value = this.symValMaps.get(value);
         }
-        result[key] = this.fromString(value);
+        result[key] = SerializerService.fromString(value);
       }
     }
     return result;
   }
 
-  toString(value: any): string|undefined {
+  static toString(value: any): string|undefined {
     switch (typeof value) {
       case 'string':
         break;
@@ -232,7 +239,7 @@ export class SerializerService {
     return value;
   }
 
-  fromString(value: string|undefined): any {
+  static fromString(value: string|undefined): any {
     if (typeof value !== 'string') return undefined;
     const prefix = value.slice(0, 2);
     const rest = value.slice(2);

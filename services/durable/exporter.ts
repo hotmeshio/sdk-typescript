@@ -22,7 +22,6 @@ import { VALSEP } from '../../modules/key';
 class ExporterService {
   appId: string;
   logger: ILogger;
-  serializer: SerializerService
   store: StoreService<RedisClient, RedisMulti>;
   symbols: Promise<Symbols> | Symbols;
 
@@ -81,7 +80,6 @@ class ExporterService {
     this.appId = appId;
     this.logger = logger;
     this.store = store;
-    this.serializer = new SerializerService();
   }
 
   /**
@@ -314,7 +312,7 @@ class ExporterService {
         this.inflateProcess(match, value, replay);
       } else if (key.length === 3) {
         //job state
-        state[this.inflateKey(key)] = this.serializer.fromString(value);
+        state[this.inflateKey(key)] = SerializerService.fromString(value);
       } else if (key.startsWith('_')) {
         //job data
         data[key.substring(1)] = value;
@@ -350,7 +348,7 @@ class ExporterService {
     if (path.endsWith('/output/metadata/ac') ||
         path.endsWith('/output/metadata/au')) {
       const dimensions = `/${numbers.replace(/,/g, '/')}`;
-      const resolved = this.serializer.fromString(value);
+      const resolved = SerializerService.fromString(value);
       replay.push([
         dimensions,
         path,
@@ -390,6 +388,8 @@ class ExporterService {
     ]);
   }
 
+  //todo: don't do string sort when sequential numbers are part of id guid
+  //      split and parse and then compare
   reverseSort(aKey: ExportItem, bKey: ExportItem) {
     if (aKey[0] > bKey[0]) {
       return 1;

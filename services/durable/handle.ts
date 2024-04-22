@@ -29,8 +29,8 @@ export class WorkflowHandleService {
   /**
    * Sends a signal to the workflow. This is a way to send
    * a message to a workflow that is paused due to having
-   * executed a `waitForSignal` workflow extension. Awakens
-   * the workflow if no other signals are pending.
+   * executed `Durable.workflow.waitFor`. The workflow
+   * will awaken if no other signals are pending.
    */
   async signal(signalId: string, data: Record<any, any>): Promise<void> {
     await this.hotMesh.hook(`${this.hotMesh.appId}.wfs.signal`, { id: signalId, data });

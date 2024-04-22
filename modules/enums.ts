@@ -1,7 +1,7 @@
 import { LogLevel } from "../types/logger";
 
 // HOTMESH SYSTEM
-export const HMSH_LOGLEVEL = process.env.HMSH_LOGLEVEL as LogLevel || 'info';
+export const HMSH_LOGLEVEL = process.env.HMSH_LOGLEVEL as LogLevel || 'debug';
 
 // STATUS CODES AND MESSAGES
 export const HMSH_CODE_SUCCESS = 200;
@@ -12,9 +12,14 @@ export const HMSH_CODE_UNKNOWN = 500;
 export const HMSH_CODE_TIMEOUT = 504;
 export const HMSH_CODE_UNACKED = 999;
 
+export const HMSH_CODE_DURABLE_SLEEP = 588;
+export const HMSH_CODE_DURABLE_ALL = 589;
+export const HMSH_CODE_DURABLE_CHILD = 590;
+export const HMSH_CODE_DURABLE_PROXY = 591;
 export const HMSH_CODE_DURABLE_SLEEPFOR = 592;
 export const HMSH_CODE_DURABLE_INCOMPLETE = 593;
 export const HMSH_CODE_DURABLE_WAITFOR = 594;
+export const HMSH_CODE_DURABLE_WAIT = 595;
 export const HMSH_CODE_DURABLE_TIMEOUT = 596;
 export const HMSH_CODE_DURABLE_MAXED = 597;
 export const HMSH_CODE_DURABLE_FATAL = 598;

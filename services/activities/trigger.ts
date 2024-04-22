@@ -67,9 +67,9 @@ class Trigger extends Activity {
       return this.context.metadata.jid;
     } catch (error) {
       if (error instanceof DuplicateJobError) {
-        this.logger.error('duplicate-job-error', { error });
+        this.logger.error('duplicate-job-error', { job_id: error.jobId });
       } else {
-        this.logger.error('trigger-process-error', { error });
+        this.logger.error('trigger-process-error', { ...error });
       }
       telemetry.setActivityError(error.message);
       throw error;

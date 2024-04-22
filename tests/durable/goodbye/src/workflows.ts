@@ -24,9 +24,7 @@ export async function example(name: string): Promise<string> {
 
   //val4 is 120.00000000009 (rounding error due to logarithmic math)
   const val4 = await search.mult('multer', 10);
-  //console.log(val1, val2, val3, val4);
   const [signal1] = await Durable.workflow.waitForSignal(['abcdefg']);
-  //console.log('just awakened with signal=>', signal1);
 
   return `${hello} - ${goodbye}`;
 }

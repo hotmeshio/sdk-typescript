@@ -1,5 +1,5 @@
 export interface StreamRetryPolicy {
-  [key: string]: [number, 'x']; //key is err code, val is the retry profile [(max retry count),(type (x:exponential (default)) (only 10, 100, 1000, 10000 allowed))
+  [key: string]: [number, 'x'] | [number]; //key is err code, val is the retry profile [(max retry count),(type (x:exponential (default)) (only 10, 100, 1000, 10000 allowed))
 }
 
 export type StreamCode = number; //3-digit status code

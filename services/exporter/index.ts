@@ -1,18 +1,18 @@
+import { VALSEP } from '../../modules/key';
 import { ILogger } from '../logger';
+import { restoreHierarchy } from '../../modules/utils';
+import { SerializerService } from '../serializer';
 import { StoreService } from '../store';
-import {
-  StringAnyType,
-  StringStringType,
-  Symbols } from "../../types/serializer";
-import { RedisClient, RedisMulti } from '../../types/redis';
 import {
   DependencyExport,
   ExportOptions,
   JobActionExport,
   JobExport } from '../../types/exporter';
-import { SerializerService } from '../serializer';
-import { restoreHierarchy } from '../../modules/utils';
-import { VALSEP } from '../../modules/key';
+import { RedisClient, RedisMulti } from '../../types/redis';
+import {
+  StringAnyType,
+  StringStringType,
+  Symbols } from "../../types/serializer";
 
 /**
  * Downloads job data from Redis (hscan, hmget, hgetall)
@@ -21,7 +21,6 @@ import { VALSEP } from '../../modules/key';
 class ExporterService {
   appId: string;
   logger: ILogger;
-  serializer: SerializerService
   store: StoreService<RedisClient, RedisMulti>;
   symbols: Promise<Symbols> | Symbols;
 
@@ -29,7 +28,6 @@ class ExporterService {
     this.appId = appId;
     this.logger = logger;
     this.store = store;
-    this.serializer = new SerializerService();
   }
 
   /**
@@ -83,11 +81,11 @@ class ExporterService {
         const [_, letters, numbers] = match;
         const path = this.inflateKey(letters);
         const dimensions = `${numbers.replace(/,/g, '/')}`;
-        const resolved = this.serializer.fromString(value);
+        const resolved = SerializerService.fromString(value);
         process[`${dimensions}/${path}`] = resolved;
       } else if (key.length === 3) {
         //job state
-        process[this.inflateKey(key)] = this.serializer.fromString(value);
+        process[this.inflateKey(key)] = SerializerService.fromString(value);
       }
     });
     

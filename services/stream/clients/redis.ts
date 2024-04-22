@@ -149,7 +149,7 @@ class RedisStreamService extends StreamService<RedisClientType, RedisMultiType> 
         return await this.redisClient.XLEN(key);
       }
     } catch (error) {
-      this.logger.error(`Error getting stream depth: ${key}`, { error });
+      this.logger.error(`Error getting stream depth: ${key}`, { ...error });
       throw error;
     }
   }

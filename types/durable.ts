@@ -1,12 +1,14 @@
 import { LogLevel } from './logger';
 import { RedisClass, RedisOptions } from './redis';
 import { StringStringType } from './serializer';
+import { StreamData } from './stream';
 
+//todo: not sure if this is the right place for these types
+//      makes better sense to apply to activities
 type WorkflowConfig = {
   backoffCoefficient?: number; //default 10
-  maximumAttempts?: number; //default 2
-  maximumInterval?: string; //default 30s
-  initialInterval?: string; //default 1s
+  maximumAttempts?: number;    //default 2
+  maximumInterval?: string;    //default 30s
 }
 
 type WorkflowContext = {
@@ -55,6 +57,11 @@ type WorkflowContext = {
    * the open telemetry span context for the workflow, used for logging and tracing. If a sink is enabled, this will be sent to the sink.
    */
   workflowSpan: string;
+
+  /**
+   * the native HotMesh message that encapsulates the arguments, metadata, and raw data for the workflow
+   */
+  raw: StreamData;
 }
 
 type WorkflowSearchOptions = {
@@ -65,19 +72,62 @@ type WorkflowSearchOptions = {
 }
 
 type WorkflowOptions = {
-  namespace?: string;         //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
-  taskQueue?: string;         //optional if entity is provided
-  args: any[];                //input arguments to pass in
-  workflowId?: string;        //execution id (the job id)
-  entity?: string;            //If invoking a workflow, passing 'entity' will apply the value as the workflowName, taskQueue, and prefix, ensuring the FT.SEARCH index is properly scoped. This is a convenience method but limits options.
-  workflowName?: string;      //the name of the user's workflow function; optional if 'entity' is provided
-  parentWorkflowId?: string;  //system reserved; the id of the parent; if present the flow will not self-clean until the parent that spawned it self-cleans
-  originJobId?: string;       //system reserved;
+  /**
+   * the namespace for the workflow; `durable` is the default namespace if not provided
+   */
+  namespace?: string;
+  /**
+   * the task queue for the workflow; optional if entity is provided
+   */
+  taskQueue?: string;
+  /**
+   * input arguments to pass in
+   */
+  args: any[];
+  /**
+   * the job id
+   */
+  workflowId?: string;
+  /**
+   * if invoking a workflow, passing 'entity' will apply the value as the workflowName, taskQueue, and prefix, ensuring the FT.SEARCH index is properly scoped. This is a convenience method but limits options.
+   */
+  entity?: string;
+  /**
+   * the name of the user's workflow function; optional if 'entity' is provided
+   */
+  workflowName?: string;
+  /**
+   * the parent workflow id; adjacent ancestor ID
+   */
+  parentWorkflowId?: string;
+  /**
+   * the entry point workflow id
+   */
+  originJobId?: string;
+  /**
+   * OpenTelemetry trace context for the workflow
+   */
   workflowTrace?: string;
+  /**
+   * OpenTelemetry span context for the workflow
+   */
   workflowSpan?: string;
+  /**
+   * the search options for the workflow
+   */
   search?: WorkflowSearchOptions
+  /**
+   * the workflow configuration
+   */
   config?: WorkflowConfig;
-  expire?: number;            //default is 3seconds; time before completed jobs and dependents are expired/scrubbed/removed
+  /**
+   * expire in seconds
+   */
+  expire?: number;
+  /**
+   * default is true; if false, will not await the execution
+   */
+  await?: boolean;
 }
 
 type HookOptions = {
@@ -88,7 +138,7 @@ type HookOptions = {
   workflowId?: string;   //execution id (the job id to hook into)
   workflowName?: string; //the name of the user's hook function
   search?: WorkflowSearchOptions //bind additional search terms immediately before hook reentry
-  config?: WorkflowConfig; //hook function constraints (backoffCoefficient, maximumAttempts, maximumInterval, initialInterval)
+  config?: WorkflowConfig; //hook function constraints (backoffCoefficient, maximumAttempts, maximumInterval)
 }
 
 type SignalOptions = {
@@ -188,13 +238,13 @@ type MeshOSWorkerOptions = {
   taskQueue?: string;          //change the default task queue
   allowList?: Array<MeshOSOptions | string>; //limit which `hook` and `workflow` workers start
   logLevel?: LogLevel;         //debug, info, warn, error
-  maxSystemRetries?: number;   //1-3 (10ms, 100ms, 1_000ms)
+  maximumAttempts?: number;   //1-3 (10ms, 100ms, 1_000ms)
   backoffCoefficient?: number; //2-10ish
 }
 
 type WorkerOptions = {
   logLevel?: LogLevel;         //debug, info, warn, error
-  maxSystemRetries?: number;   //1-3 (10ms, 100ms, 1_000ms)
+  maximumAttempts?: number;   //1-3 (10ms, 100ms, 1_000ms)
   backoffCoefficient?: number; //2-10ish
 }
 
@@ -212,7 +262,6 @@ type ActivityConfig = {
   startToCloseTimeout?: string;
   activities?: any;
   retryPolicy?: {
-    initialInterval: string;
     maximumAttempts: number;
     backoffCoefficient: number;
     maximumInterval: string;

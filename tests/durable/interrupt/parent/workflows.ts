@@ -11,7 +11,7 @@ export async function parentExample(name: string): Promise<Record<string, string
     workflowId: workflowId1,
   });
 
-  const childWorkflowOutput2 = await Durable.workflow.startChild<string>({
+  const childWorkflowOutput2 = await Durable.workflow.startChild({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',

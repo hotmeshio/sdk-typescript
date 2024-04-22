@@ -194,7 +194,7 @@ class Router {
     try {
       output = await callback(input);
     } catch (error) {
-      this.logger.error(`stream-call-function-error`, { error });
+      this.logger.error(`stream-call-function-error`, { ...error, input: input, stack: error.stack, message: error.message, name: error.name, stream, id });
       output = this.structureUnhandledError(input, error);
     }
     return output as StreamDataResponse;
@@ -233,10 +233,19 @@ class Router {
   }
 
   shouldRetry(input: StreamData, output: StreamDataResponse): [boolean, number] {
+    const isUnhandledEngineError = output.code === 500;
     const policies = input.policies?.retry;
     const errorCode = output.code.toString();
     const policy = policies?.[errorCode];
     const maxRetries = policy?.[0];
+    if (isUnhandledEngineError && !policy) {
+      //if main goes down, replicas take over within 5s
+      //if this is not system/platform related, the exponential
+      //backoff will be applied and eventually slow to a crawl while
+      //the root cause is identified
+      input.policies = { retry: { [errorCode]: [10] } };
+      return [true, 0];
+    }
     const tryCount = Math.min(input.metadata.try || 0,  HMSH_MAX_RETRIES);
     //only possible values for maxRetries are 1, 2, 3
     //only possible values for tryCount are 0, 1, 2

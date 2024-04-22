@@ -1,14 +1,33 @@
 class ObjectHandler {
+  get(obj: object, prop: string | symbol): any {
+    return obj?.[prop];
+  }
+
+  set(obj: object, prop: string | symbol, value: any): any {
+    if (!obj) obj = {};
+    obj[prop] = value;
+    return obj;
+  }
+
+  create(...args: any[]): object {
+    const obj = {};
+    if (args.length === 0) return obj;
+    for (let i = 0; i < args.length; i += 2) {
+      obj[args[i]] = args[i + 1];
+    }
+    return obj;
+  }
+
   keys(obj: object): string[] {
-    return Object.keys(obj);
+    return obj && Object.keys(obj) || [];
   }
 
   values(obj: object): any[] {
-    return Object.values(obj);
+    return obj && Object.values(obj) || [];
   }
 
   entries(obj: object): [string, any][] {
-    return Object.entries(obj);
+    return obj && Object.entries(obj) || [];
   }
 
   fromEntries(iterable: Iterable<[string, any]>): object {
@@ -16,19 +35,19 @@ class ObjectHandler {
   }
 
   assign(target: object, ...sources: object[]): object {
-    return Object.assign(target, ...sources);
+    return Object.assign(target || {}, ...sources);
   }
 
   getOwnPropertyNames(obj: object): string[] {
-    return Object.getOwnPropertyNames(obj);
+    return Object.getOwnPropertyNames(obj || {});
   }
 
   getOwnPropertySymbols(obj: object): symbol[] {
-    return Object.getOwnPropertySymbols(obj);
+    return Object.getOwnPropertySymbols(obj || {});
   }
 
   getOwnPropertyDescriptor(obj: object, prop: string | symbol): PropertyDescriptor | undefined {
-    return Object.getOwnPropertyDescriptor(obj, prop);
+    return Object.getOwnPropertyDescriptor(obj || {}, prop);
   }
 
   defineProperty(obj: object, prop: string | symbol, descriptor: PropertyDescriptor): object {

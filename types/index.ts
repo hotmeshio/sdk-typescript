@@ -90,8 +90,11 @@ export {
 export { MappingStatements } from './map';
 export {
   Pipe,
+  PipeContext,
   PipeItem,
-  PipeItems } from './pipe';
+  PipeItems,
+  PipeObject,
+  ReduceObject } from './pipe';
 export {
   HotMesh,
   HotMeshApp,

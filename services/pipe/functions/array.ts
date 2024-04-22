@@ -1,6 +1,6 @@
 class ArrayHandler {
   get(array: any[], index: number): any {
-    return array[index];
+    return array?.[index || 0];
   }
 
   length(array: any[]): any {
@@ -9,26 +9,6 @@ class ArrayHandler {
 
   concat(array1: any[], array2: any[]): any[] {
     return array1.concat(array2);
-  }
-
-  every(array: any[], callback: (value: any, index: number, array: any[]) => boolean): boolean {
-    return array.every(callback);
-  }
-
-  filter(array: any[], callback: (value: any, index: number, array: any[]) => boolean): any[] {
-    return array.filter(callback);
-  }
-
-  find(array: any[], callback: (value: any, index: number, array: any[]) => boolean): any {
-    return array.find(callback);
-  }
-
-  findIndex(array: any[], callback: (value: any, index: number, array: any[]) => boolean): number {
-    return array.findIndex(callback);
-  }
-
-  forEach(array: any[], callback: (value: any, index: number, array: any[]) => void): void {
-    array.forEach(callback);
   }
 
   indexOf(array: any[], searchElement: any, fromIndex?: number): number {
@@ -43,20 +23,13 @@ class ArrayHandler {
     return array.lastIndexOf(searchElement, fromIndex);
   }
 
-  map(array: any[], callback: (value: any, index: number, array: any[]) => any): any[] {
-    return array.map(callback);
-  }
-
   pop(array: any[]): any {
     return array.pop();
   }
 
-  push(array: any[], ...items: any[]): number {
-    return array.push(...items);
-  }
-
-  reduce(array: any[], callback: (accumulator: any, currentValue: any, currentIndex: number, array: any[]) => any, initialValue?: any): any {
-    return array.reduce(callback, initialValue);
+  push(array: any[], ...items: any[]): any[] {
+    array.push(...items);
+    return array;
   }
 
   reverse(array: any[]): any[] {
@@ -71,12 +44,26 @@ class ArrayHandler {
     return array.slice(start, end);
   }
 
-  some(array: any[], callback: (value: any, index: number, array: any[]) => boolean): boolean {
-    return array.some(callback);
-  }
-
-  sort(array: any[], compareFunction?: (a: any, b: any) => number): any[] {
-    return array.sort(compareFunction);
+  sort(array: any[], order: 'ASCENDING' | 'DESCENDING' = 'ASCENDING'): any[] {
+    return array.sort((a, b) => {
+      if (order === 'ASCENDING') {
+        if (a === b) return 0;
+        if (a === null || a === undefined) return -1;
+        if (b === null || b === undefined) return 1;
+        if (typeof a === 'string' && typeof b === 'string') {
+          return a.localeCompare(b);
+        }
+        return a < b ? -1 : 1;
+      } else {
+        if (a === b) return 0;
+        if (a === null || a === undefined) return 1;
+        if (b === null || b === undefined) return -1;
+        if (typeof a === 'string' && typeof b === 'string') {
+          return b.localeCompare(a);
+        }
+        return a > b ? -1 : 1;
+      }
+    });
   }
 
   splice(array: any[], start: number, deleteCount?: number, ...items: any[]): any[] {

@@ -1,13 +1,17 @@
+import { HMSH_CODE_DURABLE_ALL, HMSH_LOGLEVEL } from '../../modules/enums';
 import {
+  DurableChildError,
   DurableFatalError,
   DurableIncompleteSignalError,
   DurableMaxedError,
+  DurableProxyError,
   DurableRetryError,
-  DurableSleepForError,
+  DurableSleepError,
   DurableTimeoutError, 
+  DurableWaitForError, 
   DurableWaitForSignalError} from '../../modules/errors';
 import { asyncLocalStorage } from '../../modules/storage';
-import { APP_ID, APP_VERSION, getWorkflowYAML } from './factory';
+import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
   ActivityWorkflowDataType,
@@ -22,7 +26,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../types/stream';
-import { HMSH_LOGLEVEL } from '../../modules/enums';
+import { ClientService } from './client';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
@@ -135,6 +139,7 @@ export class WorkerService {
     return hotMeshWorker;
   }
 
+  //this is the linked worker function in the reentrant workflow test
   wrapActivityFunctions(): Function {
     return async (data: StreamData): Promise<StreamDataResponse> => {
       try {
@@ -154,7 +159,7 @@ export class WorkerService {
         if (!(err instanceof DurableTimeoutError) &&
           !(err instanceof DurableMaxedError) &&
           !(err instanceof DurableFatalError)) {
-          err = new DurableRetryError(err.message); 
+          err = new DurableRetryError(err.message, err.stack); 
         }
         return {
           status: StreamStatus.ERROR,
@@ -196,7 +201,8 @@ export class WorkerService {
 
   wrapWorkflowFunction(workflowFunction: Function, workflowTopic: string, config: WorkerConfig): Function {
     return async (data: StreamData): Promise<StreamDataResponse> => {
-     const counter = { counter: 0 };
+      const counter = { counter: 0 };
+      const interruptionRegistry: any[] = [];
       try {
         //incoming data payload has arguments and workflowId
         const workflowInput = data.data as unknown as WorkflowDataType;
@@ -204,7 +210,7 @@ export class WorkerService {
         context.set('raw', data);
         context.set('namespace', config.namespace ?? APP_ID);
         context.set('counter', counter);
-        context.set('workflowId', workflowInput.workflowId);
+        context.set('interruptionRegistry', interruptionRegistry);
         context.set('workflowId', workflowInput.workflowId);
         if (workflowInput.originJobId) {
           //if present there is an origin job to which this job is subordinated; 
@@ -219,8 +225,8 @@ export class WorkerService {
           context.set('workflowDimension', workflowInput.workflowDimension);
           replayQuery = `-*${workflowInput.workflowDimension}-*`;
         } else {
-          //last letter of words like 'hook', 'sleep', 'wait', 'signal', 'search', 'start'
-          replayQuery = '-*[ehklpt]-*';
+          //last letter of words like 'hook', 'sleep', 'wait', 'signal', 'search', 'start', 'proxy', 'child', 'collator'
+          replayQuery = '-*[ehklptydr]-*';
         }
         context.set('workflowTopic', workflowTopic);
         context.set('workflowName', workflowTopic.split('-').pop());
@@ -245,41 +251,90 @@ export class WorkerService {
           data: { response: workflowResponse, done: true }
         };
       } catch (err) {
-        //not an error...just a trigger to sleep
-        if (err instanceof DurableSleepForError) {
+
+        if (err instanceof DurableWaitForError || interruptionRegistry.length > 1) {
+          //return the interruption packaged as a `collator` interruption type
+          //NOTE: this type is spawned when `Promise.all` is used OR if the interruption is a `waitFor`
+          const workflowInput = data.data as unknown as WorkflowDataType;
+          const execIndex = counter.counter - interruptionRegistry.length + 1;
+          const { workflowId, workflowTopic, workflowDimension, originJobId } = workflowInput;
+          const collatorFlowId = `-${workflowId}-$COLLATOR${workflowDimension || ''}-${execIndex}`;
+          return {
+            status: StreamStatus.SUCCESS,
+            code: HMSH_CODE_DURABLE_ALL,
+            metadata: { ...data.metadata },
+            data: {
+              code: HMSH_CODE_DURABLE_ALL,
+              items: [...interruptionRegistry],
+              size: interruptionRegistry.length,
+              workflowDimension: workflowDimension || '',
+              index: execIndex,
+              originJobId: originJobId || workflowId,
+              parentWorkflowId: workflowId,
+              workflowId: collatorFlowId,
+              workflowTopic: workflowTopic,
+            },
+          } as StreamDataResponse;
+
+        } else if (err instanceof DurableSleepError) {
+          //return the sleep interruption
           return {
             status: StreamStatus.SUCCESS,
             code: err.code,
             metadata: { ...data.metadata },
             data: {
               code: err.code,
-              message: JSON.stringify({ duration: err.duration, index: err.index, dimension: err.dimension }),
+              message: JSON.stringify({ duration: err.duration, index: err.index, workflowDimension: err.workflowDimension }),
               duration: err.duration,
               index: err.index,
-              dimension: err.dimension
+              workflowDimension: err.workflowDimension,  
             }
           } as StreamDataResponse;
 
-        //not an error...just a trigger to wait for a signal
-        } else if (err instanceof DurableWaitForSignalError) {
+        } else if (err instanceof DurableProxyError) {
+          //return the proxyActivity interruption
           return {
             status: StreamStatus.SUCCESS,
             code: err.code,
             metadata: { ...data.metadata },
             data: {
               code: err.code,
-              signals: err.signals,
-              index: err.signals[0].index
+              message: JSON.stringify({ message: err.message, workflowId: err.workflowId, activityName: err.activityName, dimension: err.workflowDimension }),
+              arguments: err.arguments,
+              workflowDimension: err.workflowDimension,
+              index: err.index,
+              originJobId: err.originJobId,
+              parentWorkflowId: err.parentWorkflowId,
+              workflowId: err.workflowId,
+              workflowTopic: err.workflowTopic,
+              activityName: err.activityName,
+              backoffCoefficient: err.backoffCoefficient,
+              maximumAttempts: err.maximumAttempts,
+              maximumInterval: err.maximumInterval,
             }
           } as StreamDataResponse;
 
-        //not an error...still waiting for all the signals to arrive
-        } else if (err instanceof DurableIncompleteSignalError) {
+        } else if (err instanceof DurableChildError) {
+          //return the child interruption
           return {
             status: StreamStatus.SUCCESS,
             code: err.code,
             metadata: { ...data.metadata },
-            data: { code: err.code }
+            data: {
+              arguments: err.arguments,
+              await: err.await,
+              backoffCoefficient: err.backoffCoefficient,
+              code: err.code,
+              index: err.index,
+              message: JSON.stringify({ message: err.message, workflowId: err.workflowId, dimension: err.workflowDimension }),
+              maximumAttempts: err.maximumAttempts,
+              maximumInterval: err.maximumInterval,
+              originJobId: err.originJobId,
+              parentWorkflowId: err.parentWorkflowId,
+              workflowDimension: err.workflowDimension,
+              workflowId: err.workflowId,
+              workflowTopic: err.workflowTopic,
+            }
           } as StreamDataResponse;
         }
 

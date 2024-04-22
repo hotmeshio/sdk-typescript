@@ -54,8 +54,8 @@ export class Search {
         const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
         const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
         await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length.toString(), ...prefixes, 'SCHEMA', ...schema);
-      } catch (err) {
-        hotMeshClient.engine.logger.info('durable-client-search-err', { err });
+      } catch (error) {
+        hotMeshClient.engine.logger.info('durable-client-search-err', { ...error });
       }
     }
   }
@@ -71,8 +71,8 @@ export class Search {
       const store = hotMeshClient.engine.store;
       const searchIndexes = await store.exec('FT._LIST');
       return searchIndexes as string[];
-    } catch (err) {
-      hotMeshClient.engine.logger.info('durable-client-search-list-err', { err });
+    } catch (error) {
+      hotMeshClient.engine.logger.info('durable-client-search-list-err', { ...error });
       return [];
     }
   }
@@ -113,8 +113,8 @@ export class Search {
   async get(key: string): Promise<string> {
     try {
       return await this.store.exec('HGET',this.jobId, this.safeKey(key)) as string;
-    } catch (err) {
-      this.hotMeshClient.logger.error('durable-search-get-error', { err });
+    } catch (error) {
+      this.hotMeshClient.logger.error('durable-search-get-error', { ...error });
       return '';
     }
   }
@@ -126,8 +126,8 @@ export class Search {
     }
     try {
       return await this.store.exec('HMGET', this.jobId, ...safeArgs) as string[];
-    } catch (err) {
-      this.hotMeshClient.logger.error('durable-search-mget-error', { err });
+    } catch (error) {
+      this.hotMeshClient.logger.error('durable-search-mget-error', { ...error });
       return [];
     }
   }

@@ -70,7 +70,7 @@ describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
           taskQueue: 'sleep-world',
           workflow: workflows.default.example,
           options: {
-            maxSystemRetries: 2,
+            maximumAttempts: 2,
             backoffCoefficient: 5,
           },
         });

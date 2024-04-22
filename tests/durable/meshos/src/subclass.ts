@@ -40,18 +40,14 @@ export class MyClass extends MeshOSTest {
     //call both a proxied activity and a vanilla activity
     const greeting = await this.greet('world');
     const salud = await this.saludar('world');
-    //console.log(greeting, salud);
 
     //sleep for 1 second (or week, or year, or whatever)
     await MyClass.MeshOS.sleepFor('1 second');
 
     const receipt = await this.updateStatus('ordered', val);
-    //console.log('updateStatus receipt=>', receipt);
 
     //wait for the hook method to finish and signal completion
-    //console.log('waiting for signal!!!');
     const [hookResult] = await MyClass.MeshOS.waitForSignal(['abc']);
-    //console.log('wait for signal result=>', hookResult);
 
     //get multiple search values at once using 'mget'
     const [status, quality, quantity] = await search.mget('status', 'quality', 'quantity');
@@ -63,7 +59,6 @@ export class MyClass extends MeshOSTest {
    */
   async updateStatus(status: string, quantity: number): Promise<void> {
     //update the workflow status
-    //console.log('updating status to=>', status, Date.now());
 
     const search = await MyClass.MeshOS.search();
     const current = await search.get('status');
@@ -77,7 +72,6 @@ export class MyClass extends MeshOSTest {
 
     await MyClass.MeshOS.sleepFor('2 seconds');
 
-    //console.log('sending the abc signal');
     const random = MyClass.MeshOS.random(); //0.20008059867222983
     await MyClass.MeshOS.signal('abc', { status, quantity, random });
   }
@@ -100,7 +94,6 @@ export class MyClass extends MeshOSTest {
    * proxied activity method: return a greeting
    */
   async greet(name: string): Promise<string> {
-    //console.log('calling greet with input=>', name);
     return `Hello ${name}!`;
   }
 
@@ -108,7 +101,6 @@ export class MyClass extends MeshOSTest {
    * vanilla activity method: return a greeting
    */
   async saludar(name: string): Promise<string> {
-    //console.log('calling saludar with input=>', name);
     return `Hola ${name}!`;
   }
 

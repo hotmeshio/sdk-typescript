@@ -89,7 +89,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
       return (await this.redisClient.sendCommand(['XGROUP', 'CREATE', key, groupName, id, ...args])) === 1;
     } catch (error) {
       const streamType = mkStream === 'MKSTREAM' ? 'with MKSTREAM' : 'without MKSTREAM';
-      this.logger.debug(`x-group-error ${streamType} for key: ${key} and group: ${groupName}`, { error });
+      this.logger.debug(`x-group-error ${streamType} for key: ${key} and group: ${groupName}`, { ...error });
       throw error;
     }
   }
@@ -102,7 +102,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
     try {
       return await (multi || this.redisClient).XADD(key, id, { [args[0]]: args[1] });
     } catch (error) {
-      this.logger.error(`Error publishing 'xadd'; key: ${key}`, { error });
+      this.logger.error(`Error publishing 'xadd'; key: ${key}`, { ...error });
       throw error;
     }
   }
@@ -123,7 +123,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
       if (consumer) args.push(consumer);
       return await this.redisClient.sendCommand(['XPENDING', ...args]);
     } catch (error) {
-      this.logger.error(`Error in retrieving pending messages for group: ${group} in key: ${key}`, { error });
+      this.logger.error(`Error in retrieving pending messages for group: ${group} in key: ${key}`, { ...error });
       throw error;
     }
   }
@@ -139,7 +139,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
     try {
       return await this.redisClient.sendCommand(['XCLAIM', key, group, consumer, minIdleTime.toString(), id, ...args]) as unknown as ReclaimedMessageType;
     } catch (error) {
-      this.logger.error(`Error in claiming message with id: ${id} in group: ${group} for key: ${key}`, { error });
+      this.logger.error(`Error in claiming message with id: ${id} in group: ${group} for key: ${key}`, { ...error });
       throw error;
     }
   }
@@ -153,7 +153,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
         return await this.redisClient[this.commands.xack](key, group, id);
       }
     } catch (error) {
-      this.logger.error(`Error in acknowledging messages in group: ${group} for key: ${key}`, { error });
+      this.logger.error(`Error in acknowledging messages in group: ${group} for key: ${key}`, { ...error });
       throw error;
     }
   }
@@ -167,7 +167,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
         return await this.redisClient[this.commands.xdel](key, id);
       }
     } catch (error) {
-      this.logger.error(`Error in deleting messages with ids: ${id} for key: ${key}`, { error });
+      this.logger.error(`Error in deleting messages with ids: ${id} for key: ${key}`, { ...error });
       throw error;
     }
   }
@@ -181,7 +181,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
         return await this.redisClient.XLEN(key);
       }
     } catch (error) {
-      this.logger.error(`Error getting stream depth: ${key}`, { error });
+      this.logger.error(`Error getting stream depth: ${key}`, { ...error });
       throw error;
     }
   }

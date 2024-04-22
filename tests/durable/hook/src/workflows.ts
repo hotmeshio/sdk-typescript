@@ -33,7 +33,7 @@ export async function example(name: string): Promise<string> {
   });
 
   //start a child workflow and only confirm it started (don't wait for result)
-  await Durable.workflow.startChild<string>({
+  await Durable.workflow.startChild({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
@@ -77,7 +77,7 @@ export async function exampleHook(name: string): Promise<void> {
   });
 
   // //start a child workflow and only confirm it started (don't wait for result)
-  await Durable.workflow.startChild<string>({
+  await Durable.workflow.startChild({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',

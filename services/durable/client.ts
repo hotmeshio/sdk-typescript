@@ -1,4 +1,4 @@
-import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, getWorkflowYAML } from './factory';
+import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, getWorkflowYAML } from './schemas/factory';
 import { WorkflowHandleService } from './handle';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
@@ -32,7 +32,7 @@ export class ClientService {
       await this.verifyWorkflowActive(hotMeshClient, targetNS);
       if (!ClientService.topics.includes(workflowTopic)) {
         ClientService.topics.push(workflowTopic);
-        await this.createStream(hotMeshClient, workflowTopic, namespace);
+        await ClientService.createStream(hotMeshClient, workflowTopic, namespace);
       }
       return hotMeshClient;
     }
@@ -49,7 +49,7 @@ export class ClientService {
       }
     });
     ClientService.instances.set(targetNS, hotMeshClient);
-    await this.createStream(await hotMeshClient, workflowTopic, namespace);
+    await ClientService.createStream(await hotMeshClient, workflowTopic, namespace);
     await this.activateWorkflow(await hotMeshClient, targetNS);
     return hotMeshClient;
   }
@@ -60,7 +60,7 @@ export class ClientService {
    * has not yet been initialized, so this call ensures that the channel
    * exists and is ready to serve as a container for events.
    */
-  createStream = async(hotMeshClient: HotMesh, workflowTopic: string, namespace?: string) => {
+  static createStream = async(hotMeshClient: HotMesh, workflowTopic: string, namespace?: string) => {
     const store = hotMeshClient.engine.store;
     const params = { appId: namespace ?? APP_ID, topic: workflowTopic };
     const streamKey = store.mintKey(KeyType.STREAMS, params);
@@ -68,6 +68,23 @@ export class ClientService {
       await store.xgroup('CREATE', streamKey, 'WORKER', '$', 'MKSTREAM');
     } catch (err) {
       //ignore if already exists
+    }
+  }
+
+  /**
+   * It is possible for a client to invoke a workflow without first
+   * creating the stream. This method will verify that the stream
+   * exists and if not, create it.
+   */
+  static verifyStream = async(workflowTopic: string, namespace?: string) => {
+    const targetNS = namespace ?? APP_ID;
+    if (ClientService.instances.has(targetNS)) {
+      const hotMeshClient = await ClientService.instances.get(targetNS);
+      if (!ClientService.topics.includes(workflowTopic)) {
+        ClientService.topics.push(workflowTopic);
+        await ClientService.createStream(hotMeshClient, workflowTopic, namespace);
+      }
+      return hotMeshClient;
     }
   }
 
@@ -95,8 +112,8 @@ export class ClientService {
         const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
         const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
         await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length, ...prefixes, 'SCHEMA', ...schema);
-      } catch (err) {
-        hotMeshClient.engine.logger.info('durable-client-search-err', { err });
+      } catch (error) {
+        hotMeshClient.engine.logger.info('durable-client-search-err', { ...error });
       }
     }
   }
@@ -190,9 +207,9 @@ export class ClientService {
       const hotMeshClient = await this.getHotMeshClient(workflowTopic, namespace);
       try {
         return await this.search(hotMeshClient, index, query);
-      } catch (err) {
-        hotMeshClient.engine.logger.error('durable-client-search-err', { err });
-        throw err;
+      } catch (error) {
+        hotMeshClient.engine.logger.error('durable-client-search-err', { ...error });
+        throw error;
       }
     }
   }
@@ -218,7 +235,7 @@ export class ClientService {
         await hotMesh.deploy(getWorkflowYAML(appId, version));
         await hotMesh.activate(version);
       } catch (error) {
-        hotMesh.engine.logger.error('durable-client-deploy-activate-err', { error });
+        hotMesh.engine.logger.error('durable-client-deploy-activate-err', { ...error });
         throw error;
       }
     } else if(app && !app.active) {
