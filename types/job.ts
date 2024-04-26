@@ -37,7 +37,7 @@ type JobMetadata = {
   /** parent_activity_id */
   pa?: string;
   
-  /** sever the dependency chain if true (startChild/vs/executeChild) */
+  /** sever the dependency chain if true (startChild/vs/execChild) */
   px?: boolean;
   
   /** engine guid (one time subscriptions) */
@@ -100,29 +100,60 @@ type JobState = {
 };
 
 type JobInterruptOptions = {
-  /** Optional reason when throwing the error  */
+  /** 
+   * optional Reason; will be used as the error `message` when thrown
+   * @default 'Job Interrupted'
+   */
   reason?: string;
 
-  /** default is `true` when `undefined` (throw JobInterrupted/410 error) */
+  /** 
+   * throw JobInterrupted error upon interrupting
+   * @default true
+   */
   throw?: boolean;
 
-  /** default behavior is `false` when `undefined` (do NOT interrupt child jobs) */
+  /** 
+   * interrupt child/descendant jobs
+   * @default false
+   */
   descend?: boolean;
 
-  /** default is false; if true, errors related to inactivation (like overage...already inactive) are suppressed/ignored */
+  /**
+   * if true, errors related to inactivation (like overage...already inactive) are suppressed/ignored
+   * @default false
+   */
   suppress?: boolean;
 
-  /** how long to wait in seconds before fully expiring/removing the hash from Redis; the job is inactive, but can remain in the cache indefinitely. minimum 1 second.*/
+  /**
+   * how long to wait in seconds before fully expiring/removing the hash from Redis;
+   * the job is inactive, but can remain in the cache indefinitely;
+   * @default 1 second.
+   */
   expire?: number;
+
+  /** 
+   * Optional Error Code; will be used as the error `code` when thrown
+   * @default 410
+   */
+  code?: number;
+
+  /**
+   * Optional stack trace
+   */
+  stack?: string;
 };
 
-//format when publishing job meta/data on the wire when it completes
+/**
+ * format when publishing job meta/data on the wire when it completes
+ */
 type JobOutput = {
   metadata: JobMetadata;
   data: JobData;
 };
 
-//jid+dad+aid is a composite guid; signal in and restore the full job context
+/**
+ * jid+dad+aid is a composite guid; signal in and restore the full job context
+ */
 type PartialJobState = {
   metadata: JobMetadata | Pick<JobMetadata, 'jid' | 'dad' | 'aid'>;
   data: JobData;
@@ -135,7 +166,10 @@ type JobCompletionOptions = {
   /** default undefined */
   interrupt?: boolean;
   
-  /** in seconds to wait before deleting/expiring job hash */
+  /**
+   * in seconds to wait before deleting/expiring job hash
+   * @default 1 second
+   */
   expire?: number;
 };
 

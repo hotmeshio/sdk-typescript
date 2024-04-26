@@ -1,3 +1,5 @@
+import { formatISODate } from "../../../modules/utils";
+
 type DateInput = Date | string | number;
 
 class DateHandler {
@@ -179,6 +181,10 @@ class DateHandler {
 
   toISOString(date: DateInput): string {
     return DateHandler.getDateInstance(date).toISOString();
+  }
+
+  toISOXString(date?: DateInput): string {
+    return formatISODate(date ? DateHandler.getDateInstance(date) : new Date());
   }
 
   toJSON(date: DateInput): string {

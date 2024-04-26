@@ -535,38 +535,38 @@ describe('Pipe', () => {
       };
 
       rules = [
-        ["{a.output.data}", []],
+        ['{a.output.data}', []],
         {
-          "@reduce": [
+          '@reduce': [
+            { '@pipe': [
+              ['{$output}']
+            ]},
             {
-              "@pipe": [["{$output}"]]
-            },
-            { 
-              "@pipe": [
+              '@pipe': [
                 {
-                  "@pipe": [["first"]]
+                  '@pipe': [['first']]
                 },
                 {
-                  "@pipe": [
-                    ["{$item.full_name}", " "],
-                    ["{@string.split}", 0],
-                    ["{@array.get}"],
+                  '@pipe': [
+                    ['{$item.full_name}', ' '],
+                    ['{@string.split}', 0],
+                    ['{@array.get}'],
                   ]
                 },
                 {
-                  "@pipe": [["last"]]
+                  '@pipe': [['last']]
                 },
                 {
-                  "@pipe": [
-                    ["{$item.full_name}", " "],
-                    ["{@string.split}", 1],
-                    ["{@array.get}"],
+                  '@pipe': [
+                    ['{$item.full_name}', ' '],
+                    ['{@string.split}', 1],
+                    ['{@array.get}'],
                   ]
                 },
-                ["{@object.create}"],
+                ['{@object.create}'],
               ]
             },
-            ["{@array.push}"],
+            ['{@array.push}'],
           ]
         }
       ];

@@ -2,16 +2,17 @@ import Redis from 'ioredis';
 
 import config from '../../$setup/config'
 import { Durable } from '../../../services/durable';
-import * as workflows from './src/workflows';
+import { example, state as STATE } from './src/workflows';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
+import { DurableMaxedError } from '../../../modules/errors';
 
 const { Connection, Client, Worker } = Durable;
 
-describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
+describe('DURABLE | unknown | `Workflow Retryable Unknown Error`', () => {
   let handle: WorkflowHandleService;
-  const errorCycles = 3;
+  let toThrowCount = 3;
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -47,13 +48,18 @@ describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({ connection: { class: Redis, options }});
-        //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
-          args: [{ amount: errorCycles }],
-          taskQueue: 'sleep-world',
+          args: [toThrowCount],
+          taskQueue: 'unknown-world',
           workflowName: 'example',
           workflowId: guid(),
           expire: 120,
+          config: {
+            //speed up the default retry strategy (so the test completes in time)
+            maximumAttempts: toThrowCount + 1,
+            backoffCoefficient: 1,
+            maximumInterval: '1s',
+          }
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -68,8 +74,8 @@ describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
             class: Redis,
             options,
           },
-          taskQueue: 'sleep-world',
-          workflow: workflows.default.example,
+          taskQueue: 'unknown-world',
+          workflow: example,
         });
         await worker.run();
         expect(worker).toBeDefined();
@@ -79,10 +85,49 @@ describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
 
   describe('WorkflowHandle', () => {
     describe('result', () => {
-      it('should return the workflow execution result', async () => {
+      it('should return successfully after retrying a workflow-generated error', async () => {
         const result = await handle.result();
-        expect(result).toEqual(errorCycles);
-      }, 20_000);
+        expect(result).toBe(toThrowCount);
+      }, 15_000);
     });
   });
+
+  describe('End to End', () => {
+    it('should connect a client, start a workflow, and throw max retries exceeded', async () => {
+      //reset counter that increments with each workflow run
+      STATE.count = 0;
+
+      //instance a durable client and start the workflow
+      const client = new Client({ connection: { class: Redis, options }});
+      const handle = await client.workflow.start({
+        args: [toThrowCount],
+        taskQueue: 'unknown-world',
+        workflowName: 'example',
+        workflowId: guid(),
+        expire: 120,
+        config: {
+          //if allowed max is 1 less than errors, 597 should be thrown (max exceeded)
+          maximumAttempts: toThrowCount - 1,
+          backoffCoefficient: 1,
+          maximumInterval: '1s',
+        }
+      });
+      expect(handle.workflowId).toBeDefined();
+
+      try {
+        await handle.result();
+        throw new Error('This should not be thrown');
+      } catch (error) {
+        //the workflow throws this error
+        expect(error.message).toEqual('recurring-test-error');
+
+        //...but the final error response will be a DurableMaxedError after the workflow gives up
+        expect(error.code).toEqual(new DurableMaxedError('').code);
+
+        //expect a stack trace
+        expect(error.stack).toBeDefined();
+      }
+    }, 15_000);
+  });
+
 });

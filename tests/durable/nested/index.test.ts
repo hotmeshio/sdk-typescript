@@ -10,7 +10,7 @@ import { guid, sleepFor } from '../../../modules/utils';
 
 const { Connection, Client, Worker } = Durable;
 
-describe('DURABLE | nested | `workflow.executeChild`', () => {
+describe('DURABLE | nested | `workflow.execChild`', () => {
   let handle: WorkflowHandleService;
   const options = {
     host: config.REDIS_HOST,
@@ -65,7 +65,7 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
           [handle, handle2] = await Promise.all([h, localH]);
           expect(handle.workflowId).toBeDefined();
         } catch(e) {
-          console.log(e);
+          console.error(e);
         }
       });
     });

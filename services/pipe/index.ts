@@ -73,11 +73,12 @@ class Pipe {
    */
   reduce(input: Array<unknown[]>): unknown {
     let resolved = input[1] ?? null;
+
     if (Array.isArray(input[0])) {
-      input[0].forEach((row, index) => {
-        this.context = { $input: input[0], $output: resolved, $item: row, $key: index.toString(), $index: index };
+      for (let index = 0; index < input[0].length; index++) {
+        this.context = { $input: input[0], $output: resolved, $item: input[0][index], $key: index.toString(), $index: index };
         resolved = this.process([resolved]);
-      });
+      }
     } else {
       let index = -1;
       for (let $key in (input[0] as Record<string, unknown>)) {
@@ -155,7 +156,7 @@ class Pipe {
 
   private isContextVariable(currentCell: PipeItem): boolean {
     if(typeof currentCell === 'string' && currentCell.endsWith('}')) {
-      return ['{$input}', '{$output}', '{$item}', '{$key}', '{$index}'].includes(currentCell);
+      return currentCell.startsWith('{$item') || currentCell.startsWith('{$key') || currentCell.startsWith('{$index') || currentCell.startsWith('{$input') || currentCell.startsWith('{$output');
     }
   }
 

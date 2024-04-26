@@ -58,6 +58,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
           taskQueue: 'hook-world',
           workflowName: 'example',
           workflowId: workflowGuid,
+          expire: 600,
           //SEED the initial workflow state with data (this is
           //different than the 'args' input data which the workflow
           //receives as its first argument...this data is available
@@ -105,7 +106,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
       });
 
       it('should create and run the CHILD workflow worker', async () => {
-        //the main flow has an executeChild command which will be serviced
+        //the main flow has an execChild command which will be serviced
         //by this worker
         const worker = await Worker.create({
           namespace,
@@ -135,7 +136,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
 
         //send a `hook` to spawn a hook thread attached to this workflow
         //the exampleHook function will be invoked in job context, allowing
-        //it the ability to read/write/augment shared job state
+        //it to read/write/augment shared job state with transactional integrity
         await client.workflow.hook({
           namespace,
           taskQueue: 'hook-world',
@@ -175,13 +176,13 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
           '@_custom1:durable'
         );
         expect(count).toEqual(1);
-        const [id, ...rest2] = results;
+        const [id, ..._rest2] = results;
 
         const keyParams = { appId: namespace, jobId: workflowGuid }
         const expectedGuid = KeyService.mintKey(HMNS, KeyType.JOB_STATE, keyParams);
         expect(id).toEqual(expectedGuid);
         await sleepFor(5_000);
-      }, 25_000);
+      }, 30_000);
     });
   });
 });

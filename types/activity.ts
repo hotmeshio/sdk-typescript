@@ -110,32 +110,104 @@ interface SignalActivity extends BaseActivity {
 
 interface InterruptActivity extends BaseActivity {
   type: 'interrupt';
-  /** Optional Reason; will be used as the error `message` when thrown; NOTE: 410 is the error `code` */
+
+  /** 
+   * Optional Reason; will be used as the error `message` when thrown
+   * @default 'Job Interrupted'
+   */
   reason?: string;
-  /** default is `true` (throw JobInterrupted error upon interrupting) */
+
+  /** 
+   * throw JobInterrupted error upon interrupting
+   * @default true
+   */
   throw?: boolean;
-  /** TODO: // default is `false` (do not interrupt child jobs) */
+
+  /** 
+   * Interrupt child/descendant jobs
+   * @default false
+   */
   descend?: boolean;
-  /** target job id (if not present the current job will be targeted) */
+
+  /** 
+   * Target job id (if not present the current job will be targeted)
+   */
   target?: string;
-  /** topic to publish the interrupt message (if not present the current job topic will be used) */
+
+  /** 
+   * Optional topic to publish the interrupt message (if not present the current job topic will be used
+   */
   topic?: string;
+
+  /** 
+   * Optional Error Code; will be used as the error `code` when thrown
+   * @default 410
+   */
+  code?: number;
+
+  /**
+   * Optional stack trace
+   */
+  stack?: string;
 }
 
 type ActivityType = BaseActivity | TriggerActivity | AwaitActivity | WorkerActivity | InterruptActivity | HookActivity | SignalActivity | CycleActivity;
 
 type ActivityData = Record<string, any>;
+
+/**
+ * Type definition for activity metadata.
+ */
 type ActivityMetadata = {
-  aid: string;  //activity_id
-  atp: string;  //activity_type
-  stp: string;  //activity_subtype
-  ac: string;   //GMT created //activity_created
-  au: string;   //GMT updated //activity_updated
-  err?: string; //stringified error json: {message: string, code: number, error?}
-  l1s?: string; //open telemetry span context (leg 1)
-  l2s?: string; //open telemetry span context (leg 2)
-  dad?: string; //dimensional address
-  as?: string;  //activity status (e.g., 889000001000001)
+  /**
+   * Unique identifier for the activity.
+   */
+  aid: string;
+
+  /**
+   * Type of the activity.
+   */
+  atp: string;
+
+  /**
+   * Subtype of the activity.
+   */
+  stp: string;
+
+  /**
+   * Timestamp when the activity was created, in GMT.
+   */
+  ac: string;
+
+  /**
+   * Timestamp when the activity was last updated, in GMT.
+   */
+  au: string;
+
+  /**
+   * Optional stringified JSON containing error details such as message, code, and an optional error object.
+   */
+  err?: string;
+
+  /**
+   * OpenTelemetry span context for the first leg of the activity.
+   */
+  l1s?: string;
+
+  /**
+   * OpenTelemetry span context for the second leg of the activity.
+   */
+  l2s?: string;
+
+  /**
+   * Dimensional address, used for additional metadata.
+   */
+  dad?: string;
+
+  /**
+   * Status of the activity, could be codes representing different states.
+   */
+  as?: string;
 };
 
 type ActivityContext = {

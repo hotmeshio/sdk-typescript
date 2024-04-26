@@ -4,16 +4,13 @@ import {
   HMSH_CODE_DURABLE_MAXED,
   HMSH_CODE_DURABLE_TIMEOUT,
   HMSH_CODE_DURABLE_FATAL,
-  HMSH_CODE_DURABLE_INCOMPLETE,
   HMSH_CODE_NOTFOUND,
   HMSH_CODE_DURABLE_RETRYABLE,
-  HMSH_CODE_DURABLE_SLEEPFOR,
-  HMSH_CODE_DURABLE_WAITFOR, 
   HMSH_CODE_DURABLE_WAIT,
   HMSH_CODE_DURABLE_PROXY,
   HMSH_CODE_DURABLE_CHILD,
   HMSH_CODE_DURABLE_ALL,
-  HMSH_CODE_DURABLE_SLEEP} from "./enums";
+  HMSH_CODE_DURABLE_SLEEP } from "./enums";
 
 class GetStateError extends Error {
   jobId: string;
@@ -26,27 +23,6 @@ class GetStateError extends Error {
 class SetStateError extends Error {
   constructor() {
     super("Error occurred while setting job state");
-  }
-}
-
-//thrown when a signal set is incomplete but already configured
-//if a waitFor set has 'n' items, this can be thrown `n - 1` times
-class DurableIncompleteSignalError extends Error {
-  code: number;
-  constructor(message: string) {
-    super(message);
-    this.code = HMSH_CODE_DURABLE_INCOMPLETE;
-  }
-}
-
-//the original waitFor error that is thrown for a new signal set
-class DurableWaitForSignalError extends Error {
-  code: number;
-  signals: {signal: string, index: number}[]; //signal id and execution order in the workflow
-  constructor(message: string, signals: {signal: string, index: number}[]) {
-    super(message);
-    this.signals = signals;
-    this.code = HMSH_CODE_DURABLE_WAITFOR;
   }
 }
 
@@ -207,46 +183,45 @@ class DurableSleepError extends Error {
     this.code = HMSH_CODE_DURABLE_SLEEP;
   }
 }
-class DurableSleepForError extends Error {
-  code: number;
-  duration: number; //seconds
-  index: number;    //execution order in the workflow
-  dimension: string; //hook dimension (e.g., ',0,1,0') (uses empty string for `null`)
-  constructor(message: string, duration: number, index: number, dimension: string) {
-    super(message);
-    this.duration = duration;
-    this.index = index;
-    this.dimension = dimension;
-    this.code = HMSH_CODE_DURABLE_SLEEPFOR;
-  }
-}
+
 class DurableTimeoutError extends Error {
   code: number;
-  constructor(message: string) {
+  constructor(message: string, stack?: string) {
     super(message);
+    if (this.stack) {
+      this.stack = stack;
+    }
     this.code = HMSH_CODE_DURABLE_TIMEOUT;
   }
 }
 class DurableMaxedError extends Error {
   code: number;
-  constructor(message: string) {
+  constructor(message: string, stackTrace?: string) {
     super(message);
+    if (stackTrace) {
+      this.stack = stackTrace;
+    }
     this.code = HMSH_CODE_DURABLE_MAXED;
   }
 }
 class DurableFatalError extends Error {
   code: number;
-  constructor(message: string) {
+  constructor(message: string, stackTrace?: string) {
     super(message);
+    if (stackTrace) {
+      this.stack = stackTrace;
+    }
     this.code = HMSH_CODE_DURABLE_FATAL;
   }
 }
 class DurableRetryError extends Error {
   code: number;
   stack?: string;
-  constructor(message: string, stack?: string) {
+  constructor(message: string, stackTrace?: string) {
     super(message);
-    this.stack = stack;
+    if (stackTrace) {
+      this.stack = stackTrace;
+    }
     this.code = HMSH_CODE_DURABLE_RETRYABLE;
   }
 }
@@ -325,16 +300,13 @@ export {
   CollationError,
   DurableChildError,
   DurableFatalError,
-  DurableIncompleteSignalError,
   DurableMaxedError,
   DurableProxyError,
   DurableRetryError,
   DurableSleepError,
-  DurableSleepForError,
   DurableTimeoutError,
   DurableWaitForAllError,
   DurableWaitForError,
-  DurableWaitForSignalError,
   DuplicateJobError,
   ExecActivityError,
   GenerationalError,

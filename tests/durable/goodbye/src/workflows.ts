@@ -24,7 +24,7 @@ export async function example(name: string): Promise<string> {
 
   //val4 is 120.00000000009 (rounding error due to logarithmic math)
   const val4 = await search.mult('multer', 10);
-  const [signal1] = await Durable.workflow.waitForSignal(['abcdefg']);
+  const signal1 = await Durable.workflow.waitFor<{data: string}>('abcdefg');
 
   return `${hello} - ${goodbye}`;
 }
@@ -32,5 +32,6 @@ export async function example(name: string): Promise<string> {
 export async function exampleHook(name: string): Promise<void> {
   const search = await Durable.workflow.search();
   await search.incr('counter', 100);
+  await Durable.workflow.sleepFor('1 second');
   Durable.workflow.signal('abcdefg', { data: 'hello' });
 }

@@ -1,15 +1,20 @@
-import { HMSH_CODE_DURABLE_ALL, HMSH_LOGLEVEL } from '../../modules/enums';
+import ms from 'ms';
+import {
+  HMSH_CODE_DURABLE_ALL,
+  HMSH_CODE_DURABLE_RETRYABLE,
+  HMSH_DURABLE_EXP_BACKOFF,
+  HMSH_DURABLE_MAX_INTERVAL,
+  HMSH_DURABLE_MAX_ATTEMPTS,
+  HMSH_LOGLEVEL } from '../../modules/enums';
 import {
   DurableChildError,
   DurableFatalError,
-  DurableIncompleteSignalError,
   DurableMaxedError,
   DurableProxyError,
   DurableRetryError,
   DurableSleepError,
   DurableTimeoutError, 
-  DurableWaitForError, 
-  DurableWaitForSignalError} from '../../modules/errors';
+  DurableWaitForError } from '../../modules/errors';
 import { asyncLocalStorage } from '../../modules/storage';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 import { HotMeshService as HotMesh } from '../hotmesh';
@@ -26,7 +31,7 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../types/stream';
-import { ClientService } from './client';
+import { formatISODate } from '../../modules/utils';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
@@ -155,17 +160,42 @@ export class WorkerService {
           data: { response: pojoResponse }
         };
       } catch (err) {
-        this.activityRunner.engine.logger.error('durable-worker-activity-err', err);
+        this.activityRunner.engine.logger.error('durable-worker-activity-err', { name: err.name, message: err.message, stack: err.stack });
         if (!(err instanceof DurableTimeoutError) &&
           !(err instanceof DurableMaxedError) &&
           !(err instanceof DurableFatalError)) {
-          err = new DurableRetryError(err.message, err.stack); 
+
+            //use code 599 as a proxy for all retryable errors
+            // (basically anything not 596, 597, 598)
+            return {
+              status: StreamStatus.SUCCESS,
+              code: HMSH_CODE_DURABLE_RETRYABLE,
+              metadata: { ...data.metadata },
+              data: {
+                $error: {
+                  message: err.message,
+                  stack: err.stack,
+                  timestamp: formatISODate(new Date()),
+                }
+              },
+            } as StreamDataResponse;
         }
+
         return {
-          status: StreamStatus.ERROR,
+          //always returrn success (the Durable module is just fine);
+          //  it's the user's function that has failed
+          status: StreamStatus.SUCCESS,
           code: err.code,
+          stack: err.stack,
           metadata: { ...data.metadata },
-          data: { message: err.message }
+          data: {
+            $error: {
+              message: err.message,
+              stack: err.stack,
+              timestamp: formatISODate(new Date()),
+              code: err.code,
+            }
+          },
         } as StreamDataResponse;
       }
     }
@@ -251,9 +281,8 @@ export class WorkerService {
           data: { response: workflowResponse, done: true }
         };
       } catch (err) {
-
         if (err instanceof DurableWaitForError || interruptionRegistry.length > 1) {
-          //return the interruption packaged as a `collator` interruption type
+
           //NOTE: this type is spawned when `Promise.all` is used OR if the interruption is a `waitFor`
           const workflowInput = data.data as unknown as WorkflowDataType;
           const execIndex = counter.counter - interruptionRegistry.length + 1;
@@ -316,6 +345,11 @@ export class WorkerService {
 
         } else if (err instanceof DurableChildError) {
           //return the child interruption
+          const msg = {
+            message: err.message,
+            workflowId: err.workflowId,
+            dimension: err.workflowDimension
+          };
           return {
             status: StreamStatus.SUCCESS,
             code: err.code,
@@ -323,12 +357,12 @@ export class WorkerService {
             data: {
               arguments: err.arguments,
               await: err.await,
-              backoffCoefficient: err.backoffCoefficient,
+              backoffCoefficient: err.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF ,
               code: err.code,
               index: err.index,
-              message: JSON.stringify({ message: err.message, workflowId: err.workflowId, dimension: err.workflowDimension }),
-              maximumAttempts: err.maximumAttempts,
-              maximumInterval: err.maximumInterval,
+              message: JSON.stringify(msg),
+              maximumAttempts: err.maximumAttempts || HMSH_DURABLE_MAX_ATTEMPTS,
+              maximumInterval: err.maximumInterval || ms(HMSH_DURABLE_MAX_INTERVAL) / 1000,
               originJobId: err.originJobId,
               parentWorkflowId: err.parentWorkflowId,
               workflowDimension: err.workflowDimension,
@@ -338,12 +372,21 @@ export class WorkerService {
           } as StreamDataResponse;
         }
 
-        // all other errors are fatal (598, 597, 596) or will be retried (599)
+        // ALL other errors are actual fatal errors (598, 597, 596)
+        //  OR will be retried (599)
         return {
-          status: StreamStatus.ERROR,
+          status: StreamStatus.SUCCESS,
           code: err.code || new DurableRetryError(err.message).code,
           metadata: { ...data.metadata },
-          data: { message: err.message, type: err.name }
+          data: {
+            $error: {
+              message: err.message,
+              type: err.name,
+              name: err.name,
+              stack: err.stack,
+              code: err.code || new DurableRetryError(err.message).code,
+            }
+          }
         } as StreamDataResponse;
       }
     }

@@ -128,7 +128,6 @@ describe('FUNCTIONAL | DURABLE', () => {
         workflowTopic: err.workflowTopic,
       });
     } else {
-      //todo: handle duplicate job error, user-thrown fatal error, timeout exceeded error, retry count exceeded error
       console.error('Retrying forever!!!');
     }
   }
@@ -290,7 +289,7 @@ describe('FUNCTIONAL | DURABLE', () => {
               //child (the entity format used by pluck)
               childData = await xChild<ChildResponseType>({
                 args: ['f', { g: 7 }],
-                await: awaitChild,  // if this is false, use startChild, otherwise executeChild
+                await: awaitChild,  // if this is false, use startChild, otherwise execChild
                 workflowName,       // `entity` clobbers this
                 entity: entityName, // hotmesh syntax (use taskQueue in durable function)
               });

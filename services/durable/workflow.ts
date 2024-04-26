@@ -2,17 +2,18 @@ import ms from 'ms';
 
 import {
   DurableChildError,
-  DurableIncompleteSignalError,
+  DurableFatalError,
+  DurableMaxedError,
   DurableProxyError,
   DurableSleepError,
-  DurableWaitForError,
-  DurableWaitForSignalError
-} from '../../modules/errors';
+  DurableTimeoutError,
+  DurableWaitForError } from '../../modules/errors';
 import { KeyService, KeyType } from '../../modules/key';
 import { asyncLocalStorage } from '../../modules/storage';
-import { ClientService as Client } from './client';
-import { ConnectionService as Connection } from './connection';
-import { DEFAULT_COEFFICIENT } from './schemas/factory';
+import {
+  deterministicRandom,
+  formatISODate,
+  sleepFor } from '../../modules/utils';
 import { Search } from './search';
 import { WorkerService } from './worker';
 import { HotMeshService as HotMesh } from '../hotmesh';
@@ -23,11 +24,20 @@ import {
   WorkflowContext,
   WorkflowOptions
 } from "../../types/durable";
-import { JobInterruptOptions, JobOutput, JobState } from '../../types/job';
-import { StreamStatus } from '../../types/stream';
-import { deterministicRandom, formatISODate, sleepFor } from '../../modules/utils';
+import { JobInterruptOptions } from '../../types/job';
+import { StreamCode, StreamError, StreamStatus } from '../../types/stream';
 import { StringStringType } from '../../types';
-import { HMSH_CODE_DURABLE_CHILD, HMSH_CODE_DURABLE_PROXY, HMSH_CODE_DURABLE_SLEEP, HMSH_CODE_DURABLE_WAIT } from '../../modules/enums';
+import {
+  HMSH_CODE_DURABLE_CHILD,
+  HMSH_CODE_DURABLE_FATAL,
+  HMSH_CODE_DURABLE_MAXED,
+  HMSH_CODE_DURABLE_PROXY,
+  HMSH_CODE_DURABLE_SLEEP,
+  HMSH_CODE_DURABLE_TIMEOUT,
+  HMSH_CODE_DURABLE_WAIT, 
+  HMSH_DURABLE_EXP_BACKOFF, 
+  HMSH_DURABLE_MAX_ATTEMPTS,
+  HMSH_DURABLE_MAX_INTERVAL} from '../../modules/enums';
 import { SerializerService } from '../serializer';
 
 export class WorkflowService {
@@ -38,9 +48,9 @@ export class WorkflowService {
    * @param {WorkflowOptions} options - the workflow options
    * @returns {Promise<T>} - the result of the child workflow
    * @example
-   * const result = await Durable.workflow.executeChild<typeof resultType>({ ...options });
+   * const result = await Durable.workflow.execChild<typeof resultType>({ ...options });
    */
-  static async executeChild<T>(options: WorkflowOptions): Promise<T> {
+  static async execChild<T>(options: WorkflowOptions): Promise<T> {
     //SYNC
     //check if the activity already ran
     const isStartChild = options.await === false;
@@ -61,17 +71,13 @@ export class WorkflowService {
     const taskQueueName = options.entity ?? options.taskQueue;
     const workflowName = options.entity ?? options.workflowName;
     const workflowTopic = `${taskQueueName}-${workflowName}`;
-    let maximumInterval: number;
-    if (options?.config?.maximumInterval) {
-      maximumInterval = ms(options?.config?.maximumInterval) / 1000;
-    }
     const interruptionMessage = {
       arguments: [...(options.args || [])],
       await: options?.await ?? true,
-      backoffCoefficient: options?.config?.backoffCoefficient ?? undefined,
+      backoffCoefficient: options?.config?.backoffCoefficient ?? HMSH_DURABLE_EXP_BACKOFF,
       index: execIndex,
-      maximumAttempts: options?.config?.maximumAttempts ?? undefined,
-      maximumInterval: maximumInterval ?? undefined,
+      maximumAttempts: options?.config?.maximumAttempts ?? HMSH_DURABLE_MAX_ATTEMPTS,
+      maximumInterval: ms(options?.config?.maximumInterval ?? HMSH_DURABLE_MAX_INTERVAL) / 1000,
       originJobId: originJobId ?? workflowId,
       parentWorkflowId,
       workflowDimension: workflowDimension,
@@ -91,28 +97,27 @@ export class WorkflowService {
 
   /**
    * Spawns a child workflow and returns the child Job ID.
-   * This method guarantees that the workflow starts and returns the childJobId,
-   * but it does not await the response. A 'DuplicateJobError' error is
-   * thrown if the workflow is already running.
+   * This method guarantees the spawned child has reserved the Job ID,
+   * returning a 'DuplicateJobError' error if not. Otherwise,
+   * this is a fire-and-forget method.
+   * 
    * @param {WorkflowOptions} options - the workflow options
    * @returns {Promise<string>} - the childJobId
    * @example
    * const childJobId = await Durable.workflow.startChild({ ...options });
    */
   static async startChild(options: WorkflowOptions): Promise<string> {
-    return this.executeChild({ ...options, await: false });
+    return this.execChild({ ...options, await: false });
   }
 
   /**
-   * Wraps activities in a proxy that will durably run them
-   * @param {ActivityConfig} options - the activity configuration
-   * that will be used to wrap the activities. You must pass an
-   * `activities` object to this configuration. The activities object
-   * should be a key-value pair of activity names and their respective
-   * functions. This is typically done by importing the activities.
+   * Wraps activities in a proxy that durably runs/re-runs them to completion.
    * 
+   * @param {ActivityConfig} options - the activity configuration
+   * that will be used to wrap the activities.
    * @returns {ProxyType<ACT>} - a proxy object with the same keys as the
    * activities object, but with the values replaced by a wrapped function
+   * 
    * @example
    * // import the activities
    * import * as activities from './activities';
@@ -167,7 +172,8 @@ export class WorkflowService {
   }
 
   /**
-   * Returns the current workflow context
+   * Returns the current workflow context restored
+   * from Redis
    */
   static getContext(): WorkflowContext {
     const store = asyncLocalStorage.getStore();
@@ -182,6 +188,7 @@ export class WorkflowService {
     const COUNTER = store.get('counter');
     const raw = store.get('raw');
     return {
+      COUNTER,
       counter: COUNTER.counter,
       cursor,
       namespace,
@@ -196,17 +203,19 @@ export class WorkflowService {
   }
 
   /**
-   * Returns the current job state (replay)
-   * @param {string} prefix - one of: proxy, child, etc
+   * Returns the synchronous output from the activity (replay)
+   * if available locally
+   * @param {string} prefix - one of: proxy, child, start, wait etc
    * @returns 
    */
   static async didRun(prefix: string): Promise<[boolean, number, any?]> {
-    const store = asyncLocalStorage.getStore();
-    const workflowDimension = store.get('workflowDimension') ?? '';
-    const COUNTER = store.get('counter');
+    const {
+      COUNTER,
+      replay,
+      workflowDimension,
+    } = WorkflowService.getContext();
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
     const sessionId = `-${prefix}${workflowDimension}-${execIndex}-`;
-    const replay = store.get('replay') as StringStringType;
     if (sessionId in replay) {
       return [true, execIndex, SerializerService.fromString(replay[sessionId])];
     }
@@ -254,7 +263,7 @@ export class WorkflowService {
 
   /**
    * Sends signal data into any other paused thread (which is currently
-   * awaiting the signal) from within a hook-thread or the main-thread
+   * awaiting the signal)
    * @param {string} signalId - the signal id
    * @param {Record<any, any>} data - the signal data
    * @returns {Promise<string>} - the stream id
@@ -264,8 +273,6 @@ export class WorkflowService {
     const workflowTopic = store.get('workflowTopic');
     const namespace = store.get('namespace');
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
-    //todo: this particular one is better patterned as a get/set,
-    //since the receipt is a meaningful string (the stream id)
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'signal')) {
       return await hotMeshClient.hook(`${namespace}.wfs.signal`, { id: signalId, data });
     }
@@ -278,36 +285,27 @@ export class WorkflowService {
    * @param {HookOptions} options - the hook options
    */
   static async hook(options: HookOptions): Promise<string> {
-    const store = asyncLocalStorage.getStore();
-    const workflowTopic = store.get('workflowTopic');
-    const namespace = store.get('namespace');
+    const {
+      workflowId,
+      namespace,
+      workflowTopic,
+    } = WorkflowService.getContext();
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'hook')) {
-      const store = asyncLocalStorage.getStore();
-      const workflowId = options.workflowId ?? store.get('workflowId');
-      let workflowTopic = store.get('workflowTopic');
+      const targetWorkflowId = options.workflowId ?? workflowId;
+      let targetTopic: string;
       if (options.entity || (options.taskQueue && options.workflowName)) {
-        workflowTopic = `${options.entity ?? options.taskQueue}-${options.entity ?? options.workflowName}`;
-      } //else this is essentially recursion as the function calls itself
+        targetTopic = `${options.entity ?? options.taskQueue}-${options.entity ?? options.workflowName}`;
+      } else {
+        targetTopic = workflowTopic;
+      }
       const payload = {
         arguments: [...options.args],
-        id: workflowId,
+        id: targetWorkflowId,
         workflowTopic,
-        backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,
+        backoffCoefficient: options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
       }
       return await hotMeshClient.hook(`${namespace}.flow.signal`, payload, StreamStatus.PENDING, 202);
-    }
-  }
-
-  static getLocalState() {
-    const store = asyncLocalStorage.getStore();
-    return {
-      workflowId: store.get('workflowId'),
-      namespace: store.get('namespace'),
-      workflowTopic: store.get('workflowTopic'),
-      workflowDimension: store.get('workflowDimension') ?? '',
-      counter: store.get('counter'),
-      replay: store.get('replay'),
     }
   }
 
@@ -320,13 +318,13 @@ export class WorkflowService {
    */
   static async once<T>(fn: (...args: any[]) => Promise<T>, ...args: any[]): Promise<T> {
     const {
-      workflowId,
+      COUNTER,
       namespace,
+      workflowId,
       workflowTopic,
       workflowDimension,
-      counter: COUNTER,
       replay,
-    } = WorkflowService.getLocalState();
+    } = WorkflowService.getContext();
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
     const sessionId = `-once${workflowDimension}-${execIndex}-`;
     if (sessionId in replay) {
@@ -338,17 +336,20 @@ export class WorkflowService {
       jobId: workflowId
     }
     const workflowGuid = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+    const t1 = new Date();
     const response = await fn(...args);
-    await hotMeshClient.engine.store.exec('HSET', workflowGuid, sessionId, SerializerService.toString({ data: response, timestamp: formatISODate(new Date) }));
+    const t2 = new Date();
+    const payload = {
+      data: response,
+      ac: formatISODate(t1),
+      au: formatISODate(t2),
+    };
+    await hotMeshClient.engine.store.exec('HSET', workflowGuid, sessionId, SerializerService.toString(payload));
     return response;
   }
 
   /** 
    * Interrupts a running job
-   * 
-   * @param {string} jobId - the target job id
-   * @param {JobInterruptOptions} options - the interrupt options
-   * @returns {Promise<string>} - the stream id
    */
   static async interrupt(jobId: string, options: JobInterruptOptions = {}): Promise<string | void> {
     const store = asyncLocalStorage.getStore();
@@ -372,7 +373,6 @@ export class WorkflowService {
     //return early if this sleep command has already run
     const [didRun, execIndex, result] = await WorkflowService.didRun('sleep');
     if (didRun) {
-      //NOTE: this schema for this object is in the app.yaml
       return (result as { completion: string, duration: number }).duration; //in seconds
     }
     //package the interruption inputs
@@ -434,26 +434,30 @@ export class WorkflowService {
     throw new DurableWaitForError(interruptionMessage);
   }
 
-  /**
-   * Pauses the workflow until `signalIds[0]` is received.
-   * NOTE: used for backwards compatibility; deprecate immediately
-   * @template T - the result type
-   * @param {string[]} signalIds - a unique, shareable key that can be used to awaken the workflow
-   * @returns {Promise<T>}
-   * @example
-   * const result = await Durable.workflow.waitForSignal<typeof resultType>(['signalId']);
-   */
-  static async waitForSignal<T>(signalIds: string): Promise<T> {
-    return await this.waitFor<T>(signalIds[0]);
-  }
-
   static wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
     return async function () {
       //SYNC
       //check if the activity already ran
+      type ProxyType = { data?: T, timestamp: string, $error?: StreamError};
       const [didRun, execIndex, result] = await WorkflowService.didRun('proxy');
       if (didRun) {
-        return (result as { data: T, timestamp: string}).data as T;
+        if ((result as ProxyType)?.$error) {
+          if (options?.retryPolicy?.throwOnError !== false) {
+            //rethrow remote execution error (simulates throw)
+            const code: StreamCode = result.$error.code;
+            const message = result.$error.message;
+            const stack = result.$error.stack;
+            if (code === HMSH_CODE_DURABLE_FATAL) {
+              throw new DurableFatalError(message, stack);
+            } else if (code == HMSH_CODE_DURABLE_MAXED) {
+              throw new DurableMaxedError(message, stack);
+            } else if (code == HMSH_CODE_DURABLE_TIMEOUT) {
+              throw new DurableTimeoutError(message, stack);
+            }
+          }
+          return (result as ProxyType).$error as T;
+        }
+        return (result as ProxyType).data as T;
       }
       //package the interruption inputs
       const store = asyncLocalStorage.getStore();

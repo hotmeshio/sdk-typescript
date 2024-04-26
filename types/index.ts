@@ -41,11 +41,6 @@ export {
     FindWhereOptions,
     FindWhereQuery,
     HookOptions,
-    MeshOSActivityOptions,
-    MeshOSWorkerOptions,
-    MeshOSClassConfig,
-    MeshOSConfig,
-    MeshOSOptions,
     WorkflowConfig,
     WorkerConfig,
     WorkerOptions,
@@ -190,4 +185,3 @@ export {
   TransitionMatch,
   TransitionRule,
   Transitions } from './transition';
-      

@@ -1,4 +1,17 @@
-import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, getWorkflowYAML } from './schemas/factory';
+import ms from 'ms';
+
+import {
+  APP_ID,
+  APP_VERSION,
+  getWorkflowYAML } from './schemas/factory';
+import {
+  HMSH_LOGLEVEL,
+  HMSH_EXPIRE_JOB_SECONDS,
+  HMSH_QUORUM_DELAY_MS,
+  HMSH_DURABLE_EXP_BACKOFF,
+  HMSH_DURABLE_MAX_ATTEMPTS,
+  HMSH_DURABLE_MAX_INTERVAL } from '../../modules/enums';
+import { sleepFor } from '../../modules/utils';
 import { WorkflowHandleService } from './handle';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
@@ -11,8 +24,6 @@ import { JobState } from '../../types/job';
 import { KeyService, KeyType } from '../../modules/key';
 import { Search } from './search';
 import { StreamStatus } from '../../types';
-import { HMSH_LOGLEVEL, HMSH_EXPIRE_JOB_SECONDS, HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
-import { sleepFor } from '../../modules/utils';
 
 export class ClientService {
 
@@ -144,8 +155,11 @@ export class ClientService {
         parentWorkflowId: options.parentWorkflowId,
         workflowId: options.workflowId || HotMesh.guid(),
         workflowTopic: workflowTopic,
-        backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,
+        backoffCoefficient: options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
+        maximumAttempts: options.config?.maximumAttempts || HMSH_DURABLE_MAX_ATTEMPTS,
+        maximumInterval: ms(options.config?.maximumInterval || HMSH_DURABLE_MAX_INTERVAL) / 1000,
       }
+
       const context = { metadata: { trc, spn }, data: {}};
       const jobId = await hotMeshClient.pub(
         `${options.namespace ?? APP_ID}.execute`,
@@ -182,7 +196,9 @@ export class ClientService {
         arguments: [...options.args],
         id: options.workflowId,
         workflowTopic,
-        backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,
+        backoffCoefficient: options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
+        maximumAttempts: options.config?.maximumAttempts || HMSH_DURABLE_MAX_ATTEMPTS,
+        maximumInterval: ms(options.config?.maximumInterval || HMSH_DURABLE_MAX_INTERVAL) / 1000,
       }
       //seed search data if presentthe hook before entering
       const hotMeshClient = await this.getHotMeshClient(workflowTopic, options.namespace);

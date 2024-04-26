@@ -1,6 +1,6 @@
 # Conditional Functions
 
-In this section, various conditional functions will be explored, which are available for use in HotMesh mapping rules. The functions are designed to facilitate the manipulation and transformation of data using conditional operations during the mapping process. These functions are adapted from the `ConditionalHandler` class, and are implemented as a functional system referred to as @pipes.
+In this section, various conditional functions will be explored, which are available for use in HotMesh mapping rules. Although inspired by JavaScript, they have been adapted to follow a functional approach. Each transformation is a function that expects one or more input parameters from the prior row in the @pipe structure.
 
 **Table of Contents**
 - [conditional.ternary](#conditionalternary)

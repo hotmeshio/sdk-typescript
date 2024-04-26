@@ -1,6 +1,6 @@
 # Array Functions
 
-In this section, various Array functions will be explored, which are available for use in HotMesh mapping rules. Although inspired by and familiar to JavaScript developers, they have been adapted to follow a functional approach. Each transformation is a function that expects one or more input parameters from the prior row in the @pipe structure.
+In this section, various Array functions will be explored, which are available for use in HotMesh mapping rules. Although inspired by JavaScript, they have been adapted to follow a functional approach. Each transformation is a function that expects one or more input parameters from the prior row in the @pipe structure.
 
 **Table of Contents**
 - [array.get](#arrayget)

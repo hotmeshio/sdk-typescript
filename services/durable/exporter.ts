@@ -1,7 +1,9 @@
+import { VALSEP } from '../../modules/key';
+import { restoreHierarchy } from '../../modules/utils';
 import { ILogger } from '../logger';
+import { SerializerService } from '../serializer';
 import { StoreService } from '../store';
 import { StringStringType, Symbols } from "../../types";
-import { RedisClient, RedisMulti } from '../../types/redis';
 import {
   ActivityAction,
   DependencyExport,
@@ -11,9 +13,7 @@ import {
   JobActionExport,
   DurableJobExport,
   JobTimeline } from '../../types/exporter';
-import { SerializerService } from '../serializer';
-import { restoreHierarchy } from '../../modules/utils';
-import { VALSEP } from '../../modules/key';
+import { RedisClient, RedisMulti } from '../../types/redis';
 
 /**
  * Downloads job data from Redis (hscan, hmget, hgetall)
@@ -24,57 +24,6 @@ class ExporterService {
   logger: ILogger;
   store: StoreService<RedisClient, RedisMulti>;
   symbols: Promise<Symbols> | Symbols;
-
-  /**
-   * Friendly names for the activity ids
-   */
-  activitySymbols: Symbols = {
-    t1: 'trigger',
-    a1: 'pivot',
-    w1: 'worker',
-    a592: 'sleeper',
-    a594: 'awaiter',
-    a599: 'retryer',
-    c592: 'sleep_cycler',
-    c594: 'await_cycler',
-    c599: 'retry_cycler',
-    s5: 'scrubber',
-    sig: 'hook',
-    siga1: 'hook_pivot',
-    sigw1: 'hook_worker',
-    siga592: 'hook_sleeper',
-    siga594: 'hook_awaiter',
-    siga599: 'hook_retryer',
-    sigc592: 'hook_sleep_cycler',
-    sigc594: 'hook_await_cycler',
-    sigc599: 'hook_retry_cycler',
-  }
-
-  //adjacent transitions
-  transitions = {
-    trigger: ['pivot', 'hook'],
-    pivot: ['worker'],
-    worker: ['sleeper', 'awaiter', 'retryer', 'scrubber'],
-    sleeper: ['sleep_cycler'],
-    awaiter: ['await_cycler'],
-    retryer: ['retry_cycler'],
-    hook: ['hook_pivot'],
-    hook_pivot: ['hook_worker'],
-    hook_worker: ['hook_sleeper', 'hook_awaiter', 'hook_retryer'],
-    hook_sleeper: ['hook_sleep_cycler'],
-    hook_awaiter: ['hook_await_cycler'],
-    hook_retryer: ['hook_retry_cycler'],
-  };
-
-  //goto transitions
-  cycles = {
-    sleep_cycler: ['pivot'],
-    await_cycler: ['pivot'],
-    retry_cycler: ['pivot'],
-    hook_sleep_cycler: ['hook_pivot'],
-    hook_await_cycler: ['hook_pivot'],
-    hook_retry_cycler: ['hook_pivot'],
-  }
 
   constructor(appId: string, store: StoreService<RedisClient, RedisMulti>, logger: ILogger) {
     this.appId = appId;
@@ -166,7 +115,7 @@ class ExporterService {
   }
 
   isPausingAction(actionType: string): boolean {
-    return actionType === 'sleep' || actionType === 'waitForSignal';
+    return actionType === 'sleep' || actionType === 'waitFor';
   }
 
   isMainEntry(key: string): boolean {
@@ -186,9 +135,6 @@ class ExporterService {
     if (key in this.symbols) {
       const path = this.symbols[key];
       const parts = path.split('/');
-      if (parts[0] in this.activitySymbols) {
-        parts[0] = this.activitySymbols[parts[0]];
-      }
       return parts.join('/');
     }
     return key;
@@ -250,7 +196,7 @@ class ExporterService {
   }
 
   /**
-   * Adds historical actions (proxyActivity, executeChild)
+   * Adds historical actions (proxyActivity, execChild)
    * using the `dependency list` to determine
    * after-the-fact what happened within the 'black-box'
    * worker function. This is necessary to interleave the
@@ -265,9 +211,9 @@ class ExporterService {
       if (topic == `${this.appId}.activity.execute`) {
         depType = 'proxyActivity';
       } else if (topic == `${this.appId}.execute`) {
-        depType = 'executeChild';
+        depType = 'execChild';
       } else if (topic == `${this.appId}.wfsc.execute`) {
-        depType = 'waitForSignal';
+        depType = 'waitFor';
       }
       
       if (depType) {
@@ -293,6 +239,7 @@ class ExporterService {
    * @returns - the inflated job data
    */
   inflate(jobHash: StringStringType, dependencyList: string[]): DurableJobExport {
+    const idempotents: { key: string, value: string }[] = [];
     //the list of actions taken in the workflow and hook functions
     const actions: JobActionExport = {
       hooks: {},
@@ -318,7 +265,8 @@ class ExporterService {
         data[key.substring(1)] = value;
       } else if (key.startsWith('-')) {
         //actions with side effect (replayable)
-        this.inflateActions(key, value, actions);
+        //this.inflateActions(key, value, actions);
+        idempotents.push({key, value});
       } else {
         //collator guids, etc
         other.push([null, key, value]);
@@ -326,19 +274,18 @@ class ExporterService {
     });
 
     replay.sort(this.dateSort)
-    actions.main.items.sort(this.reverseSort);
-    Object.entries(actions.hooks).forEach(([key, value]) => {
-      value.items.sort(this.reverseSort);
-    });
+    //actions.main.items.sort(this.reverseSort);
+    // Object.entries(actions.hooks).forEach(([key, value]) => {
+    //   value.items.sort(this.reverseSort);
+    // });
     
     return {
       data: restoreHierarchy(data),
       dependencies,
+      idempotents,
       state: Object.entries(restoreHierarchy(state))[0][1],
       status: jobHash[':'],
       timeline: this.createTimeline(replay, actions),
-      transitions: { ...this.transitions },
-      cycles: { ...this.cycles },
     };
   }
 

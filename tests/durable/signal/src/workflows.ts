@@ -12,7 +12,10 @@ const { greet } = Durable.workflow
 export async function example(name: string): Promise<[string, Record<any, any>, Record<any, any>, string]> {
   const strangerGreeting = await greet('stranger');
 
-  const [signal1, signal2] = await Durable.workflow.waitForSignal(['abcdefg','hijklmnop']);
+  const [signal1, signal2] = await Promise.all([
+    Durable.workflow.waitFor<Record<any, any>>('abcdefg'),
+    Durable.workflow.waitFor<Record<any, any>>('hijklmnop')
+  ]);
 
   return [strangerGreeting, signal1, signal2, await greet(name)];
 }

@@ -109,15 +109,19 @@ HotMesh's *Durable* module is a TypeScript Library modeled after Temporal.io. If
     ```
 
 #### Workflow Extensions
-Redis governance delivers more than just reliability. Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `Durable` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
+Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `Durable` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
 
- - `waitForSignal` Pause your function and wait for external event(s) before continuing. The *waitForSignal* method will collate and cache the signals and only awaken your function once all signals have arrived.
-   ```javascript
-    const signals = [a, b] = await Durable.workflow.waitForSignal('sig1', 'sig2')` 
-    ```
- - `signal` Send a signal (and optional payload) to a paused function awaiting the signal.
+ - `waitFor` Pause your function using your chosen signal key, and only awaken when the signal is received from the outide. Use a standard `Promise` to collate and cache the signals and only awaken your function once all signals have arrived.
     ```javascript
-      await Durable.workflow.signal('sig1', {payload: 'hi!'});
+    const { waitFor } = Durable.workflow;
+    const [a, b] = await Promise.all([
+      waitFor<{payload: string}>('sig1'),
+      waitFor<number>('sig2')
+    ]);
+    ```
+ - `signal` Send a signal (and payload) to a paused function awaiting the signal. Signals may also be sent from the outside to awaken a paused function.
+    ```javascript
+    await Durable.workflow.signal('sig1', {payload: 'hi!'});
     ```
  - `hook` Redis governance converts your functions into 're-entrant processes'. Optionally use the *hook* method to spawn parallel execution threads to augment a running workflow.
     ```javascript
@@ -135,9 +139,9 @@ Redis governance delivers more than just reliability. Externalizing state fundam
     ```javascript
     const random = await Durable.workflow.random();
     ```
- - `executeChild` Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
+ - `execChild` Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
     ```javascript
-    const jobResponse = await Durable.workflow.executeChild({
+    const jobResponse = await Durable.workflow.execChild({
       workflowName: 'newsletter',
       taskQueue: 'default',
       args: [{ id, user_id, etc }],
@@ -151,7 +155,7 @@ Redis governance delivers more than just reliability. Externalizing state fundam
       args: [{ id, user_id, etc }],
     });
     ```
- - `getContext` Get the current workflow context (workflowId, etc).
+ - `getContext` Get the current workflow context (workflowId, replay history, replay index, etc).
     ```javascript
     const context = await Durable.workflow.getContext();
     ```

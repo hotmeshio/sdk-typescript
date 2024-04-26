@@ -590,7 +590,7 @@ app:
                     description: the number of items to collate
             590:
               schema:
-                description: the worker function output when executeChild or startChild are called
+                description: the worker function output when execChild or startChild are called
                 type: object
                 properties:
                   workflowId:

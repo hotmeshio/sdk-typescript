@@ -977,6 +977,8 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * This method is called by the engine and not by an activity and is
    * followed by a call to execute job completion/cleanup tasks
    * associated with a job completion event.
+   * 
+   * Todo: move most of this logic to the engine (too much logic for the store)
    */
   async interrupt(topic: string, jobId: string, options: JobInterruptOptions = {}): Promise<void> {
     try {
@@ -1004,8 +1006,9 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
 
         //persists the standard 410 error (job is `gone`)
         const err = JSON.stringify({
-          code: HMSH_CODE_INTERRUPT,
+          code: options.code ?? HMSH_CODE_INTERRUPT,
           message: options.reason ?? `job [${jobId}] interrupted`,
+          stack: options.stack ?? '',
           job_id: jobId
         });
 

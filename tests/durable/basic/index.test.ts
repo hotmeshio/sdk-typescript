@@ -9,7 +9,7 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
-describe('DURABLE | basic | `Empty Workflow Shell`', () => {
+describe('DURABLE | basic | `Durable Foundational`', () => {
   let handle: WorkflowHandleService;
   const options = {
     socket: {
@@ -106,7 +106,17 @@ describe('DURABLE | basic | `Empty Workflow Shell`', () => {
         const result = await handle.result();
         const r1 = deterministicRandom(1);
         const r2 = deterministicRandom(4);
-        expect(result).toEqual(`${r1} {"complex":"Basic, HotMesh!"} ${r2} {"complex":"Basic, HotMesh!"} ${signalPayload.data.hello}`);
+        expect(result).toEqual({
+          jobBody: 'Hello from child workflow, start-HotMeshy!', 
+          jobId: 'MyWorkflowId123', 
+          oneTimeGreeting: {'complex': 'Basic, HotMesh!'}, 
+          payload: {'data': {'hello': 'world', 'id': 'abcdefg'}, 'id': 'abcdefg'}, 
+          proxyGreeting: {'complex': 'Basic, HotMesh!'},
+          proxyGreeting3: {'complex': 'Basic, HotMesh3!'},
+          proxyGreeting4: {'complex': 'Basic, HotMesh4!'},
+          random1: r1,
+          random2: r2,
+        });
       }, 30_000);
     });
   });

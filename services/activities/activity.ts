@@ -23,7 +23,7 @@ import {
   ActivityMetadata,
   ActivityType,
   Consumes } from '../../types/activity';
-import { JobData, JobState, JobStatus } from '../../types/job';
+import { JobState, JobStatus } from '../../types/job';
 import {
   MultiResponseFlags,
   RedisClient,
@@ -191,6 +191,7 @@ class Activity {
   async processError(telemetry: TelemetryService, type: string): Promise<MultiResponseFlags> {
     this.bindActivityError(this.data);
     this.adjacencyList = await this.filterAdjacent();
+    this.mapJobData();
     const multi = this.store.getMulti();
     await this.setState(multi);
     await CollatorService.notarizeCompletion(this, multi);
@@ -227,15 +228,14 @@ class Activity {
       if (output) {
         for (const key in output) {
           const f1 = key.indexOf('[');
-          //keys with array notation [#] are moved to the root
-          //the value MUST be an object
-          //the object MUST have with a single key
+          //keys with array notation suffix `somekey[]` are moved to the root
+          //the value of said key must be an object with keys appropriate to the
+          //notation type: `somekey[0] (array)`, `somekey[-] (replay)`, OR `somekey[_] (search)`
           if (f1 > -1) {
             const amount = key.substring(f1 + 1).split(']')[0];
             if (!isNaN(Number(amount))) {
-              //todo: can multiple keys be moved to the root
               const left = key.substring(0, f1);
-              output[left] = output[key]; //output[key] should be an object with numeric keys
+              output[left] = output[key];
               delete output[key];
             } else if (amount === '-' || amount === '_') {
               const obj = output[key];
@@ -276,6 +276,7 @@ class Activity {
     //todo: map activity error data into the job error (if defined)
     //      map job status via: (500: [3**, 4**, 5**], 202: [$pending])
     this.context.metadata.err = JSON.stringify(data);
+    this.context[this.metadata.aid].output.data = data;
   }
 
   async getTriggerConfig(): Promise<ActivityType> {
@@ -426,7 +427,7 @@ class Activity {
     let { dad, jid } = this.context.metadata;
     const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], dad || '');
     //`state` is a unidimensional hash; context is a tree
-    const [state, status] = await this.store.getState(jid, consumes, dIds);
+    const [state, _status] = await this.store.getState(jid, consumes, dIds);
     this.context = restoreHierarchy(state) as JobState;
     this.assertGenerationalId(this.context?.metadata?.gid, gid);
     this.initDimensionalAddress(dad);

@@ -56,6 +56,7 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
           taskQueue: 'goodbye-world',
           workflowName: 'example',
           workflowId: workflowGuid,
+          expire: 120, //keep in Redis after completion for 120 seconds
           //SEED the initial workflow state with data (this is
           //different than the 'args' input data which the workflow
           //receives as its first argument...this data is available
@@ -141,8 +142,8 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
         const result = await handle.result();
         expect(result).toEqual('Hello, HotMesh! - Goodbye, HotMesh!');
         //call the FT search module to locate the workflow via fuzzy search
-        //NOTE: always include an underscore prefix before your search term (e.g., `_custom1`).
-        //      HotMesh uses this to avoid collisions with reserved words
+        //NOTE: include an underscore before the search term (e.g., `_term`).
+        //      (HotMesh uses `_` to avoid collisions with reserved words
         const [count, ...rest] = await client.workflow.search(
           'goodbye-world',
           workflows.example.name,
@@ -151,9 +152,9 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
           '@_custom1:durable'
         );
         expect(count).toEqual(1);
-        const [id, ...rest2] = rest;
+        const [id, ..._rest2] = rest;
         expect(id).toEqual(`hmsh:${namespace}:j:${workflowGuid}`);
-      });
+      }, 7_500);
     });
   });
 });

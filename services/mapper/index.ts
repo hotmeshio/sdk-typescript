@@ -36,7 +36,7 @@ class MapperService {
   }
 
   /**
-   * resolve a pipe expression of the form: { @pipe: [["{data.foo.bar}", 2, false, "hello world"]] }
+   * resolves a pipe expression of the form: { @pipe: [["{data.foo.bar}", 2, false, "hello world"]] }
    * @param value 
    * @returns 
    */
@@ -46,7 +46,7 @@ class MapperService {
   }
 
   /**
-   * resolve a simple mapping expression in the form: "{data.foo.bar}" or 2 or false or "hello world"
+   * resolves a mapping expression in the form: "{data.foo.bar}" or 2 or false or "hello world"
    * @param value 
    * @returns 
    */
@@ -55,7 +55,14 @@ class MapperService {
     return pipe.process();
   }
 
+  /**
+   * Evaluates a transition rule against the current job state and incoming Stream message
+   * to determine which (if any) transition should be taken.
+   */
   static evaluate(transitionRule: TransitionRule | boolean, context: JobState, code: StreamCode): boolean {
+    // if (code === 599 && transitionRule['code'] === 599) {
+    //   console.log('Transition Rule:', JSON.stringify(transitionRule, null, 2), 'Context>', JSON.stringify(context['$self'], null, 2), 'trigger', JSON.stringify(context['trigger']), 'cycle_hook', JSON.stringify(context['cycle_hook']), 'code', code);
+    // }
     if (typeof transitionRule === 'boolean') {
       return transitionRule;
     }

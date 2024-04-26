@@ -52,8 +52,7 @@ export interface DurableJobExport {
   state: StringAnyType;
   status: string;
   timeline: JobTimeline[];
-  transitions: ExportTransitions;
-  cycles: ExportCycles;
+  idempotents: { key: string, value: string }[];
 };
 
 export interface JobExport {

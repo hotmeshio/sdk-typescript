@@ -1,5 +1,8 @@
 import { DuplicateJobError } from '../../modules/errors';
-import { formatISODate, getTimeSeries, guid } from '../../modules/utils';
+import {
+  formatISODate,
+  getTimeSeries,
+  guid } from '../../modules/utils';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
@@ -86,7 +89,16 @@ class Trigger extends Activity {
 
   async execAdjacentParent() {
     if (this.context.metadata.px) {
-      await this.engine.execAdjacentParent(this.context, {metadata: this.context.metadata, data: { job_id: this.context.metadata.jid }});
+      const timestamp = formatISODate(new Date());
+      const jobStartedConfirmationMessage = {
+        metadata: this.context.metadata,
+        data: {
+          job_id: this.context.metadata.jid,
+          jc: timestamp,
+          ju: timestamp,
+        }
+      };
+      await this.engine.execAdjacentParent(this.context, jobStartedConfirmationMessage);
     }
   }
 

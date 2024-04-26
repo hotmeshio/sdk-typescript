@@ -233,19 +233,19 @@ class Router {
   }
 
   shouldRetry(input: StreamData, output: StreamDataResponse): [boolean, number] {
-    const isUnhandledEngineError = output.code === 500;
+    //const isUnhandledEngineError = output.code === 500;
     const policies = input.policies?.retry;
     const errorCode = output.code.toString();
     const policy = policies?.[errorCode];
     const maxRetries = policy?.[0];
-    if (isUnhandledEngineError && !policy) {
-      //if main goes down, replicas take over within 5s
-      //if this is not system/platform related, the exponential
-      //backoff will be applied and eventually slow to a crawl while
-      //the root cause is identified
-      input.policies = { retry: { [errorCode]: [10] } };
-      return [true, 0];
-    }
+    // if (isUnhandledEngineError && !policy) {
+    //   //if main goes down, replicas take over within 5s
+    //   //if this is not system/platform related, the exponential
+    //   //backoff will be applied and eventually slow to a crawl while
+    //   //the root cause is identified
+    //   input.policies = { retry: { [errorCode]: [10] } };
+    //   return [true, 0];
+    // }
     const tryCount = Math.min(input.metadata.try || 0,  HMSH_MAX_RETRIES);
     //only possible values for maxRetries are 1, 2, 3
     //only possible values for tryCount are 0, 1, 2
@@ -296,13 +296,15 @@ class Router {
     const message = output.data?.message ? output.data?.message.toString() : HMSH_STATUS_UNKNOWN;
     const statusCode = output.code || output.data?.code;
     const code = isNaN(statusCode as number) ? HMSH_CODE_UNKNOWN : parseInt(statusCode.toString());
-    const data: StreamError = { message, code };
+    const stack = output.data?.stack ? output.data?.stack.toString() : undefined;
+    const data: StreamError = { message, code, stack };
     if (typeof output.data?.error === 'object') {
       data.error = { ...output.data.error };
     }
     return {
       status: StreamStatus.ERROR,
       code,
+      stack,
       metadata: { ...input.metadata, guid: guid() },
       data
     } as StreamDataResponse;
@@ -371,7 +373,7 @@ class Router {
     //The stream activity was not processed within established limits. Possibilities Include:
     // 1) user error: the workers were not properly configured and are timing out
     // 2a) system error: JSON is corrupt
-    //     i) bad/unwitting actor
+    //     i) unwitting actor
     //     ii) corrupt hardware/network/transport/etc
     // 3b) system error: Redis unable to accept `xadd` request
     // 4c) system error: Redis unable to accept `xdel`/`xack` request

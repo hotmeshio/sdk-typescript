@@ -52,6 +52,7 @@ describe('DURABLE | loopactivity | `Iterate Same Activity`', () => {
           taskQueue: 'loop-world',
           workflowName: 'example',
           workflowId: 'workflow-' + guid(),
+          expire: 120, //ensures the failed workflows aren't scrubbed too soon (so they can be reviewed)
         });
         expect(handle.workflowId).toBeDefined();
       });

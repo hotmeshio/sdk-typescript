@@ -2,17 +2,18 @@ import {
   GenerationalError,
   GetStateError,
   InactiveJobError } from '../../modules/errors';
+import { CollatorService } from '../collator';
+import { Activity } from './activity';
 import { EngineService } from '../engine';
-import { Activity, ActivityType } from './activity';
+import { Pipe } from '../pipe';
+import { TelemetryService } from '../telemetry';
 import {
   ActivityData,
   ActivityMetadata,
+  ActivityType,
   InterruptActivity } from '../../types/activity';
-import { MultiResponseFlags } from '../../types';
-import { CollatorService } from '../collator';
 import { JobInterruptOptions, JobState } from '../../types/job';
-import { TelemetryService } from '../telemetry';
-import { Pipe } from '../pipe';
+import { MultiResponseFlags } from '../../types/redis';
 
 class Interrupt extends Activity {
   config: InterruptActivity;
@@ -141,6 +142,15 @@ class Interrupt extends Activity {
         : undefined,
       descend: this.config.descend !== undefined 
         ? Pipe.resolve(this.config.descend, this.context) 
+        : undefined,
+      code: this.config.code !== undefined 
+        ? Pipe.resolve(this.config.code, this.context) 
+        : undefined,
+      expire: this.config.expire !== undefined
+        ? Pipe.resolve(this.config.expire, this.context)
+        : undefined,
+      stack: this.config.stack !== undefined
+        ? Pipe.resolve(this.config.stack, this.context)
         : undefined,
     };
   }
