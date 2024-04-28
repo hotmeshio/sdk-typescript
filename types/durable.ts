@@ -1,7 +1,7 @@
 import { LogLevel } from './logger';
 import { RedisClass, RedisOptions } from './redis';
 import { StringStringType } from './serializer';
-import { StreamData } from './stream';
+import { StreamData, StreamError } from './stream';
 
 /**
  * Type definition for workflow configuration.
@@ -24,9 +24,20 @@ type WorkflowConfig = {
    * @default 120s (HMSH_DURABLE_MAX_INTERVAL)
    */
   maximumInterval?: string;
+
+  /**
+   * Whether to throw an error on final failure after retries are exhausted.
+   * @default true
+   */
+  throwOnError?: boolean;
 }
 
 type WorkflowContext = {
+
+  /**
+   * can the workflow be retried if an error occurs
+   */
+  canRetry: boolean;
 
   COUNTER: {
     /**
@@ -94,85 +105,108 @@ type WorkflowSearchOptions = {
 }
 
 type WorkflowOptions = {
+
   /**
    * the namespace for the workflow; `durable` is the default namespace if not provided
    */
   namespace?: string;
+
   /**
    * the task queue for the workflow; optional if entity is provided
    */
   taskQueue?: string;
+
   /**
    * input arguments to pass in
    */
   args: any[];
+
   /**
    * the job id
    */
   workflowId?: string;
+
   /**
    * if invoking a workflow, passing 'entity' will apply the value as the workflowName, taskQueue, and prefix, ensuring the FT.SEARCH index is properly scoped. This is a convenience method but limits options.
    */
   entity?: string;
+
   /**
    * the name of the user's workflow function; optional if 'entity' is provided
    */
   workflowName?: string;
+
   /**
    * the parent workflow id; adjacent ancestor ID
    */
   parentWorkflowId?: string;
+
   /**
    * the entry point workflow id
    */
   originJobId?: string;
+
   /**
    * OpenTelemetry trace context for the workflow
    */
   workflowTrace?: string;
+
   /**
    * OpenTelemetry span context for the workflow
    */
   workflowSpan?: string;
+
   /**
    * the full-text-search (RediSearch) options for the workflow
    */
   search?: WorkflowSearchOptions
+
   /**
    * the workflow configuration object
    */
   config?: WorkflowConfig;
+
   /**
    * sets the number of seconds a workflow may exist after completion. As the process engine is an in-memory cache, the default policy is to expire and scrub the job hash as soon as it completes.
    */
   expire?: number;
+
   /**
    * default is true; if false, will not await the execution
    */
   await?: boolean;
 }
+
 /** 
  * Options for setting up a hook.
  * 'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
  */
 type HookOptions = {
   /** Optional namespace under which the hook function will be grouped */
-  namespace?: string;   
+  namespace?: string;
+
   /** Optional task queue, needed unless 'entity' is provided */
-  taskQueue?: string;   
+  taskQueue?: string;
+
   /** Input arguments to pass into the hook */
-  args: any[];          
+  args: any[];
+     
   /**
-   * Optional entity name. If provided, applies as the workflowName, taskQueue, and prefix.
-   * This scopes the FT.SEARCH index appropriately. This is a convenience method but limits options.
+   * Optional entity name. If provided, applies as the workflowName,
+   * taskQueue, and prefix. This scopes the FT.SEARCH index appropriately.
+   * This is a convenience method but limits options.
    */
-  entity?: string;      
+  entity?: string;
+  
   /** Execution ID, also known as the job ID to hook into */
-  workflowId?: string;   
+  workflowId?: string;
+  
   /** The name of the user's hook function */
-  workflowName?: string; 
+  workflowName?: string;
+  
   /** Bind additional search terms immediately before hook reentry */
-  search?: WorkflowSearchOptions 
+  search?: WorkflowSearchOptions
+  
   /** Hook function constraints (backoffCoefficient, maximumAttempts, maximumInterval) */
   config?: WorkflowConfig; 
 }
@@ -204,6 +238,7 @@ type WorkflowDataType = {
   workflowTopic: string;
   workflowDimension?: string; //is present if hook (not main workflow)
   originJobId?: string;       //is present if there is an originating ancestor job (should rename to originJobId)
+  canRetry?: boolean;
 }
 
 type ConnectionConfig = {
@@ -294,13 +329,37 @@ type ActivityConfig = {
   };
 };
 
+/**
+ * The proxy response object returned from the activity proxy flow
+ */
+type ProxyResponseType<T> = {
+  data?: T,             //expected data
+  $error?: StreamError,
+  done?: boolean,       //non-existent if error was thrown in transition (not during execution)
+  jc: string,
+  ju: string
+};
+
+/**
+ * The child flow response object returned from the  main flow during recursion
+ */
+type ChildResponseType<T> = {
+  data?: T,             //expected data
+  $error?: StreamError,
+  done?: boolean,       //non-existent if error was thrown in transition (not during execution)
+  jc: string,
+  ju: string
+};
+
 export {
   ActivityConfig,
   ActivityWorkflowDataType,
+  ChildResponseType,
   ClientConfig,
   ContextType,
   ConnectionConfig,
   Connection,
+  ProxyResponseType,  
   ProxyType,
   Registry,
   SignalOptions,

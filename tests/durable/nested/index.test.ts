@@ -53,6 +53,7 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
             taskQueue: 'parent-world',
             workflowName: 'parentExample',
             workflowId: guid(),
+            expire: 500,
           });
           //start another workflow to simulate startup collisions
           let handle2: WorkflowHandleService;
@@ -61,6 +62,7 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
             taskQueue: 'parent-world',
             workflowName: 'parentExample',
             workflowId: guid(),
+            expire: 500,
           });
           [handle, handle2] = await Promise.all([h, localH]);
           expect(handle.workflowId).toBeDefined();

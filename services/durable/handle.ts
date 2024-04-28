@@ -80,61 +80,74 @@ export class WorkflowHandleService {
   }
 
   /**
-   * Awaits for the workflow to complete and returns the result. If
+   * Waits for the workflow to complete and returns the result. If
    * the workflow response includes an error, this method will rethrow
    * the error, including the stack trace if available. 
    * Wrap calls in a try/catch as necessary to avoid unhandled exceptions.
    */
-  async result(loadState?: boolean): Promise<any> {
+  async result<T>(config?: {state?: boolean, throwOnError?: boolean}): Promise<T | StreamError> {
     const topic = `${this.hotMesh.appId}.executed.${this.workflowId}`;
     let isResolved = false;
 
     return new Promise(async (resolve, reject) => {
 
       /**
+       * rejects/resolves the promise based on the `throwOnError`
+       * default behavior is to throw if error
+       */
+      const safeReject = (err: StreamError) => {
+        if (config?.throwOnError === false) {
+          return resolve(err);
+        }
+        reject(err);
+      };
+
+      /**
        * Common completion function that unsubscribes from the topic/returns
        */
-      const complete = async (response?: any, err?: Record<string, any>) => {
+      const complete = async (response?: T, err?: StreamError) => {
         if (isResolved) return;
         isResolved = true;
 
         if (err) {
-          return reject(err);
+          return safeReject(err as StreamError);
         } else if (!response) {
           const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
-          if (state.data?.$error) {
-            return reject(state.data.$error)
+          if (state.data?.done && !state.data?.$error) {
+            return resolve(state.data.response as T);
+          } else if (state.data?.$error) {
+            return safeReject(state.data.$error as StreamError)
           } else if (state.metadata.err) {
-            return reject(JSON.parse(state.metadata.err));
+            return safeReject(JSON.parse(state.metadata.err) as StreamError);
           }
-          response = state.data?.response;
+          response = state.data?.response as T;
         }
-        resolve(response);
+        resolve(response as T);
       };
 
-      //loadState is more expensive; fetches the entire job, not just the `status`
-      if (loadState) {
+      //more expensive; fetches the entire job, not just the `status`
+      if (config?.state) {
         const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
-        if (state.data?.$error) {
-          return complete(null, state.data.$error)
+        if (state?.data?.done && !state.data?.$error) {
+          return complete(state.data.response as T);
+        } else if (state.data?.$error) {
+          return complete(null, state.data.$error as StreamError);
         } else if (state.metadata.err) {
-          return complete(null, JSON.parse(state.metadata.err));
-        } else if (state?.data?.done) {
-          return complete(state.data.response);
+          return complete(null, JSON.parse(state.metadata.err) as StreamError);
         }
       }
 
       //subscribe to 'done' topic
       this.hotMesh.sub(topic, async (_topic: string, state: JobOutput) => {
         this.hotMesh.unsub(topic);
-
-        if (state.data?.$error) {
+        if (state.data.done && !state.data?.$error) {
+          await complete(state.data?.response as T);
+        } else if (state.data?.$error) {
           return complete(null, state.data.$error as StreamError)
         } else if (state.metadata.err) {
           const error = JSON.parse(state.metadata.err) as StreamError;
           return await complete(null, error);
         }
-        await complete(state.data?.response);
       });
 
       //check state in case completed during wiring

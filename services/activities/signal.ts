@@ -2,7 +2,7 @@ import {
   GenerationalError,
   GetStateError,
   InactiveJobError } from '../../modules/errors';
-import { Activity, ActivityType } from './activity';
+import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { MapperService } from '../mapper';
@@ -11,6 +11,7 @@ import { TelemetryService } from '../telemetry';
 import {
   ActivityData,
   ActivityMetadata,
+  ActivityType,
   SignalActivity } from '../../types/activity';
 import { JobState } from '../../types/job';
 import { MultiResponseFlags } from '../../types/redis';

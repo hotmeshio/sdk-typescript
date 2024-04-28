@@ -5,6 +5,7 @@ import {
   DurableFatalError,
   DurableMaxedError,
   DurableProxyError,
+  DurableRetryError,
   DurableSleepError,
   DurableTimeoutError,
   DurableWaitForError } from '../../modules/errors';
@@ -19,7 +20,9 @@ import { WorkerService } from './worker';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
   ActivityConfig,
+  ChildResponseType,
   HookOptions,
+  ProxyResponseType,
   ProxyType,
   WorkflowContext,
   WorkflowOptions
@@ -43,6 +46,50 @@ import { SerializerService } from '../serializer';
 export class WorkflowService {
 
   /**
+   * Return a handle to the hotmesh client currently running the workflow
+   * @returns {Promise<HotMesh>} - a hotmesh client
+   */
+  static async getHotMesh(): Promise<HotMesh> {
+    const store = asyncLocalStorage.getStore();
+    const workflowTopic = store.get('workflowTopic');
+    const namespace = store.get('namespace');
+    return await WorkerService.getHotMesh(workflowTopic, { namespace });
+  }
+
+  /**
+   * Returns the current workflow context restored
+   * from Redis
+   */
+  static getContext(): WorkflowContext {
+    const store = asyncLocalStorage.getStore();
+    const workflowId = store.get('workflowId');
+    const replay = store.get('replay');
+    const cursor = store.get('cursor');
+    const workflowDimension = store.get('workflowDimension') ?? '';
+    const workflowTopic = store.get('workflowTopic');
+    const namespace = store.get('namespace');
+    const workflowTrace = store.get('workflowTrace');
+    const canRetry = store.get('canRetry');
+    const workflowSpan = store.get('workflowSpan');
+    const COUNTER = store.get('counter');
+    const raw = store.get('raw');
+    return {
+      canRetry,
+      COUNTER,
+      counter: COUNTER.counter,
+      cursor,
+      namespace,
+      raw,
+      replay,
+      workflowId,
+      workflowDimension,
+      workflowTopic,
+      workflowTrace,
+      workflowSpan,
+    };
+  }
+
+  /**
    * Spawns a child workflow and awaits the return.
    * @template T - the result type
    * @param {WorkflowOptions} options - the workflow options
@@ -52,15 +99,35 @@ export class WorkflowService {
    */
   static async execChild<T>(options: WorkflowOptions): Promise<T> {
     //SYNC
-    //check if the activity already ran
+    //check if the activity already ran (check $error/done)
     const isStartChild = options.await === false;
-    const [didRun, execIndex, result] = await WorkflowService.didRun(isStartChild ? 'start' : 'child');
+    const [didRun, execIndex, result]: [boolean, number, ChildResponseType<T>] = await WorkflowService.didRun(isStartChild ? 'start' : 'child');
+    const store = asyncLocalStorage.getStore();
+    const canRetry = store.get('canRetry');
+
     if (didRun) {
-      //data is the job id if isStartChild is true, otherwise it is the result
-      return result?.data as T;
+      if (result?.$error && (!result.$error.is_stream_error || (result.$error.is_stream_error && !canRetry))) {
+        if (options?.config?.throwOnError !== false) {
+          //rethrow remote execution error (simulates throw)
+          const code: StreamCode = result.$error.code;
+          const message = result.$error.message;
+          const stack = result.$error.stack;
+          if (code === HMSH_CODE_DURABLE_FATAL) {
+            throw new DurableFatalError(message, stack);
+          } else if (code == HMSH_CODE_DURABLE_MAXED) {
+            throw new DurableMaxedError(message, stack);
+          } else if (code == HMSH_CODE_DURABLE_TIMEOUT) {
+            throw new DurableTimeoutError(message, stack);
+          } else {
+            throw new DurableRetryError(message, stack);
+          }
+        }
+        return result.$error as T;
+      } else if (result.data) {
+        return result.data as T;
+      }
     }
     //package the interruption inputs
-    const store = asyncLocalStorage.getStore();
     const interruptionRegistry = store.get('interruptionRegistry');
     const workflowId = store.get('workflowId');
     const originJobId = store.get('originJobId');
@@ -112,6 +179,7 @@ export class WorkflowService {
 
   /**
    * Wraps activities in a proxy that durably runs/re-runs them to completion.
+   * TODO: verify that activities do not collide if named same on same server but bound to different workflows
    * 
    * @param {ActivityConfig} options - the activity configuration
    * that will be used to wrap the activities.
@@ -141,6 +209,68 @@ export class WorkflowService {
     return proxy;
   }
 
+  static wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
+    return async function () {
+      //SYNC
+      //check if the activity already ran
+      const [didRun, execIndex, result]: [boolean, number, ProxyResponseType<T>] = await WorkflowService.didRun('proxy');
+      if (didRun) {
+        if (result?.$error) {
+          if (options?.retryPolicy?.throwOnError !== false) {
+            //rethrow remote execution error (simulates throw)
+            const code: StreamCode = result.$error.code;
+            const message = result.$error.message;
+            const stack = result.$error.stack;
+            if (code === HMSH_CODE_DURABLE_FATAL) {
+              throw new DurableFatalError(message, stack);
+            } else if (code == HMSH_CODE_DURABLE_MAXED) {
+              throw new DurableMaxedError(message, stack);
+            } else if (code == HMSH_CODE_DURABLE_TIMEOUT) {
+              throw new DurableTimeoutError(message, stack);
+            }
+          }
+          return result.$error as T;
+        }
+        return result.data as T;
+      }
+      //package the interruption inputs
+      const store = asyncLocalStorage.getStore();
+      const interruptionRegistry = store.get('interruptionRegistry');
+      const workflowDimension = store.get('workflowDimension') ?? '';
+      const workflowId = store.get('workflowId');
+      const originJobId = store.get('originJobId');
+      const workflowTopic = store.get('workflowTopic');
+      const activityTopic = `${workflowTopic}-activity`;
+      const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
+      let maximumInterval: number;
+      if (options.retryPolicy?.maximumInterval) {
+        maximumInterval = ms(options.retryPolicy.maximumInterval) / 1000;
+      }
+      const interruptionMessage = {
+        arguments: Array.from(arguments),
+        workflowDimension: workflowDimension,
+        index: execIndex,
+        originJobId: originJobId || workflowId,
+        parentWorkflowId: workflowId,
+        workflowId: activityJobId,
+        workflowTopic: activityTopic,
+        activityName,
+        backoffCoefficient: options?.retryPolicy?.backoffCoefficient ?? undefined,
+        maximumAttempts: options?.retryPolicy?.maximumAttempts ?? undefined,
+        maximumInterval: maximumInterval ?? undefined,
+      };
+      //push the packaged inputs to the registry
+      interruptionRegistry.push({
+        code: HMSH_CODE_DURABLE_PROXY,
+        ...interruptionMessage,
+      });
+      //ASYNC
+      //sleep (allow others to be packaged / registered) and throw the error
+      await sleepFor(0);
+      throw new DurableProxyError(interruptionMessage);
+    } as T;
+  }
+
   /**
    * Returns a search session for use when reading/writing to the workflow HASH.
    * The search session provides access to methods like `get`, `mget`, `set`, `del`, and `incr`.
@@ -161,54 +291,12 @@ export class WorkflowService {
   }
 
   /**
-   * Return a handle to the hotmesh client currently running the workflow
-   * @returns {Promise<HotMesh>} - a hotmesh client
-   */
-  static async getHotMesh(): Promise<HotMesh> {
-    const store = asyncLocalStorage.getStore();
-    const workflowTopic = store.get('workflowTopic');
-    const namespace = store.get('namespace');
-    return await WorkerService.getHotMesh(workflowTopic, { namespace });
-  }
-
-  /**
-   * Returns the current workflow context restored
-   * from Redis
-   */
-  static getContext(): WorkflowContext {
-    const store = asyncLocalStorage.getStore();
-    const workflowId = store.get('workflowId');
-    const replay = store.get('replay');
-    const cursor = store.get('cursor');
-    const workflowDimension = store.get('workflowDimension') ?? '';
-    const workflowTopic = store.get('workflowTopic');
-    const namespace = store.get('namespace');
-    const workflowTrace = store.get('workflowTrace');
-    const workflowSpan = store.get('workflowSpan');
-    const COUNTER = store.get('counter');
-    const raw = store.get('raw');
-    return {
-      COUNTER,
-      counter: COUNTER.counter,
-      cursor,
-      namespace,
-      raw,
-      replay,
-      workflowId,
-      workflowDimension,
-      workflowTopic,
-      workflowTrace,
-      workflowSpan,
-    };
-  }
-
-  /**
    * Returns the synchronous output from the activity (replay)
    * if available locally
    * @param {string} prefix - one of: proxy, child, start, wait etc
    * @returns 
    */
-  static async didRun(prefix: string): Promise<[boolean, number, any?]> {
+  static async didRun(prefix: string): Promise<[boolean, number, any]> {
     const {
       COUNTER,
       replay,
@@ -219,7 +307,7 @@ export class WorkflowService {
     if (sessionId in replay) {
       return [true, execIndex, SerializerService.fromString(replay[sessionId])];
     }
-    return [false, execIndex];
+    return [false, execIndex, null];
   }
 
   /**
@@ -366,7 +454,7 @@ export class WorkflowService {
    * upon reentry, the function will traverse prior execution paths up
    * until the sleep command and then resume execution thereafter.
    * @param {string} duration - See the `ms` package for syntax examples: '1 minute', '2 hours', '3 days'
-   * @returns {Promise<number>}
+   * @returns {Promise<number>} - resolved duration in seconds
    */
   static async sleepFor(duration: string): Promise<number> {
     //SYNC
@@ -432,68 +520,5 @@ export class WorkflowService {
     await sleepFor(0);
     // NOTE: If you are reading this in the stack trace, await `waitFor`
     throw new DurableWaitForError(interruptionMessage);
-  }
-
-  static wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
-    return async function () {
-      //SYNC
-      //check if the activity already ran
-      type ProxyType = { data?: T, timestamp: string, $error?: StreamError};
-      const [didRun, execIndex, result] = await WorkflowService.didRun('proxy');
-      if (didRun) {
-        if ((result as ProxyType)?.$error) {
-          if (options?.retryPolicy?.throwOnError !== false) {
-            //rethrow remote execution error (simulates throw)
-            const code: StreamCode = result.$error.code;
-            const message = result.$error.message;
-            const stack = result.$error.stack;
-            if (code === HMSH_CODE_DURABLE_FATAL) {
-              throw new DurableFatalError(message, stack);
-            } else if (code == HMSH_CODE_DURABLE_MAXED) {
-              throw new DurableMaxedError(message, stack);
-            } else if (code == HMSH_CODE_DURABLE_TIMEOUT) {
-              throw new DurableTimeoutError(message, stack);
-            }
-          }
-          return (result as ProxyType).$error as T;
-        }
-        return (result as ProxyType).data as T;
-      }
-      //package the interruption inputs
-      const store = asyncLocalStorage.getStore();
-      const interruptionRegistry = store.get('interruptionRegistry');
-      const workflowDimension = store.get('workflowDimension') ?? '';
-      const workflowId = store.get('workflowId');
-      const originJobId = store.get('originJobId');
-      const workflowTopic = store.get('workflowTopic');
-      const activityTopic = `${workflowTopic}-activity`;
-      const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
-      let maximumInterval: number;
-      if (options.retryPolicy?.maximumInterval) {
-        maximumInterval = ms(options.retryPolicy.maximumInterval) / 1000;
-      }
-      const interruptionMessage = {
-        arguments: Array.from(arguments),
-        workflowDimension: workflowDimension,
-        index: execIndex,
-        originJobId: originJobId || workflowId,
-        parentWorkflowId: workflowId,
-        workflowId: activityJobId,
-        workflowTopic: activityTopic,
-        activityName,
-        backoffCoefficient: options?.retryPolicy?.backoffCoefficient ?? undefined,
-        maximumAttempts: options?.retryPolicy?.maximumAttempts ?? undefined,
-        maximumInterval: maximumInterval ?? undefined,
-      };
-      //push the packaged inputs to the registry
-      interruptionRegistry.push({
-        code: HMSH_CODE_DURABLE_PROXY,
-        ...interruptionMessage,
-      });
-      //ASYNC
-      //sleep (allow others to be packaged / registered) and throw the error
-      await sleepFor(0);
-      throw new DurableProxyError(interruptionMessage);
-    } as T;
   }
 }

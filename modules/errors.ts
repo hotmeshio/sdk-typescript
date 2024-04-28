@@ -216,7 +216,6 @@ class DurableFatalError extends Error {
 }
 class DurableRetryError extends Error {
   code: number;
-  stack?: string;
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {

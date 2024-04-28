@@ -66,8 +66,12 @@ export async function exampleHook(name: string): Promise<void> {
   await search.incr('counter', 100);
   await search.set('jimbo', 'jackson');
 
-  //proxyActivities
-  const greeting = await bye(name);
+  //Promise.all: call in parallel; use a sleepFor
+  // and compare to an activity that uses a standard
+  const [greeting, _timeInSeconds] = await Promise.all([
+    bye(name, 1_000),
+    Durable.workflow.sleepFor('1 second'),
+  ]);
 
   //start a child workflow and wait for the result
   await Durable.workflow.execChild<string>({
@@ -76,7 +80,7 @@ export async function exampleHook(name: string): Promise<void> {
     workflowName: 'childExample',
   });
 
-  // //start a child workflow and only confirm it started (don't wait for result)
+  //start a child workflow and only confirm it started (don't wait for result)
   await Durable.workflow.startChild({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
@@ -84,7 +88,7 @@ export async function exampleHook(name: string): Promise<void> {
   });
 
   //test out sleeping
-  await Durable.workflow.sleepFor('1 second');
+  await Durable.workflow.sleepFor('2 seconds');
 
   //awake the parent/main thread by sending the 'abcdefg' signal
   await Durable.workflow.signal('abcdefg', { data: greeting });

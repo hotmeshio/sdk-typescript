@@ -49,13 +49,12 @@ describe('DURABLE | basic | `Durable Foundational`', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({ connection: { class: Redis, options }});
-        //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
           args: ['HotMesh'],
           taskQueue: 'basic-world',
           workflowName: 'example',
           workflowId: 'workflow-' + guid(),
-          expire: 120,
+          expire: 600,
         });
         expect(handle.workflowId).toBeDefined();
       });

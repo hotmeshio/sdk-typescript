@@ -60,9 +60,6 @@ class MapperService {
    * to determine which (if any) transition should be taken.
    */
   static evaluate(transitionRule: TransitionRule | boolean, context: JobState, code: StreamCode): boolean {
-    // if (code === 599 && transitionRule['code'] === 599) {
-    //   console.log('Transition Rule:', JSON.stringify(transitionRule, null, 2), 'Context>', JSON.stringify(context['$self'], null, 2), 'trigger', JSON.stringify(context['trigger']), 'cycle_hook', JSON.stringify(context['cycle_hook']), 'code', code);
-    // }
     if (typeof transitionRule === 'boolean') {
       return transitionRule;
     }

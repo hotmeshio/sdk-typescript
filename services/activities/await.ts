@@ -2,9 +2,11 @@ import {
   GenerationalError,
   GetStateError,
   InactiveJobError } from '../../modules/errors';
+import { guid } from '../../modules/utils';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
+import { Pipe } from '../pipe';
 import { TelemetryService } from '../telemetry';
 import {
   ActivityData,
@@ -14,8 +16,6 @@ import {
 import { JobState } from '../../types/job';
 import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData, StreamDataType } from '../../types/stream';
-import { Pipe } from '../pipe';
-import { guid } from '../../modules/utils';
 
 class Await extends Activity {
   config: AwaitActivity;

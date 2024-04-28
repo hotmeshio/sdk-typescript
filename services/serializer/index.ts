@@ -137,7 +137,7 @@ export class SerializerService {
           const shortDimensionalKey = `${shortKey}${dimensionalIndex}`;
           result[shortDimensionalKey] = source[key];
         } else if (!(key in result) && this.isLiteralKeyType(key)) {
-          //marker (-) and search (_)
+          //mark (-) and search (_)
           result[key] = source[key];
         }  
       }

@@ -237,10 +237,11 @@ export class WorkerService {
         //incoming data payload has arguments and workflowId
         const workflowInput = data.data as unknown as WorkflowDataType;
         const context = new Map();
-        context.set('raw', data);
-        context.set('namespace', config.namespace ?? APP_ID);
+        context.set('canRetry', workflowInput.canRetry);
         context.set('counter', counter);
         context.set('interruptionRegistry', interruptionRegistry);
+        context.set('namespace', config.namespace ?? APP_ID);
+        context.set('raw', data);
         context.set('workflowId', workflowInput.workflowId);
         if (workflowInput.originJobId) {
           //if present there is an origin job to which this job is subordinated; 

@@ -46,13 +46,34 @@ export interface ExportCycles {
   [key: string]: string[];
 };
 
+export type IdemParts = {
+  index: number;
+  secondary?: number;
+  dimension?: string;
+};
+
+export type IdemType = {
+  key: string;
+  value: string;
+  parts: IdemParts;
+};
+
+export interface TimelineEntry {
+  activity: string;
+  dimensions: string;
+  created: string;
+  updated: string;
+}
+
+
 export interface DurableJobExport {
   data: StringAnyType;
-  dependencies: DependencyExport[];
+  dependencies?: Record<string, any>[];
   state: StringAnyType;
   status: string;
-  timeline: JobTimeline[];
-  idempotents: { key: string, value: string }[];
+  timeline?: JobTimeline[];
+  idempotents: IdemType[];
+  replay: TimestampParts[];
 };
 
 export interface JobExport {
@@ -60,3 +81,10 @@ export interface JobExport {
   process: StringAnyType;
   status: string;
 };
+
+export interface TimestampParts {
+  activity: string;
+  dimensions: string;
+  created: string;
+  updated: string;
+}

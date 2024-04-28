@@ -100,7 +100,7 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
           childWorkflowOutput: 'interrupt childActivity, PARENT to CHILD!',
           cancelledWorkflowId: 'jimbo2',
         };
-        const result = await handle.result();
+        const result = await handle.result() as {cancelledWorkflowId: string};
         expect(result).toEqual(expectedOutput);
         const client = new Client({ connection: { class: Redis, options }});
         //get a handle to the interrupted workflow
@@ -112,7 +112,7 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
         const state = await handle.state(true);
         //job state (js) is @ -1billion when interrupted (depending upon semaphore state when decremented)
         expect(state.metadata.js).toBeLessThan(-1_000_000);
-        const rslt = await handle.result(true);
+        const rslt = await handle.result({state: true});
         //result is undefined, since it was interrupted; there is no return;
         expect(rslt).toBeUndefined();
       }, 15_000);

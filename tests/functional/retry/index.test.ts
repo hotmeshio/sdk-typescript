@@ -266,7 +266,7 @@ describe('FUNCTIONAL | Retry', () => {
         expect(error.job_id).not.toBeNull();
         const jobMetaData = await hotMesh.getState('calculate', error.job_id);
         expect(jobMetaData?.metadata.err).not.toBeNull();
-        expect(jobMetaData?.metadata.err).toBe('{"message":"unrecoverable error","code":403}');
+        expect(jobMetaData?.metadata.err).toBe('{"message":"unrecoverable error","code":403,"is_stream_error":true}');
       }
     });
   });

@@ -2,18 +2,19 @@ import {
   GenerationalError,
   GetStateError,
   InactiveJobError } from '../../modules/errors';
+import { guid } from '../../modules/utils';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
-import { Activity, ActivityType } from './activity';
+import { Activity } from './activity';
 import {
   ActivityData,
   ActivityMetadata,
+  ActivityType,
   CycleActivity } from '../../types/activity';
 import { JobState } from '../../types/job';
 import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData } from '../../types/stream';
 import { TelemetryService } from '../telemetry';
-import { guid } from '../../modules/utils';
 
 class Cycle extends Activity {
   config: CycleActivity;

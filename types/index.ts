@@ -30,10 +30,12 @@ export {
 export {
     ActivityConfig,
     ActivityWorkflowDataType,
+    ChildResponseType,
     ClientConfig,
     ContextType,
     ConnectionConfig,
     Connection,
+    ProxyResponseType,
     ProxyType,
     Registry,
     SignalOptions,

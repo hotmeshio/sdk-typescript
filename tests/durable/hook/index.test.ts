@@ -158,7 +158,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
           workflowGuid,
           namespace
         );
-        const result = await handle.result(true);
+        const result = await handle.result({state: true});
         expect(result).toEqual('Hello, HookMesh! - Goodbye, HookMesh!');
         const exported = await handle.export();
         expect(exported.status).not.toBeUndefined();

@@ -25,6 +25,8 @@ export type StreamError = {
   name?: string;
   /** Custom user-defined error details */
   error?: Record<string, unknown>;
+  /** True if originating via a standard transition message with an `error` status */
+  is_stream_error?: boolean;
 }
 
 /** Enumerated status values for stream operations */
