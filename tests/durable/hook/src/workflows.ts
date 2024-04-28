@@ -26,14 +26,14 @@ export async function example(name: string): Promise<string> {
   await search.mult('multer', 10);
 
   //start a child workflow and wait for the result
-  await Durable.workflow.executeChild<string>({
+  await Durable.workflow.execChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
 
   //start a child workflow and only confirm it started (don't wait for result)
-  await Durable.workflow.startChild<string>({
+  await Durable.workflow.startChild({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
@@ -43,7 +43,7 @@ export async function example(name: string): Promise<string> {
   const [hello, goodbye] = await Promise.all([greet(name), bye(name)]);
 
   //wait for the `abcdefg` signal ('exampleHook' will send it)
-  await Durable.workflow.waitForSignal(['abcdefg']);
+  await Durable.workflow.waitFor('abcdefg');
 
   //sleep for 5
   await Durable.workflow.sleepFor('5 seconds');
@@ -66,25 +66,29 @@ export async function exampleHook(name: string): Promise<void> {
   await search.incr('counter', 100);
   await search.set('jimbo', 'jackson');
 
-  //proxyActivities
-  const greeting = await bye(name);
+  //Promise.all: call in parallel; use a sleepFor
+  // and compare to an activity that uses a standard
+  const [greeting, _timeInSeconds] = await Promise.all([
+    bye(name, 1_000),
+    Durable.workflow.sleepFor('1 second'),
+  ]);
 
   //start a child workflow and wait for the result
-  await Durable.workflow.executeChild<string>({
+  await Durable.workflow.execChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
 
-  // //start a child workflow and only confirm it started (don't wait for result)
-  await Durable.workflow.startChild<string>({
+  //start a child workflow and only confirm it started (don't wait for result)
+  await Durable.workflow.startChild({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
   });
 
   //test out sleeping
-  await Durable.workflow.sleepFor('1 second');
+  await Durable.workflow.sleepFor('2 seconds');
 
   //awake the parent/main thread by sending the 'abcdefg' signal
   await Durable.workflow.signal('abcdefg', { data: greeting });

@@ -9,6 +9,7 @@ import { HotMeshGraph, HotMeshManifest } from '../../types/hotmesh';
 import { RedisClient, RedisMulti } from '../../types/redis';
 import { StringAnyType, Symbols } from '../../types/serializer';
 import { Pipe } from '../pipe';
+import { Validator } from './validator';
 
 const DEFAULT_METADATA_RANGE_SIZE = 26; //metadata is 26 slots ([a-z] * 1)
 const DEFAULT_DATA_RANGE_SIZE = 260; //data is 260 slots ([a-zA-Z] * 5)
@@ -201,6 +202,9 @@ class Deployer {
             //DAGs have one parent; easy to optimize for
             graph.activities[to].parent = fromActivity;
           }
+          //temporarily bind the transitions to the parent activity,
+          // so the consumer/producer registrar picks up the bindings
+          graph.activities[fromActivity].transitions = toTransitions;
         }
       }
     }
@@ -257,9 +261,29 @@ class Deployer {
             let newPath = [...path, key];
             traverse(obj[key], newPath);
           } else {
-            const finalPath = `data/${[...path, key].join('/')}`;
-            if (!result.includes(finalPath)) {
-              result.push(finalPath);
+            //wildcard mapping (e.g., 'friends[25]')
+            //when this is resolved, it will be expanded to
+            //`'friends/0', ..., 'friends/24'`, providing 25 dynamic
+            //slots in the flow's output data
+            const pathName = [...path, key].join('/');
+            if (!pathName.includes('[')) {
+              const finalPath = `data/${pathName}`;
+              if (!result.includes(finalPath)) {
+                result.push(finalPath);
+              }
+            } else {
+              const [left, right] = pathName.split('[');
+              //check if this variable isLiteralKeyType (#, -, or _)
+              const [amount, _] = right.split(']');
+              if (!isNaN(parseInt(amount))) {
+                //loop to create all possible paths (0 to amount)
+                for (let i = 0; i < parseInt(amount); i++) {
+                  const finalPath = `data/${left}/${i}`;
+                  if (!result.includes(finalPath)) {
+                    result.push(finalPath);
+                  }
+                }
+              } //else ignore (amount might be '-' or '_')  `-` is marker data;   `_` is job data;
             }
           }
         }
@@ -280,7 +304,7 @@ class Deployer {
       trigger.PRODUCES = results;
     }
   }
-  
+
   resolveMappingDependencies() {
     const dynamicMappingRules: string[] = [];
     //recursive function to descend into the object and find all dynamic mapping rules
@@ -289,7 +313,7 @@ class Deployer {
         if (typeof obj[key] === 'string') {
           const stringValue = obj[key] as string;
           const dynamicMappingRuleMatch = stringValue.match(/^\{[^@].*}$/);
-          if (dynamicMappingRuleMatch) { 
+          if (dynamicMappingRuleMatch && !Validator.CONTEXT_VARS.includes(stringValue)) { 
             if (stringValue.split('.')[1] !== 'input') {
               dynamicMappingRules.push(stringValue);
               consumes.push(stringValue);
@@ -359,7 +383,10 @@ class Deployer {
     for (const graph of graphs) {
       const activities = graph.activities;
       for (const activityKey in activities) {
-        activitySchemas[activityKey] = activities[activityKey];
+        const target = activities[activityKey];
+        //remove transitions; no longer necessary for runtime
+        delete target.transitions;
+        activitySchemas[activityKey] = target;
       }
     }
     await this.store.setSchemas(activitySchemas, this.getVID());

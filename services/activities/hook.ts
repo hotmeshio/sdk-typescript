@@ -63,16 +63,16 @@ class Hook extends Activity {
       return this.context.metadata.aid;
     } catch (error) {
       if (error instanceof InactiveJobError) {
-        this.logger.error('hook-inactive-job-error', { error });
+        this.logger.error('hook-inactive-job-error', { ...error });
         return;
       } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
+        this.logger.info('process-event-generational-job-error', { ...error });
         return;
       } else if (error instanceof GetStateError) {
-        this.logger.error('hook-get-state-error', { error });
+        this.logger.error('hook-get-state-error', { ...error });
         return;
       } else {
-        this.logger.error('hook-process-error', { error });
+        this.logger.error('hook-process-error', { ...error });
       }
       telemetry.setActivityError(error.message);
       throw error;

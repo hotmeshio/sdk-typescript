@@ -11,7 +11,7 @@ const { Connection, Client, Worker } = Durable;
 
 describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
   let handle: WorkflowHandleService;
-  const errorCycles = 5;
+  const errorCycles = 3;
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -53,6 +53,7 @@ describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
           taskQueue: 'sleep-world',
           workflowName: 'example',
           workflowId: guid(),
+          expire: 120,
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -69,10 +70,6 @@ describe('DURABLE | sleep | `Workflow Promise.all proxyActivities`', () => {
           },
           taskQueue: 'sleep-world',
           workflow: workflows.default.example,
-          options: {
-            maxSystemRetries: 2,
-            backoffCoefficient: 5,
-          },
         });
         await worker.run();
         expect(worker).toBeDefined();

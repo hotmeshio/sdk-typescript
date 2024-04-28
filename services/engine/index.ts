@@ -450,6 +450,7 @@ class EngineService {
         streamData.status = StreamStatus.ERROR;
         streamData.data = error;
         streamData.code = error.code;
+        streamData.stack = error.stack;
       } else if (emit) {
         streamData.status = StreamStatus.PENDING;
         streamData.code = HMSH_CODE_PENDING;
@@ -474,7 +475,10 @@ class EngineService {
 
   // ****************** `INTERRUPT` ACTIVE JOBS *****************
   async interrupt(topic: string, jobId: string, options: JobInterruptOptions = {}): Promise<string> {
+    //immediately interrupt the job, going directly to the data source
     await this.store.interrupt(topic, jobId, options);
+
+    //now that the job is interrupted, we can clean up
     const context = await this.getState(topic, jobId) as JobState;
     const completionOpts: JobCompletionOptions = {
       interrupt: options.descend,

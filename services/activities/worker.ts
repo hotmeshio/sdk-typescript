@@ -2,9 +2,12 @@ import {
   GenerationalError,
   GetStateError,
   InactiveJobError } from '../../modules/errors';
+import { guid } from '../../modules/utils';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
+import { Pipe } from '../pipe';
+import { TelemetryService } from '../telemetry';
 import {
   ActivityData,
   ActivityMetadata,
@@ -13,9 +16,6 @@ import {
 import { JobState } from '../../types/job';
 import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData} from '../../types/stream';
-import { TelemetryService } from '../telemetry';
-import { Pipe } from '../pipe';
-import { guid } from '../../modules/utils';
 
 class Worker extends Activity {
   config: WorkerActivity;
@@ -61,16 +61,16 @@ class Worker extends Activity {
       return this.context.metadata.aid;
     } catch (error) {
       if (error instanceof InactiveJobError) {
-        this.logger.error('await-inactive-job-error', { error });
+        this.logger.error('await-inactive-job-error', { ...error });
         return;
       } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
+        this.logger.info('process-event-generational-job-error', { ...error });
         return;
       } else if (error instanceof GetStateError) {
-        this.logger.error('worker-get-state-error', { error });
+        this.logger.error('worker-get-state-error', { ...error });
         return;
       } else {
-        this.logger.error('worker-process-error', { error });
+        this.logger.error('worker-process-error', { ...error });
       }
       telemetry.setActivityError(error.message);
       throw error;

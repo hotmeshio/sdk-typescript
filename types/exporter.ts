@@ -1,4 +1,4 @@
-import { StringAnyType, StringStringType } from "./serializer";
+import { StringAnyType } from "./serializer";
 
 export type ExportItem = [(string | null), string, any];
 
@@ -46,14 +46,40 @@ export interface ExportCycles {
   [key: string]: string[];
 };
 
+export type IdemParts = {
+  index: number;
+  secondary?: number;
+  dimension?: string;
+};
+
+export type IdemType = {
+  key: string;
+  value: string;
+  parts: IdemParts;
+};
+
+export interface TimelineEntry {
+  activity: string;
+  dimensions: string;
+  created: string;
+  updated: string;
+}
+
+export interface TimestampParts {
+  activity: string;
+  dimensions: string;
+  created: string;
+  updated: string;
+}
+
 export interface DurableJobExport {
   data: StringAnyType;
-  dependencies: DependencyExport[];
+  dependencies?: Record<string, any>[];
   state: StringAnyType;
   status: string;
-  timeline: JobTimeline[];
-  transitions: ExportTransitions;
-  cycles: ExportCycles;
+  timeline?: JobTimeline[];
+  idempotents: IdemType[];
+  replay: TimestampParts[];
 };
 
 export interface JobExport {

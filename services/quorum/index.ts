@@ -25,9 +25,7 @@ import {
   QuorumMessageCallback,
   QuorumProfile,
   RollCallMessage,
-  SubscriptionCallback,
-  ThrottleMessage
-} from '../../types/quorum';
+  SubscriptionCallback } from '../../types/quorum';
 import { RedisClient, RedisMulti } from '../../types/redis';
 import { RedisClientType } from '../../types/redisclient';
 

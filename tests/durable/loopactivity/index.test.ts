@@ -48,10 +48,11 @@ describe('DURABLE | loopactivity | `Iterate Same Activity`', () => {
         const client = new Client({ connection: { class: Redis, options }});
         //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
-          args: ['HotMesh'],
+          args: [],
           taskQueue: 'loop-world',
           workflowName: 'example',
           workflowId: 'workflow-' + guid(),
+          expire: 120, //ensures the failed workflows aren't scrubbed too soon (so they can be reviewed)
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -74,10 +75,10 @@ describe('DURABLE | loopactivity | `Iterate Same Activity`', () => {
 
   describe('WorkflowHandle', () => {
     describe('result', () => {
-      it('should return the workflow execution result', async () => {
+      it('run await 3 functions and one sleepFor in parallel', async () => {
         const result = await handle.result();
-        expect(result).toEqual(['Hello, 1!', 'Hello, 2!', 'Hello, 3!']);
-      }, 10_000);
+        expect(result).toEqual(['Hello, 1!', 'Hello, 2!', 'Hello, 3!', 5]);
+      }, 15_000);
     });
   });
 });

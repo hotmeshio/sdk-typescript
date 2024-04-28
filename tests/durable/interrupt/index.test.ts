@@ -53,9 +53,7 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
           taskQueue: 'parent-world',
           workflowName: 'parentExample',
           workflowId: guid(),
-          config: {
-
-          }
+          expire: 600,
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -64,19 +62,6 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
 
   describe('Worker', () => {
     describe('create', () => {
-      it('should create and run the PARENT workflow worker', async () => {
-        const worker = await Worker.create({
-          connection: { class: Redis, options },
-          taskQueue: 'parent-world',
-          workflow: parentWorkflows.parentExample,
-          options: {
-            logLevel: HMSH_LOGLEVEL,
-          },
-        });
-        await worker.run();
-        expect(worker).toBeDefined();
-      });
-
       it('should create and run the CHILD workflow worker', async () => {
         const worker = await Worker.create({
           connection: { class: Redis, options },
@@ -89,8 +74,24 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
         await worker.run();
         expect(worker).toBeDefined();
       });
+
+      it('should create and run the PARENT workflow worker', async () => {
+        const worker = await Worker.create({
+          connection: { class: Redis, options },
+          taskQueue: 'parent-world',
+          workflow: parentWorkflows.parentExample,
+          options: {
+            logLevel: HMSH_LOGLEVEL,
+          },
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
     });
   });
+
+  //add long test, spawn a timout that will throw a 410, await the handle
+  //verify the error code is 410
 
   describe('WorkflowHandle', () => {
     describe('result', () => {
@@ -99,22 +100,22 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
           childWorkflowOutput: 'interrupt childActivity, PARENT to CHILD!',
           cancelledWorkflowId: 'jimbo2',
         };
-        const result = await handle.result();
+        const result = await handle.result() as {cancelledWorkflowId: string};
         expect(result).toEqual(expectedOutput);
         const client = new Client({ connection: { class: Redis, options }});
         //get a handle to the interrupted workflow
         handle = await client.workflow.getHandle(
-          'child-world',
-          'childExample',
+          'child-world',  //task queue
+          'childExample', //workflow
           result.cancelledWorkflowId,
         );
         const state = await handle.state(true);
         //job state (js) is @ -1billion when interrupted (depending upon semaphore state when decremented)
         expect(state.metadata.js).toBeLessThan(-1_000_000);
-        const rslt = await handle.result(true);
+        const rslt = await handle.result({state: true});
         //result is undefined, since it was interrupted; there is no return;
         expect(rslt).toBeUndefined();
-      }, 10_000);
+      }, 15_000);
     });
   });
 });

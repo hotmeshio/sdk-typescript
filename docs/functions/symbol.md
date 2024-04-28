@@ -1,6 +1,6 @@
 # Symbol Handler
 
-The `SymbolHandler` class provides a set of useful methods for returning common symbolic values and objects, such as null, undefined, whitespace, object, array, and date. These methods can be used in a variety of contexts where it is necessary to represent these values or objects programmatically.
+The `SymbolHandler` class provides a set of useful methods for returning common symbolic values and objects, such as `null`, `undefined`, `whitespace`, `object`, `array`, and `date`. These methods can be used in a variety of contexts where it is necessary to represent these values or objects programmatically.
 
 **Table of Contents**
 - [null](#null): Returns null

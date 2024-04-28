@@ -1,6 +1,6 @@
 # JSON Functions
 
-In this section, various JSON functions provided by the JsonHandler class will be explored, which are available for use in HotMesh mapping rules. The functions are designed to facilitate the manipulation and transformation of JSON data during the mapping process. The JsonHandler class consists of two functions: stringify and parse, which can be utilized through the @pipe system for a functional approach.
+In this section, various JSON functions provided by the JsonHandler class will be explored, which are available for use in HotMesh mapping rules. Although inspired by JavaScript, they have been adapted to follow a functional approach. Each transformation is a function that expects one or more input parameters from the prior row in the @pipe structure.
 
 **Table of Contents**
 - [json.stringify](#jsonstringify)

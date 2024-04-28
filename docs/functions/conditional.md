@@ -1,6 +1,6 @@
 # Conditional Functions
 
-In this section, various conditional functions will be explored, which are available for use in HotMesh mapping rules. The functions are designed to facilitate the manipulation and transformation of data using conditional operations during the mapping process. These functions are adapted from the `ConditionalHandler` class, and are implemented as a functional system referred to as @pipes.
+In this section, various conditional functions will be explored, which are available for use in HotMesh mapping rules. Although inspired by JavaScript, they have been adapted to follow a functional approach. Each transformation is a function that expects one or more input parameters from the prior row in the @pipe structure.
 
 **Table of Contents**
 - [conditional.ternary](#conditionalternary)
@@ -254,5 +254,41 @@ After executing the mapping rules, the resulting JSON object will be:
 ```json
 {
   "is_value1_less_than_or_equal_value2": true
+}
+```
+
+
+## conditional.nullish
+
+The `conditional.nullish` function checks whether the first value is null or undefined. It takes two parameters: the first value (`value1`) and the second value (`value2`).
+
+### Example
+
+Suppose there are the following input JSON objects:
+
+**Object A:**
+```json
+{
+  "data": {
+    "value1": 0,
+    "value2": 10
+  }
+}
+```
+
+The goal is to create a new object with a non-null value, allowing for values like `0` and `false` to be considered:
+
+```yaml
+non_null_value:
+  "@pipe":
+    - ["{a.data.value1}", "{a.data.value2}"]
+    - ["{@conditional.nullish}"]
+```
+
+After executing the mapping rules, the resulting JSON object will be:
+
+```json
+{
+  "non_null_value": 0
 }
 ```

@@ -143,19 +143,19 @@ class Activity {
       this.transitionAdjacent(multiResponse, telemetry);
     } catch (error) {
       if (error instanceof CollationError) {
-        this.logger.info('process-event-inactive-error', { error });
+        this.logger.info('process-event-inactive-error', { ...error });
         return;
       } else if (error instanceof InactiveJobError) {
-        this.logger.info('process-event-inactive-job-error', { error });
+        this.logger.info('process-event-inactive-job-error', { ...error });
         return;
       } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
+        this.logger.info('process-event-generational-job-error', { ...error });
         return;
       } else if (error instanceof GetStateError) {
-        this.logger.info('process-event-get-job-error', { error });
+        this.logger.info('process-event-get-job-error', {  ...error  });
         return;
       }
-      this.logger.error('activity-process-event-error', { error });
+      this.logger.error('activity-process-event-error', { ...error, message: error.message, stack: error.stack, name: error.name });
       telemetry && telemetry.setActivityError(error.message);
       throw error;
     } finally {
@@ -191,6 +191,10 @@ class Activity {
   async processError(telemetry: TelemetryService, type: string): Promise<MultiResponseFlags> {
     this.bindActivityError(this.data);
     this.adjacencyList = await this.filterAdjacent();
+    if (!this.adjacencyList.length) {
+      this.bindJobError(this.data);
+    }
+    this.mapJobData();
     const multi = this.store.getMulti();
     await this.setState(multi);
     await CollatorService.notarizeCompletion(this, multi);
@@ -205,7 +209,7 @@ class Activity {
     const attrs: StringScalarType = { 'app.job.jss': jobStatus };
     //adjacencyList membership has already been set at this point (according to activity status)
     const messageIds = await this.transition(this.adjacencyList, jobStatus);
-    if (messageIds.length) {
+    if (messageIds?.length) {
       attrs['app.activity.mids'] = messageIds.join(',')
     }
     telemetry.setActivityAttributes(attrs);
@@ -223,7 +227,30 @@ class Activity {
   mapJobData(): void {
     if(this.config.job?.maps) {
       const mapper = new MapperService(this.config.job.maps, this.context);
-      this.context.data = mapper.mapRules();
+      const output = mapper.mapRules();
+      if (output) {
+        for (const key in output) {
+          const f1 = key.indexOf('[');
+          //keys with array notation suffix `somekey[]` represent
+          //dynamically-keyed mappings whose `value` must be moved to the output.
+          //The `value` must be an object with keys appropriate to the
+          //notation type: `somekey[0] (array)`, `somekey[-] (mark)`, OR `somekey[_] (search)`
+          if (f1 > -1) {
+            const amount = key.substring(f1 + 1).split(']')[0];
+            if (!isNaN(Number(amount))) {
+              const left = key.substring(0, f1);
+              output[left] = output[key];
+              delete output[key];
+            } else if (amount === '-' || amount === '_') {
+              const obj = output[key];
+              Object.keys(obj).forEach((newKey) => {
+                output[newKey] = obj[newKey];
+              });
+            }
+          }
+        }
+      }
+      this.context.data = output;
     }
   }
 
@@ -249,10 +276,22 @@ class Activity {
     //set timeout in support of hook and/or duplex
   }
 
+  /**
+   * Any StreamMessage with a status of ERROR is bound to the activity
+   */
   bindActivityError(data: Record<string, unknown>): void {
-    //todo: map activity error data into the job error (if defined)
-    //      map job status via: (500: [3**, 4**, 5**], 202: [$pending])
-    this.context.metadata.err = JSON.stringify(data);
+    const md = this.context[this.metadata.aid].output.metadata;
+    md.err = JSON.stringify(this.data);
+    //(temporary...useful for mapping error parts in the app.yaml)
+    md.$error = { ...data, is_stream_error: true };
+  }
+
+  /**
+   * unhandled activity errors (activities that return an ERROR StreamMessage
+   * status and have no adjacent children to transition to) are bound to the job
+   */
+  bindJobError(data: Record<string, unknown>): void {
+    this.context.metadata.err = JSON.stringify({ ...data, is_stream_error: true });
   }
 
   async getTriggerConfig(): Promise<ActivityType> {
@@ -322,9 +361,9 @@ class Activity {
     if (this.status === StreamStatus.ERROR) {
       self.output.metadata.err = JSON.stringify(this.data);
     }
-    //todo: verify leg2 never overwrites leg1 `ac`
-    self.output.metadata.ac = 
-      self.output.metadata.au = formatISODate(new Date());
+    const ts = formatISODate(new Date());
+    self.output.metadata.ac = ts;
+    self.output.metadata.au = ts;
     self.output.metadata.atp = this.config.type;
     if (this.config.subtype) {
       self.output.metadata.stp = this.config.subtype;
@@ -342,6 +381,11 @@ class Activity {
       const value = getValueByPath(this.context, path);
       if (value !== undefined) {
         state[path] = value;
+      }
+    }
+    for (let key in this.context?.data ?? {}) {
+      if (key.startsWith('-') || key.startsWith('_')) {
+        state[key] = this.context.data[key];
       }
     }
     TelemetryService.bindJobTelemetryToState(state, this.config, this.context);
@@ -398,7 +442,7 @@ class Activity {
     let { dad, jid } = this.context.metadata;
     const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], dad || '');
     //`state` is a unidimensional hash; context is a tree
-    const [state, status] = await this.store.getState(jid, consumes, dIds);
+    const [state, _status] = await this.store.getState(jid, consumes, dIds);
     this.context = restoreHierarchy(state) as JobState;
     this.assertGenerationalId(this.context?.metadata?.gid, gid);
     this.initDimensionalAddress(dad);
@@ -443,6 +487,11 @@ class Activity {
     if (!self.hook) {
       self.hook = { };
     }
+    if (!self.output.metadata) {
+      self.output.metadata = { };
+    }
+    //prebind the updated timestamp (mappings need the time)
+    self.output.metadata.au = formatISODate(new Date());
     context['$self'] = self;
     context['$job'] = context; //NEVER call STRINGIFY! (now circular)
     return context as JobState;

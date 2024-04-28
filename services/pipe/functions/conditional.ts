@@ -26,6 +26,10 @@ class ConditionalHandler {
   less_than_or_equal(value1: number, value2: number): boolean {
     return value1 <= value2;
   }
+
+  nullish(value1: any, value2: any): any {
+    return value1 ?? value2;
+  }
 }
 
 export { ConditionalHandler };

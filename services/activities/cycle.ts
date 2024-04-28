@@ -2,18 +2,19 @@ import {
   GenerationalError,
   GetStateError,
   InactiveJobError } from '../../modules/errors';
+import { guid } from '../../modules/utils';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
-import { Activity, ActivityType } from './activity';
+import { Activity } from './activity';
 import {
   ActivityData,
   ActivityMetadata,
+  ActivityType,
   CycleActivity } from '../../types/activity';
 import { JobState } from '../../types/job';
 import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData } from '../../types/stream';
 import { TelemetryService } from '../telemetry';
-import { guid } from '../../modules/utils';
 
 class Cycle extends Activity {
   config: CycleActivity;
@@ -63,16 +64,16 @@ class Cycle extends Activity {
       return this.context.metadata.aid;
     } catch (error) {
       if (error instanceof InactiveJobError) {
-        this.logger.error('cycle-inactive-job-error', { error });
+        this.logger.error('cycle-inactive-job-error', { ...error });
         return;
       } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
+        this.logger.info('process-event-generational-job-error', { ...error });
         return;
       } else if (error instanceof GetStateError) {
-        this.logger.error('cycle-get-state-error', { error });
+        this.logger.error('cycle-get-state-error', { ...error });
         return;
       } else {
-        this.logger.error('cycle-process-error', { error });
+        this.logger.error('cycle-process-error', { ...error });
       }
       telemetry.setActivityError(error.message);
       throw error;

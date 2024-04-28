@@ -48,12 +48,12 @@ describe('DURABLE | fatal | `Workflow Promise.all proxyActivities`', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({ connection: { class: Redis, options }});
-        //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
           args: [{ name: NAME }],
           taskQueue: 'fatal-world',
           workflowName: 'example',
           workflowId: guid(),
+          expire: 120, //ensures the failed workflows aren't scrubbed too soon (so they can be reviewed (but unnecessary for the test to succeed))
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -81,8 +81,9 @@ describe('DURABLE | fatal | `Workflow Promise.all proxyActivities`', () => {
     describe('result', () => {
       it('should throw the fatal error with `code` and `message`', async () => {
         try {
-          //the activity will throw `DurableFatalError`
+          //the activity will throw `598 [DurableFatalError]; the workflow will rethrow;`
           await handle.result();
+          throw new Error('This should not be thrown');
         } catch (err) {
           expect(err.message).toEqual(`stop-retrying-please-${NAME}`);
           expect(err.code).toEqual(new DurableFatalError('').code);

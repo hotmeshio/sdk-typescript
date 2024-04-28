@@ -2,9 +2,11 @@ import {
   GenerationalError,
   GetStateError,
   InactiveJobError } from '../../modules/errors';
+import { guid } from '../../modules/utils';
 import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
+import { Pipe } from '../pipe';
 import { TelemetryService } from '../telemetry';
 import {
   ActivityData,
@@ -14,8 +16,6 @@ import {
 import { JobState } from '../../types/job';
 import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData, StreamDataType } from '../../types/stream';
-import { Pipe } from '../pipe';
-import { guid } from '../../modules/utils';
 
 class Await extends Activity {
   config: AwaitActivity;
@@ -60,16 +60,16 @@ class Await extends Activity {
       return this.context.metadata.aid;
     } catch (error) {
       if (error instanceof InactiveJobError) {
-        this.logger.error('await-inactive-job-error', { error });
+        this.logger.error('await-inactive-job-error', { ...error });
         return;
       } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
+        this.logger.info('process-event-generational-job-error', { ...error });
         return;
       } else if (error instanceof GetStateError) {
-        this.logger.error('await-get-state-error', { error });
+        this.logger.error('await-get-state-error', { ...error });
         return;
       } else {
-        this.logger.error('await-process-error', { error });
+        this.logger.error('await-process-error', { ...error });
       }
       telemetry.setActivityError(error.message);
       throw error;

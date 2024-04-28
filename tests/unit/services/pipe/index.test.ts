@@ -480,8 +480,175 @@ describe('Pipe', () => {
       result = pipe.process();
 
       expect(result).toEqual('ke-bab-case');
+    });
 
+    it('should exec nested pipes', () => {
+      jobData = {
+        a: {
+          output: {
+            data: {
+              workflowDimension: ',0,0,1',
+              index: 13,
+              duration: 1000,
+            },
+          },
+        },
+      };
 
+      rules = [
+        {
+          "@pipe": [
+            [
+              "-sleep",
+              "{a.output.data.workflowDimension}",
+              "-",
+              "{a.output.data.index}",
+              "-"
+            ],
+            [
+              "{@string.concat}"
+            ]
+          ]
+        },
+        { "@pipe": [
+            [ "{a.output.data.duration}" ]
+          ] 
+        },
+        [ "{@object.create}" ]
+      ];
+
+      pipe = new Pipe(rules, jobData);
+      const result = pipe.process();
+      expect(result).toEqual({ '-sleep,0,0,1-13-': 1000 });
+    });
+
+    it('should reduce, split, map, create, push', () => {
+      jobData = {
+        a: {
+          output: {
+            data: [
+              { full_name: 'Luke Birdeau' },
+              { full_name: 'John Doe' },
+            ],
+          },
+        },
+      };
+
+      rules = [
+        ['{a.output.data}', []],
+        {
+          '@reduce': [
+            { '@pipe': [
+              ['{$output}']
+            ]},
+            {
+              '@pipe': [
+                {
+                  '@pipe': [['first']]
+                },
+                {
+                  '@pipe': [
+                    ['{$item.full_name}', ' '],
+                    ['{@string.split}', 0],
+                    ['{@array.get}'],
+                  ]
+                },
+                {
+                  '@pipe': [['last']]
+                },
+                {
+                  '@pipe': [
+                    ['{$item.full_name}', ' '],
+                    ['{@string.split}', 1],
+                    ['{@array.get}'],
+                  ]
+                },
+                ['{@object.create}'],
+              ]
+            },
+            ['{@array.push}'],
+          ]
+        }
+      ];
+
+      pipe = new Pipe(rules, jobData);
+      const result = pipe.process();
+
+      expect(result).toEqual([
+        { first: 'Luke', last: 'Birdeau' },
+        { first: 'John', last: 'Doe' },
+      ]);
+    });
+
+    it('should reduce, split, map, create, concat, push', () => {
+      jobData = {
+        a: {
+          output: {
+            workflowDimension: ',0,0,1',
+            index: 5,
+            data: {
+              '0': { type: 'wait', data: { first: 'Luke', last: 'Birdeau' }}, //index 5 (index + 0)
+              '1': { type: 'sleep', data: { first: 'John', last: 'Doe' }},     //index 6 (index + 1)
+            },
+          },
+        },
+      };
+
+      rules = [
+        ['{a.output.data}', {}],
+        {
+          '@reduce': [
+            { '@pipe': [
+              ['{$output}']
+            ]},
+            {
+              '@pipe': [
+                { '@pipe': [
+                  ['-']
+                ]},
+                { '@pipe': [
+                  ['{$item}', 'type'],
+                  ['{@object.get}']
+                ]},
+                { '@pipe': [
+                  ['{a.output.workflowDimension}']
+                ]},
+                { '@pipe': [
+                  ['-']
+                ]},
+                { '@pipe': [
+                  { '@pipe': [
+                    ['{a.output.index}']
+                  ]},
+                  { '@pipe': [
+                    ['{$index}']
+                  ]},
+                  ['{@math.add}'],
+                ]},
+                { '@pipe': [
+                  ['-']
+                ]},
+                [
+                  '{@string.concat}'
+                ]
+              ]
+            },
+            { '@pipe': [
+              ['{$item}', 'data'],
+              ['{@object.get}']
+            ]},
+            ['{@object.set}'],
+          ]
+        }
+      ];
+
+      pipe = new Pipe(rules, jobData);
+      const result = pipe.process();
+
+      expect(result).toEqual({
+        '-wait,0,0,1-5-': { first: 'Luke', last: 'Birdeau' },
+        '-sleep,0,0,1-6-': { first: 'John', last: 'Doe' },
+      });
     });
   });
 });

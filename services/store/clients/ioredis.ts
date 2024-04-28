@@ -77,7 +77,7 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
     try {
       return await (multi || this.redisClient).xadd(key, id, messageId, messageValue);
     } catch (error) {
-      this.logger.error(`Error publishing 'xadd'; key: ${key}`, { error });
+      this.logger.error(`Error publishing 'xadd'; key: ${key}`, { ...error });
       throw error;
     }
   }
@@ -93,7 +93,7 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
     try {
       return await this.redisClient.xpending(key, group, start, end, count, consumer);
     } catch (error) {
-      this.logger.error(`Error in retrieving pending messages for [stream ${key}], [group ${group}]`, { error });
+      this.logger.error(`Error in retrieving pending messages for [stream ${key}], [group ${group}]`, { ...error });
       throw error;
     }
   }
@@ -109,7 +109,7 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
     try {
       return await this.redisClient.xclaim(key, group, consumer, minIdleTime, id, ...args) as unknown as ReclaimedMessageType;
     } catch (error) {
-      this.logger.error(`Error in claiming message with id: ${id} in group: ${group} for key: ${key}`, { error });
+      this.logger.error(`Error in claiming message with id: ${id} in group: ${group} for key: ${key}`, { ...error });
       throw error;
     }
   }
@@ -118,7 +118,7 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
     try {
       return await (multi || this.redisClient).xack(key, group, id);
     } catch (error) {
-      this.logger.error(`Error in acknowledging messages in group: ${group} for key: ${key}`, { error });
+      this.logger.error(`Error in acknowledging messages in group: ${group} for key: ${key}`, { ...error });
       throw error;
     }
   }
@@ -127,7 +127,7 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
     try {
       return await (multi || this.redisClient).xdel(key, id);
     } catch (error) {
-      this.logger.error(`Error in deleting messages with id: ${id} for key: ${key}`, { error });
+      this.logger.error(`Error in deleting messages with id: ${id} for key: ${key}`, { ...error });
       throw error;
     }
   }
@@ -136,7 +136,7 @@ class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> 
     try {
       return await (multi || this.redisClient).xlen(key);
     } catch (error) {
-      this.logger.error(`Error getting stream depth: ${key}`, { error });
+      this.logger.error(`Error getting stream depth: ${key}`, { ...error });
       throw error;
     }
   }

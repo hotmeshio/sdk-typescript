@@ -1,15 +1,52 @@
 import { LogLevel } from './logger';
 import { RedisClass, RedisOptions } from './redis';
 import { StringStringType } from './serializer';
+import { StreamData, StreamError } from './stream';
 
+/**
+ * Type definition for workflow configuration.
+ */
 type WorkflowConfig = {
-  backoffCoefficient?: number; //default 10
-  maximumAttempts?: number; //default 2
-  maximumInterval?: string; //default 30s
-  initialInterval?: string; //default 1s
+  /** 
+   * Backoff coefficient for retry mechanism.
+   * @default 10 (HMSH_DURABLE_EXP_BACKOFF)
+   */
+  backoffCoefficient?: number;
+
+  /** 
+   * Maximum number of attempts for retries.
+   * @default 5 (HMSH_DURABLE_MAX_ATTEMPTS)
+   */
+  maximumAttempts?: number;
+
+  /** 
+   * Maximum interval between retries.
+   * @default 120s (HMSH_DURABLE_MAX_INTERVAL)
+   */
+  maximumInterval?: string;
+
+  /**
+   * Whether to throw an error on final failure after retries are exhausted
+   * or return the error object as a standard response containing error-related
+   * fields like `stack`, `code`, `message`.
+   * @default true
+   */
+  throwOnError?: boolean;
 }
 
 type WorkflowContext = {
+
+  /**
+   * can the workflow be retried if an error occurs
+   */
+  canRetry: boolean;
+
+  COUNTER: {
+    /**
+     * the reentrant semaphore parent counter object for object reference during increment
+     */
+    counter: number;
+  }
 
   /**
    * the reentrant semaphore, incremented in real-time as idempotent statements are re-traversed upon reentry. Indicates the current semaphore count.
@@ -55,47 +92,160 @@ type WorkflowContext = {
    * the open telemetry span context for the workflow, used for logging and tracing. If a sink is enabled, this will be sent to the sink.
    */
   workflowSpan: string;
+
+  /**
+   * the native HotMesh message that encapsulates the arguments, metadata, and raw data for the workflow
+   */
+  raw: StreamData;
 }
 
 type WorkflowSearchOptions = {
-  index?: string;         //FT index name (myapp:myindex)
-  prefix?: string[];      //FT prefixes (['myapp:myindex:prefix1', 'myapp:myindex:prefix2'])
-  schema?: Record<string, {type: 'TEXT' | 'NUMERIC' | 'TAG', sortable?: boolean}>;
+  /** FT index name (myapp:myindex) */
+  index?: string;
+
+  /** FT prefixes (['myapp:myindex:prefix1', 'myapp:myindex:prefix2']) */
+  prefix?: string[];
+
+  /** 
+   * Schema mapping each field to a type with an optional sortable flag 
+   */
+  schema?: Record<string, { type: 'TEXT' | 'NUMERIC' | 'TAG', sortable?: boolean }>;
+
+  /** Additional data as a key-value record */
   data?: Record<string, string>;
 }
 
+
 type WorkflowOptions = {
-  namespace?: string;         //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
-  taskQueue?: string;         //optional if entity is provided
-  args: any[];                //input arguments to pass in
-  workflowId?: string;        //execution id (the job id)
-  entity?: string;            //If invoking a workflow, passing 'entity' will apply the value as the workflowName, taskQueue, and prefix, ensuring the FT.SEARCH index is properly scoped. This is a convenience method but limits options.
-  workflowName?: string;      //the name of the user's workflow function; optional if 'entity' is provided
-  parentWorkflowId?: string;  //system reserved; the id of the parent; if present the flow will not self-clean until the parent that spawned it self-cleans
-  originJobId?: string;       //system reserved;
+
+  /**
+   * the namespace for the workflow; `durable` is the default namespace if not provided
+   */
+  namespace?: string;
+
+  /**
+   * the task queue for the workflow; optional if entity is provided
+   */
+  taskQueue?: string;
+
+  /**
+   * input arguments to pass in
+   */
+  args: any[];
+
+  /**
+   * the job id
+   */
+  workflowId?: string;
+
+  /**
+   * if invoking a workflow, passing 'entity' will apply the value as the workflowName, taskQueue, and prefix, ensuring the FT.SEARCH index is properly scoped. This is a convenience method but limits options.
+   */
+  entity?: string;
+
+  /**
+   * the name of the user's workflow function; optional if 'entity' is provided
+   */
+  workflowName?: string;
+
+  /**
+   * the parent workflow id; adjacent ancestor ID
+   */
+  parentWorkflowId?: string;
+
+  /**
+   * the entry point workflow id
+   */
+  originJobId?: string;
+
+  /**
+   * OpenTelemetry trace context for the workflow
+   */
   workflowTrace?: string;
+
+  /**
+   * OpenTelemetry span context for the workflow
+   */
   workflowSpan?: string;
+
+  /**
+   * the full-text-search (RediSearch) options for the workflow
+   */
   search?: WorkflowSearchOptions
+
+  /**
+   * the workflow configuration object
+   */
   config?: WorkflowConfig;
-  expire?: number;            //default is 3seconds; time before completed jobs and dependents are expired/scrubbed/removed
+
+  /**
+   * sets the number of seconds a workflow may exist after completion. As the process engine is an in-memory cache, the default policy is to expire and scrub the job hash as soon as it completes.
+   */
+  expire?: number;
+
+  /**
+   * default is true; if false, will not await the execution
+   */
+  await?: boolean;
 }
 
+/** 
+ * Options for setting up a hook.
+ * 'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
+ */
 type HookOptions = {
-  namespace?: string;   //'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
-  taskQueue?: string;   //optional if 'entity' is provided
-  args: any[];          //input arguments to pass into the hook
-  entity?: string;      //If invoking a hook, passing 'entity' will apply the value as the workflowName, taskQueue, and prefix, ensuring the FT.SEARCH index is properly scoped. This is a convenience method but limits options.
-  workflowId?: string;   //execution id (the job id to hook into)
-  workflowName?: string; //the name of the user's hook function
-  search?: WorkflowSearchOptions //bind additional search terms immediately before hook reentry
-  config?: WorkflowConfig; //hook function constraints (backoffCoefficient, maximumAttempts, maximumInterval, initialInterval)
+  /** Optional namespace under which the hook function will be grouped */
+  namespace?: string;
+
+  /** Optional task queue, needed unless 'entity' is provided */
+  taskQueue?: string;
+
+  /** Input arguments to pass into the hook */
+  args: any[];
+     
+  /**
+   * Optional entity name. If provided, applies as the workflowName,
+   * taskQueue, and prefix. This scopes the FT.SEARCH index appropriately.
+   * This is a convenience method but limits options.
+   */
+  entity?: string;
+  
+  /** Execution ID, also known as the job ID to hook into */
+  workflowId?: string;
+  
+  /** The name of the user's hook function */
+  workflowName?: string;
+  
+  /** Bind additional search terms immediately before hook reentry */
+  search?: WorkflowSearchOptions
+  
+  /** Hook function constraints (backoffCoefficient, maximumAttempts, maximumInterval) */
+  config?: WorkflowConfig; 
 }
 
+/** 
+ * Options for sending signals in a workflow.
+ */
 type SignalOptions = {
+  /** 
+   * Task queue associated with the workflow 
+   */
   taskQueue: string;
-  data: Record<string, any>; //input data (any serializable object)
-  workflowId: string;        //execution id (the job id)
-  workflowName?: string;     //the name of the user's workflow function
+
+  /** 
+   * Input data for the signal (any serializable object) 
+   */
+  data: Record<string, any>; 
+
+  /** 
+   * Execution ID, also known as the job ID 
+   */
+  workflowId: string;
+
+  /** 
+   * Optional name of the user's workflow function 
+   */
+  workflowName?: string;
 }
 
 type ActivityWorkflowDataType = {
@@ -111,19 +261,7 @@ type WorkflowDataType = {
   workflowTopic: string;
   workflowDimension?: string; //is present if hook (not main workflow)
   originJobId?: string;       //is present if there is an originating ancestor job (should rename to originJobId)
-}
-
-type MeshOSClassConfig = {
-  namespace: string;
-  taskQueue: string;
-  redisOptions: RedisOptions;
-  redisClass: RedisClass;
-}
-
-type MeshOSConfig = {
-  id?: string;        //guid for the workflow when instancing
-  await?: boolean;    //default is false; must explicitly send true to await the final result
-  taskQueue?: string; //optional target queue isolate for the function
+  canRetry?: boolean;
 }
 
 type ConnectionConfig = {
@@ -139,15 +277,29 @@ type ClientConfig = {
 type Registry  = {
   [key: string]: Function
 };
-
 type WorkerConfig = {
+  /** Connection configuration for the worker */
   connection: Connection;
-  namespace?: string; //`appid` in the YAML (e.g, 'default')
-  taskQueue: string; //`subscribes` in the YAML (e.g, 'hello-world')
-  workflow: Function | Record<string | symbol, Function>; //target function to run
+
+  /**
+   * Namespace used in the app configuration, denoted as `appid` in the YAML (e.g., 'durable')
+   * @default durable
+   */
+  namespace?: string;
+
+  /** Task queue name, denoted as `subscribes` in the YAML (e.g., 'hello-world') */
+  taskQueue: string;
+
+  /** Target function or a record type with a name (string) and reference function */
+  workflow: Function | Record<string | symbol, Function>;
+
+  /** Additional options for configuring the worker */
   options?: WorkerOptions;
+
+  /** Search options for workflow execution details */
   search?: WorkflowSearchOptions;
 }
+
 
 type FindWhereQuery = {
   field: string;
@@ -160,7 +312,7 @@ type FindOptions = {
   workflowName?: string; //also the function name
   taskQueue?: string;
   namespace?: string;
-  index?: string;        //the FT search index name
+  index?: string;
 }
 
 type FindWhereOptions = {
@@ -174,28 +326,18 @@ type FindWhereOptions = {
   }
 }
 
-type MeshOSOptions = {
-  name: string;
-  options: WorkerOptions;
-}
-
-type MeshOSActivityOptions = {
-  name: string;
-  options: ActivityConfig;
-}
-
-type MeshOSWorkerOptions = {
-  taskQueue?: string;          //change the default task queue
-  allowList?: Array<MeshOSOptions | string>; //limit which `hook` and `workflow` workers start
-  logLevel?: LogLevel;         //debug, info, warn, error
-  maxSystemRetries?: number;   //1-3 (10ms, 100ms, 1_000ms)
-  backoffCoefficient?: number; //2-10ish
-}
-
 type WorkerOptions = {
-  logLevel?: LogLevel;         //debug, info, warn, error
-  maxSystemRetries?: number;   //1-3 (10ms, 100ms, 1_000ms)
-  backoffCoefficient?: number; //2-10ish
+  /** Log level: debug, info, warn, error */
+  logLevel?: LogLevel;
+
+  /** Maximum number of attempts, default 5 (HMSH_DURABLE_MAX_ATTEMPTS) */
+  maximumAttempts?: number;
+
+  /** Backoff coefficient for retry logic, default 10 (HMSH_DURABLE_EXP_BACKOFF) */
+  backoffCoefficient?: number;
+
+  /** Maximum interval between retries, default 120s (HMSH_DURABLE_MAX_INTERVAL) */
+  maximumInterval?: string;
 }
 
 type ContextType = {
@@ -208,24 +350,60 @@ type ProxyType<ACT> = {
   [K in keyof ACT]: FunctionSignature<ACT[K]>;
 };
 
+/**
+ * Configuration settings for activities within a workflow.
+ */
 type ActivityConfig = {
+  /** Start to close timeout for the activity; not yet implemented */
   startToCloseTimeout?: string;
+
+  /** Configuration for specific activities, type not yet specified */
   activities?: any;
+
+  /** Retry policy configuration for activities */
   retryPolicy?: {
-    initialInterval: string;
-    maximumAttempts: number;
-    backoffCoefficient: number;
-    maximumInterval: string;
+    /** Maximum number of retry attempts, default is 5 (HMSH_DURABLE_MAX_ATTEMPTS) */
+    maximumAttempts?: number;
+    /** Factor by which the retry timeout increases, default is 10 (HMSH_DURABLE_MAX_INTERVAL) */
+    backoffCoefficient?: number;
+    /** Maximum interval between retries, default is '120s' (HMSH_DURABLE_EXP_BACKOFF) */
+    maximumInterval?: string;
+    /** Whether to throw an error on failure, default is true */
+    throwOnError?: boolean;
   };
+};
+
+/**
+ * The proxy response object returned from the activity proxy flow
+ */
+type ProxyResponseType<T> = {
+  data?: T,             //expected data
+  $error?: StreamError,
+  done?: boolean,       //non-existent if error was thrown in transition (not during execution)
+  jc: string,
+  ju: string
+};
+
+/**
+ * The child flow response object returned from the  main flow during recursion
+ */
+type ChildResponseType<T> = {
+  data?: T,             //expected data
+  $error?: StreamError,
+  done?: boolean,       //non-existent if error was thrown in transition (not during execution)
+  jc: string,
+  ju: string
 };
 
 export {
   ActivityConfig,
   ActivityWorkflowDataType,
+  ChildResponseType,
   ClientConfig,
   ContextType,
   ConnectionConfig,
   Connection,
+  ProxyResponseType,  
   ProxyType,
   Registry,
   SignalOptions,
@@ -233,11 +411,6 @@ export {
   FindWhereOptions,
   FindWhereQuery,
   HookOptions,
-  MeshOSActivityOptions,
-  MeshOSWorkerOptions,
-  MeshOSClassConfig,
-  MeshOSConfig,
-  MeshOSOptions,
   WorkerConfig,
   WorkflowConfig,
   WorkerOptions,

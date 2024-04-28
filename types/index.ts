@@ -30,10 +30,12 @@ export {
 export {
     ActivityConfig,
     ActivityWorkflowDataType,
+    ChildResponseType,
     ClientConfig,
     ContextType,
     ConnectionConfig,
     Connection,
+    ProxyResponseType,
     ProxyType,
     Registry,
     SignalOptions,
@@ -41,11 +43,6 @@ export {
     FindWhereOptions,
     FindWhereQuery,
     HookOptions,
-    MeshOSActivityOptions,
-    MeshOSWorkerOptions,
-    MeshOSClassConfig,
-    MeshOSConfig,
-    MeshOSOptions,
     WorkflowConfig,
     WorkerConfig,
     WorkerOptions,
@@ -90,8 +87,11 @@ export {
 export { MappingStatements } from './map';
 export {
   Pipe,
+  PipeContext,
   PipeItem,
-  PipeItems } from './pipe';
+  PipeItems,
+  PipeObject,
+  ReduceObject } from './pipe';
 export {
   HotMesh,
   HotMeshApp,
@@ -187,4 +187,3 @@ export {
   TransitionMatch,
   TransitionRule,
   Transitions } from './transition';
-      

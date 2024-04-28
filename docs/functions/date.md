@@ -1,6 +1,6 @@
 # Date Functions
 
-In this section, various Date functions will be explored, which are available for use in HotMesh mapping rules. The functions are designed to facilitate the manipulation and transformation of dates and times during the mapping process. These functions are adapted to be used in a functional approach with the `@pipe` structure.
+In this section, various Date functions will be explored, which are available for use in HotMesh mapping rules. Although inspired by JavaScript, they have been adapted to follow a functional approach. Each transformation is a function that expects one or more input parameters from the prior row in the @pipe structure.
 
 Many of the Date functions listed here accept various input formats (`Date`, `string`, and `number`), implicitly casting to dates as necessary. The *ISO 8601 Extended Format* is supported which includes date strings like `YYYY-MM-DD`, `YYYY-MM-DDTHH:mm:ss`, and =`YYYY-MM-DDTHH:mm:ss.sss`. 
 
@@ -1664,5 +1664,40 @@ After executing the mapping rules, the resulting JSON object will contain the nu
 ```json
 {
   "milliseconds_since_epoch": 1670213696000
+}
+```
+
+## date.toISOXString
+
+Returns an ISO date (or now) as a string formatted as a decimal. This is useful for sorting dates in a string format, while keeping the output more human-friendly than `Date.valueOf`.
+
+### Example
+
+Suppose there is the following input JSON object:
+
+**Object A:**
+```json
+{
+  "output": {
+    "data": {
+      "date": "2024-04-23T12:34:56.789Z"
+    }
+  }
+}
+```
+The goal is to create a new string, formatted as a shortened ISO date:
+
+```yaml
+current_time: 
+  "@pipe":
+    - ["{a.output.data.date}"]
+    - ["{@date.toISOXString}"]
+```
+
+After executing the mapping rules, the resulting JSON object will contain the current time in milliseconds, for example:
+
+```json
+{
+  "current_time": "20240423123456.789"
 }
 ```

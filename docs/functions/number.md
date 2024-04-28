@@ -1,6 +1,6 @@
 # Number Functions
 
-In this section, various Number functions will be explored, which are available for use in HotMesh mapping rules. These functions are designed to facilitate the manipulation and transformation of numbers during the mapping process. They are inspired by and should be familiar to JavaScript developers. The key principle to keep in mind is that each transformation is a function that expects one or more input parameters from the prior row in the \@pipe structure.
+In this section, various Number functions will be explored, which are available for use in HotMesh mapping rules. These functions are designed to facilitate the manipulation and transformation of numbers during the mapping process. Although inspired by JavaScript, they have been adapted to follow a functional approach. Each transformation is a function that expects one or more input parameters from the prior row in the @pipe structure.
 
 **Table of Contents**
 - [number.isFinite](#numberisfinite): Check if a number is finite

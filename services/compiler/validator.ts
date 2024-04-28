@@ -11,7 +11,8 @@ class Validator {
   store: StoreService<RedisClient, RedisMulti> | null = null;
 
   static SYS_VARS = ['$app', '$self', '$graph', '$job'];
-
+  static CONTEXT_VARS = ['{$input}', '{$output}', '{$item}', '{$key}', '{$index}'];
+  
   constructor(manifest: HotMeshManifest) {
     this.manifest = manifest;
   }
@@ -92,8 +93,7 @@ class Validator {
         if (statement.startsWith('{') && statement.endsWith('}')) {
           const statementParts = statement.slice(1, -1).split('.');
           const referencedActivityId = statementParts[0];
-  
-          if (!(Validator.SYS_VARS.includes(referencedActivityId) || activityIds.includes(referencedActivityId) || this.isFunction(statement))) {
+          if (!(Validator.SYS_VARS.includes(referencedActivityId) || activityIds.includes(referencedActivityId) || this.isFunction(statement) || this.isContextVariable(statement))) {
             throw new Error(`Mapping statement references non-existent activity: ${statement}`);
           }
         }
@@ -103,6 +103,10 @@ class Validator {
 
   isFunction(value: string): boolean {
     return value.startsWith('{@') && Pipe.resolveFunction(value);
+  }
+
+  isContextVariable(value: string): boolean {
+    return ['{$input}', '{$output}', '{$item}', '{$key}', '{$index}'].includes(value);
   }
 
   // 1.3) Validate the mapping/@pipe statements are valid

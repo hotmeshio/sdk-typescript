@@ -1,4 +1,17 @@
-import { APP_ID, APP_VERSION, DEFAULT_COEFFICIENT, getWorkflowYAML } from './factory';
+import ms from 'ms';
+
+import {
+  APP_ID,
+  APP_VERSION,
+  getWorkflowYAML } from './schemas/factory';
+import {
+  HMSH_LOGLEVEL,
+  HMSH_EXPIRE_JOB_SECONDS,
+  HMSH_QUORUM_DELAY_MS,
+  HMSH_DURABLE_EXP_BACKOFF,
+  HMSH_DURABLE_MAX_ATTEMPTS,
+  HMSH_DURABLE_MAX_INTERVAL } from '../../modules/enums';
+import { sleepFor } from '../../modules/utils';
 import { WorkflowHandleService } from './handle';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
@@ -11,8 +24,6 @@ import { JobState } from '../../types/job';
 import { KeyService, KeyType } from '../../modules/key';
 import { Search } from './search';
 import { StreamStatus } from '../../types';
-import { HMSH_LOGLEVEL, HMSH_EXPIRE_JOB_SECONDS, HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
-import { sleepFor } from '../../modules/utils';
 
 export class ClientService {
 
@@ -32,7 +43,7 @@ export class ClientService {
       await this.verifyWorkflowActive(hotMeshClient, targetNS);
       if (!ClientService.topics.includes(workflowTopic)) {
         ClientService.topics.push(workflowTopic);
-        await this.createStream(hotMeshClient, workflowTopic, namespace);
+        await ClientService.createStream(hotMeshClient, workflowTopic, namespace);
       }
       return hotMeshClient;
     }
@@ -49,7 +60,7 @@ export class ClientService {
       }
     });
     ClientService.instances.set(targetNS, hotMeshClient);
-    await this.createStream(await hotMeshClient, workflowTopic, namespace);
+    await ClientService.createStream(await hotMeshClient, workflowTopic, namespace);
     await this.activateWorkflow(await hotMeshClient, targetNS);
     return hotMeshClient;
   }
@@ -60,7 +71,7 @@ export class ClientService {
    * has not yet been initialized, so this call ensures that the channel
    * exists and is ready to serve as a container for events.
    */
-  createStream = async(hotMeshClient: HotMesh, workflowTopic: string, namespace?: string) => {
+  static createStream = async(hotMeshClient: HotMesh, workflowTopic: string, namespace?: string) => {
     const store = hotMeshClient.engine.store;
     const params = { appId: namespace ?? APP_ID, topic: workflowTopic };
     const streamKey = store.mintKey(KeyType.STREAMS, params);
@@ -68,6 +79,23 @@ export class ClientService {
       await store.xgroup('CREATE', streamKey, 'WORKER', '$', 'MKSTREAM');
     } catch (err) {
       //ignore if already exists
+    }
+  }
+
+  /**
+   * It is possible for a client to invoke a workflow without first
+   * creating the stream. This method will verify that the stream
+   * exists and if not, create it.
+   */
+  static verifyStream = async(workflowTopic: string, namespace?: string) => {
+    const targetNS = namespace ?? APP_ID;
+    if (ClientService.instances.has(targetNS)) {
+      const hotMeshClient = await ClientService.instances.get(targetNS);
+      if (!ClientService.topics.includes(workflowTopic)) {
+        ClientService.topics.push(workflowTopic);
+        await ClientService.createStream(hotMeshClient, workflowTopic, namespace);
+      }
+      return hotMeshClient;
     }
   }
 
@@ -95,8 +123,8 @@ export class ClientService {
         const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
         const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
         await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length, ...prefixes, 'SCHEMA', ...schema);
-      } catch (err) {
-        hotMeshClient.engine.logger.info('durable-client-search-err', { err });
+      } catch (error) {
+        hotMeshClient.engine.logger.info('durable-client-search-err', { ...error });
       }
     }
   }
@@ -127,8 +155,11 @@ export class ClientService {
         parentWorkflowId: options.parentWorkflowId,
         workflowId: options.workflowId || HotMesh.guid(),
         workflowTopic: workflowTopic,
-        backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,
+        backoffCoefficient: options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
+        maximumAttempts: options.config?.maximumAttempts || HMSH_DURABLE_MAX_ATTEMPTS,
+        maximumInterval: ms(options.config?.maximumInterval || HMSH_DURABLE_MAX_INTERVAL) / 1000,
       }
+
       const context = { metadata: { trc, spn }, data: {}};
       const jobId = await hotMeshClient.pub(
         `${options.namespace ?? APP_ID}.execute`,
@@ -165,7 +196,9 @@ export class ClientService {
         arguments: [...options.args],
         id: options.workflowId,
         workflowTopic,
-        backoffCoefficient: options.config?.backoffCoefficient || DEFAULT_COEFFICIENT,
+        backoffCoefficient: options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
+        maximumAttempts: options.config?.maximumAttempts || HMSH_DURABLE_MAX_ATTEMPTS,
+        maximumInterval: ms(options.config?.maximumInterval || HMSH_DURABLE_MAX_INTERVAL) / 1000,
       }
       //seed search data if presentthe hook before entering
       const hotMeshClient = await this.getHotMeshClient(workflowTopic, options.namespace);
@@ -190,9 +223,9 @@ export class ClientService {
       const hotMeshClient = await this.getHotMeshClient(workflowTopic, namespace);
       try {
         return await this.search(hotMeshClient, index, query);
-      } catch (err) {
-        hotMeshClient.engine.logger.error('durable-client-search-err', { err });
-        throw err;
+      } catch (error) {
+        hotMeshClient.engine.logger.error('durable-client-search-err', { ...error });
+        throw error;
       }
     }
   }
@@ -218,7 +251,7 @@ export class ClientService {
         await hotMesh.deploy(getWorkflowYAML(appId, version));
         await hotMesh.activate(version);
       } catch (error) {
-        hotMesh.engine.logger.error('durable-client-deploy-activate-err', { error });
+        hotMesh.engine.logger.error('durable-client-deploy-activate-err', { ...error });
         throw error;
       }
     } else if(app && !app.active) {

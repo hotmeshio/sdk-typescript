@@ -209,11 +209,11 @@ initials:
   "@pipe":
     - ["{a2.output.data.full_name}", " "]
     - "@pipe":
-      - ["{@array.split}", 0]
+      - ["{@string.split}", 0]
       - ["{@array.get}", 0]
       - ["{@string.charAt}"]
     - "@pipe":
-      - ["{@array.split}", 1]
+      - ["{@string.split}", 1]
       - ["{@array.get}", 0]
       - ["{@string.charAt}"]
     - ["{@string.concat}"]

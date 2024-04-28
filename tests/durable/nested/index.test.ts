@@ -10,7 +10,7 @@ import { guid, sleepFor } from '../../../modules/utils';
 
 const { Connection, Client, Worker } = Durable;
 
-describe('DURABLE | nested | `workflow.executeChild`', () => {
+describe('DURABLE | nested | `workflow.execChild`', () => {
   let handle: WorkflowHandleService;
   const options = {
     host: config.REDIS_HOST,
@@ -47,26 +47,28 @@ describe('DURABLE | nested | `workflow.executeChild`', () => {
     describe('start', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
         try {
-        const client = new Client({ connection: { class: Redis, options }});
-        const h = client.workflow.start({
-          args: ['PARENT'],
-          taskQueue: 'parent-world',
-          workflowName: 'parentExample',
-          workflowId: guid(),
-        });
-        //start another workflow to simulate startup collisions
-        let handle2: WorkflowHandleService;
-        const localH = client.workflow.start({
-          args: ['PARENT'],
-          taskQueue: 'parent-world',
-          workflowName: 'parentExample',
-          workflowId: guid(),
-        });
-        [handle, handle2] = await Promise.all([h, localH]);
-        expect(handle.workflowId).toBeDefined();
-      } catch(e) {
-        console.log(e);
-      }
+          const client = new Client({ connection: { class: Redis, options }});
+          const h = client.workflow.start({
+            args: ['PARENT'],
+            taskQueue: 'parent-world',
+            workflowName: 'parentExample',
+            workflowId: guid(),
+            expire: 500,
+          });
+          //start another workflow to simulate startup collisions
+          let handle2: WorkflowHandleService;
+          const localH = client.workflow.start({
+            args: ['PARENT'],
+            taskQueue: 'parent-world',
+            workflowName: 'parentExample',
+            workflowId: guid(),
+            expire: 500,
+          });
+          [handle, handle2] = await Promise.all([h, localH]);
+          expect(handle.workflowId).toBeDefined();
+        } catch(e) {
+          console.error(e);
+        }
       });
     });
   });
