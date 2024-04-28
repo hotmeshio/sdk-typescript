@@ -1,4 +1,4 @@
-import { StringAnyType, StringStringType } from "./serializer";
+import { StringAnyType } from "./serializer";
 
 export type ExportItem = [(string | null), string, any];
 
@@ -65,6 +65,12 @@ export interface TimelineEntry {
   updated: string;
 }
 
+export interface TimestampParts {
+  activity: string;
+  dimensions: string;
+  created: string;
+  updated: string;
+}
 
 export interface DurableJobExport {
   data: StringAnyType;
@@ -81,10 +87,3 @@ export interface JobExport {
   process: StringAnyType;
   status: string;
 };
-
-export interface TimestampParts {
-  activity: string;
-  dimensions: string;
-  created: string;
-  updated: string;
-}

@@ -26,7 +26,9 @@ type WorkflowConfig = {
   maximumInterval?: string;
 
   /**
-   * Whether to throw an error on final failure after retries are exhausted.
+   * Whether to throw an error on final failure after retries are exhausted
+   * or return the error object as a standard response containing error-related
+   * fields like `stack`, `code`, `message`.
    * @default true
    */
   throwOnError?: boolean;
@@ -98,11 +100,21 @@ type WorkflowContext = {
 }
 
 type WorkflowSearchOptions = {
-  index?: string;         //FT index name (myapp:myindex)
-  prefix?: string[];      //FT prefixes (['myapp:myindex:prefix1', 'myapp:myindex:prefix2'])
-  schema?: Record<string, {type: 'TEXT' | 'NUMERIC' | 'TAG', sortable?: boolean}>;
+  /** FT index name (myapp:myindex) */
+  index?: string;
+
+  /** FT prefixes (['myapp:myindex:prefix1', 'myapp:myindex:prefix2']) */
+  prefix?: string[];
+
+  /** 
+   * Schema mapping each field to a type with an optional sortable flag 
+   */
+  schema?: Record<string, { type: 'TEXT' | 'NUMERIC' | 'TAG', sortable?: boolean }>;
+
+  /** Additional data as a key-value record */
   data?: Record<string, string>;
 }
+
 
 type WorkflowOptions = {
 
@@ -215,14 +227,25 @@ type HookOptions = {
  * Options for sending signals in a workflow.
  */
 type SignalOptions = {
-  /** Task queue associated with the workflow */
+  /** 
+   * Task queue associated with the workflow 
+   */
   taskQueue: string;
-  /** Input data for the signal (any serializable object) */
+
+  /** 
+   * Input data for the signal (any serializable object) 
+   */
   data: Record<string, any>; 
-  /** Execution ID, also known as the job ID */
-  workflowId: string;        
-  /** Optional name of the user's workflow function */
-  workflowName?: string;     
+
+  /** 
+   * Execution ID, also known as the job ID 
+   */
+  workflowId: string;
+
+  /** 
+   * Optional name of the user's workflow function 
+   */
+  workflowName?: string;
 }
 
 type ActivityWorkflowDataType = {
@@ -254,15 +277,29 @@ type ClientConfig = {
 type Registry  = {
   [key: string]: Function
 };
-
 type WorkerConfig = {
+  /** Connection configuration for the worker */
   connection: Connection;
-  namespace?: string; //`appid` in the YAML (e.g, 'default')
-  taskQueue: string; //`subscribes` in the YAML (e.g, 'hello-world')
-  workflow: Function | Record<string | symbol, Function>; //target function to run
+
+  /**
+   * Namespace used in the app configuration, denoted as `appid` in the YAML (e.g., 'durable')
+   * @default durable
+   */
+  namespace?: string;
+
+  /** Task queue name, denoted as `subscribes` in the YAML (e.g., 'hello-world') */
+  taskQueue: string;
+
+  /** Target function or a record type with a name (string) and reference function */
+  workflow: Function | Record<string | symbol, Function>;
+
+  /** Additional options for configuring the worker */
   options?: WorkerOptions;
+
+  /** Search options for workflow execution details */
   search?: WorkflowSearchOptions;
 }
+
 
 type FindWhereQuery = {
   field: string;
@@ -275,7 +312,7 @@ type FindOptions = {
   workflowName?: string; //also the function name
   taskQueue?: string;
   namespace?: string;
-  index?: string;        //the FT search index name
+  index?: string;
 }
 
 type FindWhereOptions = {
@@ -290,10 +327,17 @@ type FindWhereOptions = {
 }
 
 type WorkerOptions = {
-  logLevel?: LogLevel;         //debug, info, warn, error
-  maximumAttempts?: number;    //default 5 (HMSH_DURABLE_MAX_ATTEMPTS)
-  backoffCoefficient?: number; //default 10 (HMSH_DURABLE_EXP_BACKOFF)
-  maximumInterval?: string;    //default 120s (HMSH_DURABLE_MAX_INTERVAL)
+  /** Log level: debug, info, warn, error */
+  logLevel?: LogLevel;
+
+  /** Maximum number of attempts, default 5 (HMSH_DURABLE_MAX_ATTEMPTS) */
+  maximumAttempts?: number;
+
+  /** Backoff coefficient for retry logic, default 10 (HMSH_DURABLE_EXP_BACKOFF) */
+  backoffCoefficient?: number;
+
+  /** Maximum interval between retries, default 120s (HMSH_DURABLE_MAX_INTERVAL) */
+  maximumInterval?: string;
 }
 
 type ContextType = {
