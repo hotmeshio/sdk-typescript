@@ -163,7 +163,7 @@ export class WorkflowService {
     const isStartChild = options.await === false;
     const prefix = isStartChild ? 'start' : 'child';
     const [didRun, execIndex, result]: [boolean, number, ChildResponseType<T>] = await WorkflowService.didRun(prefix);
-    const context = this.getContext();
+    const context = WorkflowService.getContext();
     const { canRetry, interruptionRegistry } = context;
 
     if (didRun) {
@@ -188,7 +188,7 @@ export class WorkflowService {
         return result.data as T;
       }
     }
-    const interruptionMessage = this.getChildInterruptPayload(context, options, execIndex);
+    const interruptionMessage = WorkflowService.getChildInterruptPayload(context, options, execIndex);
     //push the packaged inputs to the registry
     interruptionRegistry.push({
       code: HMSH_CODE_DURABLE_CHILD,
@@ -244,7 +244,7 @@ export class WorkflowService {
    * const childJobId = await Durable.workflow.startChild({ ...options });
    */
   static async startChild(options: WorkflowOptions): Promise<string> {
-    return this.execChild({ ...options, await: false });
+    return WorkflowService.execChild({ ...options, await: false });
   }
 
   /**
