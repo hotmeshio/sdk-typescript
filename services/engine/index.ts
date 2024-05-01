@@ -51,7 +51,8 @@ import {
   PartialJobState,
   JobStatus, 
   JobInterruptOptions,
-  JobCompletionOptions } from '../../types/job';
+  JobCompletionOptions, 
+  ExtensionType} from '../../types/job';
 import {
   HotMeshApps,
   HotMeshConfig,
@@ -566,10 +567,10 @@ class EngineService {
 
   // ********************** PUB/SUB ENTRY POINT **********************
   //publish (returns just the job id)
-  async pub(topic: string, data: JobData, context?: JobState): Promise<string> {
+  async pub(topic: string, data: JobData, context?: JobState, extended?: ExtensionType): Promise<string> {
     const activityHandler = await this.initActivity(topic, data, context);
     if (activityHandler) {
-      return await activityHandler.process();
+      return await activityHandler.process(extended);
     } else {
       throw new Error(`unable to process activity for topic ${topic}`);
     }

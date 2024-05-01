@@ -1,22 +1,22 @@
-import { VALSEP } from '../../modules/key';
 import { restoreHierarchy } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { SerializerService } from '../serializer';
 import { StoreService } from '../store';
 import {
-  ExportItem,
   ExportOptions,
   DurableJobExport, 
-  IdemType,
-  TimelineEntry } from '../../types/exporter';
+  TimelineType,
+  TransitionType, 
+  ExportFields} from '../../types/exporter';
 import { RedisClient, RedisMulti } from '../../types/redis';
-import { StringStringType, Symbols } from "../../types/serializer";
+import { StringAnyType, StringStringType, Symbols } from "../../types/serializer";
 
 class ExporterService {
   appId: string;
   logger: ILogger;
   store: StoreService<RedisClient, RedisMulti>;
   symbols: Promise<Symbols> | Symbols;
+  private static symbols: Map<string, Symbols> = new Map();
 
   constructor(appId: string, store: StoreService<RedisClient, RedisMulti>, logger: ILogger) {
     this.appId = appId;
@@ -29,49 +29,13 @@ class ExporterService {
    * facets that describe the workflow in terms relevant to narrative storytelling.
    */
   async export(jobId: string, options: ExportOptions = {}): Promise<DurableJobExport> {
-    if (!this.symbols) {
-      this.symbols = this.store.getAllSymbols();
-      this.symbols = await this.symbols;
+    if (!ExporterService.symbols.has(this.appId)) {
+      const symbols: Symbols | Promise<Symbols> = this.store.getAllSymbols();
+      ExporterService.symbols.set(this.appId, await symbols);
     }
     const jobData = await this.store.getRaw(jobId);
-    const jobExport = this.inflate(jobData/*, depData*/);
+    const jobExport = this.inflate(jobData, options);
     return jobExport;
-  }
-
-  /**
-   * Inflates the key from Redis, 3-character symbol
-   * into a human-readable JSON path, reflecting the
-   * tree-like structure of the unidimensional Hash
-   */
-  inflateKey(key: string): string {
-    if (key in this.symbols) {
-      const path = this.symbols[key];
-      const parts = path.split('/');
-      return parts.join('/');
-    }
-    return key;
-  }
-
-  /**
-   * Inflates the dependency data from Redis into a DurableJobExport object by
-   * organizing the dimensional isolate in sch a way asto interleave
-   * into a story
-   * @param data - the dependency data from Redis
-   * @returns - the organized dependency data
-   */
-  inflateDependencyData(data: string[]): Record<string, any>[] {
-    return data.map((dependency, index: number): Record<string, any> => {
-      const [action, topic, gid, dimension, ...jid] = dependency.split(VALSEP);
-      const job_id = jid.join(VALSEP);
-      return {
-        index,
-        action,
-        topic,
-        gid,
-        dimension,
-        job_id,
-      }
-    });
   }
 
   /**
@@ -80,122 +44,114 @@ class ExporterService {
    * @param dependencyList - the list of dependencies for the job
    * @returns - the inflated job data
    */
-  inflate(jobHash: StringStringType): DurableJobExport {
-    const idempotents: IdemType[] = [];
-    const state: StringStringType = {};
+  inflate(jobHash: StringStringType, options: ExportOptions): DurableJobExport {
+    const timeline: TimelineType[] = [];
+    const state: StringAnyType = {};
     const data: StringStringType = {};
-    const other: ExportItem[] = [];
-    const replay: Record<string, TimelineEntry> = {};
+    const transitionsObject: Record<string, TransitionType> = {};
     const regex = /^([a-zA-Z]{3}),(\d+(?:,\d+)*)/;
 
     Object.entries(jobHash).forEach(([key, value]) => {
       const match = key.match(regex);
+
       if (match) {
-        //activity process state
-        this.inflateProcess(match, value, replay);
+        //transitions
+        this.inflateTransition(match, value, transitionsObject);
+
       } else if (key.length === 3) {
-        //job state
+        //state
         state[this.inflateKey(key)] = SerializerService.fromString(value);
+
       } else if (key.startsWith('_')) {
-        //job data
+        //data
         data[key.substring(1)] = value;
+
       } else if (key.startsWith('-')) {
-        //actions with side effect (replayable)
-        idempotents.push({
+        //timeline
+        const keyParts = this.keyToObject(key); //key parts have meaning
+        timeline.push({
+          ...keyParts,
           key,
-          value: SerializerService.fromString(value),
-          parts: extractParts(key),
+          value: this.resolveValue(value, options.values),
         });
-      } else {
-        //collator guids, etc
-        other.push([null, key, value]);
       }
     });
 
-    const sortEntriesByCreated = (obj: { [key: string]: TimelineEntry }): TimelineEntry[]  => {
-      const entriesArray: TimelineEntry[] = Object.values(obj);
-      entriesArray.sort((a, b) => {
-        return (a.created || a.updated).localeCompare(b.created || b.updated);
-      });
-      return entriesArray;
-    }
-
-    /**
-     * idem list has a complicated sort order based on indexes and dimensions
-     */
-    const sortParts = (parts: IdemType[]): IdemType[]=> {
-      return parts.sort((a, b) => {
-        const { dimension: aDim, index: aIdx, secondary: aSec } = a.parts;
-        const { dimension: bDim, index: bIdx, secondary: bSec } = b.parts;
-    
-        if (aDim === undefined && bDim !== undefined) return -1;
-        if (aDim !== undefined && bDim === undefined) return 1;
-        if (aDim !== undefined && bDim !== undefined) {
-          if (aDim < bDim) return -1;
-          if (aDim > bDim) return 1;
-        }
-    
-        if (aIdx < bIdx) return -1;
-        if (aIdx > bIdx) return 1;
-    
-        if (aSec === undefined && bSec !== undefined) return -1;
-        if (aSec !== undefined && bSec === undefined) return 1;
-        if (aSec !== undefined && bSec !== undefined) {
-          if (aSec < bSec) return -1;
-          if (aSec > bSec) return 1;
-        }
-    
-        return 0;
-      });
-    };
-    
-    function extractParts(key: string): {index: number, dimension?: string, secondary?: number} {
-      function extractDimension(label: string): string {
-        const parts = label.split(',');
-        if (parts.length > 1) {
-          parts.shift();
-          return parts.join(',');
-        }
-      }
-
-      const parts = key.split('-');
-      if (parts.length === 4) {
-        //-proxy-5-     -search-1-1-
-        return {
-          index: parseInt(parts[2], 10),
-          dimension: extractDimension(parts[1]),
-        }
-      } else {
-        //-search,0,0-1-1-    -proxy,0,0-1-
-        return {
-          index: parseInt(parts[2], 10),
-          secondary: parseInt(parts[3], 10),
-          dimension: extractDimension(parts[1]),
-        }
-      }
-    }
-
-    return {
+    return this.filterFields({
       data: restoreHierarchy(data),
-      idempotents: sortParts(idempotents),
       state: Object.entries(restoreHierarchy(state))[0][1],
-      status: jobHash[':'],
-      replay: sortEntriesByCreated(replay),
-    };
+      status: parseInt(jobHash[':'], 10),
+      timeline: this.sortParts(timeline),
+      transitions: this.sortEntriesByCreated(transitionsObject),
+    }, options.block, options.allow);
   }
 
-  inflateProcess(match: RegExpMatchArray, value: string, replay: Record<string, Record<string, any>>) {
+  resolveValue(raw: string, withValues: boolean): Record<string, any> | string | number | null {
+    const resolved = SerializerService.fromString(raw);
+    if (withValues !== false) {
+      return resolved;
+    }
+    if (resolved && typeof resolved === 'object') {
+      if ('data' in resolved) {
+        resolved.data = {};
+      }
+      if ('$error' in resolved) {
+        resolved.$error = {};
+      }
+    }
+    return resolved;
+  }
+
+  /**
+   * Inflates the key from Redis, 3-character symbol
+   * into a human-readable JSON path, reflecting the
+   * tree-like structure of the unidimensional Hash
+   * @private
+   */
+  inflateKey(key: string): string {
+    const symbols = ExporterService.symbols.get(this.appId);
+    if (key in symbols) {
+      const path = symbols[key];
+      const parts = path.split('/');
+      return parts.join('/');
+    }
+    return key;
+  }
+
+ filterFields(fullObject: DurableJobExport, block: ExportFields[] = [], allow: ExportFields[] = []): Partial<DurableJobExport> {
+    let result: Partial<DurableJobExport> = {};
+    if (allow && allow.length > 0) {
+      allow.forEach(field => {
+        if (field in fullObject) {
+          result[field] = fullObject[field] as StringAnyType & number & TimelineType[] & TransitionType[];
+        }
+      });
+    } else {
+      result = { ...fullObject };
+    }
+    if (block && block.length > 0) {
+      block.forEach(field => {
+        if (field in result) {
+          delete result[field];
+        }
+      });
+    }
+    return result as DurableJobExport;
+  }
+
+  inflateTransition(match: RegExpMatchArray, value: string, transitionsObject: Record<string, TransitionType>) {
     const [_, letters, dimensions] = match;
     const path = this.inflateKey(letters);
     const parts = path.split('/');
     const activity = parts[0];
     const isCreate = path.endsWith('/output/metadata/ac');
     const isUpdate = path.endsWith('/output/metadata/au');
+    //for now only export activity start/stop; activity data would also be interesting
     if (isCreate || isUpdate) {
       const targetName = `${activity},${dimensions}`;
-      let target = replay[targetName];
+      let target = transitionsObject[targetName];
       if (!target) {
-        replay[targetName] = {
+        transitionsObject[targetName] = {
           activity,
           dimensions,
           created: isCreate ? value : null,
@@ -206,6 +162,71 @@ class ExporterService {
       }
     }
   }
+
+  sortEntriesByCreated(obj: { [key: string]: TransitionType }): TransitionType[] {
+    const entriesArray: TransitionType[] = Object.values(obj);
+    entriesArray.sort((a, b) => {
+      return (a.created || a.updated).localeCompare(b.created || b.updated);
+    });
+    return entriesArray;
+  }
+
+  /**
+   * marker names are overloaded with details like sequence, type, etc
+   */
+  keyToObject(key: string): {index: number, dimension?: string, secondary?: number} {
+    function extractDimension(label: string): string {
+      const parts = label.split(',');
+      if (parts.length > 1) {
+        parts.shift();
+        return parts.join(',');
+      }
+    }
+    const parts = key.split('-');
+    if (parts.length === 4) {
+      //-proxy-5-     -search-1-1-
+      return {
+        index: parseInt(parts[2], 10),
+        dimension: extractDimension(parts[1]),
+      }
+    } else {
+      //-search,0,0-1-1-    -proxy,0,0-1-
+      return {
+        index: parseInt(parts[2], 10),
+        secondary: parseInt(parts[3], 10),
+        dimension: extractDimension(parts[1]),
+      }
+    }
+  }
+
+  /**
+   * idem list has a complicated sort order based on indexes and dimensions
+   */
+  sortParts(parts: TimelineType[]): TimelineType[] {
+    return parts.sort((a, b) => {
+      const { dimension: aDim, index: aIdx, secondary: aSec } = a;
+      const { dimension: bDim, index: bIdx, secondary: bSec } = b;
+  
+      if (aDim === undefined && bDim !== undefined) return -1;
+      if (aDim !== undefined && bDim === undefined) return 1;
+      if (aDim !== undefined && bDim !== undefined) {
+        if (aDim < bDim) return -1;
+        if (aDim > bDim) return 1;
+      }
+  
+      if (aIdx < bIdx) return -1;
+      if (aIdx > bIdx) return 1;
+  
+      if (aSec === undefined && bSec !== undefined) return -1;
+      if (aSec !== undefined && bSec === undefined) return 1;
+      if (aSec !== undefined && bSec !== undefined) {
+        if (aSec < bSec) return -1;
+        if (aSec > bSec) return 1;
+      }
+  
+      return 0;
+    });
+  };
 }
 
 export { ExporterService };

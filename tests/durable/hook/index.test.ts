@@ -59,11 +59,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
           workflowName: 'example',
           workflowId: workflowGuid,
           expire: 600,
-          //SEED the initial workflow state with data (this is
-          //different than the 'args' input data which the workflow
-          //receives as its first argument...this data is available
-          //to the workflow via the 'search' object)
-          //NOTE: data can also be updated during workflow execution
+          //SEED the initial workflow state with data
           search: {
             data: {
               fred: 'flintstone',
@@ -160,10 +156,10 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
         );
         const result = await handle.result({state: true});
         expect(result).toEqual('Hello, HookMesh! - Goodbye, HookMesh!');
-        const exported = await handle.export();
+        const exported = await handle.export({allow: ['timeline', 'status', 'data', 'state'], values: false});
         expect(exported.status).not.toBeUndefined();
-        expect(exported.data.fred).toBe('flintstone');
-        expect(exported.state.data.done).toBe(true);
+        expect(exported.data?.fred).toBe('flintstone');
+        expect(exported.state?.data.done).toBe(true);
 
         //call the FT search module to locate the workflow via fuzzy search
         //NOTE: always include an underscore prefix before your search term (e.g., `_custom1`).

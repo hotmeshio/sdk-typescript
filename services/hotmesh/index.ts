@@ -12,7 +12,8 @@ import {
   JobData,
   JobOutput, 
   JobStatus, 
-  JobInterruptOptions} from '../../types/job';
+  JobInterruptOptions,
+  ExtensionType} from '../../types/job';
 import {
   HotMeshConfig,
   HotMeshManifest } from '../../types/hotmesh';
@@ -115,8 +116,8 @@ class HotMeshService {
   }
 
   // ************* PUB/SUB METHODS *************
-  async pub(topic: string, data: JobData = {}, context?: JobState): Promise<string> {
-    return await this.engine?.pub(topic, data, context);
+  async pub(topic: string, data: JobData = {}, context?: JobState, extended?: ExtensionType): Promise<string> {
+    return await this.engine?.pub(topic, data, context, extended);
   }
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
     return await this.engine?.sub(topic, callback);

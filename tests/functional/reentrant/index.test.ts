@@ -345,7 +345,7 @@ describe('FUNCTIONAL | DURABLE', () => {
                 //signals are the exception (HMSH_CODE_DURABLE_WAIT). They are bundled as an array
                 errData = interruptionList[0];
               } else {
-                const collatorFlowId = `-${workflowId}-$COLLATOR${workflowDimension}-${execIndex}`;
+                const collatorFlowId = `-${workflowId}-$${workflowDimension}-$${execIndex}`;
                 errData = {
                   code: HMSH_CODE_DURABLE_ALL,
                   items: [...interruptionRegistry],

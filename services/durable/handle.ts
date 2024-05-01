@@ -1,6 +1,6 @@
 import { ExporterService } from './exporter';
 import { HotMeshService as HotMesh } from '../hotmesh';
-import { DurableJobExport } from '../../types/exporter';
+import { DurableJobExport, ExportOptions } from '../../types/exporter';
 import { JobInterruptOptions, JobOutput } from '../../types/job';
 import { StreamError } from '../../types/stream';
 
@@ -21,8 +21,8 @@ export class WorkflowHandleService {
     );
   }
 
-  async export(): Promise<DurableJobExport>  {
-    return this.exporter.export(this.workflowId);
+  async export(options?: ExportOptions): Promise<DurableJobExport>  {
+    return this.exporter.export(this.workflowId, options);
   }
 
   /**

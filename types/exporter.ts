@@ -2,7 +2,28 @@ import { StringAnyType } from "./serializer";
 
 export type ExportItem = [(string | null), string, any];
 
-export interface ExportOptions {};
+/**
+ * job export data can be large, particularly transitions the timeline
+ */
+export type ExportFields = 'data' | 'state' | 'status' | 'timeline' | 'transitions';
+
+export interface ExportOptions {
+  /**
+   * limit the export byte size by specifying an allowlist
+   */
+  allow?: Array<ExportFields>;
+
+  /**
+   * limit the export byte size by specifying a block list
+   */
+  block?: Array<ExportFields>;
+
+  /**
+   * If false, do not return timeline values (like child job response, proxy activity response, etc)
+   * @default true
+   */
+  values?: boolean;
+};
 
 export type JobAction = {
   cursor: number;
@@ -46,26 +67,15 @@ export interface ExportCycles {
   [key: string]: string[];
 };
 
-export type IdemParts = {
+export type TimelineType = {
+  key: string;
+  value: Record<string, any> | string | number | null;
   index: number;
   secondary?: number;
   dimension?: string;
 };
 
-export type IdemType = {
-  key: string;
-  value: string;
-  parts: IdemParts;
-};
-
-export interface TimelineEntry {
-  activity: string;
-  dimensions: string;
-  created: string;
-  updated: string;
-}
-
-export interface TimestampParts {
+export interface TransitionType {
   activity: string;
   dimensions: string;
   created: string;
@@ -73,13 +83,11 @@ export interface TimestampParts {
 }
 
 export interface DurableJobExport {
-  data: StringAnyType;
-  dependencies?: Record<string, any>[];
-  state: StringAnyType;
-  status: string;
-  timeline?: JobTimeline[];
-  idempotents: IdemType[];
-  replay: TimestampParts[];
+  data?: StringAnyType;
+  state?: StringAnyType;
+  status?: number;
+  timeline?: TimelineType[];
+  transitions?: TransitionType[];
 };
 
 export interface JobExport {

@@ -52,6 +52,12 @@ export {
     WorkflowOptions,
   } from './durable';
 export {
+  DurableChildErrorType,
+  DurableProxyErrorType,
+  DurableSleepErrorType,
+  DurableWaitForAllErrorType,
+  DurableWaitForErrorType } from "./error";
+export {
   ActivityAction,
   DependencyExport,
   DurableJobExport,
@@ -83,7 +89,8 @@ export {
   JobOutput,
   JobState,
   JobStatus,
-  PartialJobState } from './job';
+  PartialJobState,
+  ExtensionType } from './job';
 export { MappingStatements } from './map';
 export {
   Pipe,
