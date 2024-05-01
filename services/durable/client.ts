@@ -164,15 +164,9 @@ export class ClientService {
       const jobId = await hotMeshClient.pub(
         `${options.namespace ?? APP_ID}.execute`,
         payload,
-        context as JobState
+        context as JobState,
+        { search: options?.search?.data, marker: options?.marker},
       );
-      // Seed search data
-      if (jobId && options.search?.data) {
-        const searchSessionId = `-search-0`;
-        const search = new Search(jobId, hotMeshClient, searchSessionId);
-        const entries = Object.entries(options.search.data).flat();
-        await search.set(...entries);
-      }
       return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
     },
 

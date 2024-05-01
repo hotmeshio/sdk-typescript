@@ -15,7 +15,7 @@ import {
   ActivityMetadata,
   ActivityType,
   TriggerActivity } from '../../types/activity';
-import { JobState } from '../../types/job';
+import { JobState, ExtensionType } from '../../types/job';
 import { RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 import { WorkListTaskType } from '../../types/task';
@@ -33,7 +33,7 @@ class Trigger extends Activity {
       super(config, data, metadata, hook, engine, context);
   }
 
-  async process(): Promise<string> {
+  async process(options?: ExtensionType): Promise<string> {
     this.logger.debug('trigger-process', { subscribes: this.config.subscribes });
     let telemetry: TelemetryService;
     try {
@@ -47,6 +47,9 @@ class Trigger extends Activity {
       await this.setStateNX();
       this.adjacencyList = await this.filterAdjacent();
       await this.setStatus(this.adjacencyList.length);
+
+      this.bindSearchData(options);
+      this.bindMarkerData(options);
 
       const multi = this.store.getMulti();
       await this.setState(multi);
@@ -80,6 +83,28 @@ class Trigger extends Activity {
       telemetry?.endJobSpan();
       telemetry?.endActivitySpan();
       this.logger.debug('trigger-process-end', { subscribes: this.config.subscribes, jid: this.context.metadata.jid, gid: this.context.metadata.gid });
+    }
+  }
+
+  safeKey(key:string): string {
+    return `_${key}`;
+  }
+
+  bindSearchData(options?: ExtensionType): void {
+    if (options?.search) {
+      Object.keys(options.search).forEach((key) => {
+        this.context.data[this.safeKey(key)] = options.search[key].toString();
+      });
+    }
+  }
+
+  bindMarkerData(options?: ExtensionType): void {
+    if (options?.marker) {
+      Object.keys(options.marker).forEach((key) => {
+        if (key.startsWith('-')) {
+          this.context.data[key] = options.marker[key].toString();
+        }
+      });
     }
   }
 

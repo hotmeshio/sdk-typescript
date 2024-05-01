@@ -1,6 +1,6 @@
 import { LogLevel } from './logger';
 import { RedisClass, RedisOptions } from './redis';
-import { StringStringType } from './serializer';
+import { StringAnyType, StringStringType } from './serializer';
 import { StreamData, StreamError } from './stream';
 
 /**
@@ -69,6 +69,16 @@ type WorkflowContext = {
   namespace: string;
 
   /**
+   * holds list of interruption payloads; if list is longer than 1 when the error is thrown, a `collator` subflow will be used
+   */
+  interruptionRegistry: any[];
+
+  /**
+   * entry point ancestor flow; might be the parent; will never be self
+   */
+  originJobId: string;
+
+  /**
    * the workflow/job ID
    */
   workflowId: string;
@@ -112,7 +122,7 @@ type WorkflowSearchOptions = {
   schema?: Record<string, { type: 'TEXT' | 'NUMERIC' | 'TAG', sortable?: boolean }>;
 
   /** Additional data as a key-value record */
-  data?: Record<string, string>;
+  data?: StringStringType;
 }
 
 
@@ -172,6 +182,11 @@ type WorkflowOptions = {
    * the full-text-search (RediSearch) options for the workflow
    */
   search?: WorkflowSearchOptions
+
+  /**
+   * marker data (begins with a -)
+   */
+  marker?: StringStringType
 
   /**
    * the workflow configuration object
@@ -235,7 +250,7 @@ type SignalOptions = {
   /** 
    * Input data for the signal (any serializable object) 
    */
-  data: Record<string, any>; 
+  data: StringAnyType; 
 
   /** 
    * Execution ID, also known as the job ID 

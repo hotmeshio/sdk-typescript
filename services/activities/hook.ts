@@ -86,7 +86,14 @@ class Hook extends Activity {
    * does this activity use a time-hook or web-hook
    */
   doesHook(): boolean {
-    return !!(this.config.hook?.topic || this.config.sleep);
+    if (this.config.sleep) {
+      const duration = Pipe.resolve(
+        this.config.sleep,
+        this.context,
+      );
+      return !isNaN(duration) && Number(duration) > 0
+    }
+    return !!this.config.hook?.topic;
   }
 
   async doHook(telemetry: TelemetryService) {

@@ -1,3 +1,5 @@
+import { StringStringType } from "./serializer";
+
 type JobData = Record<string, unknown|Record<string, unknown>>;
 type JobsData = Record<string, unknown>;
 
@@ -81,6 +83,30 @@ type JobMetadata = {
   /** process data expire policy */
   expire?: number;
 };
+
+/**
+ * User-defined (extended) types for job data. Users may interleave
+ * data into the job hash safely by using the `ExtensionType` interface.
+ * The data will be prefixed as necessary using an underscore or
+ * dash to ensure it is not confused with system process data.
+ */
+type ExtensionType = {
+  /**
+   * Custom search data field (name/value pairs) to seed the Hash.
+   * Every field will be prefixed with an underscore before being
+   * stored with the initial Hash data set along side system
+   * process data.
+   */
+  search?: StringStringType;
+
+  /**
+   * Custom marker data field used for adding a searchable marker to the job.
+   * markers always begin with a dash (-). Any field that does not
+   * begin with a dash will be removed and will not be inserted with
+   * the initial data set.
+   */
+  marker?: StringStringType;
+}
 
 /**
  * job_status semaphore
@@ -183,4 +209,5 @@ export {
   JobState,
   JobStatus,
   PartialJobState,
+  ExtensionType,
 };

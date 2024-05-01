@@ -1,5 +1,3 @@
-import { ActivityDuplex } from "../types/activity";
-import { CollationFaultType, CollationStage } from "../types/collator";
 import {
   HMSH_CODE_DURABLE_MAXED,
   HMSH_CODE_DURABLE_TIMEOUT,
@@ -11,6 +9,14 @@ import {
   HMSH_CODE_DURABLE_CHILD,
   HMSH_CODE_DURABLE_ALL,
   HMSH_CODE_DURABLE_SLEEP } from "./enums";
+import { ActivityDuplex } from "../types/activity";
+import { CollationFaultType, CollationStage } from "../types/collator";
+import {
+  DurableChildErrorType,
+  DurableProxyErrorType,
+  DurableSleepErrorType,
+  DurableWaitForAllErrorType,
+  DurableWaitForErrorType } from "../types/error";
 
 class GetStateError extends Error {
   jobId: string;
@@ -32,13 +38,8 @@ class DurableWaitForError extends Error {
   workflowId: string;
   index: number;
   workflowDimension: string; //hook workflowDimension (e.g., ',0,1,0') (use empty string for `null`)
-  constructor(params: {
-    signalId: string,
-    index: number,
-    workflowDimension: string
-    workflowId: string;
-  }) {
-    super(`Durable WaitFor Error [${params.workflowId}]`);
+  constructor(params: DurableWaitForErrorType) {
+    super(`WaitFor Interruption`);
     this.signalId = params.signalId;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
@@ -59,20 +60,8 @@ class DurableProxyError extends Error {
   workflowDimension: string;
   workflowId: string;
   workflowTopic: string;
-  constructor(params: {
-    arguments: string[],
-    activityName: string,
-    backoffCoefficient?: number,
-    index: number,
-    maximumAttempts?: number,
-    maximumInterval?: number,
-    originJobId: string | null,
-    parentWorkflowId: string,
-    workflowDimension: string,
-    workflowId: string,
-    workflowTopic: string,
-  }) {
-    super(`Durable Proxy Activity Error [${params.parentWorkflowId}] => [${params.workflowId}]`);
+  constructor(params: DurableProxyErrorType) {
+    super(`ProxyActivity Interruption`);
     this.arguments = params.arguments;
     this.workflowId = params.workflowId;
     this.workflowTopic = params.workflowTopic;
@@ -101,20 +90,8 @@ class DurableChildError extends Error {
   parentWorkflowId: string;
   workflowId: string;
   workflowTopic: string;
-  constructor(params: {
-    arguments: string[],
-    await?: boolean,
-    backoffCoefficient?: number,
-    index: number,
-    maximumAttempts?: number,
-    maximumInterval?: number,
-    originJobId: string | null,
-    parentWorkflowId: string,
-    workflowDimension: string,
-    workflowId: string,
-    workflowTopic: string,
-  }) {
-    super(`Durable Child Error [${params.parentWorkflowId}] => [${params.workflowId}]`);
+  constructor(params: DurableChildErrorType) {
+    super(`ExecChild Interruption`);
     this.arguments = params.arguments;
     this.workflowId = params.workflowId;
     this.workflowTopic = params.workflowTopic;
@@ -140,17 +117,8 @@ class DurableWaitForAllError extends Error {
   parentWorkflowId: string;
   workflowId: string;
   workflowTopic: string;
-  constructor(params: {
-    items: string[],
-    workflowId: string,
-    workflowTopic: string,
-    parentWorkflowId: string,
-    originJobId: string | null,
-    size: number,
-    index: number,
-    workflowDimension: string
-  }) {
-    super(`Durable Wait for All Error [${params.parentWorkflowId}] => [${params.workflowId}]`);
+  constructor(params: DurableWaitForAllErrorType) {
+    super(`Collation Interruption`);
     this.items = params.items;
     this.size = params.size;
     this.workflowId = params.workflowId;
@@ -169,13 +137,8 @@ class DurableSleepError extends Error {
   duration: number; //seconds
   index: number;
   workflowDimension: string; //empty string for null
-  constructor(params: {
-    duration: number,
-    index: number,
-    workflowDimension: string,
-    workflowId: string,
-  }) {
-    super(`Durable Sleep Error [${params.workflowId}]`);
+  constructor(params: DurableSleepErrorType) {
+    super(`SleepFor Interruption`);
     this.duration = params.duration;
     this.workflowId = params.workflowId;
     this.index = params.index;

@@ -14,10 +14,12 @@ import { asyncLocalStorage } from '../../modules/storage';
 import {
   deterministicRandom,
   formatISODate,
+  guid,
   sleepFor } from '../../modules/utils';
 import { Search } from './search';
 import { WorkerService } from './worker';
 import { HotMeshService as HotMesh } from '../hotmesh';
+import { SerializerService } from '../serializer';
 import {
   ActivityConfig,
   ChildResponseType,
@@ -28,8 +30,8 @@ import {
   WorkflowOptions
 } from "../../types/durable";
 import { JobInterruptOptions } from '../../types/job';
-import { StreamCode, StreamError, StreamStatus } from '../../types/stream';
-import { StringStringType } from '../../types';
+import { StreamCode, StreamStatus } from '../../types/stream';
+import { StringStringType } from '../../types/serializer';
 import {
   HMSH_CODE_DURABLE_CHILD,
   HMSH_CODE_DURABLE_FATAL,
@@ -41,19 +43,62 @@ import {
   HMSH_DURABLE_EXP_BACKOFF, 
   HMSH_DURABLE_MAX_ATTEMPTS,
   HMSH_DURABLE_MAX_INTERVAL} from '../../modules/enums';
-import { SerializerService } from '../serializer';
+import { DurableChildErrorType, DurableProxyErrorType } from '../../types/error';
 
 export class WorkflowService {
 
   /**
-   * Return a handle to the hotmesh client currently running the workflow
-   * @returns {Promise<HotMesh>} - a hotmesh client
+   * Returns the synchronous output from the activity (replay)
+   * if available locally, revealing whether or not the activity already
+   * ran during a prior execution cycle
+   * @param {string} prefix - one of: proxy, child, start, wait etc
+   * @returns 
    */
-  static async getHotMesh(): Promise<HotMesh> {
+  static async didRun(prefix: string): Promise<[boolean, number, any]> {
+    const {
+      COUNTER,
+      replay,
+      workflowDimension,
+    } = WorkflowService.getContext();
+    const execIndex = COUNTER.counter = COUNTER.counter + 1;
+    const sessionId = `-${prefix}${workflowDimension}-${execIndex}-`;
+    if (sessionId in replay) {
+      const restored = SerializerService.fromString(replay[sessionId]);
+      return [true, execIndex, restored];
+    }
+    return [false, execIndex, null];
+  }
+
+  /**
+   * Those methods that may only be called once must be protected by flagging
+   * their execution with a unique key (the key is stored in the HASH alongside
+   * process state and job state)
+   * @private
+   */
+  static async isSideEffectAllowed(hotMeshClient: HotMesh, prefix: string): Promise<boolean> {
     const store = asyncLocalStorage.getStore();
-    const workflowTopic = store.get('workflowTopic');
-    const namespace = store.get('namespace');
-    return await WorkerService.getHotMesh(workflowTopic, { namespace });
+    const workflowId = store.get('workflowId');
+    const workflowDimension = store.get('workflowDimension') ?? '';
+    const COUNTER = store.get('counter');
+    const execIndex = COUNTER.counter = COUNTER.counter + 1;
+    const sessionId = `-${prefix}${workflowDimension}-${execIndex}-`;
+    const replay = store.get('replay') as StringStringType;
+    if (sessionId in replay) {
+      return false;
+    }
+    const keyParams = {
+      appId: hotMeshClient.appId,
+      jobId: workflowId
+    }
+    const workflowGuid = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+    const guidValue = Number(
+      await hotMeshClient.engine.store.exec(
+        'HINCRBYFLOAT',
+        workflowGuid,
+        sessionId,
+        '1') as string
+    );
+    return guidValue === 1;
   }
 
   /**
@@ -65,9 +110,11 @@ export class WorkflowService {
     const workflowId = store.get('workflowId');
     const replay = store.get('replay');
     const cursor = store.get('cursor');
+    const interruptionRegistry = store.get('interruptionRegistry');
     const workflowDimension = store.get('workflowDimension') ?? '';
     const workflowTopic = store.get('workflowTopic');
     const namespace = store.get('namespace');
+    const originJobId = store.get('originJobId');
     const workflowTrace = store.get('workflowTrace');
     const canRetry = store.get('canRetry');
     const workflowSpan = store.get('workflowSpan');
@@ -78,7 +125,9 @@ export class WorkflowService {
       COUNTER,
       counter: COUNTER.counter,
       cursor,
+      interruptionRegistry,
       namespace,
+      originJobId,
       raw,
       replay,
       workflowId,
@@ -87,6 +136,17 @@ export class WorkflowService {
       workflowTrace,
       workflowSpan,
     };
+  }
+
+  /**
+   * Return a handle to the hotmesh client hosting the workflow execution
+   * @returns {Promise<HotMesh>} - a hotmesh client
+   */
+  static async getHotMesh(): Promise<HotMesh> {
+    const store = asyncLocalStorage.getStore();
+    const workflowTopic = store.get('workflowTopic');
+    const namespace = store.get('namespace');
+    return await WorkerService.getHotMesh(workflowTopic, { namespace });
   }
 
   /**
@@ -101,14 +161,15 @@ export class WorkflowService {
     //SYNC
     //check if the activity already ran (check $error/done)
     const isStartChild = options.await === false;
-    const [didRun, execIndex, result]: [boolean, number, ChildResponseType<T>] = await WorkflowService.didRun(isStartChild ? 'start' : 'child');
-    const store = asyncLocalStorage.getStore();
-    const canRetry = store.get('canRetry');
+    const prefix = isStartChild ? 'start' : 'child';
+    const [didRun, execIndex, result]: [boolean, number, ChildResponseType<T>] = await WorkflowService.didRun(prefix);
+    const context = this.getContext();
+    const { canRetry, interruptionRegistry } = context;
 
     if (didRun) {
       if (result?.$error && (!result.$error.is_stream_error || (result.$error.is_stream_error && !canRetry))) {
         if (options?.config?.throwOnError !== false) {
-          //rethrow remote execution error (simulates throw)
+          //rethrow remote execution error (simulates local failure)
           const code: StreamCode = result.$error.code;
           const message = result.$error.message;
           const stack = result.$error.stack;
@@ -127,18 +188,36 @@ export class WorkflowService {
         return result.data as T;
       }
     }
-    //package the interruption inputs
-    const interruptionRegistry = store.get('interruptionRegistry');
-    const workflowId = store.get('workflowId');
-    const originJobId = store.get('originJobId');
-    const workflowDimension = store.get('workflowDimension') ?? '';
-    const entityOrEmptyString = options.entity ?? '';
-    const childJobId = options.workflowId ?? `${entityOrEmptyString}-${workflowId}-$${options.entity ?? options.workflowName}${workflowDimension}-${execIndex}`;
+    const interruptionMessage = this.getChildInterruptPayload(context, options, execIndex);
+    //push the packaged inputs to the registry
+    interruptionRegistry.push({
+      code: HMSH_CODE_DURABLE_CHILD,
+      ...interruptionMessage,
+    });
+    //ASYNC
+    //sleep (allow others to be packaged / registered) and throw the error
+    await sleepFor(0);
+    throw new DurableChildError(interruptionMessage );
+  }
+
+  /**
+   * constructs the payload necessary to spawn a child job
+   * @private
+   */
+  static getChildInterruptPayload(context: WorkflowContext, options: WorkflowOptions, execIndex: number): DurableChildErrorType {
+    const { workflowId, originJobId, workflowDimension } = context;    let childJobId: string;
+    if (options.workflowId) {
+      childJobId = options.workflowId;
+    } else if (options.entity) {
+      childJobId = `${options.entity}-${workflowId.substring(0, 7)}-${guid()}-${workflowDimension}-${execIndex}`;
+    } else {
+      childJobId = `-${options.workflowName}-${guid()}-${workflowDimension}-${execIndex}`;
+    }
     const parentWorkflowId = workflowId;
     const taskQueueName = options.entity ?? options.taskQueue;
     const workflowName = options.entity ?? options.workflowName;
     const workflowTopic = `${taskQueueName}-${workflowName}`;
-    const interruptionMessage = {
+    return {
       arguments: [...(options.args || [])],
       await: options?.await ?? true,
       backoffCoefficient: options?.config?.backoffCoefficient ?? HMSH_DURABLE_EXP_BACKOFF,
@@ -151,15 +230,6 @@ export class WorkflowService {
       workflowId: childJobId,
       workflowTopic,
     };
-    //push the packaged inputs to the registry
-    interruptionRegistry.push({
-      code: HMSH_CODE_DURABLE_CHILD,
-      ...interruptionMessage,
-    });
-    //ASYNC
-    //sleep (allow others to be packaged / registered) and throw the error
-    await sleepFor(0);
-    throw new DurableChildError(interruptionMessage);
   }
 
   /**
@@ -234,31 +304,15 @@ export class WorkflowService {
         return result.data as T;
       }
       //package the interruption inputs
-      const store = asyncLocalStorage.getStore();
-      const interruptionRegistry = store.get('interruptionRegistry');
-      const workflowDimension = store.get('workflowDimension') ?? '';
-      const workflowId = store.get('workflowId');
-      const originJobId = store.get('originJobId');
-      const workflowTopic = store.get('workflowTopic');
-      const activityTopic = `${workflowTopic}-activity`;
-      const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
-      let maximumInterval: number;
-      if (options.retryPolicy?.maximumInterval) {
-        maximumInterval = ms(options.retryPolicy.maximumInterval) / 1000;
-      }
-      const interruptionMessage = {
-        arguments: Array.from(arguments),
-        workflowDimension: workflowDimension,
-        index: execIndex,
-        originJobId: originJobId || workflowId,
-        parentWorkflowId: workflowId,
-        workflowId: activityJobId,
-        workflowTopic: activityTopic,
+      const context = WorkflowService.getContext();
+      const { interruptionRegistry } = context;
+      const interruptionMessage = WorkflowService.getProxyInterruptPayload(
+        context,
         activityName,
-        backoffCoefficient: options?.retryPolicy?.backoffCoefficient ?? undefined,
-        maximumAttempts: options?.retryPolicy?.maximumAttempts ?? undefined,
-        maximumInterval: maximumInterval ?? undefined,
-      };
+        execIndex,
+        Array.from(arguments),
+        options
+      );
       //push the packaged inputs to the registry
       interruptionRegistry.push({
         code: HMSH_CODE_DURABLE_PROXY,
@@ -269,6 +323,33 @@ export class WorkflowService {
       await sleepFor(0);
       throw new DurableProxyError(interruptionMessage);
     } as T;
+  }
+
+  /**
+    * constructs the payload necessary to spawn a proxyActivity job
+    * @private
+    */
+  static getProxyInterruptPayload(context: WorkflowContext, activityName: string, execIndex: number, args: any[], options?: ActivityConfig): DurableProxyErrorType {
+    const { workflowDimension, workflowId, originJobId, workflowTopic } = context;
+    const activityTopic = `${workflowTopic}-activity`;
+    const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
+    let maximumInterval: number;
+    if (options.retryPolicy?.maximumInterval) {
+      maximumInterval = ms(options.retryPolicy.maximumInterval) / 1000;
+    }
+    return {
+      arguments: args,
+      workflowDimension: workflowDimension,
+      index: execIndex,
+      originJobId: originJobId || workflowId,
+      parentWorkflowId: workflowId,
+      workflowId: activityJobId,
+      workflowTopic: activityTopic,
+      activityName,
+      backoffCoefficient: options?.retryPolicy?.backoffCoefficient ?? undefined,
+      maximumAttempts: options?.retryPolicy?.maximumAttempts ?? undefined,
+      maximumInterval: maximumInterval ?? undefined,
+    };
   }
 
   /**
@@ -288,52 +369,6 @@ export class WorkflowService {
     //this ID is used as a item key with a hash (dash prefix ensures no collision)
     const searchSessionId = `-search${workflowDimension}-${execIndex}`;
     return new Search(workflowId, hotMeshClient, searchSessionId);
-  }
-
-  /**
-   * Returns the synchronous output from the activity (replay)
-   * if available locally
-   * @param {string} prefix - one of: proxy, child, start, wait etc
-   * @returns 
-   */
-  static async didRun(prefix: string): Promise<[boolean, number, any]> {
-    const {
-      COUNTER,
-      replay,
-      workflowDimension,
-    } = WorkflowService.getContext();
-    const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const sessionId = `-${prefix}${workflowDimension}-${execIndex}-`;
-    if (sessionId in replay) {
-      return [true, execIndex, SerializerService.fromString(replay[sessionId])];
-    }
-    return [false, execIndex, null];
-  }
-
-  /**
-   * Those methods that may only be called once must be protected by flagging
-   * their execution with a unique key (the key is stored in the HASH alongside
-   * process state and job state)
-   * @private
-   */
-  static async isSideEffectAllowed(hotMeshClient: HotMesh, prefix: string): Promise<boolean> {
-    const store = asyncLocalStorage.getStore();
-    const workflowId = store.get('workflowId');
-    const workflowDimension = store.get('workflowDimension') ?? '';
-    const COUNTER = store.get('counter');
-    const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const sessionId = `-${prefix}${workflowDimension}-${execIndex}-`;
-    const replay = store.get('replay') as StringStringType;
-    if (sessionId in replay) {
-      return false;
-    }
-    const keyParams = {
-      appId: hotMeshClient.appId,
-      jobId: workflowId
-    }
-    const workflowGuid = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
-    const guidValue = Number(await hotMeshClient.engine.store.exec('HINCRBYFLOAT', workflowGuid, sessionId, '1') as string);
-    return guidValue === 1;
   }
 
   /**
@@ -440,9 +475,7 @@ export class WorkflowService {
    * Interrupts a running job
    */
   static async interrupt(jobId: string, options: JobInterruptOptions = {}): Promise<string | void> {
-    const store = asyncLocalStorage.getStore();
-    const workflowTopic = store.get('workflowTopic');
-    const namespace = store.get('namespace');
+    const { workflowTopic, namespace } = WorkflowService.getContext();
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'interrupt')) {
       return await hotMeshClient.interrupt(`${hotMeshClient.appId}.execute`, jobId, options);
