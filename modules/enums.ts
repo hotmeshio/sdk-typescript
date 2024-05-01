@@ -1,7 +1,7 @@
 import { LogLevel } from "../types/logger";
 
 // HOTMESH SYSTEM
-export const HMSH_LOGLEVEL = process.env.HMSH_LOGLEVEL as LogLevel || 'debug';
+export const HMSH_LOGLEVEL = process.env.HMSH_LOGLEVEL as LogLevel || 'info';
 
 // HOTMESH STATUS CODES
 export const HMSH_CODE_SUCCESS = 200;
