@@ -1,16 +1,16 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config';
+import { HotMesh, HotMeshConfig } from '../../../index';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
-import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { JobOutput } from '../../../types/job';
 import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
-import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import config from '../../$setup/config';
 
 describe('FUNCTIONAL | EMIT', () => {
   const appConfig = { id: 'emit', version: '1' };

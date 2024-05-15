@@ -1,7 +1,9 @@
 import { KeyService, KeyStoreParams, KeyType, HMNS } from '../../../modules/key';
 import { ILogger } from '../../logger';
 import { StreamService } from '../index';
-import { RedisClientType, RedisMultiType } from '../../../types/redisclient';
+import {
+  RedisRedisClientType as RedisClientType,
+  RedisRedisMultiType as RedisMultiType } from '../../../types/redis';
 import { ReclaimedMessageType } from '../../../types/stream';
 
 class RedisStreamService extends StreamService<RedisClientType, RedisMultiType> {

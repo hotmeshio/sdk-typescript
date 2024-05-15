@@ -1,8 +1,8 @@
 import { HMNS } from '../../../../modules/key';
+import { sleepFor } from '../../../../modules/utils';
 import { LoggerService } from '../../../../services/logger';
 import { IORedisStreamService } from '../../../../services/stream/clients/ioredis';
 import { RedisConnection, RedisClientType } from '../../../$setup/cache/ioredis';
-import { sleepFor } from '../../../../modules/utils';
 
 describe('FUNCTIONAL | IORedisStreamService', () => {
   let redisConnection: RedisConnection;

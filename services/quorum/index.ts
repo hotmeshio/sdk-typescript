@@ -19,15 +19,17 @@ import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
 import { RedisSubService as RedisSub } from '../sub/clients/redis';
 import { CacheMode } from '../../types/cache';
 import { HotMeshConfig, KeyType } from '../../types/hotmesh';
-import { RedisClientType as IORedisClientType } from '../../types/ioredisclient';
 import {
   QuorumMessage,
   QuorumMessageCallback,
   QuorumProfile,
   RollCallMessage,
   SubscriptionCallback } from '../../types/quorum';
-import { RedisClient, RedisMulti } from '../../types/redis';
-import { RedisClientType } from '../../types/redisclient';
+import {
+  IORedisClientType,
+  RedisClient,
+  RedisMulti,
+  RedisRedisClientType as RedisClientType } from '../../types/redis';  
 
 class QuorumService {
   namespace: string;

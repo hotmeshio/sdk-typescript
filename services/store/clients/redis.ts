@@ -3,7 +3,9 @@ import { ILogger } from '../../logger';
 import { SerializerService as Serializer } from '../../serializer';
 import { Cache } from '../cache';
 import { StoreService } from '../index';
-import { RedisClientType, RedisMultiType } from '../../../types/redisclient';
+import {
+  RedisRedisClientType as RedisClientType,
+  RedisRedisMultiType as RedisMultiType } from '../../../types/redis';
 import { ReclaimedMessageType } from '../../../types/stream';
 
 class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {

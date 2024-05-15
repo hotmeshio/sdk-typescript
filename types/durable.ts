@@ -110,6 +110,7 @@ type WorkflowContext = {
 }
 
 type WorkflowSearchOptions = {
+
   /** FT index name (myapp:myindex) */
   index?: string;
 
@@ -119,12 +120,109 @@ type WorkflowSearchOptions = {
   /** 
    * Schema mapping each field to a type with an optional sortable flag 
    */
-  schema?: Record<string, { type: 'TEXT' | 'NUMERIC' | 'TAG', sortable?: boolean }>;
+  schema?: Record<string, {
+    /**
+     * The FT.SEARCH field type. One of: TEXT, NUMERIC, TAG. TEXT is
+     * most expensive, but also most expressive.
+     */
+    type: 'TEXT' | 'NUMERIC' | 'TAG';
+
+    /**
+     * FT.SEARCH SORTABLE field. If true, results may be sorted according to this field
+     * @default false
+     */
+    sortable?: boolean;
+
+    /**
+     * FT.SEARCH NOSTEM field. applies to TEXT fields types.
+     * If true, the text field index will not stem words
+     * @default false
+     */
+    nostem?: boolean;
+
+    /**
+     * FT.SEARCH NOINDEX field. If true and if the field is sortable, the field will aid
+     * in sorting results but not be directly indexed as a standalone
+     * @default false
+     */
+    noindex?: boolean;
+
+    /**
+     * if true, the field is indexed and searchable within the FT.SEARCH index
+     * This is different from `noindex` which is FT.SEARCH specific and relates
+     * to sorting and indexing. This is a general flag for the field that will
+     * enable or disable indexing and searching entirely. Use for fields with
+     * absolutely no meaning to query or sorting but which are important
+     * nonetheless as part of the data record that is saved and returned.
+     * @default true
+     */
+    indexed?: boolean;
+
+    /**
+     * An array of possible values for the field
+     */
+    examples?: string[];
+
+    /**
+     * The 'nilable' setting may NOT be set to `true` for 
+     * NUMBER types as it causes an indexing error;
+     * consider a custom (e.g., negative number) value to represent
+     * `null` if desired for a NUMERIC field.
+     * Set to true only if the field is a TEXT or TAG type and
+     * you wish to save the string `null` as a value to search
+     * on (the tag, {null}, or the string, (null)
+     * @default false
+     */
+    nilable?: boolean;
+
+    /**
+     * possible scalar/primitive types for the field. Use when
+     * serializing and restoring data to ensure the field is
+     * properly typed. If not provided, the field will be
+     * treated as a string.
+     */
+    primitive?: 'string' | 'number' | 'boolean' | 'array' | 'object';
+
+    /**
+     * if true, the field is required to be present in the data record
+     * @default false
+     */
+    required?: boolean;
+
+    /**
+     * an enumerated list of allowed values; if field is nilable, it is implied
+     * and therefore not necessary to include `null` in the list
+     * @default []
+     */
+    enum?: string[];
+
+    /**
+     * a regular expression pattern for the field
+     * @default '.*'
+     * @example '^[a-zA-Z0-9_]*$'
+     */
+    pattern?: string;
+  }>;
 
   /** Additional data as a key-value record */
   data?: StringStringType;
 }
 
+
+type SearchResults = {
+  /**
+   * the total number of results
+   */
+  count: number,
+  /**
+   * the raw FT.SEARCH query string
+   */
+  query: string,
+  /**
+   * the raw FT.SEARCH results as an array of objects
+   */
+  data: StringStringType[]
+};
 
 type WorkflowOptions = {
 
@@ -280,8 +378,8 @@ type WorkflowDataType = {
 }
 
 type ConnectionConfig = {
-  class: RedisClass;
-  options: RedisOptions;
+  class: Partial<RedisClass>;
+  options: Partial<RedisOptions>;
 }
 type Connection =  ConnectionConfig;
 
@@ -328,6 +426,7 @@ type FindOptions = {
   taskQueue?: string;
   namespace?: string;
   index?: string;
+  search?: WorkflowSearchOptions;
 }
 
 type FindWhereOptions = {
@@ -339,6 +438,23 @@ type FindWhereOptions = {
     start: number,
     size: number
   }
+}
+
+type FindJobsOptions = {
+  /** The workflow name; include an asterisk for wilcard search; refer to Redis SCAN for the allowed format */
+  match?: string;
+
+  /** application namespace; defaults to 'durable' */
+  namespace?: string;
+
+  /** The suggested response limit. Reduce batch size to reduce the likelihood of large overages. */
+  limit?: number;
+
+  /** How many records to scan at a time */
+  batch?: number;
+
+  /** The start cursor; defaults to 0 */
+  cursor?: string;
 }
 
 type WorkerOptions = {
@@ -422,10 +538,12 @@ export {
   ProxyType,
   Registry,
   SignalOptions,
+  FindJobsOptions,
   FindOptions,
   FindWhereOptions,
   FindWhereQuery,
   HookOptions,
+  SearchResults,
   WorkerConfig,
   WorkflowConfig,
   WorkerOptions,

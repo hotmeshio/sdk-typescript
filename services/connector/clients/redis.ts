@@ -1,14 +1,14 @@
 import {
-  RedisClientType,
-  RedisClientOptions,
-  RedisClassType } from '../../../types/redisclient';
+  RedisRedisClassType,
+  RedisRedisClientType,
+  RedisRedisClientOptions } from '../../../types/redis';
 
 class RedisConnection {
-  private connection: RedisClientType | null = null;
+  private connection: RedisRedisClientType | null = null;
   private static instances: Map<string, RedisConnection> = new Map();
   private id: string | null = null;
 
-  private static clientOptions: RedisClientOptions = {
+  private static clientOptions: RedisRedisClientOptions = {
     socket: {
       host: 'localhost',
       port: 6379,
@@ -18,9 +18,9 @@ class RedisConnection {
     //database: config.REDIS_DATABASE,
   };
 
-  private async createConnection(Redis: RedisClassType, options: RedisClientOptions): Promise<RedisClientType> {
+  private async createConnection(Redis: Partial<RedisRedisClassType>, options: RedisRedisClientOptions): Promise<Partial<RedisRedisClientType>> {
     return new Promise((resolve, reject) => {
-      const client = Redis.createClient(options);
+      const client = Redis.createClient(options) as unknown as RedisRedisClientType;
 
       client.on('error', (error: any) => {
         reject(error);
@@ -34,7 +34,7 @@ class RedisConnection {
     });
   }
 
-  public getClient(): RedisClientType {
+  public getClient(): RedisRedisClientType {
     if (!this.connection) {
       throw new Error('Redis client is not connected');
     }
@@ -51,13 +51,13 @@ class RedisConnection {
     }
   }
 
-  public static async connect(id: string, Redis: RedisClassType, options?: RedisClientOptions): Promise<RedisConnection> {
+  public static async connect(id: string, Redis: Partial<RedisRedisClassType>, options?: RedisRedisClientOptions): Promise<RedisConnection> {
     if (this.instances.has(id)) {
       return this.instances.get(id)!;
     }
     const instance = new RedisConnection();
     const opts = options ? { ...options } : { ...this.clientOptions };
-    instance.connection = await instance.createConnection(Redis, opts);
+    instance.connection = (await instance.createConnection(Redis as RedisRedisClassType, opts)) as RedisRedisClientType;
     instance.id = id;
     this.instances.set(id, instance);
     return instance;
@@ -69,4 +69,4 @@ class RedisConnection {
   }
 }
 
-export { RedisConnection, RedisClientType };
+export { RedisConnection, RedisRedisClientType };

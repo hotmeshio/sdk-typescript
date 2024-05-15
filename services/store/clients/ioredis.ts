@@ -3,7 +3,9 @@ import { ILogger } from '../../logger';
 import { SerializerService as Serializer } from '../../serializer';
 import { Cache } from '../cache';
 import { StoreService } from '../index';
-import { RedisClientType, RedisMultiType } from '../../../types/ioredisclient';
+import {
+  IORedisClientType as RedisClientType,
+  IORedisMultiType as RedisMultiType } from '../../../types/redis';
 import { ReclaimedMessageType } from '../../../types/stream';
 
 class IORedisStoreService extends StoreService<RedisClientType, RedisMultiType> {

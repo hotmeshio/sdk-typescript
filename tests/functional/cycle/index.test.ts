@@ -1,11 +1,11 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import { guid } from '../../../modules/utils';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { StreamData, StreamDataResponse } from '../../../types/stream';
-import { guid } from '../../../modules/utils';
-import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import config from '../../$setup/config';
 
 describe('FUNCTIONAL | Activity Cycles', () => {
   const options = {

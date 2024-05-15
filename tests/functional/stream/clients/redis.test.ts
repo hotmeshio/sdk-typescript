@@ -1,8 +1,8 @@
 import { HMNS } from '../../../../modules/key';
+import { sleepFor } from '../../../../modules/utils';
 import { LoggerService } from '../../../../services/logger';
 import { RedisStreamService } from '../../../../services/stream/clients/redis';
 import { RedisConnection, RedisClientType } from '../../../$setup/cache/redis';
-import { sleepFor } from '../../../../modules/utils';
 
 describe('FUNCTIONAL | RedisStreamService', () => {
   let redisConnection: RedisConnection;

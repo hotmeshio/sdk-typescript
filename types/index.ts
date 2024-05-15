@@ -39,10 +39,12 @@ export {
     ProxyType,
     Registry,
     SignalOptions,
+    FindJobsOptions,
     FindOptions,
     FindWhereOptions,
     FindWhereQuery,
     HookOptions,
+    SearchResults,
     WorkflowConfig,
     WorkerConfig,
     WorkerOptions,
@@ -78,19 +80,18 @@ export {
   HookRules,
   HookSignal
 } from './hook';
-export {
-  RedisClientType as IORedisClientType,
-  RedisMultiType as IORedisMultiType } from './ioredisclient';
 export { ILogger } from './logger';
 export {
+  ExtensionType,
+  JobCompletionOptions,
   JobData,
   JobsData,
+  JobInterruptOptions,
   JobMetadata,
   JobOutput,
   JobState,
   JobStatus,
-  PartialJobState,
-  ExtensionType } from './job';
+  PartialJobState } from './job';
 export { MappingStatements } from './map';
 export {
   Pipe,
@@ -123,18 +124,30 @@ export {
   QuorumMessageCallback,
   QuorumProfile,
   RollCallMessage,
+  RollCallOptions,
   SubscriptionCallback,
+  SubscriptionOptions,
   SystemHealth,
   ThrottleMessage,
   ThrottleOptions,
   WorkMessage } from './quorum';
 export {
-  MultiResponseFlags,
+  RedisClass,
+  RedisRedisClientType,
+  RedisRedisClientOptions,
+  RedisRedisClassType,
+  IORedisClientType,
   RedisClient,
-  RedisMulti } from './redis'; //common redis types
-export {
-  RedisClientType,
-  RedisMultiType } from './redisclient';
+  RedisMulti,
+  RedisRedisMultiType,
+  IORedisClientOptions,
+  IORedisClassType,
+  IORedisMultiType,
+  RedisOptions,
+  MultiResponseFlags,
+  isRedisClient,
+  isIORedisClient,
+} from './redis'; //common redis types
 export {
   JSONSchema,
   StringAnyType,

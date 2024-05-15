@@ -201,9 +201,9 @@ type JobCompletionOptions = {
 
 export {
   JobCompletionOptions,
-  JobInterruptOptions,
   JobData,
   JobsData,
+  JobInterruptOptions,
   JobMetadata,
   JobOutput,
   JobState,

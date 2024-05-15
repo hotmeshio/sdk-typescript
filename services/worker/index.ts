@@ -1,5 +1,10 @@
 import { KeyType } from "../../modules/key";
-import { XSleepFor, formatISODate, getSystemHealth, identifyRedisType, sleepFor } from "../../modules/utils";
+import {
+  XSleepFor,
+  formatISODate,
+  getSystemHealth,
+  identifyRedisType,
+  sleepFor } from "../../modules/utils";
 import { ConnectorService } from "../connector";
 import { ILogger } from "../logger";
 import { Router } from "../router";
@@ -13,15 +18,20 @@ import { SubService } from '../sub';
 import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
 import { RedisSubService as RedisSub } from '../sub/clients/redis';
 import { HotMeshConfig, HotMeshWorker } from "../../types/hotmesh";
-import { RedisClientType as IORedisClientType } from '../../types/ioredisclient';
 import {
   QuorumMessage,
   QuorumProfile,
   RollCallMessage,
   SubscriptionCallback } from "../../types/quorum";
-import { RedisClient, RedisMulti } from "../../types/redis";
-import { RedisClientType } from '../../types/redisclient';
-import { StreamData, StreamRole, StreamDataResponse } from "../../types/stream";
+import {
+  IORedisClientType,
+  RedisClient,
+  RedisMulti,
+  RedisRedisClientType as RedisClientType }  from "../../types/redis";
+import {
+  StreamData,
+  StreamRole,
+  StreamDataResponse } from "../../types/stream";
 import { HMSH_QUORUM_ROLLCALL_CYCLES } from "../../modules/enums";
 
 class WorkerService {

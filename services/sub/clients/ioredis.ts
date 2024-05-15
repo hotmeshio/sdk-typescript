@@ -1,7 +1,9 @@
 import { KeyService, KeyStoreParams, KeyType, HMNS } from '../../../modules/key';
 import { ILogger } from '../../logger';
 import { SubService } from '../index';
-import { RedisClientType, RedisMultiType } from '../../../types/ioredisclient';
+import {
+  IORedisClientType as RedisClientType,
+  IORedisMultiType as RedisMultiType } from '../../../types/redis';
 import { SubscriptionCallback } from '../../../types/quorum';
 
 class IORedisSubService extends SubService<RedisClientType, RedisMultiType> {
@@ -37,7 +39,7 @@ class IORedisSubService extends SubService<RedisClientType, RedisMultiType> {
         self.logger.error(`Error subscribing to: ${topic}`, err);
       }
     });
-    this.redisClient.on('message', (channel, message) => {
+    this.redisClient.on('message', (channel: string, message: string) => {
       if (channel === topic) {
         try {
           const payload = JSON.parse(message);

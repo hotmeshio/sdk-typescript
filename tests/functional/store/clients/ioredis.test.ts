@@ -1,13 +1,16 @@
 import { KeyType, HMNS, VALSEP } from '../../../../modules/key';
+import { getSymKey, sleepFor } from '../../../../modules/utils';
 import { LoggerService } from '../../../../services/logger';
+import { MDATA_SYMBOLS } from '../../../../services/serializer';
 import { IORedisStoreService } from '../../../../services/store/clients/ioredis';
 import { ActivityType, Consumes } from '../../../../types/activity';
 import { HookSignal } from '../../../../types/hook';
+import {
+  StringAnyType,
+  StringStringType,
+  Symbols } from '../../../../types/serializer';
 import { StatsType } from '../../../../types/stats';
 import { RedisConnection, RedisClientType } from '../../../$setup/cache/ioredis';
-import { StringAnyType, StringStringType, Symbols } from '../../../../types/serializer';
-import { MDATA_SYMBOLS } from '../../../../services/serializer';
-import { getSymKey, sleepFor } from '../../../../modules/utils';
 
 describe('FUNCTIONAL | IORedisStoreService', () => {
   const appConfig = { id: 'test-app', version: '1' };

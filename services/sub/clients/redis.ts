@@ -1,7 +1,9 @@
 import { KeyService, KeyStoreParams, KeyType, HMNS } from '../../../modules/key';
 import { ILogger } from '../../logger';
 import { SubService } from '../index';
-import { RedisClientType, RedisMultiType } from '../../../types/redisclient';
+import {
+  RedisRedisClientType as RedisClientType,
+  RedisRedisMultiType as RedisMultiType } from '../../../types/redis';
 import { SubscriptionCallback } from '../../../types/quorum';
 
 class RedisSubService extends SubService<RedisClientType, RedisMultiType> {

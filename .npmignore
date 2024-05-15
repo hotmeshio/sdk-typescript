@@ -1,5 +1,7 @@
 node_modules/
 src/
+modules/
+services/
 tests/
 docs/
 *.log

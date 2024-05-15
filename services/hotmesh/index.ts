@@ -2,6 +2,7 @@ import { HMNS } from '../../modules/key';
 import { guid } from '../../modules/utils';
 import { RedisConnection } from '../connector/clients/redis';
 import { RedisConnection as IORedisConnection } from '../connector/clients/ioredis';
+import { ConnectorService } from '../connector';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
 import { QuorumService } from '../quorum';
@@ -17,16 +18,25 @@ import {
 import {
   HotMeshConfig,
   HotMeshManifest } from '../../types/hotmesh';
-import { JobMessageCallback, QuorumProfile, ThrottleMessage, ThrottleOptions } from '../../types/quorum';
+import { JobExport } from '../../types/exporter';
+import {
+  JobMessageCallback,
+  QuorumProfile,
+  ThrottleMessage,
+  ThrottleOptions } from '../../types/quorum';
+import {
+  StringAnyType,
+  StringStringType } from '../../types/serializer';
 import {
   JobStatsInput,
   GetStatsOptions,
   IdsResponse,
   StatsResponse } from '../../types/stats';
-import { ConnectorService } from '../connector';
-import { StreamCode, StreamData, StreamDataResponse, StreamStatus } from '../../types/stream';
-import { StringAnyType, StringStringType } from '../../types/serializer';
-import { JobExport } from '../../types/exporter';
+import {
+  StreamCode,
+  StreamData,
+  StreamDataResponse,
+  StreamStatus } from '../../types/stream';
 
 class HotMeshService {
   namespace: string;
