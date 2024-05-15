@@ -1,8 +1,9 @@
 /**
  * The Cache is a key/value store and used to store commonly accessed Redis metadata
  * (mainly the execution rules for the app) to save time accessing them as they
- * are immutable per verison. The only time the rules are ejected are when
- * a new version is deployed to the quorum and the cache is invalidated/cleared.
+ * are immutable per verison. Rules are only ejected when a new version
+ * (a new distributed executable) is deployed to the quorum
+ * and the cache is invalidated/cleared of the prior version.
  */
 
 import { ActivityType } from "../../types/activity";

@@ -42,7 +42,7 @@ import {
   ActivityType,
   Consumes } from '../../types/activity';
 import { CacheMode } from '../../types/cache';
-import { RedisClientType as IORedisClientType } from '../../types/ioredisclient';
+import { JobExport } from '../../types/exporter';
 import {
   JobState,
   JobData,
@@ -62,8 +62,11 @@ import {
   JobMessage,
   JobMessageCallback,
   SubscriptionCallback } from '../../types/quorum';
-import { RedisClient, RedisMulti } from '../../types/redis';
-import { RedisClientType } from '../../types/redisclient';
+import {
+  IORedisClientType,
+  RedisClient,
+  RedisMulti,
+  RedisRedisClientType as RedisClientType } from '../../types/redis';
 import { StringAnyType, StringStringType } from '../../types/serializer';
 import {
   GetStatsOptions,
@@ -80,7 +83,6 @@ import {
   StreamRole,
   StreamStatus } from '../../types/stream';
 import { WorkListTaskType } from '../../types/task';
-import { JobExport } from '../../types/exporter';
 
 class EngineService {
   namespace: string;

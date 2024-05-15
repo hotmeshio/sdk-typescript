@@ -1,7 +1,10 @@
 import * as Redis from 'redis';
 import config from '../../../../$setup/config';
 import { RedisConnection } from '../../../../../services/connector/clients/redis'; 
-import { RedisClientOptions, RedisClientType } from '../../../../../types/redisclient';
+import {
+  RedisRedisClientOptions as RedisClientOptions,
+  RedisRedisClientType as RedisClientType, 
+  RedisRedisClassType} from '../../../../../types/redis';
 
 describe('RedisConnection', () => {
   let redisConnection: RedisConnection;
@@ -19,7 +22,11 @@ describe('RedisConnection', () => {
 
   // Connect to Redis before running tests
   beforeAll(async () => {
-    redisConnection = await RedisConnection.connect('testId', Redis, options);
+    redisConnection = await RedisConnection.connect(
+      'testId',
+      Redis as unknown as RedisRedisClassType,
+      options,
+    );
     redisClient = redisConnection.getClient();
   });
 

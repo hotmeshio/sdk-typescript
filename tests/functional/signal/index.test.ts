@@ -1,11 +1,11 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import { guid, sleepFor } from '../../../modules/utils';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { JobOutput } from '../../../types/job';
-import { guid, sleepFor } from '../../../modules/utils';
-import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import config from '../../$setup/config';
 
 describe('FUNCTIONAL | Signal', () => {
   const options = {

@@ -6,6 +6,7 @@ import { Durable } from '../../../services/durable';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/redis';
 import * as workflows from './src/workflows';
+import { RedisRedisClassType } from '../../../types';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -23,7 +24,11 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis as unknown as RedisRedisClassType,
+      options,
+    );
     redisConnection.getClient().flushDb();
   });
 

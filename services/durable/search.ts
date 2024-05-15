@@ -11,6 +11,7 @@ export class Search {
   searchSessionIndex: number = 0;
   hotMeshClient: HotMesh;
   store: StoreService<RedisClient, RedisMulti> | null;
+  cachedFields: Record<string, string> = {};
 
   constructor(workflowId: string, hotMeshClient: HotMesh, searchSessionId: string) {
     const keyParams = {
@@ -23,7 +24,17 @@ export class Search {
     this.store = hotMeshClient.engine.store as StoreService<RedisClient, RedisMulti>;
   }
 
+  /**
+   * Prefixes the key with an underscore to keep separate from the
+   * activity and job history (and searchable via HKEYS)
+   * @param {string} key - the key to be sanitized. Wrap in quotes to avoid sanitization.
+   * @returns {string} - the sanitized key
+   * @private
+   */
   safeKey(key:string): string {
+    if (key.startsWith('"')) {
+      return key.slice(1, -1);
+    }
     return `_${key}`;
   }
 
@@ -31,19 +42,41 @@ export class Search {
    * For those deployments with a redis stack backend (with the FT module),
    * this method will configure the search index for the workflow. For all
    * others, this method will exit/fail gracefully and not index
-   * the fields in the HASH. However, all values are still available
-   * in the HASH.
+   * the fields in the HASH. All values are searchable via HKEYS/HSC/HGET
+   * @param {HotMesh} hotMeshClient - the hotmesh client
+   * @param {WorkflowSearchOptions} search - the search options
+   * @returns {Promise<void>}
+   * @example
+   * const search = {
+   *  index: 'my_search_index',
+   *  prefix: ['my_workflow_prefix'],
+   *  schema: {
+   *   field1: { type: 'TEXT', sortable: true },
+   *   field2: { type: 'NUMERIC', sortable: true }
+   *  }
+   * }
+   * await Search.configureSearchIndex(hotMeshClient, search);
    */
   static async configureSearchIndex(hotMeshClient: HotMesh, search?: WorkflowSearchOptions): Promise<void> {
     if (search?.schema) {
       const store = hotMeshClient.engine.store;
       const schema: string[] = [];
       for (const [key, value] of Object.entries(search.schema)) {
-        //prefix with a comma (avoids collisions with hotmesh reserved words)
-        schema.push(`_${key}`);
-        schema.push(value.type);
-        if (value.sortable) {
-          schema.push('SORTABLE');
+        if (value.indexed !== false) {
+          schema.push(`_${key}`);
+          schema.push(value.type);
+          if (value.sortable) {
+            schema.push('SORTABLE');
+          }
+          if (value.sortable) {
+            schema.push('SORTABLE');
+          }
+          if (value.noindex) {
+            schema.push('NOINDEX');
+          }
+          if (value.nostem && value.type === 'TEXT') {
+            schema.push('NOSTEM');
+          }
         }
       }
       try {
@@ -63,8 +96,11 @@ export class Search {
   /**
    * For those deployments with a redis stack backend (with the FT module),
    * this method will list all search indexes.
+   * 
    * @param {HotMesh} hotMeshClient - the hotmesh client
    * @returns {Promise<string[]>} - the list of search indexes
+   * @example
+   * const searchIndexes = await Search.listSearchIndexes(hotMeshClient);
    */
   static async listSearchIndexes(hotMeshClient: HotMesh): Promise<string[]> {
     try {
@@ -80,6 +116,7 @@ export class Search {
   /**
    * increments the index to return a unique search session guid when
    * calling any method that produces side effects (changes the value)
+   * @private
    */
   getSearchSessionGuid(): string {
     //return the search session as it would exist in the search session index
@@ -90,19 +127,26 @@ export class Search {
    * Sets the fields listed in args. Returns the
    * count of new fields that were set (does not
    * count fields that were updated)
+   * @param args
+   * @returns {number}
+   * @example
+   * const search = new Search();
+   * const count = await search.set('field1', 'value1', 'field2', 'value2');
    */
   async set(...args: string[]): Promise<number> {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    if (ssGuid in replay) {
-      return Number(replay[ssGuid]);
-    }
     const safeArgs: string[] = [];
     for (let i = 0; i < args.length; i += 2) {
-      const key = this.safeKey(args[i]);
+      const keyName = args[i];
+      delete this.cachedFields[keyName];
+      const key = this.safeKey(keyName);
       const value = args[i+1].toString();
       safeArgs.push(key, value);
+    }
+    if (ssGuid in replay) {
+      return Number(replay[ssGuid]);
     }
     const fieldCount = await this.store.exec('HSET', this.jobId, ...safeArgs);
     //no need to wait; set this interim value in the replay
@@ -110,22 +154,56 @@ export class Search {
     return Number(fieldCount);
   }
 
+  /**
+   * Returns the value of the field in the HASH stored at key.
+   * @param key
+   * @returns {string}
+   * @example
+   * const search = new Search();
+   * const value = await search.get('field1');
+   */
   async get(key: string): Promise<string> {
     try {
-      return await this.store.exec('HGET',this.jobId, this.safeKey(key)) as string;
+      if (key in this.cachedFields) {
+        return this.cachedFields[key];
+      }
+      const value = await this.store.exec('HGET',this.jobId, this.safeKey(key)) as string;
+      this.cachedFields[key] = value;
+      return value;
     } catch (error) {
       this.hotMeshClient.logger.error('durable-search-get-error', { ...error });
       return '';
     }
   }
 
+  /**
+   * Returns the values of all specified fields in the HASH stored at key.
+   * @param args 
+   * @returns 
+   */
   async mget(...args: string[]): Promise<string[]> {
+    let isCached = true;
+    const values: string[] = [];
     const safeArgs: string[] = [];
     for (let i = 0; i < args.length; i++) {
+      if (isCached && args[i] in this.cachedFields) {
+        values.push(this.cachedFields[args[i]]);
+      } else {
+        isCached = false; 
+      }
       safeArgs.push(this.safeKey(args[i]));
     }
     try {
-      return await this.store.exec('HMGET', this.jobId, ...safeArgs) as string[];
+      if (isCached) {
+        return values;
+      }
+      const returnValues = await this.store.exec('HMGET', this.jobId, ...safeArgs) as string[];
+      returnValues.forEach((value, index) => {
+        if (value !== null) {
+          this.cachedFields[args[index]] = value;
+        }
+      });
+      return returnValues;
     } catch (error) {
       this.hotMeshClient.logger.error('durable-search-mget-error', { ...error });
       return [];
@@ -133,33 +211,48 @@ export class Search {
   }
 
   /**
-   * Deletes the fields listed in args. Returns the
+   * Deletes the fields provided as args. Returns the
    * count of fields that were deleted.
+   * 
+   * @param args
+   * @returns {number}
+   * @example
+   * sont search = new Search();
+   * const count = await search.del('field1', 'field2', 'field3');
    */
   async del(...args: string[]): Promise<number | void> {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
+    const safeArgs: string[] = [];
+    for (let i = 0; i < args.length; i++) {
+      const keyName = args[i];
+      delete this.cachedFields[keyName];
+      safeArgs.push(this.safeKey(keyName));
+    }
     if (ssGuid in replay) {
       return Number(replay[ssGuid]);
     }
-    const safeArgs: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      safeArgs.push(this.safeKey(args[i]));
-    }
     const response = await this.store.exec('HDEL', this.jobId, ...safeArgs);
     const formattedResponse = isNaN(response as unknown as number) ? 0 : Number(response);
-    //no need to wait; set this interim value in the replay
     this.store.exec('HSET', this.jobId, ssGuid, formattedResponse.toString());
     return formattedResponse;
   }
 
   /**
-   * Increments the value of a field by the given amount. Returns the
-   * new value of the field after the increment. Can be
-   * used to decrement the value of a field by specifying a negative.
+   * Increments the value of a float field by the given amount. Returns the
+   * new value of the field after the increment. Pass a negative
+   * number to decrement the value.
+   * 
+   * @param key - the key to increment
+   * @param val - the value to increment by
+   * @returns {number} - the new value
+   * @example
+   * const search = new Search();
+   * const count = await search.incr('field1', 1.5);
    */
   async incr(key: string, val: number): Promise<number> {
+    delete this.cachedFields[key];
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
@@ -167,7 +260,6 @@ export class Search {
       return Number(replay[ssGuid]);
     }
     const num = await this.store.exec('HINCRBYFLOAT', this.jobId, this.safeKey(key), val.toString()) as string;
-    //no need to wait; set this interim value in the replay
     this.store.exec('HSET', this.jobId, ssGuid, num.toString());
     return Number(num);
   }
@@ -176,8 +268,16 @@ export class Search {
    * Multiplies the value of a field by the given amount. Returns the
    * new value of the field after the multiplication. NOTE:
    * this is exponential multiplication.
+   * 
+   * @param key - the key to multiply
+   * @param val - the value to multiply by
+   * @returns {number} - the new product of the multiplication
+   * @example
+   * const search = new Search();
+   * const product = await search.mult('field1', 1.5);
    */
   async mult(key: string, val: number): Promise<number> {
+    delete this.cachedFields[key];
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
@@ -188,7 +288,6 @@ export class Search {
     if (ssGuidValue === 1) {
       const log = Math.log(val);
       const logTotal = await this.store.exec('HINCRBYFLOAT', this.jobId, this.safeKey(key), log.toString()) as string;
-      //no need to wait; set this interim value in the replay
       this.store.exec('HSET', this.jobId, ssGuid, logTotal.toString());
       return Math.exp(Number(logTotal));
     }

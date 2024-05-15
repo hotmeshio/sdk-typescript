@@ -1,7 +1,7 @@
 import {
-  RedisClientOptions,
-  RedisClassType,
-  RedisClientType } from '../../../types/ioredisclient';
+  IORedisClientOptions as RedisClientOptions,
+  IORedisClassType as RedisClassType,
+  IORedisClientType as RedisClientType } from '../../../types/redis';
 
 class RedisConnection {
   private connection: any | null = null;
@@ -36,13 +36,13 @@ class RedisConnection {
     }
   }
 
-  public static async connect(id: string, Redis: RedisClassType, options?: RedisClientOptions): Promise<RedisConnection> {
+  public static async connect(id: string, Redis: Partial<RedisClassType>, options?: RedisClientOptions): Promise<RedisConnection> {
     if (this.instances.has(id)) {
       return this.instances.get(id) as RedisConnection;
     }
     const instance = new RedisConnection();
     const opts = options ? { ...options } : { ...this.clientOptions };
-    instance.connection = await instance.createConnection(Redis, opts);
+    instance.connection = await instance.createConnection(Redis as RedisClassType, opts);
     instance.id = id;
     this.instances.set(id, instance);
     return instance;

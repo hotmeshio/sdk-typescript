@@ -50,8 +50,8 @@ type KeyStoreParams = {
 type HotMesh = typeof HotMeshService;
 
 type RedisConfig = {
-  class: RedisClass;
-  options: RedisOptions;
+  class: Partial<RedisClass>;
+  options: Partial<RedisOptions>;
 }
 
 type HotMeshEngine = {
@@ -68,10 +68,7 @@ type HotMeshWorker = {
   store?: RedisClient;  //set by hotmesh using instanced `redis` class
   stream?: RedisClient; //set by hotmesh using instanced `redis` class
   sub?: RedisClient;    //set by hotmesh using instanced `redis` class
-  redis?: {
-    class: RedisClass;
-    options: RedisOptions;
-  };
+  redis?: RedisConfig;
   reclaimDelay?: number; //milliseconds
   reclaimCount?: number; //max number of times to reclaim a stream
   callback: (payload: StreamData) => Promise<StreamDataResponse|void>;

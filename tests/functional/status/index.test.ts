@@ -1,14 +1,14 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config';
-import { guid } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import { guid } from '../../../modules/utils';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../../types/stream';
-import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import config from '../../$setup/config';
 
 describe('FUNCTIONAL | Status Codes', () => {
   const options = {

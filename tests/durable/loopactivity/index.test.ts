@@ -20,7 +20,11 @@ describe('DURABLE | loopactivity | `Iterate Same Activity`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options
+    );
     redisConnection.getClient().flushdb();
   });
 

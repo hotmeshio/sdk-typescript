@@ -1,6 +1,10 @@
 import { Redis, RedisOptions as RedisClientOptions } from 'ioredis';
 import config from '../config';
-import { RedisClientType, RedisMultiType } from '../../../types/ioredisclient';
+import { 
+  IORedisClassType,
+  IORedisClientType,
+  IORedisClientType as RedisClientType,
+  IORedisMultiType as RedisMultiType } from '../../../types/redis';
 
 class RedisConnection {
   private connection: any | null = null;
@@ -20,7 +24,7 @@ class RedisConnection {
     });
   }
 
-  public async getClient(): Promise<Redis> {
+  public async getClient(): Promise<IORedisClientType> {
     if (!this.connection) {
       throw new Error('Redis client is not connected');
     }

@@ -1,11 +1,11 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config';
+import { HotMesh, HotMeshConfig } from '../../../index';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HMNS } from '../../../modules/key';
 import { guid } from '../../../modules/utils';
-import { HotMesh, HotMeshConfig } from '../../../index';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
-import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import config from '../../$setup/config';
 
 describe('FUNCTIONAL | AWAIT (OR NOT)', () => {
   const appConfig = { id: 'awaiter', version: '1' };

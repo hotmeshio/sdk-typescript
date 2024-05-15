@@ -4,8 +4,10 @@
     "module": "commonjs",
     "outDir": "./build",
     "declaration": true,
+    "declarationMap": false,
+    "removeComments": true,
     "esModuleInterop": true,
-     "resolveJsonModule": true
+    "resolveJsonModule": true
   },
   "include": [
     "**/*.ts"

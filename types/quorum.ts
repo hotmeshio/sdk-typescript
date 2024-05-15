@@ -32,14 +32,21 @@ export type ThrottleOptions = {
   guid?: string;
   /** target a worker quorum */
   topic?: string;
+  /** entity/noun */
+  entity?: string;
   /** in milliseconds; default is 0 */
   throttle: number;
+  /** namespace
+   * @default 'durable'
+   */
+  namespace?: string;
 };
 
 export interface QuorumProfile {
   namespace: string;
   app_id: string;
   engine_id: string;
+  entity?: string;
   worker_topic?: string;
   stream?: string;
   stream_depth?: number;
@@ -54,6 +61,7 @@ export interface QuorumProfile {
 }
 
 interface QuorumMessageBase {
+  entity?: string;
   guid?: string;
   topic?: string;
   type?: string;
@@ -80,6 +88,7 @@ export interface PongMessage extends QuorumMessageBase {
   type: 'pong';
   guid: string;            //call initiator
   originator: string;      //clone of originator guid passed in ping
+  entity?: string;         //optional entity
   profile?: QuorumProfile; //contains details about the engine/worker
 }
 
@@ -91,6 +100,7 @@ export interface ActivateMessage extends QuorumMessageBase {
 
 export interface JobMessage extends QuorumMessageBase {
   type: 'job';
+  entity?: string;
   topic: string; //this comes from the 'publishes' field in the YAML
   job: JobOutput
 }
@@ -98,6 +108,7 @@ export interface JobMessage extends QuorumMessageBase {
 export interface ThrottleMessage extends QuorumMessageBase {
   type: 'throttle';
   guid?: string; //target engine AND workers with this guid
+  entity?: string;
   topic?: string;  //target worker(s) matching this topic (pass null to only target the engine, pass undefined to target engine and workers)
   throttle: number; //0-n; millis
 }
@@ -105,6 +116,7 @@ export interface ThrottleMessage extends QuorumMessageBase {
 export interface RollCallMessage extends QuorumMessageBase {
   type: 'rollcall';
   guid?: string;    //target the engine quorum
+  entity?: string;
   topic?: string | null;   //target a worker if string; suppress if `null`;
   interval: number; //every 'n' seconds
   max?: number;     //max broadcasts
@@ -122,6 +134,16 @@ export interface SubscriptionCallback {
 export interface QuorumMessageCallback {
   (topic: string, message: QuorumMessage): void;
 }
+
+export type RollCallOptions = {
+  delay?: number;
+  namespace?: string;
+};
+
+export type SubscriptionOptions = {
+  namespace?: string;
+};
+
 
 /**
  * The types in this file are used to define those messages that are sent

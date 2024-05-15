@@ -1,7 +1,9 @@
 import Redis from 'ioredis';
 import config from '../../../../$setup/config';
 import { RedisConnection } from '../../../../../services/connector/clients/ioredis'; 
-import { RedisClientOptions, RedisClientType } from '../../../../../types/ioredisclient';
+import { 
+  IORedisClientOptions as RedisClientOptions, 
+  IORedisClientType as RedisClientType } from '../../../../../types/redis';
 
 describe('RedisConnection', () => {
   let redisConnection: RedisConnection;

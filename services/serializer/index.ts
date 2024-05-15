@@ -188,11 +188,11 @@ export class SerializerService {
     for (let key in document) {
       let value = SerializerService.toString(document[key]);
       if (value) {
-        if (/^:*[a-zA-Z]{2}$/.test(value)) {
-          value = ':' + value;
-        } else if (this.symValReverseMaps.has(value)) {
-          value = this.symValReverseMaps.get(value);
-        }
+        // if (/^:*[a-zA-Z]{2}$/.test(value)) {
+        //   value = ':' + value;
+        // } else if (this.symValReverseMaps.has(value)) {
+        //   value = this.symValReverseMaps.get(value);
+        // }
         result[key] = value;
       }
     }
@@ -204,14 +204,14 @@ export class SerializerService {
     let result: any = {};
     for (let [key, value] of Object.entries(document)) {
       if (value === undefined || value === null) continue;
-      if (/^:+[a-zA-Z]{2}$/.test(value)) {
-        result[key] = value.slice(1);
-      } else {
-        if (value?.length === 2 && this.symValMaps.has(value)) {
-          value = this.symValMaps.get(value);
-        }
-        result[key] = SerializerService.fromString(value);
-      }
+      // if (/^:+[a-zA-Z]{2}$/.test(value)) {
+      //   result[key] = value.slice(1);
+      // } else {
+      //   if (value?.length === 2 && this.symValMaps.has(value)) {
+      //     value = this.symValMaps.get(value);
+      //   }
+      result[key] = SerializerService.fromString(value);
+      // }
     }
     return result;
   }

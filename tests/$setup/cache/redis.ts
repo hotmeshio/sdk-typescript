@@ -1,6 +1,8 @@
 import { createClient, RedisClientOptions } from 'redis';
 import config from '../config';
-import { RedisClientType, RedisMultiType } from '../../../types/redisclient';
+import {
+  RedisRedisClientType as RedisClientType,
+  RedisRedisMultiType as RedisMultiType } from '../../../types/redis';
 
 class RedisConnection {
   private connection: RedisClientType | null = null;
@@ -26,7 +28,7 @@ class RedisConnection {
       });
 
       client.on('ready', () => {
-        resolve(client);
+        resolve(client as unknown as RedisClientType);
       });
 
       client.connect();

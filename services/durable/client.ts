@@ -99,36 +99,6 @@ export class ClientService {
     }
   }
 
-  /**
-   * For those deployments with a redis stack backend (with the FT module),
-   * this method will configure the search index for the workflow.
-   */
-  configureSearchIndex = async (hotMeshClient: HotMesh, search?: WorkflowSearchOptions): Promise<void> => {
-    if (search?.schema) {
-      const store = hotMeshClient.engine.store;
-      const schema: string[] = [];
-      for (const [key, value] of Object.entries(search.schema)) {
-        //prefix with an underscore (avoids collisions with hotmesh reserved symbols)
-        schema.push(`_${key}`);
-        schema.push(value.type);
-        if (value.sortable) {
-          schema.push('SORTABLE');
-        }
-      }
-      try {
-        const keyParams = {
-          appId: hotMeshClient.appId,
-          jobId: ''
-        }
-        const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
-        const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
-        await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length, ...prefixes, 'SCHEMA', ...schema);
-      } catch (error) {
-        hotMeshClient.engine.logger.info('durable-client-search-err', { ...error });
-      }
-    }
-  }
-
   search = async (hotMeshClient: HotMesh, index: string, query: string[]): Promise<string[]> => {
     const store = hotMeshClient.engine.store;
     if (query[0]?.startsWith('FT.')) {
@@ -147,7 +117,6 @@ export class ClientService {
       //     the taskQueue and workflowName used by the Durable module
       const workflowTopic = `${taskQueueName}-${workflowName}`;
       const hotMeshClient = await this.getHotMeshClient(workflowTopic, options.namespace);
-      this.configureSearchIndex(hotMeshClient, options.search);
       const payload = {
         arguments: [...options.args],
         originJobId: options.originJobId,

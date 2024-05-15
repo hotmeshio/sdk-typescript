@@ -16,8 +16,11 @@ export async function example(name: string): Promise<string> {
   const [hello, goodbye] = await Promise.all([greet(name), bye(name)]);
 
   //all data is available to the workflow
-  await search.get('jimbo');
+  const j1 = await search.get('jimbo');
   await search.incr('counter', 10);
+  const j2 = await search.get('jimbo');
+  const j3 = await search.mget('jimbo');
+  //console.log(j1, j2, j3[0]);
   const val1 = await search.incr('counter', 1);
   const val2 = await search.get('counter');
   const val3 = await search.mult('multer', 12);

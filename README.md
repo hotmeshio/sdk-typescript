@@ -19,9 +19,6 @@ HotMesh inverts the relationship to Redis: those functions that once used Redis 
 
 HotMesh creates an *ad hoc*, Redis-backed network of functions and organizes them into a unified service mesh. *Any service with access to Redis can join in the network, bypassing the legacy clutter.*
 
-<img src="./docs/img/hotmesh_emergent_properties.png" alt="HotMesh elevates Redis to a Service Mesh, Message Router, Integration Bus, and Business Process Engine." style="max-width:100%;width:600px;">
-
-
 ## Design
 HotMesh uses your existing Redis installation. If you already have an instance available, you have all the infrastructure you'll ever need.
 
