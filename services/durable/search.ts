@@ -63,15 +63,15 @@ export class Search {
       const schema: string[] = [];
       for (const [key, value] of Object.entries(search.schema)) {
         if (value.indexed !== false) {
-          schema.push(`_${key}`);
-          schema.push(value.type);
+          schema.push(value.fieldName ? `${value.fieldName.toString()}` : `_${key}`);
+          schema.push(value.type ? value.type : 'TEXT');
           if (value.noindex) {
             schema.push('NOINDEX');
           } else {
             if (value.nostem && value.type === 'TEXT') {
               schema.push('NOSTEM');
             }
-            if (value.sortable && value.noindex !== true) {
+            if (value.sortable) {
               schema.push('SORTABLE');
             }
           }
