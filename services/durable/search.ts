@@ -65,17 +65,15 @@ export class Search {
         if (value.indexed !== false) {
           schema.push(`_${key}`);
           schema.push(value.type);
-          if (value.sortable) {
-            schema.push('SORTABLE');
-          }
-          if (value.sortable) {
-            schema.push('SORTABLE');
-          }
           if (value.noindex) {
             schema.push('NOINDEX');
-          }
-          if (value.nostem && value.type === 'TEXT') {
-            schema.push('NOSTEM');
+          } else {
+            if (value.nostem && value.type === 'TEXT') {
+              schema.push('NOSTEM');
+            }
+            if (value.sortable && value.noindex !== true) {
+              schema.push('SORTABLE');
+            }
           }
         }
       }
