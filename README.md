@@ -301,7 +301,7 @@ Workflows and activities are run according to the rules you define, offering [Gr
 Refer to the [FAQ](./docs/faq.md) for terminology, definitions, and an exploration of how HotMesh facilitates orchestration use cases.
 
 ## Quick Start
-Refer to the [Quick Start](./docs/quickstart.md) for sample flows you can easily copy, paste, and modify to get started.
+Refer to the [Quick Start](./docs/quickstart.md) for sample YAML workflows you can copy, paste, and modify to get started.
 
 ## Developer Guide
 For more details on the complete development process, including information about schemas, APIs, and deployment, consult the [Developer Guide](./docs/developer_guide.md).

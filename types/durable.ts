@@ -118,7 +118,11 @@ type WorkflowSearchOptions = {
   prefix?: string[];
 
   /** 
-   * Schema mapping each field to a type with an optional sortable flag 
+   * Schema mapping each field. Each field is a key-value pair where the key is the field name
+   * and the value is a record of field options. If the fieldName is provided,
+   * it will be used as the indexed field name. If not provided
+   * key will be used as the indexed field name with an underscore prefix.
+   * 
    */
   schema?: Record<string, {
     /**
@@ -202,6 +206,11 @@ type WorkflowSearchOptions = {
      * @example '^[a-zA-Z0-9_]*$'
      */
     pattern?: string;
+
+    /**
+     * literal value to use for the indexed field name (without including the standard underscore (_) prefix isolate)
+     */
+    fieldName?: string;
   }>;
 
   /** Additional data as a key-value record */
