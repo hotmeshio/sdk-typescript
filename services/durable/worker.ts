@@ -16,6 +16,7 @@ import {
   DurableTimeoutError, 
   DurableWaitForError } from '../../modules/errors';
 import { asyncLocalStorage } from '../../modules/storage';
+import { formatISODate, guid } from '../../modules/utils';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
@@ -31,7 +32,6 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus } from '../../types/stream';
-import { formatISODate } from '../../modules/utils';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
@@ -232,7 +232,8 @@ export class WorkerService {
   wrapWorkflowFunction(workflowFunction: Function, workflowTopic: string, config: WorkerConfig): Function {
     return async (data: StreamData): Promise<StreamDataResponse> => {
       const counter = { counter: 0 };
-      const interruptionRegistry: any[] = [];
+      const interruptionRegistry: any[] = new Array();
+      let isProcessing = false;
       try {
         //incoming data payload has arguments and workflowId
         const workflowInput = data.data as unknown as WorkflowDataType;
@@ -282,13 +283,17 @@ export class WorkerService {
           data: { response: workflowResponse, done: true }
         };
       } catch (err) {
+        if (isProcessing) {
+          return;
+        }
         if (err instanceof DurableWaitForError || interruptionRegistry.length > 1) {
+          isProcessing = true;
 
           //NOTE: this type is spawned when `Promise.all` is used OR if the interruption is a `waitFor`
           const workflowInput = data.data as unknown as WorkflowDataType;
           const execIndex = counter.counter - interruptionRegistry.length + 1;
           const { workflowId, workflowTopic, workflowDimension, originJobId } = workflowInput;
-          const collatorFlowId = `-${workflowId}-$${workflowDimension || ''}-$${execIndex}`;
+          const collatorFlowId = guid();
           return {
             status: StreamStatus.SUCCESS,
             code: HMSH_CODE_DURABLE_ALL,
@@ -308,6 +313,7 @@ export class WorkerService {
 
         } else if (err instanceof DurableSleepError) {
           //return the sleep interruption
+          isProcessing = true;
           return {
             status: StreamStatus.SUCCESS,
             code: err.code,
@@ -323,6 +329,7 @@ export class WorkerService {
 
         } else if (err instanceof DurableProxyError) {
           //return the proxyActivity interruption
+          isProcessing = true;
           return {
             status: StreamStatus.SUCCESS,
             code: err.code,
@@ -346,10 +353,11 @@ export class WorkerService {
 
         } else if (err instanceof DurableChildError) {
           //return the child interruption
+          isProcessing = true;
           const msg = {
             message: err.message,
             workflowId: err.workflowId,
-            dimension: err.workflowDimension
+            dimension: err.workflowDimension,
           };
           return {
             status: StreamStatus.SUCCESS,
@@ -358,7 +366,7 @@ export class WorkerService {
             data: {
               arguments: err.arguments,
               await: err.await,
-              backoffCoefficient: err.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF ,
+              backoffCoefficient: err.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
               code: err.code,
               index: err.index,
               message: JSON.stringify(msg),
@@ -375,6 +383,7 @@ export class WorkerService {
 
         // ALL other errors are actual fatal errors (598, 597, 596)
         //  OR will be retried (599)
+        isProcessing = true;
         return {
           status: StreamStatus.SUCCESS,
           code: err.code || new DurableRetryError(err.message).code,

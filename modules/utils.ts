@@ -50,6 +50,10 @@ export async function sleepFor(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function sleepImmediate(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 export function guid(): string {
   return nanoid().replace(/[_-]/g, '0');
 }

@@ -31,7 +31,7 @@ const APP_ID = 'durable';
  * @param {string} version - number as string (e.g., '1')
  * @returns {string} HotMesh App YAML
  */
-const getWorkflowYAML = (app: string, version: string) => {
+const getWorkflowYAML = (app: string, version: string): string => {
   return `app:
   id: ${app}
   version: '${version}'
