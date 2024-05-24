@@ -15,7 +15,7 @@ import {
   deterministicRandom,
   formatISODate,
   guid,
-  sleepFor } from '../../modules/utils';
+  sleepImmediate} from '../../modules/utils';
 import { Search } from './search';
 import { WorkerService } from './worker';
 import { HotMeshService as HotMesh } from '../hotmesh';
@@ -196,7 +196,7 @@ export class WorkflowService {
     });
     //ASYNC
     //sleep (allow others to be packaged / registered) and throw the error
-    await sleepFor(0);
+    await sleepImmediate();
     throw new DurableChildError(interruptionMessage );
   }
 
@@ -205,7 +205,8 @@ export class WorkflowService {
    * @private
    */
   static getChildInterruptPayload(context: WorkflowContext, options: WorkflowOptions, execIndex: number): DurableChildErrorType {
-    const { workflowId, originJobId, workflowDimension } = context;    let childJobId: string;
+    const { workflowId, originJobId, workflowDimension } = context;
+    let childJobId: string;
     if (options.workflowId) {
       childJobId = options.workflowId;
     } else if (options.entity) {
@@ -214,7 +215,7 @@ export class WorkflowService {
       childJobId = `-${options.workflowName}-${guid()}-${workflowDimension}-${execIndex}`;
     }
     const parentWorkflowId = workflowId;
-    const taskQueueName = options.entity ?? options.taskQueue;
+    const taskQueueName = options.taskQueue ?? options.entity;
     const workflowName = options.entity ?? options.workflowName;
     const workflowTopic = `${taskQueueName}-${workflowName}`;
     return {
@@ -320,7 +321,7 @@ export class WorkflowService {
       });
       //ASYNC
       //sleep (allow others to be packaged / registered) and throw the error
-      await sleepFor(0);
+      await sleepImmediate();
       throw new DurableProxyError(interruptionMessage);
     } as T;
   }
@@ -483,6 +484,14 @@ export class WorkflowService {
   }
 
   /**
+   * Promise.all (limited to 25 total concurrent workflow)
+   */
+  static async all<T>(...promises: Promise<T>[]): Promise<T[]> {
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    return await Promise.all(promises);
+  }
+
+  /**
    * Sleeps the workflow for a duration. As the function is reentrant, 
    * upon reentry, the function will traverse prior execution paths up
    * until the sleep command and then resume execution thereafter.
@@ -513,7 +522,7 @@ export class WorkflowService {
     });
     //ASYNC
     //sleep to allow other interruptions to be packaged and registered
-    await sleepFor(0);
+    await sleepImmediate();
     // NOTE: If you are reading this in the stack trace, await `sleepFor`
     throw new DurableSleepError(interruptionMessage);
   }
@@ -550,7 +559,7 @@ export class WorkflowService {
     });
     //ASYNC
     //sleep to allow other interruptions to be packaged and registered
-    await sleepFor(0);
+    await sleepImmediate();
     // NOTE: If you are reading this in the stack trace, await `waitFor`
     throw new DurableWaitForError(interruptionMessage);
   }
