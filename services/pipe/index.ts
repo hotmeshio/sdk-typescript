@@ -60,6 +60,28 @@ class Pipe {
     return resolved[0];
   }
 
+  cloneUnknown<T>(value: T): T {
+    if (value === null || typeof value !== 'object') {
+      return value;
+    }
+    if (value instanceof Date) {
+      return new Date(value.getTime()) as T;
+    }
+    if (value instanceof RegExp) {
+      return new RegExp(value) as T;
+    }
+    if (Array.isArray(value)) {
+      return (value.map(item => this.cloneUnknown(item)) as unknown) as T;
+    }
+    const clonedObj = {} as T;
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        (clonedObj as any)[key] = this.cloneUnknown((value as any)[key]);
+      }
+    }
+    return clonedObj;
+  }
+
   /**
    * Transforms iterable `input` into a single value. Vars $output, $item, $key
    * and $input are available. The final statement in the iterator (the reduction)
@@ -72,7 +94,7 @@ class Pipe {
    * @private
    */
   reduce(input: Array<unknown[]>): unknown {
-    let resolved = input[1] ?? null;
+    let resolved = this.cloneUnknown<any>(input[1] ?? null);
 
     if (Array.isArray(input[0])) {
       for (let index = 0; index < input[0].length; index++) {

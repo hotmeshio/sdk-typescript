@@ -293,7 +293,7 @@ export class WorkerService {
           const workflowInput = data.data as unknown as WorkflowDataType;
           const execIndex = counter.counter - interruptionRegistry.length + 1;
           const { workflowId, workflowTopic, workflowDimension, originJobId } = workflowInput;
-          const collatorFlowId = guid();
+          const collatorFlowId = `${guid()}$C`;
           return {
             status: StreamStatus.SUCCESS,
             code: HMSH_CODE_DURABLE_ALL,
