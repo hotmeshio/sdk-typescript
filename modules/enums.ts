@@ -60,3 +60,6 @@ const TEST_FIDELITY_SECONDS = 1;
 export const HMSH_FIDELITY_SECONDS = process.env.HMSH_FIDELITY_SECONDS ? parseInt(process.env.HMSH_FIDELITY_SECONDS, 10) : (process.env.NODE_ENV === 'test' ? TEST_FIDELITY_SECONDS : BASE_FIDELITY_SECONDS);
 
 export const HMSH_SCOUT_INTERVAL_SECONDS = parseInt(process.env.HMSH_SCOUT_INTERVAL_SECONDS, 10) || 60;
+
+// UTILS
+export const HMSH_GUID_SIZE = Math.min(parseInt(process.env.HMSH_GUID_SIZE, 10) || 22, 32);
