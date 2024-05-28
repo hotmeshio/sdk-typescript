@@ -7,6 +7,7 @@ import { RedisClient, RedisMulti } from "../types/redis";
 import { StringAnyType } from "../types/serializer";
 import { StreamCode, StreamStatus } from "../types/stream";
 import { SystemHealth } from '../types/quorum';
+import { HMSH_GUID_SIZE } from './enums';
 
 async function safeExecute<T>(operation: Promise<T>, defaultValue: T): Promise<T> {
   try {
@@ -54,8 +55,12 @@ export function sleepImmediate(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-export function guid(): string {
-  return nanoid().replace(/[_-]/g, '0');
+function s4() {
+  return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
+}
+
+export function guid(size: number = HMSH_GUID_SIZE): string {
+  return s4() + `H` + nanoid(size);
 }
 
 export function deterministicRandom(seed: number): number {
