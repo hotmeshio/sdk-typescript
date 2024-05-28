@@ -1,4 +1,3 @@
-
 import { LogLevel } from "../types/logger";
 
 // HOTMESH SYSTEM
