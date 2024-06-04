@@ -7,12 +7,14 @@ import {
   DependencyExport,
   ExportOptions,
   JobActionExport,
-  JobExport } from '../../types/exporter';
+  JobExport,
+} from '../../types/exporter';
 import { RedisClient, RedisMulti } from '../../types/redis';
 import {
   StringAnyType,
   StringStringType,
-  Symbols } from "../../types/serializer";
+  Symbols,
+} from '../../types/serializer';
 
 /**
  * Downloads job data from Redis (hscan, hmget, hgetall)
@@ -24,7 +26,11 @@ class ExporterService {
   store: StoreService<RedisClient, RedisMulti>;
   symbols: Promise<Symbols> | Symbols;
 
-  constructor(appId: string, store: StoreService<RedisClient, RedisMulti>, logger: ILogger) {
+  constructor(
+    appId: string,
+    store: StoreService<RedisClient, RedisMulti>,
+    logger: ILogger,
+  ) {
     this.appId = appId;
     this.logger = logger;
     this.store = store;
@@ -52,7 +58,7 @@ class ExporterService {
    * tree-like structure of the unidimensional Hash
    */
   inflateKey(key: string): string {
-    return (key in this.symbols) ? this.symbols[key] : key;
+    return key in this.symbols ? this.symbols[key] : key;
   }
 
   /**
@@ -67,8 +73,8 @@ class ExporterService {
       hooks: {},
       main: {
         cursor: -1,
-        items: []
-      }
+        items: [],
+      },
     };
     const process: StringAnyType = {};
     const dependencies = this.inflateDependencyData(dependencyList, actions);
@@ -88,7 +94,7 @@ class ExporterService {
         process[this.inflateKey(key)] = SerializerService.fromString(value);
       }
     });
-    
+
     return {
       dependencies,
       process: restoreHierarchy(process),
@@ -103,7 +109,10 @@ class ExporterService {
    * @param data - the dependency data from Redis
    * @returns - the organized dependency data
    */
-  inflateDependencyData(data: string[], actions: JobActionExport): DependencyExport[] {
+  inflateDependencyData(
+    data: string[],
+    actions: JobActionExport,
+  ): DependencyExport[] {
     const hookReg = /([0-9,]+)-(\d+)$/;
     const flowReg = /-(\d+)$/;
     return data.map((dependency, index: number): DependencyExport => {
@@ -112,7 +121,7 @@ class ExporterService {
       const match = jobId.match(hookReg);
       let prefix: string;
       let type: 'hook' | 'flow' | 'other';
-      let dimensionKey: string = '';
+      let dimensionKey = '';
 
       if (match) {
         //hook-originating dependency

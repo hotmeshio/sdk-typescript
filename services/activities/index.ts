@@ -7,7 +7,7 @@ import { Signal } from './signal';
 import { Trigger } from './trigger';
 import { Worker } from './worker';
 
-export default { 
+export default {
   activity: Activity,
   await: Await,
   cycle: Cycle,

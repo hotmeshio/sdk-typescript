@@ -6,11 +6,11 @@
  * and the cache is invalidated/cleared of the prior version.
  */
 
-import { ActivityType } from "../../types/activity";
-import { HookRule } from "../../types/hook";
-import { HotMeshApp, HotMeshSettings } from "../../types/hotmesh";
-import { Symbols } from "../../types/serializer";
-import { Transitions } from "../../types/transition";
+import { ActivityType } from '../../types/activity';
+import { HookRule } from '../../types/hook';
+import { HotMeshApp, HotMeshSettings } from '../../types/hotmesh';
+import { Symbols } from '../../types/serializer';
+import { Transitions } from '../../types/transition';
 
 class Cache {
   settings: HotMeshSettings;
@@ -26,14 +26,25 @@ class Cache {
 
   /**
    * The cache is ALWAYS initialized with HotMeshSettings. The other parameters are optional.
-   * @param settings 
-   * @param apps 
-   * @param schemas 
-   * @param subscriptions 
-   * @param transitions 
-   * @param hookRules 
+   * @param settings
+   * @param apps
+   * @param schemas
+   * @param subscriptions
+   * @param transitions
+   * @param hookRules
    */
-  constructor(appId: string, settings: HotMeshSettings, apps: Record<string, HotMeshApp> = {}, schemas: Record<string, ActivityType> = {}, subscriptions: Record<string, Record<string, string>> = {}, symbols: Record<string, Symbols> = {}, symvals: Record<string, Symbols> = {}, transitions: Record<string, Record<string, unknown>> = {}, hookRules: Record<string, Record<string, HookRule[]>> = {}, workItems: Record<string, string> = {}) {
+  constructor(
+    appId: string,
+    settings: HotMeshSettings,
+    apps: Record<string, HotMeshApp> = {},
+    schemas: Record<string, ActivityType> = {},
+    subscriptions: Record<string, Record<string, string>> = {},
+    symbols: Record<string, Symbols> = {},
+    symvals: Record<string, Symbols> = {},
+    transitions: Record<string, Record<string, unknown>> = {},
+    hookRules: Record<string, Record<string, HookRule[]>> = {},
+    workItems: Record<string, string> = {},
+  ) {
     this.appId = appId;
     this.settings = settings;
     this.apps = apps;
@@ -82,18 +93,33 @@ class Cache {
   }
 
   getSchemas(appId: string, version: string): Record<string, ActivityType> {
-    return this.schemas[`${appId}/${version}`] as unknown as Record<string, ActivityType>;
+    return this.schemas[`${appId}/${version}`] as unknown as Record<
+      string,
+      ActivityType
+    >;
   }
 
   getSchema(appId: string, version: string, activityId: string): ActivityType {
     return this.schemas?.[`${appId}/${version}`]?.[activityId] as ActivityType;
   }
 
-  setSchemas(appId: string, version: string, schemas: Record<string, ActivityType>): void {
-    this.schemas[`${appId}/${version}`] = schemas as unknown as Record<string, ActivityType>;
+  setSchemas(
+    appId: string,
+    version: string,
+    schemas: Record<string, ActivityType>,
+  ): void {
+    this.schemas[`${appId}/${version}`] = schemas as unknown as Record<
+      string,
+      ActivityType
+    >;
   }
 
-  setSchema(appId: string, version: string, activityId: string, schema: ActivityType): void {
+  setSchema(
+    appId: string,
+    version: string,
+    activityId: string,
+    schema: ActivityType,
+  ): void {
     this.schemas[`${appId}/${version}`][activityId] = schema;
   }
 
@@ -105,7 +131,11 @@ class Cache {
     return this.subscriptions?.[`${appId}/${version}`]?.[topic];
   }
 
-  setSubscriptions(appId: string, version: string, subscriptions: Record<string, string>): void {
+  setSubscriptions(
+    appId: string,
+    version: string,
+    subscriptions: Record<string, string>,
+  ): void {
     this.subscriptions[`${appId}/${version}`] = subscriptions;
   }
 
@@ -137,7 +167,11 @@ class Cache {
     return this.transitions[`${appId}/${version}`] as Transitions;
   }
 
-  setTransitions(appId: string, version: string, transitions: Transitions): void {
+  setTransitions(
+    appId: string,
+    version: string,
+    transitions: Transitions,
+  ): void {
     this.transitions[`${appId}/${version}`] = transitions;
   }
 
@@ -150,11 +184,11 @@ class Cache {
   }
 
   getSignals(appId: string, version: string): Record<string, unknown> {
-    throw new Error("SIGNAL (getHooks) is not supported");
+    throw new Error('SIGNAL (getHooks) is not supported');
   }
 
   setSignals(appId: string, version: string): Record<string, unknown> {
-    throw new Error("SIGNAL (setHook) is not supported");
+    throw new Error('SIGNAL (setHook) is not supported');
   }
 
   getActiveTaskQueue(appId: string): string {

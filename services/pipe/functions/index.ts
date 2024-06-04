@@ -11,7 +11,7 @@ import { StringHandler } from './string';
 import { SymbolHandler } from './symbol';
 import { UnaryHandler } from './unary';
 
-export default { 
+export default {
   array: new ArrayHandler(),
   bitwise: new BitwiseHandler(),
   conditional: new ConditionalHandler(),

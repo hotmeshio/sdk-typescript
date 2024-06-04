@@ -10,7 +10,8 @@ import { JobOutput } from '../../../types/job';
 import {
   StreamData,
   StreamDataResponse,
-  StreamStatus } from '../../../types/stream';
+  StreamStatus,
+} from '../../../types/stream';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Retry', () => {
@@ -30,9 +31,15 @@ describe('FUNCTIONAL | Retry', () => {
   let hotMesh: HotMesh;
 
   //worker callback function
-  const callback =  async (streamData: StreamData): Promise<StreamDataResponse> => {
+  const callback = async (
+    streamData: StreamData,
+  ): Promise<StreamDataResponse> => {
     const values = JSON.parse(streamData.data.values as string) as number[];
-    const operation = streamData.data.operation as 'add'|'subtract'|'multiply'|'divide';
+    const operation = streamData.data.operation as
+      | 'add'
+      | 'subtract'
+      | 'multiply'
+      | 'divide';
     const result = new MathHandler()[operation](values);
 
     if (simulateUnrecoverableError) {
@@ -42,9 +49,11 @@ describe('FUNCTIONAL | Retry', () => {
         status: StreamStatus.ERROR,
         code: UNRECOVERABLE_ERROR.code,
         metadata: { ...streamData.metadata },
-        data: { code: UNRECOVERABLE_ERROR.code, message: UNRECOVERABLE_ERROR.message },
+        data: {
+          code: UNRECOVERABLE_ERROR.code,
+          message: UNRECOVERABLE_ERROR.message,
+        },
       } as StreamDataResponse;
-
     } else if (simulateOneTimeError) {
       simulateOneTimeError = false;
       //simulate a system error and retry
@@ -55,7 +64,6 @@ describe('FUNCTIONAL | Retry', () => {
         metadata: { ...streamData.metadata },
         data: { error: 'recoverable error' },
       } as StreamDataResponse;
-
     } else {
       return {
         status: StreamStatus.SUCCESS,
@@ -67,7 +75,11 @@ describe('FUNCTIONAL | Retry', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     const config: HotMeshConfig = {
@@ -76,7 +88,7 @@ describe('FUNCTIONAL | Retry', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
 
       workers: [
@@ -84,8 +96,8 @@ describe('FUNCTIONAL | Retry', () => {
           topic: 'calculation.execute',
           redis: { class: Redis, options },
           callback,
-        }
-      ]
+        },
+      ],
     };
     hotMesh = await HotMesh.init(config);
     await hotMesh.deploy('/app/tests/$setup/apps/calc/v1/hotmesh.yaml');
@@ -97,9 +109,7 @@ describe('FUNCTIONAL | Retry', () => {
     await HotMesh.stop();
   });
 
-  beforeEach(() => {
-
-  });
+  beforeEach(() => {});
 
   describe('Execute streamed tasks', () => {
     it('should invoke a worker activity (add) in calculator app', async () => {
@@ -107,7 +117,12 @@ describe('FUNCTIONAL | Retry', () => {
         operation: 'add',
         values: JSON.stringify([1, 2, 3, 4, 5]),
       };
-      const jobResponse = await hotMesh.pubsub('calculate', payload, null, 2500);
+      const jobResponse = await hotMesh.pubsub(
+        'calculate',
+        payload,
+        null,
+        2500,
+      );
       expect(jobResponse?.metadata.jid).not.toBeNull();
       expect(jobResponse?.data.result).toBe(15);
     });
@@ -117,7 +132,12 @@ describe('FUNCTIONAL | Retry', () => {
         operation: 'subtract',
         values: JSON.stringify([5, 4, 3, 2, 1]),
       };
-      const jobResponse = await hotMesh.pubsub('calculate', payload, null, 2500);
+      const jobResponse = await hotMesh.pubsub(
+        'calculate',
+        payload,
+        null,
+        2500,
+      );
       expect(jobResponse?.metadata.jid).not.toBeNull();
       expect(jobResponse?.data.result).toBe(-5);
     });
@@ -127,7 +147,12 @@ describe('FUNCTIONAL | Retry', () => {
         operation: 'multiply',
         values: JSON.stringify([5, 4, 3, 2, 1]),
       };
-      const jobResponse = await hotMesh.pubsub('calculate', payload, null, 2500);
+      const jobResponse = await hotMesh.pubsub(
+        'calculate',
+        payload,
+        null,
+        2500,
+      );
       expect(jobResponse?.metadata.jid).not.toBeNull();
       expect(jobResponse?.data.result).toBe(120);
     });
@@ -166,14 +191,24 @@ describe('FUNCTIONAL | Retry', () => {
 
     it('should run synchronous calls in parallel', async () => {
       const [divide, multiply] = await Promise.all([
-        hotMesh.pubsub('calculate', {
-          operation: 'divide',
-          values: JSON.stringify([200, 4, 5]),
-        }, null, 1500),
-        hotMesh.pubsub('calculate', {
-          operation: 'multiply',
-          values: JSON.stringify([10, 10, 10]),
-        }, null, 1500),
+        hotMesh.pubsub(
+          'calculate',
+          {
+            operation: 'divide',
+            values: JSON.stringify([200, 4, 5]),
+          },
+          null,
+          1500,
+        ),
+        hotMesh.pubsub(
+          'calculate',
+          {
+            operation: 'multiply',
+            values: JSON.stringify([10, 10, 10]),
+          },
+          null,
+          1500,
+        ),
       ]);
       expect(divide?.data.result).toBe(10);
       expect(multiply?.data.result).toBe(1000);
@@ -204,24 +239,26 @@ describe('FUNCTIONAL | Retry', () => {
       let jobId: string;
       let bAtLeastOne = false;
       //subscribe to the 'calculated' topic
-      await hotMesh.psub('calculated.*', (topic: string, message: JobOutput) => {
-        //results are broadcast here
-        expect(topic).toBe('calculated');
-        expect(message.data.result).toBe(5);
-        bAtLeastOne = true;
-      });
+      await hotMesh.psub(
+        'calculated.*',
+        (topic: string, message: JobOutput) => {
+          //results are broadcast here
+          expect(topic).toBe('calculated');
+          expect(message.data.result).toBe(5);
+          bAtLeastOne = true;
+        },
+      );
       const payload = {
         operation: 'divide',
         values: JSON.stringify([100, 4, 5]),
       };
       //publish a job (sleep for 500, so the test doesn't exit tooo soon)
-      jobId = await hotMesh.pub('calculate', payload) as string;
+      jobId = (await hotMesh.pub('calculate', payload)) as string;
       while (!bAtLeastOne) {
         await sleepFor(100);
       }
       await hotMesh.punsub('calculated.*');
     }, 5_000);
-
 
     it('should subscribe to a topic to see a single job results', async () => {
       let jobId: string;
@@ -231,16 +268,19 @@ describe('FUNCTIONAL | Retry', () => {
         values: JSON.stringify([100, 4, 5]),
       };
       //publish a job (sleep for 500, so the test doesn't exit tooo soon)
-      jobId = await hotMesh.pub('calculate', payload) as string;
+      jobId = (await hotMesh.pub('calculate', payload)) as string;
       //subscribe to the 'calculated' topic
-      await hotMesh.psub(`calculated.${jobId}`, (topic: string, message: JobOutput) => {
-        //results are broadcast here
-        expect(topic).toBe('calculated');
-        expect(message.data.result).toBe(5);
-        //note: remove; v2 serializer will be exact and does not need the toString() call
-        expect(message.metadata.jid.toString()).toBe(jobId.toString());
-        bAtLeastOne = true;
-      });
+      await hotMesh.psub(
+        `calculated.${jobId}`,
+        (topic: string, message: JobOutput) => {
+          //results are broadcast here
+          expect(topic).toBe('calculated');
+          expect(message.data.result).toBe(5);
+          //note: remove; v2 serializer will be exact and does not need the toString() call
+          expect(message.metadata.jid.toString()).toBe(jobId.toString());
+          bAtLeastOne = true;
+        },
+      );
       while (!bAtLeastOne) {
         await sleepFor(100);
       }
@@ -266,7 +306,9 @@ describe('FUNCTIONAL | Retry', () => {
         expect(error.job_id).not.toBeNull();
         const jobMetaData = await hotMesh.getState('calculate', error.job_id);
         expect(jobMetaData?.metadata.err).not.toBeNull();
-        expect(jobMetaData?.metadata.err).toBe('{"message":"unrecoverable error","code":403,"is_stream_error":true}');
+        expect(jobMetaData?.metadata.err).toBe(
+          '{"message":"unrecoverable error","code":403,"is_stream_error":true}',
+        );
       }
     });
   });

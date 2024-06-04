@@ -1,9 +1,9 @@
 import {
   GenerationalError,
   GetStateError,
-  InactiveJobError } from '../../modules/errors';
+  InactiveJobError,
+} from '../../modules/errors';
 import { guid } from '../../modules/utils';
-import { Activity } from './activity';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
@@ -12,10 +12,13 @@ import {
   ActivityData,
   ActivityMetadata,
   ActivityType,
-  WorkerActivity } from '../../types/activity';
+  WorkerActivity,
+} from '../../types/activity';
 import { JobState } from '../../types/job';
 import { MultiResponseFlags, RedisMulti } from '../../types/redis';
-import { StreamData} from '../../types/stream';
+import { StreamData } from '../../types/stream';
+
+import { Activity } from './activity';
 
 class Worker extends Activity {
   config: WorkerActivity;
@@ -26,18 +29,28 @@ class Worker extends Activity {
     metadata: ActivityMetadata,
     hook: ActivityData | null,
     engine: EngineService,
-    context?: JobState) {
-      super(config, data, metadata, hook, engine, context);
+    context?: JobState,
+  ) {
+    super(config, data, metadata, hook, engine, context);
   }
 
   //********  INITIAL ENTRY POINT (A)  ********//
   async process(): Promise<string> {
-    this.logger.debug('worker-process', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
+    this.logger.debug('worker-process', {
+      jid: this.context.metadata.jid,
+      gid: this.context.metadata.gid,
+      aid: this.metadata.aid,
+    });
     let telemetry: TelemetryService;
     try {
       await this.verifyEntry();
 
-      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
+      telemetry = new TelemetryService(
+        this.engine.appId,
+        this.config,
+        this.metadata,
+        this.context,
+      );
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
 
@@ -48,14 +61,14 @@ class Worker extends Activity {
       await CollatorService.authorizeReentry(this, multi);
       await this.setState(multi);
       await this.setStatus(0, multi);
-      const multiResponse = await multi.exec() as MultiResponseFlags;
+      const multiResponse = (await multi.exec()) as MultiResponseFlags;
 
       //telemetry
       telemetry.mapActivityAttributes();
       const jobStatus = this.resolveStatus(multiResponse);
       telemetry.setActivityAttributes({
         'app.activity.mid': messageId,
-        'app.job.jss': jobStatus
+        'app.job.jss': jobStatus,
       });
 
       return this.context.metadata.aid;
@@ -76,7 +89,11 @@ class Worker extends Activity {
       throw error;
     } finally {
       telemetry?.endActivitySpan();
-      this.logger.debug('worker-process-end', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
+      this.logger.debug('worker-process-end', {
+        jid: this.context.metadata.jid,
+        gid: this.context.metadata.gid,
+        aid: this.metadata.aid,
+      });
     }
   }
 
@@ -93,14 +110,18 @@ class Worker extends Activity {
         spn: this.context['$self'].output.metadata.l1s,
         trc: this.context.metadata.trc,
       },
-      data: this.context.data
+      data: this.context.data,
     };
     if (this.config.retry) {
       streamData.policies = {
-        retry: this.config.retry
+        retry: this.config.retry,
       };
     }
-    return (await this.engine.router?.publishMessage(topic, streamData, multi)) as string;
+    return (await this.engine.router?.publishMessage(
+      topic,
+      streamData,
+      multi,
+    )) as string;
   }
 }
 

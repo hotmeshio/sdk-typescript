@@ -9,7 +9,8 @@ import { JobOutput } from '../../../types/job';
 import {
   StreamData,
   StreamDataResponse,
-  StreamStatus } from '../../../types/stream';
+  StreamStatus,
+} from '../../../types/stream';
 import config from '../../$setup/config';
 
 describe('FUNCTIONAL | EMIT', () => {
@@ -24,7 +25,11 @@ describe('FUNCTIONAL | EMIT', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     const config: HotMeshConfig = {
@@ -33,22 +38,24 @@ describe('FUNCTIONAL | EMIT', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
 
       workers: [
         {
           topic: 'emit.test.worker',
           redis: { class: Redis, options },
-          callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+          callback: async (
+            streamData: StreamData,
+          ): Promise<StreamDataResponse> => {
             return {
               status: StreamStatus.SUCCESS,
               metadata: { ...streamData.metadata },
               data: { status: 'success' },
             } as StreamDataResponse;
           },
-        }
-      ]
+        },
+      ],
     };
     hotMesh = await HotMesh.init(config);
     await hotMesh.deploy('/app/tests/$setup/apps/emit/v1/hotmesh.yaml');
@@ -66,25 +73,28 @@ describe('FUNCTIONAL | EMIT', () => {
       let isDone = false;
 
       //subscribe to the 'emit.tested' topic
-      await hotMesh.psub('emit.tested*', (topic: string, message: JobOutput) => {
-        //results are broadcast here
-        expect(topic).toBe('emit.tested');
-        expect(message.data.status).toBe('success');
+      await hotMesh.psub(
+        'emit.tested*',
+        (topic: string, message: JobOutput) => {
+          //results are broadcast here
+          expect(topic).toBe('emit.tested');
+          expect(message.data.status).toBe('success');
 
-        //two messages are published when emit is used;
-        // the second message includes a 'done' property
-        if (message.data.done) {
-          isDone = true;
-        }
-      });
+          //two messages are published when emit is used;
+          // the second message includes a 'done' property
+          if (message.data.done) {
+            isDone = true;
+          }
+        },
+      );
 
       const payload = {};
 
       //publish emit.test
-      jobId = await hotMesh.pub('emit.test', payload) as string;
+      jobId = (await hotMesh.pub('emit.test', payload)) as string;
 
       //wait for the second message to be published (the one with 'done' property)
-      while(!isDone) {
+      while (!isDone) {
         await sleepFor(500);
       }
 

@@ -1,12 +1,13 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { Durable } from '../../../services/durable';
-import * as parentWorkflows from './parent/workflows';
-import * as childWorkflows from './child/workflows';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
+
+import * as childWorkflows from './child/workflows';
+import * as parentWorkflows from './parent/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -21,7 +22,11 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
   });
 
@@ -47,7 +52,7 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
     describe('start', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
         try {
-          const client = new Client({ connection: { class: Redis, options }});
+          const client = new Client({ connection: { class: Redis, options } });
           const h = client.workflow.start({
             args: ['PARENT'],
             taskQueue: 'parent-world',
@@ -66,7 +71,7 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
           });
           [handle, handle2] = await Promise.all([h, localH]);
           expect(handle.workflowId).toBeDefined();
-        } catch(e) {
+        } catch (e) {
           console.error(e);
         }
       });

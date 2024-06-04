@@ -1,9 +1,5 @@
 import { DuplicateJobError } from '../../modules/errors';
-import {
-  formatISODate,
-  getTimeSeries,
-  guid } from '../../modules/utils';
-import { Activity } from './activity';
+import { formatISODate, getTimeSeries, guid } from '../../modules/utils';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
@@ -14,11 +10,14 @@ import {
   ActivityData,
   ActivityMetadata,
   ActivityType,
-  TriggerActivity } from '../../types/activity';
+  TriggerActivity,
+} from '../../types/activity';
 import { JobState, ExtensionType } from '../../types/job';
 import { RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 import { WorkListTaskType } from '../../types/task';
+
+import { Activity } from './activity';
 
 class Trigger extends Activity {
   config: TriggerActivity;
@@ -29,18 +28,26 @@ class Trigger extends Activity {
     metadata: ActivityMetadata,
     hook: ActivityData | null,
     engine: EngineService,
-    context?: JobState) {
-      super(config, data, metadata, hook, engine, context);
+    context?: JobState,
+  ) {
+    super(config, data, metadata, hook, engine, context);
   }
 
   async process(options?: ExtensionType): Promise<string> {
-    this.logger.debug('trigger-process', { subscribes: this.config.subscribes });
+    this.logger.debug('trigger-process', {
+      subscribes: this.config.subscribes,
+    });
     let telemetry: TelemetryService;
     try {
       this.setLeg(2);
       await this.getState();
 
-      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
+      telemetry = new TelemetryService(
+        this.engine.appId,
+        this.config,
+        this.metadata,
+        this.context,
+      );
       telemetry.startJobSpan();
       telemetry.startActivitySpan(this.leg);
       this.mapJobData();
@@ -67,7 +74,7 @@ class Trigger extends Activity {
       const attrs: StringScalarType = { 'app.job.jss': jobStatus };
       const messageIds = await this.transition(this.adjacencyList, jobStatus);
       if (messageIds.length) {
-        attrs['app.activity.mids'] = messageIds.join(',')
+        attrs['app.activity.mids'] = messageIds.join(',');
       }
       telemetry.setActivityAttributes(attrs);
       return this.context.metadata.jid;
@@ -82,11 +89,15 @@ class Trigger extends Activity {
     } finally {
       telemetry?.endJobSpan();
       telemetry?.endActivitySpan();
-      this.logger.debug('trigger-process-end', { subscribes: this.config.subscribes, jid: this.context.metadata.jid, gid: this.context.metadata.gid });
+      this.logger.debug('trigger-process-end', {
+        subscribes: this.config.subscribes,
+        jid: this.context.metadata.jid,
+        gid: this.context.metadata.gid,
+      });
     }
   }
 
-  safeKey(key:string): string {
+  safeKey(key: string): string {
     return `_${key}`;
   }
 
@@ -121,23 +132,26 @@ class Trigger extends Activity {
           job_id: this.context.metadata.jid,
           jc: timestamp,
           ju: timestamp,
-        }
+        },
       };
-      await this.engine.execAdjacentParent(this.context, jobStartedConfirmationMessage);
+      await this.engine.execAdjacentParent(
+        this.context,
+        jobStartedConfirmationMessage,
+      );
     }
   }
 
   createInputContext(): Partial<JobState> {
-    const input = { 
+    const input = {
       [this.metadata.aid]: {
-        input: { data: this.data }
-      },
-      '$self': {
         input: { data: this.data },
-        output: { data: this.data }
+      },
+      $self: {
+        input: { data: this.data },
+        output: { data: this.data },
       },
     } as Partial<JobState>;
-    return input
+    return input;
   }
 
   async getState(): Promise<void> {
@@ -178,18 +192,18 @@ class Trigger extends Activity {
         js: 0,
       },
       data: {},
-      [this.metadata.aid]: { 
-        input: { 
+      [this.metadata.aid]: {
+        input: {
           data: this.data,
-          metadata: activityMetadata
+          metadata: activityMetadata,
         },
-        output: { 
+        output: {
           data: this.data,
-          metadata: activityMetadata
+          metadata: activityMetadata,
         },
         settings: { data: {} },
         errors: { data: {} },
-       },
+      },
     };
     this.context['$self'] = this.context[this.metadata.aid];
     this.context['$job'] = this.context; //NEVER call STRINGIFY! (circular)
@@ -204,7 +218,9 @@ class Trigger extends Activity {
   }
 
   resolveGranularity(): string {
-    return this.config.stats?.granularity || ReporterService.DEFAULT_GRANULARITY;
+    return (
+      this.config.stats?.granularity || ReporterService.DEFAULT_GRANULARITY
+    );
   }
 
   getJobStatus(): number {
@@ -236,18 +252,20 @@ class Trigger extends Activity {
     const depKey = this.config.stats?.parent ?? this.context.metadata.pj;
     let resolvedDepKey = depKey ? Pipe.resolve(depKey, this.context) : '';
     const adjKey = this.config.stats?.adjacent;
-    let resolvedAdjKey = depKey ? Pipe.resolve(adjKey, this.context) : '';
+    const resolvedAdjKey = depKey ? Pipe.resolve(adjKey, this.context) : '';
     if (!resolvedDepKey) {
       resolvedDepKey = this.context.metadata.pj;
     }
     if (resolvedDepKey) {
-      const isParentOrigin = (resolvedDepKey === this.context.metadata.pj) || (resolvedDepKey === resolvedAdjKey);
+      const isParentOrigin =
+        resolvedDepKey === this.context.metadata.pj ||
+        resolvedDepKey === resolvedAdjKey;
       let type: WorkListTaskType;
       if (isParentOrigin) {
         if (this.context.metadata.px) {
-          type = 'child'
+          type = 'child';
         } else {
-          type = 'expire-child'
+          type = 'expire-child';
         }
       } else {
         type = 'expire';
@@ -286,7 +304,7 @@ class Trigger extends Activity {
         md.ts,
         reporter.resolveTriggerStatistics(this.config, this.context),
         config,
-        multi
+        multi,
       );
     }
   }

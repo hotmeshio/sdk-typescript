@@ -1,15 +1,14 @@
-import { formatISODate } from "../../../modules/utils";
+import { formatISODate } from '../../../modules/utils';
 
 type DateInput = Date | string | number;
 
 class DateHandler {
-
   /**
    * It is so common in mapping operations to use a string (ISO) date as input. This helper
    * method allows for a more-concise mapping ruleset by avoiding date initialization boilerplate
    * code and instead handles the ISO, Milliseconds, and ECMAScript Date input types.
-   * @param input 
-   * @returns 
+   * @param input
+   * @returns
    */
   static getDateInstance(input: DateInput): Date {
     const ISO_REGEX = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z)?$/;
@@ -29,7 +28,7 @@ class DateHandler {
       return new Date(input);
     }
 
-    throw new Error("Invalid date format");
+    throw new Error('Invalid date format');
   }
 
   fromISOString(isoString: string): Date {
@@ -120,7 +119,12 @@ class DateHandler {
     return DateHandler.getDateInstance(date).setMilliseconds(ms);
   }
 
-  setMinutes(date: DateInput, minutes: number, seconds?: number, ms?: number): number {
+  setMinutes(
+    date: DateInput,
+    minutes: number,
+    seconds?: number,
+    ms?: number,
+  ): number {
     return DateHandler.getDateInstance(date).setMinutes(minutes, seconds, ms);
   }
 
@@ -140,20 +144,45 @@ class DateHandler {
     return DateHandler.getDateInstance(date).setUTCDate(day);
   }
 
-  setUTCFullYear(date: DateInput, year: number, month?: number, day?: number): number {
+  setUTCFullYear(
+    date: DateInput,
+    year: number,
+    month?: number,
+    day?: number,
+  ): number {
     return DateHandler.getDateInstance(date).setUTCFullYear(year, month, day);
   }
 
-  setUTCHours(date: DateInput, hours: number, minutes?: number, seconds?: number, ms?: number): number {
-    return DateHandler.getDateInstance(date).setUTCHours(hours, minutes, seconds, ms);
+  setUTCHours(
+    date: DateInput,
+    hours: number,
+    minutes?: number,
+    seconds?: number,
+    ms?: number,
+  ): number {
+    return DateHandler.getDateInstance(date).setUTCHours(
+      hours,
+      minutes,
+      seconds,
+      ms,
+    );
   }
 
   setUTCMilliseconds(date: DateInput, ms: number): number {
     return DateHandler.getDateInstance(date).setUTCMilliseconds(ms);
   }
 
-  setUTCMinutes(date: DateInput, minutes: number, seconds?: number, ms?: number): number {
-    return DateHandler.getDateInstance(date).setUTCMinutes(minutes, seconds, ms);
+  setUTCMinutes(
+    date: DateInput,
+    minutes: number,
+    seconds?: number,
+    ms?: number,
+  ): number {
+    return DateHandler.getDateInstance(date).setUTCMinutes(
+      minutes,
+      seconds,
+      ms,
+    );
   }
 
   setUTCMonth(date: DateInput, month: number, day?: number): number {
@@ -163,17 +192,33 @@ class DateHandler {
   setUTCSeconds(date: DateInput, seconds: number, ms?: number): number {
     return DateHandler.getDateInstance(date).setUTCSeconds(seconds, ms);
   }
-  
+
   setDate(date: DateInput, day: number): number {
     return DateHandler.getDateInstance(date).setDate(day);
   }
 
-  setFullYear(date: DateInput, year: number, month?: number, day?: number): number {
+  setFullYear(
+    date: DateInput,
+    year: number,
+    month?: number,
+    day?: number,
+  ): number {
     return DateHandler.getDateInstance(date).setFullYear(year, month, day);
   }
 
-  setHours(date: DateInput, hours: number, minutes?: number, seconds?: number, ms?: number): number {
-    return DateHandler.getDateInstance(date).setHours(hours, minutes, seconds, ms);
+  setHours(
+    date: DateInput,
+    hours: number,
+    minutes?: number,
+    seconds?: number,
+    ms?: number,
+  ): number {
+    return DateHandler.getDateInstance(date).setHours(
+      hours,
+      minutes,
+      seconds,
+      ms,
+    );
   }
   toDateString(date: DateInput): string {
     return DateHandler.getDateInstance(date).toDateString();
@@ -191,30 +236,55 @@ class DateHandler {
     return DateHandler.getDateInstance(date).toJSON();
   }
 
-  toLocaleDateString(date: DateInput, locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
-    return DateHandler.getDateInstance(date).toLocaleDateString(locales, options);
+  toLocaleDateString(
+    date: DateInput,
+    locales?: string | string[],
+    options?: Intl.DateTimeFormatOptions,
+  ): string {
+    return DateHandler.getDateInstance(date).toLocaleDateString(
+      locales,
+      options,
+    );
   }
 
-  toLocaleString(date: DateInput, locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
+  toLocaleString(
+    date: DateInput,
+    locales?: string | string[],
+    options?: Intl.DateTimeFormatOptions,
+  ): string {
     return DateHandler.getDateInstance(date).toLocaleString(locales, options);
   }
 
-  toLocaleTimeString(date: DateInput, locales?: string | string[], options?: Intl.DateTimeFormatOptions): string {
-    return DateHandler.getDateInstance(date).toLocaleTimeString(locales, options);
+  toLocaleTimeString(
+    date: DateInput,
+    locales?: string | string[],
+    options?: Intl.DateTimeFormatOptions,
+  ): string {
+    return DateHandler.getDateInstance(date).toLocaleTimeString(
+      locales,
+      options,
+    );
   }
 
   toString(date: DateInput): string {
     return DateHandler.getDateInstance(date).toString();
   }
 
-  UTC(year: number, month: number, date?: number, hours?: number, minutes?: number, seconds?: number, ms?: number): number {
+  UTC(
+    year: number,
+    month: number,
+    date?: number,
+    hours?: number,
+    minutes?: number,
+    seconds?: number,
+    ms?: number,
+  ): number {
     return Date.UTC(year, month, date, hours, minutes, seconds, ms);
   }
 
   valueOf(date: DateInput): number {
     return DateHandler.getDateInstance(date).valueOf();
   }
-
 }
 
 export { DateHandler };

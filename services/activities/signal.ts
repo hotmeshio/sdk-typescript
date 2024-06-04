@@ -1,8 +1,8 @@
 import {
   GenerationalError,
   GetStateError,
-  InactiveJobError } from '../../modules/errors';
-import { Activity } from './activity';
+  InactiveJobError,
+} from '../../modules/errors';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { MapperService } from '../mapper';
@@ -12,11 +12,14 @@ import {
   ActivityData,
   ActivityMetadata,
   ActivityType,
-  SignalActivity } from '../../types/activity';
+  SignalActivity,
+} from '../../types/activity';
 import { JobState } from '../../types/job';
 import { MultiResponseFlags } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 import { JobStatsInput } from '../../types/stats';
+
+import { Activity } from './activity';
 
 class Signal extends Activity {
   config: SignalActivity;
@@ -27,19 +30,28 @@ class Signal extends Activity {
     metadata: ActivityMetadata,
     hook: ActivityData | null,
     engine: EngineService,
-    context?: JobState) {
-      super(config, data, metadata, hook, engine, context);
+    context?: JobState,
+  ) {
+    super(config, data, metadata, hook, engine, context);
   }
-
 
   //********  LEG 1 ENTRY  ********//
   async process(): Promise<string> {
-    this.logger.debug('signal-process', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
+    this.logger.debug('signal-process', {
+      jid: this.context.metadata.jid,
+      gid: this.context.metadata.gid,
+      aid: this.metadata.aid,
+    });
     let telemetry: TelemetryService;
     try {
       await this.verifyEntry();
 
-      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
+      telemetry = new TelemetryService(
+        this.engine.appId,
+        this.config,
+        this.metadata,
+        this.context,
+      );
       telemetry.startActivitySpan(this.leg);
 
       //save state and notarize early completion (signals only run leg1)
@@ -50,7 +62,7 @@ class Signal extends Activity {
       await this.setState(multi);
       await CollatorService.notarizeEarlyCompletion(this, multi);
       await this.setStatus(this.adjacencyList.length - 1, multi);
-      const multiResponse = await multi.exec() as MultiResponseFlags;
+      const multiResponse = (await multi.exec()) as MultiResponseFlags;
 
       //todo: this should execute BEFORE the status is decremented
       if (this.config.subtype === 'all') {
@@ -64,7 +76,7 @@ class Signal extends Activity {
       const attrs: StringScalarType = { 'app.job.jss': jobStatus };
       const messageIds = await this.transition(this.adjacencyList, jobStatus);
       if (messageIds.length) {
-        attrs['app.activity.mids'] = messageIds.join(',')
+        attrs['app.activity.mids'] = messageIds.join(',');
       }
       telemetry.mapActivityAttributes();
       telemetry.setActivityAttributes(attrs);
@@ -87,19 +99,23 @@ class Signal extends Activity {
       throw error;
     } finally {
       telemetry?.endActivitySpan();
-      this.logger.debug('signal-process-end', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
+      this.logger.debug('signal-process-end', {
+        jid: this.context.metadata.jid,
+        gid: this.context.metadata.gid,
+        aid: this.metadata.aid,
+      });
     }
   }
 
   mapSignalData(): Record<string, any> {
-    if(this.config.signal?.maps) {
+    if (this.config.signal?.maps) {
       const mapper = new MapperService(this.config.signal.maps, this.context);
       return mapper.mapRules();
     }
   }
 
   mapResolverData(): Record<string, any> {
-    if(this.config.resolver?.maps) {
+    if (this.config.resolver?.maps) {
       const mapper = new MapperService(this.config.resolver.maps, this.context);
       return mapper.mapRules();
     }
@@ -140,7 +156,7 @@ class Signal extends Activity {
       this.config.topic,
       signalInputData,
       keyResolverData,
-      indexQueryFacets
+      indexQueryFacets,
     );
   }
 }

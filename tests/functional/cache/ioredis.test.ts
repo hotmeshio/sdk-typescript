@@ -1,23 +1,26 @@
 import { RedisConnection } from '../../$setup/cache/ioredis';
 
 describe('FUNCTIONAL | IORedisConnection', () => {
-
   afterEach(async () => {
     await RedisConnection.disconnectAll();
   });
 
   it('should create a connection to Redis', async () => {
-    const redisConnection = await RedisConnection.getConnection('test-connection');
+    const redisConnection =
+      await RedisConnection.getConnection('test-connection');
 
     expect(redisConnection).toBeInstanceOf(RedisConnection);
     expect(await redisConnection.getClient()).not.toBeNull();
   });
 
   it('should disconnect from Redis', async () => {
-    const redisConnection = await RedisConnection.getConnection('test-connection');
+    const redisConnection =
+      await RedisConnection.getConnection('test-connection');
     await redisConnection.disconnect();
 
-    expect(redisConnection.getClient()).rejects.toThrow('Redis client is not connected');
+    expect(redisConnection.getClient()).rejects.toThrow(
+      'Redis client is not connected',
+    );
   });
 
   it('should disconnect all instances', async () => {
@@ -29,16 +32,18 @@ describe('FUNCTIONAL | IORedisConnection', () => {
   });
 
   it('should set and get a value from Redis', async () => {
-    const redisConnection = await RedisConnection.getConnection('test-connection');
+    const redisConnection =
+      await RedisConnection.getConnection('test-connection');
     const redisClient = await redisConnection.getClient();
 
     await redisClient.set('test-key', 'test-value');
     const val = await redisClient.get('test-key');
     expect(val).toBe('test-value');
   });
-    
+
   it('should set and get a hash in Redis', async () => {
-    const redisConnection = await RedisConnection.getConnection('test-connection');
+    const redisConnection =
+      await RedisConnection.getConnection('test-connection');
     const redisClient = await redisConnection.getClient();
     const obj = { a: 'b' };
     await redisClient.hset('test-hash', obj);

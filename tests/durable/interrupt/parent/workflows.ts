@@ -1,6 +1,8 @@
 import { Durable } from '../../../../services/durable';
 
-export async function parentExample(name: string): Promise<Record<string, string>> {
+export async function parentExample(
+  name: string,
+): Promise<Record<string, string>> {
   const workflowId1 = 'jimbo1';
   const workflowId2 = 'jimbo2';
   const childWorkflowOutput1 = await Durable.workflow.execChild<string>({
@@ -18,6 +20,12 @@ export async function parentExample(name: string): Promise<Record<string, string
   });
   //interrupted flows are stopped immediately, while an async cascade is triggered
   // the workflow will also be expired/scrubbed from Redis in 600 seconds (default 1s)
-  await Durable.workflow.interrupt(workflowId2, { throw: false, expire: 600 }) as string;
-  return { childWorkflowOutput: childWorkflowOutput1, cancelledWorkflowId: childWorkflowOutput2 };
+  (await Durable.workflow.interrupt(workflowId2, {
+    throw: false,
+    expire: 600,
+  })) as string;
+  return {
+    childWorkflowOutput: childWorkflowOutput1,
+    cancelledWorkflowId: childWorkflowOutput2,
+  };
 }

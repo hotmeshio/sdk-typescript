@@ -1,8 +1,10 @@
 import { createClient, RedisClientOptions } from 'redis';
+
 import config from '../config';
 import {
   RedisRedisClientType as RedisClientType,
-  RedisRedisMultiType as RedisMultiType } from '../../../types/redis';
+  RedisRedisMultiType as RedisMultiType,
+} from '../../../types/redis';
 
 class RedisConnection {
   private connection: RedisClientType | null = null;
@@ -19,7 +21,9 @@ class RedisConnection {
     database: config.REDIS_DATABASE,
   };
 
-  private async createConnection(options: RedisClientOptions): Promise<RedisClientType> {
+  private async createConnection(
+    options: RedisClientOptions,
+  ): Promise<RedisClientType> {
     return new Promise((resolve, reject) => {
       const client = createClient(options);
 
@@ -54,7 +58,10 @@ class RedisConnection {
     }
   }
 
-  public static async getConnection(id: string, options?: Partial<RedisClientOptions>): Promise<RedisConnection> {
+  public static async getConnection(
+    id: string,
+    options?: Partial<RedisClientOptions>,
+  ): Promise<RedisConnection> {
     if (this.instances.has(id)) {
       return this.instances.get(id)!;
     }
@@ -68,7 +75,11 @@ class RedisConnection {
   }
 
   public static async disconnectAll(): Promise<void> {
-    await Promise.all(Array.from(this.instances.values()).map((instance) => instance.disconnect()));
+    await Promise.all(
+      Array.from(this.instances.values()).map((instance) =>
+        instance.disconnect(),
+      ),
+    );
     this.instances.clear();
   }
 }

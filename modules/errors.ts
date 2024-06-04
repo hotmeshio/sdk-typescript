@@ -1,3 +1,13 @@
+import { ActivityDuplex } from '../types/activity';
+import { CollationFaultType, CollationStage } from '../types/collator';
+import {
+  DurableChildErrorType,
+  DurableProxyErrorType,
+  DurableSleepErrorType,
+  DurableWaitForAllErrorType,
+  DurableWaitForErrorType,
+} from '../types/error';
+
 import {
   HMSH_CODE_DURABLE_MAXED,
   HMSH_CODE_DURABLE_TIMEOUT,
@@ -8,15 +18,8 @@ import {
   HMSH_CODE_DURABLE_PROXY,
   HMSH_CODE_DURABLE_CHILD,
   HMSH_CODE_DURABLE_ALL,
-  HMSH_CODE_DURABLE_SLEEP } from "./enums";
-import { ActivityDuplex } from "../types/activity";
-import { CollationFaultType, CollationStage } from "../types/collator";
-import {
-  DurableChildErrorType,
-  DurableProxyErrorType,
-  DurableSleepErrorType,
-  DurableWaitForAllErrorType,
-  DurableWaitForErrorType } from "../types/error";
+  HMSH_CODE_DURABLE_SLEEP,
+} from './enums';
 
 class GetStateError extends Error {
   jobId: string;
@@ -28,7 +31,7 @@ class GetStateError extends Error {
 }
 class SetStateError extends Error {
   constructor() {
-    super("Error occurred while setting job state");
+    super('Error occurred while setting job state');
   }
 }
 
@@ -190,20 +193,20 @@ class DurableRetryError extends Error {
 
 class MapDataError extends Error {
   constructor() {
-    super("Error occurred while mapping data");
+    super('Error occurred while mapping data');
   }
 }
 
 class RegisterTimeoutError extends Error {
   constructor() {
-    super("Error occurred while registering activity timeout");
+    super('Error occurred while registering activity timeout');
   }
 }
 
 class DuplicateJobError extends Error {
   jobId: string;
   constructor(jobId: string) {
-    super("Duplicate job");
+    super('Duplicate job');
     this.jobId = jobId;
     this.message = `Duplicate job: ${jobId}`;
   }
@@ -213,7 +216,7 @@ class InactiveJobError extends Error {
   activityId: string;
   status: number; //non-positive integer
   constructor(jobId: string, status: number, activityId: string) {
-    super("Inactive job");
+    super('Inactive job');
     this.jobId = jobId;
     this.activityId = activityId;
     this.message = `Inactive job: ${jobId}`;
@@ -227,8 +230,14 @@ class GenerationalError extends Error {
   activityId: string;
   dimensionalAddress: string;
 
-  constructor(expected: string, actual: string, jobId: string, activityId: string, dimensionalAddress: string) {
-    super("Generational Error");
+  constructor(
+    expected: string,
+    actual: string,
+    jobId: string,
+    activityId: string,
+    dimensionalAddress: string,
+  ) {
+    super('Generational Error');
     this.expected = expected;
     this.actual = actual;
     this.jobId = jobId;
@@ -239,7 +248,7 @@ class GenerationalError extends Error {
 
 class ExecActivityError extends Error {
   constructor() {
-    super("Error occurred while executing activity");
+    super('Error occurred while executing activity');
   }
 }
 
@@ -249,8 +258,13 @@ class CollationError extends Error {
   stage: CollationStage; //enter | exit | confirm
   fault: CollationFaultType; //missing, invalid, etc
 
-  constructor(status: number, leg: ActivityDuplex, stage: CollationStage, fault?: CollationFaultType) {
-    super("collation-error");
+  constructor(
+    status: number,
+    leg: ActivityDuplex,
+    stage: CollationStage,
+    fault?: CollationFaultType,
+  ) {
+    super('collation-error');
     this.leg = leg;
     this.status = status;
     this.stage = stage;

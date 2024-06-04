@@ -46,11 +46,18 @@ class ObjectHandler {
     return Object.getOwnPropertySymbols(obj || {});
   }
 
-  getOwnPropertyDescriptor(obj: object, prop: string | symbol): PropertyDescriptor | undefined {
+  getOwnPropertyDescriptor(
+    obj: object,
+    prop: string | symbol,
+  ): PropertyDescriptor | undefined {
     return Object.getOwnPropertyDescriptor(obj || {}, prop);
   }
 
-  defineProperty(obj: object, prop: string | symbol, descriptor: PropertyDescriptor): object {
+  defineProperty(
+    obj: object,
+    prop: string | symbol,
+    descriptor: PropertyDescriptor,
+  ): object {
     return Object.defineProperty(obj, prop, descriptor);
   }
 

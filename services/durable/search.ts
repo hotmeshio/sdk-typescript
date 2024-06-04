@@ -1,4 +1,4 @@
-import { HotMeshService as HotMesh } from '../hotmesh'
+import { HotMeshService as HotMesh } from '../hotmesh';
 import { RedisClient, RedisMulti } from '../../types/redis';
 import { StoreService } from '../store';
 import { KeyService, KeyType } from '../../modules/key';
@@ -8,20 +8,31 @@ import { asyncLocalStorage } from '../../modules/storage';
 export class Search {
   jobId: string;
   searchSessionId: string;
-  searchSessionIndex: number = 0;
+  searchSessionIndex = 0;
   hotMeshClient: HotMesh;
   store: StoreService<RedisClient, RedisMulti> | null;
   cachedFields: Record<string, string> = {};
 
-  constructor(workflowId: string, hotMeshClient: HotMesh, searchSessionId: string) {
+  constructor(
+    workflowId: string,
+    hotMeshClient: HotMesh,
+    searchSessionId: string,
+  ) {
     const keyParams = {
       appId: hotMeshClient.appId,
-      jobId: workflowId
-    }
-    this.jobId = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+      jobId: workflowId,
+    };
+    this.jobId = KeyService.mintKey(
+      hotMeshClient.namespace,
+      KeyType.JOB_STATE,
+      keyParams,
+    );
     this.searchSessionId = searchSessionId;
     this.hotMeshClient = hotMeshClient;
-    this.store = hotMeshClient.engine.store as StoreService<RedisClient, RedisMulti>;
+    this.store = hotMeshClient.engine.store as StoreService<
+      RedisClient,
+      RedisMulti
+    >;
   }
 
   /**
@@ -31,7 +42,7 @@ export class Search {
    * @returns {string} - the sanitized key
    * @private
    */
-  safeKey(key:string): string {
+  safeKey(key: string): string {
     if (key.startsWith('"')) {
       return key.slice(1, -1);
     }
@@ -57,13 +68,18 @@ export class Search {
    * }
    * await Search.configureSearchIndex(hotMeshClient, search);
    */
-  static async configureSearchIndex(hotMeshClient: HotMesh, search?: WorkflowSearchOptions): Promise<void> {
+  static async configureSearchIndex(
+    hotMeshClient: HotMesh,
+    search?: WorkflowSearchOptions,
+  ): Promise<void> {
     if (search?.schema) {
       const store = hotMeshClient.engine.store;
       const schema: string[] = [];
       for (const [key, value] of Object.entries(search.schema)) {
         if (value.indexed !== false) {
-          schema.push(value.fieldName ? `${value.fieldName.toString()}` : `_${key}`);
+          schema.push(
+            value.fieldName ? `${value.fieldName.toString()}` : `_${key}`,
+          );
           schema.push(value.type ? value.type : 'TEXT');
           if (value.noindex) {
             schema.push('NOINDEX');
@@ -80,13 +96,31 @@ export class Search {
       try {
         const keyParams = {
           appId: hotMeshClient.appId,
-          jobId: ''
-        }
-        const hotMeshPrefix = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
-        const prefixes = search.prefix.map((prefix) => `${hotMeshPrefix}${prefix}`);
-        await store.exec('FT.CREATE', `${search.index}`, 'ON', 'HASH', 'PREFIX', prefixes.length.toString(), ...prefixes, 'SCHEMA', ...schema);
+          jobId: '',
+        };
+        const hotMeshPrefix = KeyService.mintKey(
+          hotMeshClient.namespace,
+          KeyType.JOB_STATE,
+          keyParams,
+        );
+        const prefixes = search.prefix.map(
+          (prefix) => `${hotMeshPrefix}${prefix}`,
+        );
+        await store.exec(
+          'FT.CREATE',
+          `${search.index}`,
+          'ON',
+          'HASH',
+          'PREFIX',
+          prefixes.length.toString(),
+          ...prefixes,
+          'SCHEMA',
+          ...schema,
+        );
       } catch (error) {
-        hotMeshClient.engine.logger.info('durable-client-search-err', { ...error });
+        hotMeshClient.engine.logger.info('durable-client-search-err', {
+          ...error,
+        });
       }
     }
   }
@@ -94,7 +128,7 @@ export class Search {
   /**
    * For those deployments with a redis stack backend (with the FT module),
    * this method will list all search indexes.
-   * 
+   *
    * @param {HotMesh} hotMeshClient - the hotmesh client
    * @returns {Promise<string[]>} - the list of search indexes
    * @example
@@ -106,7 +140,9 @@ export class Search {
       const searchIndexes = await store.exec('FT._LIST');
       return searchIndexes as string[];
     } catch (error) {
-      hotMeshClient.engine.logger.info('durable-client-search-list-err', { ...error });
+      hotMeshClient.engine.logger.info('durable-client-search-list-err', {
+        ...error,
+      });
       return [];
     }
   }
@@ -140,7 +176,7 @@ export class Search {
       const keyName = args[i];
       delete this.cachedFields[keyName];
       const key = this.safeKey(keyName);
-      const value = args[i+1].toString();
+      const value = args[i + 1].toString();
       safeArgs.push(key, value);
     }
     if (ssGuid in replay) {
@@ -165,7 +201,11 @@ export class Search {
       if (key in this.cachedFields) {
         return this.cachedFields[key];
       }
-      const value = await this.store.exec('HGET',this.jobId, this.safeKey(key)) as string;
+      const value = (await this.store.exec(
+        'HGET',
+        this.jobId,
+        this.safeKey(key),
+      )) as string;
       this.cachedFields[key] = value;
       return value;
     } catch (error) {
@@ -176,8 +216,8 @@ export class Search {
 
   /**
    * Returns the values of all specified fields in the HASH stored at key.
-   * @param args 
-   * @returns 
+   * @param args
+   * @returns
    */
   async mget(...args: string[]): Promise<string[]> {
     let isCached = true;
@@ -187,7 +227,7 @@ export class Search {
       if (isCached && args[i] in this.cachedFields) {
         values.push(this.cachedFields[args[i]]);
       } else {
-        isCached = false; 
+        isCached = false;
       }
       safeArgs.push(this.safeKey(args[i]));
     }
@@ -195,7 +235,11 @@ export class Search {
       if (isCached) {
         return values;
       }
-      const returnValues = await this.store.exec('HMGET', this.jobId, ...safeArgs) as string[];
+      const returnValues = (await this.store.exec(
+        'HMGET',
+        this.jobId,
+        ...safeArgs,
+      )) as string[];
       returnValues.forEach((value, index) => {
         if (value !== null) {
           this.cachedFields[args[index]] = value;
@@ -203,7 +247,9 @@ export class Search {
       });
       return returnValues;
     } catch (error) {
-      this.hotMeshClient.logger.error('durable-search-mget-error', { ...error });
+      this.hotMeshClient.logger.error('durable-search-mget-error', {
+        ...error,
+      });
       return [];
     }
   }
@@ -211,7 +257,7 @@ export class Search {
   /**
    * Deletes the fields provided as args. Returns the
    * count of fields that were deleted.
-   * 
+   *
    * @param args
    * @returns {number}
    * @example
@@ -232,7 +278,9 @@ export class Search {
       return Number(replay[ssGuid]);
     }
     const response = await this.store.exec('HDEL', this.jobId, ...safeArgs);
-    const formattedResponse = isNaN(response as unknown as number) ? 0 : Number(response);
+    const formattedResponse = isNaN(response as unknown as number)
+      ? 0
+      : Number(response);
     this.store.exec('HSET', this.jobId, ssGuid, formattedResponse.toString());
     return formattedResponse;
   }
@@ -241,7 +289,7 @@ export class Search {
    * Increments the value of a float field by the given amount. Returns the
    * new value of the field after the increment. Pass a negative
    * number to decrement the value.
-   * 
+   *
    * @param key - the key to increment
    * @param val - the value to increment by
    * @returns {number} - the new value
@@ -257,7 +305,12 @@ export class Search {
     if (ssGuid in replay) {
       return Number(replay[ssGuid]);
     }
-    const num = await this.store.exec('HINCRBYFLOAT', this.jobId, this.safeKey(key), val.toString()) as string;
+    const num = (await this.store.exec(
+      'HINCRBYFLOAT',
+      this.jobId,
+      this.safeKey(key),
+      val.toString(),
+    )) as string;
     this.store.exec('HSET', this.jobId, ssGuid, num.toString());
     return Number(num);
   }
@@ -266,7 +319,7 @@ export class Search {
    * Multiplies the value of a field by the given amount. Returns the
    * new value of the field after the multiplication. NOTE:
    * this is exponential multiplication.
-   * 
+   *
    * @param key - the key to multiply
    * @param val - the value to multiply by
    * @returns {number} - the new product of the multiplication
@@ -282,10 +335,22 @@ export class Search {
     if (ssGuid in replay) {
       return Math.exp(Number(replay[ssGuid]));
     }
-    const ssGuidValue = Number(await this.store.exec('HINCRBYFLOAT', this.jobId, ssGuid, '1') as string);
+    const ssGuidValue = Number(
+      (await this.store.exec(
+        'HINCRBYFLOAT',
+        this.jobId,
+        ssGuid,
+        '1',
+      )) as string,
+    );
     if (ssGuidValue === 1) {
       const log = Math.log(val);
-      const logTotal = await this.store.exec('HINCRBYFLOAT', this.jobId, this.safeKey(key), log.toString()) as string;
+      const logTotal = (await this.store.exec(
+        'HINCRBYFLOAT',
+        this.jobId,
+        this.safeKey(key),
+        log.toString(),
+      )) as string;
       this.store.exec('HSET', this.jobId, ssGuid, logTotal.toString());
       return Math.exp(Number(logTotal));
     }

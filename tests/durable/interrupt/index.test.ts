@@ -1,13 +1,14 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { Durable } from '../../../services/durable';
-import * as parentWorkflows from './parent/workflows';
-import * as childWorkflows from './child/workflows';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
+
+import * as childWorkflows from './child/workflows';
+import * as parentWorkflows from './parent/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -22,7 +23,11 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
   });
 
@@ -47,7 +52,7 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         handle = await client.workflow.start({
           args: ['PARENT'],
           taskQueue: 'parent-world',
@@ -100,19 +105,21 @@ describe('DURABLE | interrupt | `workflow.interrupt`', () => {
           childWorkflowOutput: 'interrupt childActivity, PARENT to CHILD!',
           cancelledWorkflowId: 'jimbo2',
         };
-        const result = await handle.result() as {cancelledWorkflowId: string};
+        const result = (await handle.result()) as {
+          cancelledWorkflowId: string;
+        };
         expect(result).toEqual(expectedOutput);
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         //get a handle to the interrupted workflow
         handle = await client.workflow.getHandle(
-          'child-world',  //task queue
+          'child-world', //task queue
           'childExample', //workflow
           result.cancelledWorkflowId,
         );
         const state = await handle.state(true);
         //job state (js) is @ -1billion when interrupted (depending upon semaphore state when decremented)
         expect(state.metadata.js).toBeLessThan(-1_000_000);
-        const rslt = await handle.result({state: true});
+        const rslt = await handle.result({ state: true });
         //result is undefined, since it was interrupted; there is no return;
         expect(rslt).toBeUndefined();
       }, 15_000);

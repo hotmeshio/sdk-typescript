@@ -8,16 +8,16 @@ import {
   DurableRetryError,
   DurableSleepError,
   DurableTimeoutError,
-  DurableWaitForError } from '../../modules/errors';
+  DurableWaitForError,
+} from '../../modules/errors';
 import { KeyService, KeyType } from '../../modules/key';
 import { asyncLocalStorage } from '../../modules/storage';
 import {
   deterministicRandom,
   formatISODate,
   guid,
-  sleepImmediate} from '../../modules/utils';
-import { Search } from './search';
-import { WorkerService } from './worker';
+  sleepImmediate,
+} from '../../modules/utils';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import { SerializerService } from '../serializer';
 import {
@@ -27,8 +27,8 @@ import {
   ProxyResponseType,
   ProxyType,
   WorkflowContext,
-  WorkflowOptions
-} from "../../types/durable";
+  WorkflowOptions,
+} from '../../types/durable';
 import { JobInterruptOptions } from '../../types/job';
 import { StreamCode, StreamStatus } from '../../types/stream';
 import { StringStringType } from '../../types/serializer';
@@ -39,27 +39,29 @@ import {
   HMSH_CODE_DURABLE_PROXY,
   HMSH_CODE_DURABLE_SLEEP,
   HMSH_CODE_DURABLE_TIMEOUT,
-  HMSH_CODE_DURABLE_WAIT, 
-  HMSH_DURABLE_EXP_BACKOFF, 
+  HMSH_CODE_DURABLE_WAIT,
+  HMSH_DURABLE_EXP_BACKOFF,
   HMSH_DURABLE_MAX_ATTEMPTS,
-  HMSH_DURABLE_MAX_INTERVAL} from '../../modules/enums';
-import { DurableChildErrorType, DurableProxyErrorType } from '../../types/error';
+  HMSH_DURABLE_MAX_INTERVAL,
+} from '../../modules/enums';
+import {
+  DurableChildErrorType,
+  DurableProxyErrorType,
+} from '../../types/error';
+
+import { WorkerService } from './worker';
+import { Search } from './search';
 
 export class WorkflowService {
-
   /**
    * Returns the synchronous output from the activity (replay)
    * if available locally, revealing whether or not the activity already
    * ran during a prior execution cycle
    * @param {string} prefix - one of: proxy, child, start, wait etc
-   * @returns 
+   * @returns
    */
   static async didRun(prefix: string): Promise<[boolean, number, any]> {
-    const {
-      COUNTER,
-      replay,
-      workflowDimension,
-    } = WorkflowService.getContext();
+    const { COUNTER, replay, workflowDimension } = WorkflowService.getContext();
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
     const sessionId = `-${prefix}${workflowDimension}-${execIndex}-`;
     if (sessionId in replay) {
@@ -75,7 +77,10 @@ export class WorkflowService {
    * process state and job state)
    * @private
    */
-  static async isSideEffectAllowed(hotMeshClient: HotMesh, prefix: string): Promise<boolean> {
+  static async isSideEffectAllowed(
+    hotMeshClient: HotMesh,
+    prefix: string,
+  ): Promise<boolean> {
     const store = asyncLocalStorage.getStore();
     const workflowId = store.get('workflowId');
     const workflowDimension = store.get('workflowDimension') ?? '';
@@ -88,15 +93,20 @@ export class WorkflowService {
     }
     const keyParams = {
       appId: hotMeshClient.appId,
-      jobId: workflowId
-    }
-    const workflowGuid = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+      jobId: workflowId,
+    };
+    const workflowGuid = KeyService.mintKey(
+      hotMeshClient.namespace,
+      KeyType.JOB_STATE,
+      keyParams,
+    );
     const guidValue = Number(
-      await hotMeshClient.engine.store.exec(
+      (await hotMeshClient.engine.store.exec(
         'HINCRBYFLOAT',
         workflowGuid,
         sessionId,
-        '1') as string
+        '1',
+      )) as string,
     );
     return guidValue === 1;
   }
@@ -162,12 +172,17 @@ export class WorkflowService {
     //check if the activity already ran (check $error/done)
     const isStartChild = options.await === false;
     const prefix = isStartChild ? 'start' : 'child';
-    const [didRun, execIndex, result]: [boolean, number, ChildResponseType<T>] = await WorkflowService.didRun(prefix);
+    const [didRun, execIndex, result]: [boolean, number, ChildResponseType<T>] =
+      await WorkflowService.didRun(prefix);
     const context = WorkflowService.getContext();
     const { canRetry, interruptionRegistry } = context;
 
     if (didRun) {
-      if (result?.$error && (!result.$error.is_stream_error || (result.$error.is_stream_error && !canRetry))) {
+      if (
+        result?.$error &&
+        (!result.$error.is_stream_error ||
+          result.$error.is_stream_error && !canRetry)
+      ) {
         if (options?.config?.throwOnError !== false) {
           //rethrow remote execution error (simulates local failure)
           const code: StreamCode = result.$error.code;
@@ -188,7 +203,11 @@ export class WorkflowService {
         return result.data as T;
       }
     }
-    const interruptionMessage = WorkflowService.getChildInterruptPayload(context, options, execIndex);
+    const interruptionMessage = WorkflowService.getChildInterruptPayload(
+      context,
+      options,
+      execIndex,
+    );
     //push the packaged inputs to the registry
     interruptionRegistry.push({
       code: HMSH_CODE_DURABLE_CHILD,
@@ -197,14 +216,18 @@ export class WorkflowService {
     //ASYNC
     //sleep (allow others to be packaged / registered) and throw the error
     await sleepImmediate();
-    throw new DurableChildError(interruptionMessage );
+    throw new DurableChildError(interruptionMessage);
   }
 
   /**
    * constructs the payload necessary to spawn a child job
    * @private
    */
-  static getChildInterruptPayload(context: WorkflowContext, options: WorkflowOptions, execIndex: number): DurableChildErrorType {
+  static getChildInterruptPayload(
+    context: WorkflowContext,
+    options: WorkflowOptions,
+    execIndex: number,
+  ): DurableChildErrorType {
     const { workflowId, originJobId, workflowDimension } = context;
     let childJobId: string;
     if (options.workflowId) {
@@ -221,10 +244,14 @@ export class WorkflowService {
     return {
       arguments: [...(options.args || [])],
       await: options?.await ?? true,
-      backoffCoefficient: options?.config?.backoffCoefficient ?? HMSH_DURABLE_EXP_BACKOFF,
+      backoffCoefficient:
+        options?.config?.backoffCoefficient ?? HMSH_DURABLE_EXP_BACKOFF,
       index: execIndex,
-      maximumAttempts: options?.config?.maximumAttempts ?? HMSH_DURABLE_MAX_ATTEMPTS,
-      maximumInterval: ms(options?.config?.maximumInterval ?? HMSH_DURABLE_MAX_INTERVAL) / 1000,
+      maximumAttempts:
+        options?.config?.maximumAttempts ?? HMSH_DURABLE_MAX_ATTEMPTS,
+      maximumInterval:
+        ms(options?.config?.maximumInterval ?? HMSH_DURABLE_MAX_INTERVAL) /
+        1000,
       originJobId: originJobId ?? workflowId,
       parentWorkflowId,
       workflowDimension: workflowDimension,
@@ -238,7 +265,7 @@ export class WorkflowService {
    * This method guarantees the spawned child has reserved the Job ID,
    * returning a 'DuplicateJobError' error if not. Otherwise,
    * this is a fire-and-forget method.
-   * 
+   *
    * @param {WorkflowOptions} options - the workflow options
    * @returns {Promise<string>} - the childJobId
    * @example
@@ -251,17 +278,17 @@ export class WorkflowService {
   /**
    * Wraps activities in a proxy that durably runs/re-runs them to completion.
    * TODO: verify that activities do not collide if named same on same server but bound to different workflows
-   * 
+   *
    * @param {ActivityConfig} options - the activity configuration
    * that will be used to wrap the activities.
    * @returns {ProxyType<ACT>} - a proxy object with the same keys as the
    * activities object, but with the values replaced by a wrapped function
-   * 
+   *
    * @example
    * // import the activities
    * import * as activities from './activities';
    * const proxy = WorkflowService.proxyActivities<typeof activities>({ activities });
-   * 
+   *
    * //or destructure the proxy object, as the function names are the keys
    * const { activity1, activity2 } = WorkflowService.proxyActivities<typeof activities>({ activities });
    */
@@ -274,7 +301,10 @@ export class WorkflowService {
     if (keys.length) {
       keys.forEach((key: string) => {
         const activityFunction = WorkerService.activityRegistry[key];
-        proxy[key] = WorkflowService.wrapActivity<typeof activityFunction>(key, options);
+        proxy[key] = WorkflowService.wrapActivity<typeof activityFunction>(
+          key,
+          options,
+        );
       });
     }
     return proxy;
@@ -284,7 +314,11 @@ export class WorkflowService {
     return async function () {
       //SYNC
       //check if the activity already ran
-      const [didRun, execIndex, result]: [boolean, number, ProxyResponseType<T>] = await WorkflowService.didRun('proxy');
+      const [didRun, execIndex, result]: [
+        boolean,
+        number,
+        ProxyResponseType<T>,
+      ] = await WorkflowService.didRun('proxy');
       if (didRun) {
         if (result?.$error) {
           if (options?.retryPolicy?.throwOnError !== false) {
@@ -312,7 +346,7 @@ export class WorkflowService {
         activityName,
         execIndex,
         Array.from(arguments),
-        options
+        options,
       );
       //push the packaged inputs to the registry
       interruptionRegistry.push({
@@ -327,11 +361,18 @@ export class WorkflowService {
   }
 
   /**
-    * constructs the payload necessary to spawn a proxyActivity job
-    * @private
-    */
-  static getProxyInterruptPayload(context: WorkflowContext, activityName: string, execIndex: number, args: any[], options?: ActivityConfig): DurableProxyErrorType {
-    const { workflowDimension, workflowId, originJobId, workflowTopic } = context;
+   * constructs the payload necessary to spawn a proxyActivity job
+   * @private
+   */
+  static getProxyInterruptPayload(
+    context: WorkflowContext,
+    activityName: string,
+    execIndex: number,
+    args: any[],
+    options?: ActivityConfig,
+  ): DurableProxyErrorType {
+    const { workflowDimension, workflowId, originJobId, workflowTopic } =
+      context;
     const activityTopic = `${workflowTopic}-activity`;
     const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
     let maximumInterval: number;
@@ -366,7 +407,9 @@ export class WorkflowService {
     const namespace = store.get('namespace');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      namespace,
+    });
     //this ID is used as a item key with a hash (dash prefix ensures no collision)
     const searchSessionId = `-search${workflowDimension}-${execIndex}`;
     return new Search(workflowId, hotMeshClient, searchSessionId);
@@ -392,13 +435,21 @@ export class WorkflowService {
    * @param {Record<any, any>} data - the signal data
    * @returns {Promise<string>} - the stream id
    */
-  static async signal(signalId: string, data: Record<any, any>): Promise<string> {
+  static async signal(
+    signalId: string,
+    data: Record<any, any>,
+  ): Promise<string> {
     const store = asyncLocalStorage.getStore();
     const workflowTopic = store.get('workflowTopic');
     const namespace = store.get('namespace');
-    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      namespace,
+    });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'signal')) {
-      return await hotMeshClient.hook(`${namespace}.wfs.signal`, { id: signalId, data });
+      return await hotMeshClient.hook(`${namespace}.wfs.signal`, {
+        id: signalId,
+        data,
+      });
     }
   }
 
@@ -409,12 +460,11 @@ export class WorkflowService {
    * @param {HookOptions} options - the hook options
    */
   static async hook(options: HookOptions): Promise<string> {
-    const {
-      workflowId,
+    const { workflowId, namespace, workflowTopic } =
+      WorkflowService.getContext();
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
       namespace,
-      workflowTopic,
-    } = WorkflowService.getContext();
-    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'hook')) {
       const targetWorkflowId = options.workflowId ?? workflowId;
       let targetTopic: string;
@@ -427,9 +477,15 @@ export class WorkflowService {
         arguments: [...options.args],
         id: targetWorkflowId,
         workflowTopic,
-        backoffCoefficient: options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
-      }
-      return await hotMeshClient.hook(`${namespace}.flow.signal`, payload, StreamStatus.PENDING, 202);
+        backoffCoefficient:
+          options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
+      };
+      return await hotMeshClient.hook(
+        `${namespace}.flow.signal`,
+        payload,
+        StreamStatus.PENDING,
+        202,
+      );
     }
   }
 
@@ -440,7 +496,10 @@ export class WorkflowService {
    * not require the cost and safety provided by proxyActivities.
    * @template T - the result type
    */
-  static async once<T>(fn: (...args: any[]) => Promise<T>, ...args: any[]): Promise<T> {
+  static async once<T>(
+    fn: (...args: any[]) => Promise<T>,
+    ...args: any[]
+  ): Promise<T> {
     const {
       COUNTER,
       namespace,
@@ -454,12 +513,18 @@ export class WorkflowService {
     if (sessionId in replay) {
       return SerializerService.fromString(replay[sessionId]).data as T;
     }
-    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      namespace,
+    });
     const keyParams = {
       appId: hotMeshClient.appId,
-      jobId: workflowId
-    }
-    const workflowGuid = KeyService.mintKey(hotMeshClient.namespace, KeyType.JOB_STATE, keyParams);
+      jobId: workflowId,
+    };
+    const workflowGuid = KeyService.mintKey(
+      hotMeshClient.namespace,
+      KeyType.JOB_STATE,
+      keyParams,
+    );
     const t1 = new Date();
     const response = await fn(...args);
     const t2 = new Date();
@@ -468,18 +533,32 @@ export class WorkflowService {
       ac: formatISODate(t1),
       au: formatISODate(t2),
     };
-    await hotMeshClient.engine.store.exec('HSET', workflowGuid, sessionId, SerializerService.toString(payload));
+    await hotMeshClient.engine.store.exec(
+      'HSET',
+      workflowGuid,
+      sessionId,
+      SerializerService.toString(payload),
+    );
     return response;
   }
 
-  /** 
+  /**
    * Interrupts a running job
    */
-  static async interrupt(jobId: string, options: JobInterruptOptions = {}): Promise<string | void> {
+  static async interrupt(
+    jobId: string,
+    options: JobInterruptOptions = {},
+  ): Promise<string | void> {
     const { workflowTopic, namespace } = WorkflowService.getContext();
-    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, { namespace });
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      namespace,
+    });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'interrupt')) {
-      return await hotMeshClient.interrupt(`${hotMeshClient.appId}.execute`, jobId, options);
+      return await hotMeshClient.interrupt(
+        `${hotMeshClient.appId}.execute`,
+        jobId,
+        options,
+      );
     }
   }
 
@@ -492,7 +571,7 @@ export class WorkflowService {
   }
 
   /**
-   * Sleeps the workflow for a duration. As the function is reentrant, 
+   * Sleeps the workflow for a duration. As the function is reentrant,
    * upon reentry, the function will traverse prior execution paths up
    * until the sleep command and then resume execution thereafter.
    * @param {string} duration - See the `ms` package for syntax examples: '1 minute', '2 hours', '3 days'
@@ -503,7 +582,7 @@ export class WorkflowService {
     //return early if this sleep command has already run
     const [didRun, execIndex, result] = await WorkflowService.didRun('sleep');
     if (didRun) {
-      return (result as { completion: string, duration: number }).duration; //in seconds
+      return (result as { completion: string; duration: number }).duration; //in seconds
     }
     //package the interruption inputs
     const store = asyncLocalStorage.getStore();
@@ -515,7 +594,7 @@ export class WorkflowService {
       duration: ms(duration) / 1000,
       index: execIndex,
       workflowDimension,
-    }
+    };
     interruptionRegistry.push({
       code: HMSH_CODE_DURABLE_SLEEP,
       ...interruptionMessage,
@@ -540,7 +619,7 @@ export class WorkflowService {
     //return early if this waitFor command has already run
     const [didRun, execIndex, result] = await WorkflowService.didRun('wait');
     if (didRun) {
-      return (result as { id: string, data: { data: T }}).data.data as T;
+      return (result as { id: string; data: { data: T } }).data.data as T;
     }
     //package the interruption inputs
     const store = asyncLocalStorage.getStore();
@@ -552,7 +631,7 @@ export class WorkflowService {
       signalId,
       index: execIndex,
       workflowDimension,
-    }
+    };
     interruptionRegistry.push({
       code: HMSH_CODE_DURABLE_WAIT,
       ...interruptionMessage,

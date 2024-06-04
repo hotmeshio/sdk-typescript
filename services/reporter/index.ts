@@ -14,11 +14,12 @@ import {
   JobStatsRange,
   IdsData,
   IdsResponse,
-  MeasureIds, 
+  MeasureIds,
   TimeSegment,
-  CountByFacet, 
+  CountByFacet,
   StatsType,
-  StatType } from '../../types/stats';
+  StatType,
+} from '../../types/stats';
 
 class ReporterService {
   private appVersion: AppVID;
@@ -26,7 +27,11 @@ class ReporterService {
   private store: StoreService<RedisClient, RedisMulti>;
   static DEFAULT_GRANULARITY = '5m';
 
-  constructor(appVersion: AppVID, store: StoreService<RedisClient, RedisMulti>, logger: ILogger) {
+  constructor(
+    appVersion: AppVID,
+    store: StoreService<RedisClient, RedisMulti>,
+    logger: ILogger,
+  ) {
     this.appVersion = appVersion;
     this.logger = logger;
     this.store = store;
@@ -36,22 +41,45 @@ class ReporterService {
     this.logger.debug('reporter-getstats-started', options);
     const { key, granularity, range, end, start } = options;
     this.validateOptions(options);
-    const dateTimeSets = this.generateDateTimeSets(granularity, range, end, start);
-    const redisKeys = dateTimeSets.map((dateTime) => this.buildRedisKey(key, dateTime));
+    const dateTimeSets = this.generateDateTimeSets(
+      granularity,
+      range,
+      end,
+      start,
+    );
+    const redisKeys = dateTimeSets.map((dateTime) =>
+      this.buildRedisKey(key, dateTime),
+    );
     const rawData = await this.store.getJobStats(redisKeys);
     const [count, aggregatedData] = this.aggregateData(rawData);
-    const statsResponse = this.buildStatsResponse(rawData, redisKeys, aggregatedData, count, options);
+    const statsResponse = this.buildStatsResponse(
+      rawData,
+      redisKeys,
+      aggregatedData,
+      count,
+      options,
+    );
     return statsResponse;
   }
 
   private validateOptions(options: GetStatsOptions): void {
     const { start, end, range, granularity } = options;
-    if (granularity !== 'infinity' && (start && end && range || !start && !end && !range)) {
-      throw new Error('Invalid combination of start, end, and range values. Provide either start+end, end+range, or start+range.');
+    if (
+      granularity !== 'infinity' &&
+      (start && end && range || !start && !end && !range)
+    ) {
+      throw new Error(
+        'Invalid combination of start, end, and range values. Provide either start+end, end+range, or start+range.',
+      );
     }
   }
 
-  private generateDateTimeSets(granularity: string, range: string|undefined, end: string, start?: string): string[] {
+  private generateDateTimeSets(
+    granularity: string,
+    range: string | undefined,
+    end: string,
+    start?: string,
+  ): string[] {
     if (granularity === 'infinity') {
       //if granularity is infinity, it means a date/time sequence/slice is not used to further segment the statistics
       return ['0'];
@@ -87,7 +115,8 @@ class ReporterService {
     }
     // Round the start time to the nearest granularity unit
     startTime.setUTCMinutes(
-      Math.floor(startTime.getUTCMinutes() / granularityMinutes) * granularityMinutes
+      Math.floor(startTime.getUTCMinutes() / granularityMinutes) *
+        granularityMinutes,
     );
     const dateTimeSets: string[] = [];
     for (
@@ -106,7 +135,7 @@ class ReporterService {
     }
     return dateTimeSets;
   }
-  
+
   private convertRangeToMinutes(range: string): number | null {
     const timeUnit = range.slice(-1);
     const value = parseInt(range.slice(0, -1), 10);
@@ -123,10 +152,10 @@ class ReporterService {
       default:
         return null;
     }
-  }  
+  }
 
   private buildRedisKey(key: string, dateTime: string, subTarget = ''): string {
-    return `hmsh:${this.appVersion.id}:s:${key}:${dateTime}${subTarget?':'+subTarget:''}`;
+    return `hmsh:${this.appVersion.id}:s:${key}:${dateTime}${subTarget ? ':' + subTarget : ''}`;
   }
 
   private aggregateData(rawData: JobStatsRange): [number, AggregatedData] {
@@ -148,9 +177,17 @@ class ReporterService {
     return [count, aggregatedData];
   }
 
-  private buildStatsResponse(rawData: JobStatsRange, redisKeys: string[], aggregatedData: AggregatedData, count: number, options: GetStatsOptions): StatsResponse {
+  private buildStatsResponse(
+    rawData: JobStatsRange,
+    redisKeys: string[],
+    aggregatedData: AggregatedData,
+    count: number,
+    options: GetStatsOptions,
+  ): StatsResponse {
     const measures: Measure[] = [];
-    const measureKeys = Object.keys(aggregatedData).filter((key) => key !== "count");
+    const measureKeys = Object.keys(aggregatedData).filter(
+      (key) => key !== 'count',
+    );
     let segments = undefined;
     if (options.sparse !== true) {
       segments = this.handleSegments(rawData, redisKeys);
@@ -158,7 +195,7 @@ class ReporterService {
     measureKeys.forEach((key) => {
       const measure: Measure = {
         target: key,
-        type: "count",
+        type: 'count',
         value: aggregatedData[key],
       };
       measures.push(measure);
@@ -181,12 +218,13 @@ class ReporterService {
     const segments: Segment[] = [];
     hashKeys.forEach((hashKey, index) => {
       const segmentData: Measure[] = [];
-      data[hashKey] && Object.entries(data[hashKey]).forEach(([key, value]) => {
-        if (key.startsWith('count:')) {
-          const target = key.slice('count:'.length);
-          segmentData.push({ target, type: 'count', value });
-        }
-      });
+      data[hashKey] &&
+        Object.entries(data[hashKey]).forEach(([key, value]) => {
+          if (key.startsWith('count:')) {
+            const target = key.slice('count:'.length);
+            segmentData.push({ target, type: 'count', value });
+          }
+        });
       const isoTimestamp = this.isoTimestampFromKeyTimestamp(hashKey);
       const count = data[hashKey] ? data[hashKey].count : 0;
       segments.push({ count, time: isoTimestamp, measures: segmentData });
@@ -207,7 +245,11 @@ class ReporterService {
     return `${year}-${month}-${day}T${hour}:${minute}Z`;
   }
 
-  async getIds(options: GetStatsOptions, facets: string[], idRange: [number, number] = [0, -1]): Promise<IdsResponse> {
+  async getIds(
+    options: GetStatsOptions,
+    facets: string[],
+    idRange: [number, number] = [0, -1],
+  ): Promise<IdsResponse> {
     if (!facets.length) {
       const stats = await this.getStats(options);
       facets = this.getUniqueFacets(stats);
@@ -216,28 +258,43 @@ class ReporterService {
     this.validateOptions(options);
     let redisKeys: string[] = [];
     facets.forEach((facet) => {
-      const dateTimeSets = this.generateDateTimeSets(granularity, range, end, start);
-      redisKeys = redisKeys.concat(dateTimeSets.map((dateTime) => this.buildRedisKey(key, dateTime, `index:${facet}`)));
+      const dateTimeSets = this.generateDateTimeSets(
+        granularity,
+        range,
+        end,
+        start,
+      );
+      redisKeys = redisKeys.concat(
+        dateTimeSets.map((dateTime) =>
+          this.buildRedisKey(key, dateTime, `index:${facet}`),
+        ),
+      );
     });
     const idsData = await this.store.getJobIds(redisKeys, idRange);
     const idsResponse = this.buildIdsResponse(idsData, options, facets);
     return idsResponse;
   }
 
-  private buildIdsResponse(idsData: IdsData, options: GetStatsOptions, facets: string[]): IdsResponse {
+  private buildIdsResponse(
+    idsData: IdsData,
+    options: GetStatsOptions,
+    facets: string[],
+  ): IdsResponse {
     const countsByFacet: { [key: string]: number } = {};
     const measureKeys = Object.keys(idsData);
     measureKeys.forEach((key) => {
       const target = this.getTargetForKey(key as string);
       const count = idsData[key].length;
-  
+
       if (countsByFacet[target]) {
         countsByFacet[target] += count;
       } else {
         countsByFacet[target] = count;
       }
     });
-    const counts: CountByFacet[] = Object.entries(countsByFacet).map(([facet, count]) => ({ facet, count }));
+    const counts: CountByFacet[] = Object.entries(countsByFacet).map(
+      ([facet, count]) => ({ facet, count }),
+    );
     const response: IdsResponse = {
       key: options.key,
       facets,
@@ -253,33 +310,37 @@ class ReporterService {
   private buildTimeSegments(idsData: IdsData): TimeSegment[] {
     const measureKeys = Object.keys(idsData);
     const timeSegments: { [time: string]: MeasureIds[] } = {};
-  
+
     measureKeys.forEach((key) => {
       const measure: MeasureIds = {
         type: 'ids',
         target: this.getTargetForKey(key as string),
-        time: this.isoTimestampFromKeyTimestamp(this.getTargetForTime(key as string)),
+        time: this.isoTimestampFromKeyTimestamp(
+          this.getTargetForTime(key as string),
+        ),
         count: idsData[key].length,
         ids: idsData[key],
       };
-  
+
       if (timeSegments[measure.time]) {
         timeSegments[measure.time].push(measure);
       } else {
         timeSegments[measure.time] = [measure];
       }
     });
-  
-    const segments: TimeSegment[] = Object.entries(timeSegments).map(([time, measures]) => ({
-      time,
-      measures,
-    }));
-  
+
+    const segments: TimeSegment[] = Object.entries(timeSegments).map(
+      ([time, measures]) => ({
+        time,
+        measures,
+      }),
+    );
+
     return segments;
   }
 
   getUniqueFacets(data: StatsResponse): string[] {
-    const targets = data.measures.map(measure => measure.target);
+    const targets = data.measures.map((measure) => measure.target);
     return Array.from(new Set(targets));
   }
 
@@ -291,7 +352,10 @@ class ReporterService {
     return key.split(':index:')[0];
   }
 
-  async getWorkItems(options: GetStatsOptions, facets: string[]): Promise<string[]> {
+  async getWorkItems(
+    options: GetStatsOptions,
+    facets: string[],
+  ): Promise<string[]> {
     if (!facets.length) {
       const stats = await this.getStats(options);
       facets = this.getUniqueFacets(stats);
@@ -300,8 +364,17 @@ class ReporterService {
     this.validateOptions(options);
     let redisKeys: string[] = [];
     facets.forEach((facet) => {
-      const dateTimeSets = this.generateDateTimeSets(granularity, range, end, start);
-      redisKeys = redisKeys.concat(dateTimeSets.map((dateTime) => this.buildRedisKey(key, dateTime, `index:${facet}`)));
+      const dateTimeSets = this.generateDateTimeSets(
+        granularity,
+        range,
+        end,
+        start,
+      );
+      redisKeys = redisKeys.concat(
+        dateTimeSets.map((dateTime) =>
+          this.buildRedisKey(key, dateTime, `index:${facet}`),
+        ),
+      );
     });
     const idsData = await this.store.getJobIds(redisKeys, [0, 1]);
     const workerLists = this.buildWorkerLists(idsData);
@@ -323,15 +396,21 @@ class ReporterService {
    * be saved to the database. doesn't actually save the stats, but
    * just generates the info that should be saved
    */
-  resolveTriggerStatistics({ stats: statsConfig}: TriggerActivity, context: JobState): StatsType {
+  resolveTriggerStatistics(
+    { stats: statsConfig }: TriggerActivity,
+    context: JobState,
+  ): StatsType {
     const stats: StatsType = {
       general: [],
       index: [],
-      median: []
-    }
+      median: [],
+    };
     stats.general.push({ metric: 'count', target: 'count', value: 1 });
     for (const measure of statsConfig.measures) {
-      const metric = this.resolveMetric({ metric: measure.measure, target: measure.target }, context);
+      const metric = this.resolveMetric(
+        { metric: measure.measure, target: measure.target },
+        context,
+      );
       if (this.isGeneralMetric(measure.measure)) {
         stats.general.push(metric);
       } else if (this.isMedianMetric(measure.measure)) {
@@ -355,7 +434,7 @@ class ReporterService {
     return metric === 'index';
   }
 
-  resolveMetric({metric, target}, context: JobState): StatType {
+  resolveMetric({ metric, target }, context: JobState): StatType {
     const pipe = new Pipe([[target]], context);
     const resolvedValue = pipe.process().toString();
     const resolvedTarget = this.resolveTarget(metric, target, resolvedValue);

@@ -1,13 +1,14 @@
 import { Durable } from '../../../../services/durable';
-import * as activities from './activities';
 
+import * as activities from './activities';
 import type greetFunctionType from './activities';
 type ActivitiesType = {
   greet: typeof greetFunctionType;
 };
 
-const { greet } = Durable.workflow
-  .proxyActivities<ActivitiesType>({ activities });
+const { greet } = Durable.workflow.proxyActivities<ActivitiesType>({
+  activities,
+});
 
 export async function example(name: string): Promise<string> {
   //run a proxy activity

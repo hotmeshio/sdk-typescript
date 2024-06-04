@@ -84,7 +84,11 @@ interface RedisRedisMultiType {
   LRANGE(key: string, start: number, end: number): this;
   RPUSH(key: string, items: string[]): this;
   SET(key: string, value: string): this;
-  ZADD(key: string, values: { score: string, value: string }, opts?: { NX: boolean }): this;
+  ZADD(
+    key: string,
+    values: { score: string; value: string },
+    opts?: { NX: boolean },
+  ): this;
   ZRANGE_WITHSCORES(key: string, start: number, end: number): this;
   ZRANK(key: string, member: string): this;
   ZSCORE(key: string, value: string): this;
@@ -101,9 +105,15 @@ interface RedisRedisClientType {
   duplicate(): RedisRedisClientType;
   on(event: string, callback: (...args: any[]) => void): void;
   publish(channel: string, message: string): Promise<number>;
-  pSubscribe(pattern: string, callback: (channel: string, message: string) => void): void;
+  pSubscribe(
+    pattern: string,
+    callback: (channel: string, message: string) => void,
+  ): void;
   pUnsubscribe(pattern: string): void;
-  subscribe(channel: string, callback: (channel: string, message: string) => void): void;
+  subscribe(
+    channel: string,
+    callback: (channel: string, message: string) => void,
+  ): void;
   unsubscribe(channel: string): void;
   punsubscribe(channel: string): void;
   get(key: string): Promise<string | null>;
@@ -125,8 +135,16 @@ interface RedisRedisClientType {
   LRANGE(key: string, start: number, end: number): Promise<string[]>;
   RPUSH(key: string, items: string[]): Promise<number>;
   SET(key: string, value: string): Promise<string>;
-  ZADD(key: string, values: { score: string, value: string }, opts?: { NX: boolean }): Promise<number>;
-  ZRANGE_WITHSCORES(key: string, start: number, end: number): Promise<{ score: number, value: string }>;
+  ZADD(
+    key: string,
+    values: { score: string; value: string },
+    opts?: { NX: boolean },
+  ): Promise<number>;
+  ZRANGE_WITHSCORES(
+    key: string,
+    start: number,
+    end: number,
+  ): Promise<{ score: number; value: string }>;
   ZRANK(key: string, member: string): Promise<number>;
   ZSCORE(key: string, value: string): Promise<number>;
 }
@@ -165,9 +183,15 @@ interface IORedisClient {
   flushdb(): Promise<string>;
 
   publish(channel: string, message: string): Promise<number>;
-  psubscribe(pattern: string, callback: (channel: string, message: string) => void): Promise<void>;
+  psubscribe(
+    pattern: string,
+    callback: (channel: string, message: string) => void,
+  ): Promise<void>;
   punsubscribe(pattern: string): void;
-  subscribe(channel: string, callback: (channel: string, message: string) => void): void;
+  subscribe(
+    channel: string,
+    callback: (channel: string, message: string) => void,
+  ): void;
   unsubscribe(channel: string): void;
   punsubscribe(channel: string): void;
 
@@ -181,8 +205,12 @@ interface IORedisClient {
     start?: string,
     end?: string,
     count?: number,
-    consumer?: string
-  ): Promise<[string, string, number, [string, number][]][] | [string, string, number, number] | unknown[]>;
+    consumer?: string,
+  ): Promise<
+    | [string, string, number, [string, number][]][]
+    | [string, string, number, number]
+    | unknown[]
+  >;
   xclaim(
     key: string,
     group: string,
@@ -194,7 +222,7 @@ interface IORedisClient {
   xinfo(command: 'GROUPS' | string, key: string): Promise<unknown>;
   xrange(key: string, start: string, end: string): Promise<string[][]>;
   del(key: string): Promise<number>;
-  exists(key: string): Promise<number>
+  exists(key: string): Promise<number>;
   get(key: string): Promise<string | null>;
   hdel(key: string, itemId: string): Promise<number>;
   hget(key: string, itemId: string): Promise<string | null>;
@@ -208,19 +236,40 @@ interface IORedisClient {
   rpush(key: string, ...args: string[]): Promise<number>;
   set(key: string, value: string): Promise<string>;
   zadd(...args: Array<string | number>): Promise<number>;
-  zrange(key: string, start: number, end: number, withScores?: 'WITHSCORES'): Promise<string[]>;
+  zrange(
+    key: string,
+    start: number,
+    end: number,
+    withScores?: 'WITHSCORES',
+  ): Promise<string[]>;
   zrank(key: string, member: string): Promise<number>;
   zscore(key: string, value: string): Promise<number>;
-  xgroup(command: 'CREATE' | string, key: string, groupName: string, id: string, mkStream?: 'MKSTREAM'): Promise<string>;
+  xgroup(
+    command: 'CREATE' | string,
+    key: string,
+    groupName: string,
+    id: string,
+    mkStream?: 'MKSTREAM',
+  ): Promise<string>;
 }
 
-type IORedisClassType = new (options: IORedisClientOptions, ...args: any[]) => IORedisClient;
+type IORedisClassType = new (
+  options: IORedisClientOptions,
+  ...args: any[]
+) => IORedisClient;
 interface IORedisMultiType {
   xadd(key: string, id: string, fields: any, message?: string): this;
   xack(key: string, group: string, id: string): this;
   xdel(key: string, id: string): this;
   xlen(key: string): this;
-  xpending(key: string, group: string, start?: string, end?: string, count?: number, consumer?: string): this;
+  xpending(
+    key: string,
+    group: string,
+    start?: string,
+    end?: string,
+    count?: number,
+    consumer?: string,
+  ): this;
   xclaim(
     key: string,
     group: string,
@@ -238,7 +287,13 @@ interface IORedisMultiType {
   lrange(key: string, start: number, end: number): this;
   rpush(key: string, value: string): this;
   zadd(...args: Array<string | number>): this;
-  xgroup(command: 'CREATE', key: string, groupName: string, id: string, mkStream?: 'MKSTREAM'): this;
+  xgroup(
+    command: 'CREATE',
+    key: string,
+    groupName: string,
+    id: string,
+    mkStream?: 'MKSTREAM',
+  ): this;
 
   sendCommand(command: string[]): Promise<any>;
   exec: () => Promise<unknown[]>;

@@ -19,7 +19,11 @@ describe('FUNCTIONAL | Hook', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     //init HotMesh
@@ -28,7 +32,7 @@ describe('FUNCTIONAL | Hook', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
     };
 
@@ -55,21 +59,24 @@ describe('FUNCTIONAL | Hook', () => {
       let shouldResume = false;
 
       //subscribe to the 'hook.tested' topic
-      await hotMesh.psub('hook.tested*', (topic: string, message: JobOutput) => {
-        //results are broadcast here
-        expect(topic).toBe('hook.tested');
-        expect(message.data.parent_job_id).toBe(parent_job_id);
-        expect(message.data.job_id).toBe(id);
+      await hotMesh.psub(
+        'hook.tested*',
+        (topic: string, message: JobOutput) => {
+          //results are broadcast here
+          expect(topic).toBe('hook.tested');
+          expect(message.data.parent_job_id).toBe(parent_job_id);
+          expect(message.data.job_id).toBe(id);
 
-        //two messages will be published, because the trigger has an 'emit' flag in the YAML
-        //the first publication is just the emit signal
-        // the second message includes a 'done' property and is the final job result
-        if (message.data.done) {
-          isDone = true;
-        } else {
-          shouldResume = true;
-        }
-      });
+          //two messages will be published, because the trigger has an 'emit' flag in the YAML
+          //the first publication is just the emit signal
+          // the second message includes a 'done' property and is the final job result
+          if (message.data.done) {
+            isDone = true;
+          } else {
+            shouldResume = true;
+          }
+        },
+      );
 
       const payload = { parent_job_id: parent_job_id, job_id: id };
       await hotMesh.pub('hook.test', payload);
@@ -92,7 +99,12 @@ describe('FUNCTIONAL | Hook', () => {
 
       //hookAll will resume all paused jobs that match the query
       //NOTE: 'targets' is the REDIS address of the index that contains all jobs that match
-      const targets = await hotMesh.hookAll('hook.resume', { done: true }, jobKeyQuery, indexQueryFacets);
+      const targets = await hotMesh.hookAll(
+        'hook.resume',
+        { done: true },
+        jobKeyQuery,
+        indexQueryFacets,
+      );
 
       //NOTE: in the YAML, `granularity` is set to `infinity`, so all jobs are listed in a single index (not a time series index)
       //      This is why targets.length is `1`; otherwise, `indexQueryFacets` would have included a time range

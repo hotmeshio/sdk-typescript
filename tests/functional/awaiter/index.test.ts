@@ -19,7 +19,11 @@ describe('FUNCTIONAL | AWAIT (OR NOT)', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     const config: HotMeshConfig = {
@@ -27,8 +31,8 @@ describe('FUNCTIONAL | AWAIT (OR NOT)', () => {
       namespace: HMNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options }
-      }
+        redis: { class: Redis, options },
+      },
     };
 
     hotMesh = await HotMesh.init(config);
@@ -64,6 +68,5 @@ describe('FUNCTIONAL | AWAIT (OR NOT)', () => {
       const job = await hotMesh.pubsub('awaiter.test', payload, null, 10_000);
       expect(job.data.child_job_id).toBeTruthy();
     }, 10_000);
-
   });
 });

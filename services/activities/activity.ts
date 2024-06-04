@@ -3,12 +3,14 @@ import {
   CollationError,
   GenerationalError,
   GetStateError,
-  InactiveJobError } from '../../modules/errors';
+  InactiveJobError,
+} from '../../modules/errors';
 import {
   formatISODate,
   getValueByPath,
   guid,
-  restoreHierarchy } from '../../modules/utils';
+  restoreHierarchy,
+} from '../../modules/utils';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { ILogger } from '../logger';
@@ -17,23 +19,22 @@ import { Pipe } from '../pipe';
 import { MDATA_SYMBOLS } from '../serializer';
 import { StoreService } from '../store';
 import { TelemetryService } from '../telemetry';
-import { 
+import {
   ActivityData,
   ActivityLeg,
   ActivityMetadata,
   ActivityType,
-  Consumes } from '../../types/activity';
+  Consumes,
+} from '../../types/activity';
 import { JobState, JobStatus } from '../../types/job';
-import {
-  MultiResponseFlags,
-  RedisClient,
-  RedisMulti } from '../../types/redis';
+import { MultiResponseFlags, RedisClient, RedisMulti } from '../../types/redis';
 import { StringAnyType, StringScalarType } from '../../types/serializer';
 import {
   StreamCode,
   StreamData,
   StreamDataType,
-  StreamStatus } from '../../types/stream';
+  StreamStatus,
+} from '../../types/stream';
 import { TransitionRule } from '../../types/transition';
 
 /**
@@ -44,7 +45,7 @@ class Activity {
   data: ActivityData;
   hook: ActivityData;
   metadata: ActivityMetadata;
-  store: StoreService<RedisClient, RedisMulti>
+  store: StoreService<RedisClient, RedisMulti>;
   context: JobState;
   engine: EngineService;
   logger: ILogger;
@@ -60,15 +61,16 @@ class Activity {
     metadata: ActivityMetadata,
     hook: ActivityData | null,
     engine: EngineService,
-    context?: JobState) {
-      this.config = config;
-      this.data = data;
-      this.metadata = metadata;
-      this.hook = hook;
-      this.engine = engine;
-      this.context = context || { data: {}, metadata: {} } as JobState;
-      this.logger = engine.logger;
-      this.store = engine.store;
+    context?: JobState,
+  ) {
+    this.config = config;
+    this.data = data;
+    this.metadata = metadata;
+    this.hook = hook;
+    this.engine = engine;
+    this.context = context || ({ data: {}, metadata: {} } as JobState);
+    this.logger = engine.logger;
+    this.store = engine.store;
   }
 
   setLeg(leg: ActivityLeg): void {
@@ -85,7 +87,7 @@ class Activity {
     CollatorService.assertJobActive(
       this.context.metadata.js,
       this.context.metadata.jid,
-      this.metadata.aid
+      this.metadata.aid,
     );
     await CollatorService.notarizeEntry(this);
   }
@@ -101,23 +103,35 @@ class Activity {
     CollatorService.assertJobActive(
       this.context.metadata.js,
       this.context.metadata.jid,
-      this.metadata.aid
+      this.metadata.aid,
     );
     return await CollatorService.notarizeReentry(this, guid);
   }
 
   //********  DUPLEX RE-ENTRY POINT  ********//
-  async processEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200, type: 'hook' | 'output' = 'output'): Promise<void> {
+  async processEvent(
+    status: StreamStatus = StreamStatus.SUCCESS,
+    code: StreamCode = 200,
+    type: 'hook' | 'output' = 'output',
+  ): Promise<void> {
     this.setLeg(2);
     const jid = this.context.metadata.jid;
     if (!jid) {
-      this.logger.error('activity-process-event-error', { message: 'job id is undefined' });
+      this.logger.error('activity-process-event-error', {
+        message: 'job id is undefined',
+      });
       return;
     }
     const aid = this.metadata.aid;
     this.status = status;
     this.code = code;
-    this.logger.debug('activity-process-event', { topic: this.config.subtype, jid, aid, status, code });
+    this.logger.debug('activity-process-event', {
+      topic: this.config.subtype,
+      jid,
+      aid,
+      status,
+      code,
+    });
     let telemetry: TelemetryService;
 
     try {
@@ -152,10 +166,15 @@ class Activity {
         this.logger.info('process-event-generational-job-error', { ...error });
         return;
       } else if (error instanceof GetStateError) {
-        this.logger.info('process-event-get-job-error', {  ...error  });
+        this.logger.info('process-event-get-job-error', { ...error });
         return;
       }
-      this.logger.error('activity-process-event-error', { ...error, message: error.message, stack: error.stack, name: error.name });
+      this.logger.error('activity-process-event-error', {
+        ...error,
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      });
       telemetry && telemetry.setActivityError(error.message);
       throw error;
     } finally {
@@ -164,7 +183,10 @@ class Activity {
     }
   }
 
-  async processPending(telemetry: TelemetryService, type: 'hook' | 'output'): Promise<MultiResponseFlags> {
+  async processPending(
+    telemetry: TelemetryService,
+    type: 'hook' | 'output',
+  ): Promise<MultiResponseFlags> {
     this.bindActivityData(type);
     this.adjacencyList = await this.filterAdjacent();
     this.mapJobData();
@@ -173,10 +195,13 @@ class Activity {
     await CollatorService.notarizeContinuation(this, multi);
 
     await this.setStatus(this.adjacencyList.length, multi);
-    return await multi.exec() as MultiResponseFlags;
+    return (await multi.exec()) as MultiResponseFlags;
   }
 
-  async processSuccess(telemetry: TelemetryService, type: 'hook' | 'output'): Promise<MultiResponseFlags> {
+  async processSuccess(
+    telemetry: TelemetryService,
+    type: 'hook' | 'output',
+  ): Promise<MultiResponseFlags> {
     this.bindActivityData(type);
     this.adjacencyList = await this.filterAdjacent();
     this.mapJobData();
@@ -185,10 +210,13 @@ class Activity {
     await CollatorService.notarizeCompletion(this, multi);
 
     await this.setStatus(this.adjacencyList.length - 1, multi);
-    return await multi.exec() as MultiResponseFlags;
+    return (await multi.exec()) as MultiResponseFlags;
   }
 
-  async processError(telemetry: TelemetryService, type: string): Promise<MultiResponseFlags> {
+  async processError(
+    telemetry: TelemetryService,
+    type: string,
+  ): Promise<MultiResponseFlags> {
     this.bindActivityError(this.data);
     this.adjacencyList = await this.filterAdjacent();
     if (!this.adjacencyList.length) {
@@ -200,17 +228,20 @@ class Activity {
     await CollatorService.notarizeCompletion(this, multi);
 
     await this.setStatus(this.adjacencyList.length - 1, multi);
-    return await multi.exec() as MultiResponseFlags;
+    return (await multi.exec()) as MultiResponseFlags;
   }
 
-  async transitionAdjacent(multiResponse: MultiResponseFlags, telemetry: TelemetryService): Promise<void> {
+  async transitionAdjacent(
+    multiResponse: MultiResponseFlags,
+    telemetry: TelemetryService,
+  ): Promise<void> {
     telemetry.mapActivityAttributes();
     const jobStatus = this.resolveStatus(multiResponse);
     const attrs: StringScalarType = { 'app.job.jss': jobStatus };
     //adjacencyList membership has already been set at this point (according to activity status)
     const messageIds = await this.transition(this.adjacencyList, jobStatus);
     if (messageIds?.length) {
-      attrs['app.activity.mids'] = messageIds.join(',')
+      attrs['app.activity.mids'] = messageIds.join(',');
     }
     telemetry.setActivityAttributes(attrs);
   }
@@ -225,7 +256,7 @@ class Activity {
   }
 
   mapJobData(): void {
-    if(this.config.job?.maps) {
+    if (this.config.job?.maps) {
       const mapper = new MapperService(this.config.job.maps, this.context);
       const output = mapper.mapRules();
       if (output) {
@@ -255,7 +286,7 @@ class Activity {
   }
 
   mapInputData(): void {
-    if(this.config.input?.maps) {
+    if (this.config.input?.maps) {
       const mapper = new MapperService(this.config.input.maps, this.context);
       this.context.data = mapper.mapRules();
     }
@@ -263,7 +294,7 @@ class Activity {
 
   mapOutputData(): void {
     //activity YAML may include output map data that produces/extends activity output data.
-    if(this.config.output?.maps) {
+    if (this.config.output?.maps) {
       const mapper = new MapperService(this.config.output.maps, this.context);
       const actOutData = mapper.mapRules();
       const activityId = this.metadata.aid;
@@ -291,13 +322,16 @@ class Activity {
    * status and have no adjacent children to transition to) are bound to the job
    */
   bindJobError(data: Record<string, unknown>): void {
-    this.context.metadata.err = JSON.stringify({ ...data, is_stream_error: true });
+    this.context.metadata.err = JSON.stringify({
+      ...data,
+      is_stream_error: true,
+    });
   }
 
   async getTriggerConfig(): Promise<ActivityType> {
     return await this.store.getSchema(
       this.config.trigger,
-      await this.engine.getVID()
+      await this.engine.getVID(),
     );
   }
 
@@ -307,21 +341,20 @@ class Activity {
 
   async setStatus(amount: number, multi?: RedisMulti): Promise<void> {
     const { id: appId } = await this.engine.getVID();
-    await this.store.setStatus(
-      amount,
-      this.context.metadata.jid,
-      appId,
-      multi
-    );
+    await this.store.setStatus(amount, this.context.metadata.jid, appId, multi);
   }
 
   authorizeEntry(state: StringAnyType): string[] {
     //pre-authorize activity state to allow entry for adjacent activities
-    return this.adjacencyList?.map((streamData) => {
-      const { metadata: { aid } } = streamData;
-      state[`${aid}/output/metadata/as`] = CollatorService.getSeed();
-      return aid;
-    }) ?? [];
+    return (
+      this.adjacencyList?.map((streamData) => {
+        const {
+          metadata: { aid },
+        } = streamData;
+        state[`${aid}/output/metadata/as`] = CollatorService.getSeed();
+        return aid;
+      }) ?? []
+    );
   }
 
   bindDimensionalAddress(state: StringAnyType) {
@@ -333,7 +366,7 @@ class Activity {
     const jobId = this.context.metadata.jid;
     this.bindJobMetadata();
     this.bindActivityMetadata();
-    let state: StringAnyType = {};
+    const state: StringAnyType = {};
     await this.bindJobState(state);
     const presets = this.authorizeEntry(state);
     this.bindDimensionalAddress(state);
@@ -342,10 +375,20 @@ class Activity {
     const symbolNames = [
       `$${this.config.subscribes}`,
       this.metadata.aid,
-      ...presets
+      ...presets,
     ];
-    const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], this.resolveDad());
-    return await this.store.setState(state, this.getJobStatus(), jobId, symbolNames, dIds, multi);
+    const dIds = CollatorService.getDimensionsById(
+      [...this.config.ancestors, this.metadata.aid],
+      this.resolveDad(),
+    );
+    return await this.store.setState(
+      state,
+      this.getJobStatus(),
+      jobId,
+      symbolNames,
+      dIds,
+      multi,
+    );
   }
 
   bindJobMetadata(): void {
@@ -375,7 +418,7 @@ class Activity {
     const triggerConfig = await this.getTriggerConfig();
     const PRODUCES = [
       ...(triggerConfig.PRODUCES || []),
-      ...this.bindJobMetadataPaths()
+      ...this.bindJobMetadataPaths(),
     ];
     for (const path of PRODUCES) {
       const value = getValueByPath(this.context, path);
@@ -383,7 +426,7 @@ class Activity {
         state[path] = value;
       }
     }
-    for (let key in this.context?.data ?? {}) {
+    for (const key in this.context?.data ?? {}) {
       if (key.startsWith('-') || key.startsWith('_')) {
         state[key] = this.context.data[key];
       }
@@ -391,19 +434,25 @@ class Activity {
     TelemetryService.bindJobTelemetryToState(state, this.config, this.context);
   }
 
-  bindActivityState(state: StringAnyType,): void {
+  bindActivityState(state: StringAnyType): void {
     const produces = [
       ...this.config.produces,
-      ...this.bindActivityMetadataPaths()
+      ...this.bindActivityMetadataPaths(),
     ];
     for (const path of produces) {
       const prefixedPath = `${this.metadata.aid}/${path}`;
       const value = getValueByPath(this.context, prefixedPath);
       if (value !== undefined) {
         state[prefixedPath] = value;
-      } 
+      }
     }
-    TelemetryService.bindActivityTelemetryToState(state, this.config, this.metadata, this.context, this.leg);
+    TelemetryService.bindActivityTelemetryToState(
+      state,
+      this.config,
+      this.metadata,
+      this.context,
+      this.leg,
+    );
   }
 
   bindJobMetadataPaths(): string[] {
@@ -411,18 +460,22 @@ class Activity {
   }
 
   bindActivityMetadataPaths(): string[] {
-    const keys_to_save = this.leg === 1 ? 'ACTIVITY': 'ACTIVITY_UPDATE'
-    return MDATA_SYMBOLS[keys_to_save].KEYS.map((key) => `output/metadata/${key}`);
+    const keys_to_save = this.leg === 1 ? 'ACTIVITY' : 'ACTIVITY_UPDATE';
+    return MDATA_SYMBOLS[keys_to_save].KEYS.map(
+      (key) => `output/metadata/${key}`,
+    );
   }
 
   async getState() {
     const gid = this.context.metadata.gid;
     const jobSymbolHashName = `$${this.config.subscribes}`;
     const consumes: Consumes = {
-      [jobSymbolHashName]: MDATA_SYMBOLS.JOB.KEYS.map((key) => `metadata/${key}`)
+      [jobSymbolHashName]: MDATA_SYMBOLS.JOB.KEYS.map(
+        (key) => `metadata/${key}`,
+      ),
     };
     for (let [activityId, paths] of Object.entries(this.config.consumes)) {
-       if(activityId === '$job') {
+      if (activityId === '$job') {
         for (const path of paths) {
           consumes[jobSymbolHashName].push(path);
         }
@@ -438,9 +491,17 @@ class Activity {
         }
       }
     }
-    TelemetryService.addTargetTelemetryPaths(consumes, this.config, this.metadata, this.leg);
-    let { dad, jid } = this.context.metadata;
-    const dIds = CollatorService.getDimensionsById([...this.config.ancestors, this.metadata.aid], dad || '');
+    TelemetryService.addTargetTelemetryPaths(
+      consumes,
+      this.config,
+      this.metadata,
+      this.leg,
+    );
+    const { dad, jid } = this.context.metadata;
+    const dIds = CollatorService.getDimensionsById(
+      [...this.config.ancestors, this.metadata.aid],
+      dad || '',
+    );
     //`state` is a unidimensional hash; context is a tree
     const [state, _status] = await this.store.getState(jid, consumes, dIds);
     this.context = restoreHierarchy(state) as JobState;
@@ -463,7 +524,7 @@ class Activity {
         msgGID,
         this.context?.metadata?.jid ?? '',
         this.context?.metadata?.aid ?? '',
-        this.context?.metadata?.dad ?? ''
+        this.context?.metadata?.dad ?? '',
       );
     }
   }
@@ -475,20 +536,20 @@ class Activity {
   initSelf(context: StringAnyType): JobState {
     const activityId = this.metadata.aid;
     if (!context[activityId]) {
-      context[activityId] = { };
+      context[activityId] = {};
     }
     const self = context[activityId];
     if (!self.output) {
-      self.output = { };
+      self.output = {};
     }
     if (!self.input) {
-      self.input = { };
+      self.input = {};
     }
     if (!self.hook) {
-      self.hook = { };
+      self.hook = {};
     }
     if (!self.output.metadata) {
-      self.output.metadata = { };
+      self.output.metadata = {};
     }
     //prebind the updated timestamp (mappings need the time)
     self.output.metadata.au = formatISODate(new Date());
@@ -500,7 +561,7 @@ class Activity {
   initPolicies(context: JobState) {
     const expire = Pipe.resolve(
       this.config.expire ?? HMSH_EXPIRE_DURATION,
-      context
+      context,
     );
     context.metadata.expire = expire;
   }
@@ -513,7 +574,7 @@ class Activity {
     let dad = this.metadata.dad;
     if (this.adjacentIndex > 0) {
       //if adjacent index > 0 the activity is cycling; replace last index with cycle index
-      dad = `${dad.substring(0, dad.lastIndexOf(','))},${this.adjacentIndex}`
+      dad = `${dad.substring(0, dad.lastIndexOf(','))},${this.adjacentIndex}`;
     }
     return dad;
   }
@@ -521,17 +582,20 @@ class Activity {
   resolveAdjacentDad(): string {
     //concat self and child dimension (all children (leg 1) begin life at 0)
     return `${this.resolveDad()}${CollatorService.getDimensionalSeed(0)}`;
-  };
+  }
 
   async filterAdjacent(): Promise<StreamData[]> {
     const adjacencyList: StreamData[] = [];
-    const transitions = await this.store.getTransitions(await this.engine.getVID());
+    const transitions = await this.store.getTransitions(
+      await this.engine.getVID(),
+    );
     const transition = transitions[`.${this.metadata.aid}`];
     //resolve the dimensional address for adjacent children
     const adjacentDad = this.resolveAdjacentDad();
     if (transition) {
       for (const toActivityId in transition) {
-        const transitionRule: boolean | TransitionRule = transition[toActivityId];
+        const transitionRule: boolean | TransitionRule =
+          transition[toActivityId];
         if (MapperService.evaluate(transitionRule, this.context, this.code)) {
           adjacencyList.push({
             metadata: {
@@ -544,7 +608,7 @@ class Activity {
               trc: this.context.metadata.trc,
             },
             type: StreamDataType.TRANSITION,
-            data: {}
+            data: {},
           });
         }
       }
@@ -552,20 +616,22 @@ class Activity {
     return adjacencyList;
   }
 
-  async transition(adjacencyList: StreamData[], jobStatus: JobStatus): Promise<string[]> {
+  async transition(
+    adjacencyList: StreamData[],
+    jobStatus: JobStatus,
+  ): Promise<string[]> {
     if (this.jobWasInterrupted(jobStatus)) {
       return;
     }
     let mIds: string[] = [];
-    let emit: boolean = false;
+    let emit = false;
     if (this.config.emit) {
       emit = Pipe.resolve(this.config.emit, this.context);
     }
     if (jobStatus <= 0 || emit) {
-      await this.engine.runJobCompletionTasks(
-        this.context,
-        { emit: jobStatus > 0 },
-      );
+      await this.engine.runJobCompletionTasks(this.context, {
+        emit: jobStatus > 0,
+      });
     }
     if (adjacencyList.length && jobStatus > 0) {
       const multi = this.store.getMulti();

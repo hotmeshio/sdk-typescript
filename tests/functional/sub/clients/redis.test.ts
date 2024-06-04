@@ -22,7 +22,8 @@ describe('FUNCTIONAL | RedisSubService', () => {
 
   beforeAll(async () => {
     redisConnection = await RedisConnection.getConnection('test-connection-1');
-    redisPublisherConnection = await RedisConnection.getConnection('test-publisher-1');
+    redisPublisherConnection =
+      await RedisConnection.getConnection('test-publisher-1');
     redisClient = await redisConnection.getClient();
     redisPublisherClient = await redisPublisherConnection.getClient();
     await redisPublisherClient.flushDb();
@@ -37,50 +38,92 @@ describe('FUNCTIONAL | RedisSubService', () => {
   describe('subscribe/unsubscribe', () => {
     it('subscribes during initialization', async () => {
       const subscriptionHandler: SubscriptionCallback = (topic, message) => {
-        const topicKey = redisSubService.mintKey(KeyType.QUORUM, { appId: appConfig.id });
+        const topicKey = redisSubService.mintKey(KeyType.QUORUM, {
+          appId: appConfig.id,
+        });
         expect(topic).toEqual(topicKey);
         expect(message).toEqual(payload);
       };
-      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
-      const payload = { 'any': 'data' };
-      await redisSubService.subscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id);
+      await redisSubService.init(
+        HMNS,
+        appConfig.id,
+        engineId,
+        new LoggerService(),
+      );
+      const payload = { any: 'data' };
+      await redisSubService.subscribe(
+        KeyType.QUORUM,
+        subscriptionHandler,
+        appConfig.id,
+      );
       await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id);
     });
 
     it('unsubscribes and subscribes', async () => {
       const subscriptionHandler: SubscriptionCallback = (topic, message) => {
-        const topicKey = redisSubService.mintKey(KeyType.QUORUM, { appId: appConfig.id });
+        const topicKey = redisSubService.mintKey(KeyType.QUORUM, {
+          appId: appConfig.id,
+        });
         expect(topic).toEqual(topicKey);
         expect(message).toEqual(payload);
       };
-      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
-      const payload = { 'any': 'data' };
-      await redisSubService.subscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id);
-      const pub = await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id);
+      await redisSubService.init(
+        HMNS,
+        appConfig.id,
+        engineId,
+        new LoggerService(),
+      );
+      const payload = { any: 'data' };
+      await redisSubService.subscribe(
+        KeyType.QUORUM,
+        subscriptionHandler,
+        appConfig.id,
+      );
+      const pub = await redisPubService.publish(
+        KeyType.QUORUM,
+        payload,
+        appConfig.id,
+      );
       expect(pub).toBeTruthy();
     });
   });
 
-
   describe('psubscribe/punsubscribe', () => {
     it('psubscribes and punsubscribes', async () => {
-      const payload = { 'any': 'data' };
+      const payload = { any: 'data' };
       let responded = false;
       const word = 'dog';
       const wild = 'd*g';
       const subscriptionHandler: SubscriptionCallback = (topic, message) => {
-        const topicKey = redisSubService.mintKey(KeyType.QUORUM, { appId: appConfig.id, engineId: word });
+        const topicKey = redisSubService.mintKey(KeyType.QUORUM, {
+          appId: appConfig.id,
+          engineId: word,
+        });
         expect(topic).toEqual(topicKey);
         expect(message).toEqual(payload);
         responded = true;
       };
-      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
-      await redisSubService.psubscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id, wild);
-      await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id, word );
+      await redisSubService.init(
+        HMNS,
+        appConfig.id,
+        engineId,
+        new LoggerService(),
+      );
+      await redisSubService.psubscribe(
+        KeyType.QUORUM,
+        subscriptionHandler,
+        appConfig.id,
+        wild,
+      );
+      await redisPubService.publish(
+        KeyType.QUORUM,
+        payload,
+        appConfig.id,
+        word,
+      );
       sleepFor(250); //give time to run
       await redisSubService.punsubscribe(KeyType.QUORUM, appConfig.id, wild);
       expect(responded).toBeTruthy();
     });
   });
-
 });

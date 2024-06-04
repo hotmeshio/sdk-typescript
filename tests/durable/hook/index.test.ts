@@ -1,13 +1,14 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { Durable } from '../../../services/durable';
-import * as workflows from './src/workflows';
-import * as childWorkflows from './child/workflows';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { ClientService } from '../../../services/durable/client';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HMNS, KeyService, KeyType } from '../../../modules/key';
+
+import * as childWorkflows from './child/workflows';
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -25,7 +26,11 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
   });
 
@@ -49,7 +54,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        client = new Client({ connection: { class: Redis, options }});
+        client = new Client({ connection: { class: Redis, options } });
         workflowGuid = prefix + guid();
 
         const handle = await client.workflow.start({
@@ -64,8 +69,8 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
             data: {
               fred: 'flintstone',
               barney: 'rubble',
-            }
-          }
+            },
+          },
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -92,10 +97,10 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
               },
               custom2: {
                 type: 'NUMERIC', //or TAG
-                sortable: true
-              }
-            }
-          }
+                sortable: true,
+              },
+            },
+          },
         });
         await worker.run();
         expect(worker).toBeDefined();
@@ -139,8 +144,8 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
           workflowName: 'exampleHook',
           workflowId: workflowGuid,
           args: ['HotMeshHook'],
-         });
-      }, 10_000);        
+        });
+      }, 10_000);
     });
   });
 
@@ -152,11 +157,14 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
           'hook-world',
           workflows.example.name,
           workflowGuid,
-          namespace
+          namespace,
         );
-        const result = await handle.result({state: true});
+        const result = await handle.result({ state: true });
         expect(result).toEqual('Hello, HookMesh! - Goodbye, HookMesh!');
-        const exported = await handle.export({allow: ['timeline', 'status', 'data', 'state'], values: false});
+        const exported = await handle.export({
+          allow: ['timeline', 'status', 'data', 'state'],
+          values: false,
+        });
         expect(exported.status).not.toBeUndefined();
         expect(exported.data?.fred).toBe('flintstone');
         expect(exported.state?.data.done).toBe(true);
@@ -169,13 +177,17 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
           workflows.example.name,
           namespace,
           'bye-bye',
-          '@_custom1:durable'
+          '@_custom1:durable',
         );
         expect(count).toEqual(1);
         const [id, ..._rest2] = results;
 
-        const keyParams = { appId: namespace, jobId: workflowGuid }
-        const expectedGuid = KeyService.mintKey(HMNS, KeyType.JOB_STATE, keyParams);
+        const keyParams = { appId: namespace, jobId: workflowGuid };
+        const expectedGuid = KeyService.mintKey(
+          HMNS,
+          KeyType.JOB_STATE,
+          keyParams,
+        );
         expect(id).toEqual(expectedGuid);
         await sleepFor(5_000);
       }, 30_000);

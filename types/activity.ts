@@ -1,7 +1,16 @@
-import { MetricTypes } from "./stats";
-import { StreamRetryPolicy } from "./stream";
+import { MetricTypes } from './stats';
+import { StreamRetryPolicy } from './stream';
 
-type ActivityExecutionType = 'trigger' | 'await' | 'worker' | 'activity' | 'emit' | 'interrupt' | 'cycle' | 'signal' | 'hook';
+type ActivityExecutionType =
+  | 'trigger'
+  | 'await'
+  | 'worker'
+  | 'activity'
+  | 'emit'
+  | 'interrupt'
+  | 'cycle'
+  | 'signal'
+  | 'hook';
 
 type Consumes = Record<string, string[]>;
 
@@ -15,20 +24,20 @@ interface BaseActivity {
   job?: Record<string, any>;
   hook?: Record<string, any>;
   telemetry?: Record<string, any>;
-  emit?: boolean;                      //if true, the activity will emit a message to the `publishes` topic immediately before transitioning to adjacent activities
-  sleep?: number;                      //@pipe /in seconds
-  expire?: number;                     //-1 forever; 0 persists the flow until the parent flow that expired it is dismissed; 15 seconds is the default
-  retry?: StreamRetryPolicy
-  cycle?: boolean;                     //if true, the `notary` will leave leg 2 open, so it can be re/cycled
-  collationInt?: number;               //compiler
-  consumes?: Consumes;                 //compiler
-  PRODUCES?: string[];                 //compiler
-  produces?: string[];                 //compiler
-  publishes?: string;                  //compiler 
-  subscribes?: string;                 //compiler
-  trigger?: string;                    //compiler
-  parent?: string;                     //compiler
-  ancestors?: string[];                //compiler
+  emit?: boolean; //if true, the activity will emit a message to the `publishes` topic immediately before transitioning to adjacent activities
+  sleep?: number; //@pipe /in seconds
+  expire?: number; //-1 forever; 0 persists the flow until the parent flow that expired it is dismissed; 15 seconds is the default
+  retry?: StreamRetryPolicy;
+  cycle?: boolean; //if true, the `notary` will leave leg 2 open, so it can be re/cycled
+  collationInt?: number; //compiler
+  consumes?: Consumes; //compiler
+  PRODUCES?: string[]; //compiler
+  produces?: string[]; //compiler
+  publishes?: string; //compiler
+  subscribes?: string; //compiler
+  trigger?: string; //compiler
+  parent?: string; //compiler
+  ancestors?: string[]; //compiler
 }
 
 interface Measure {
@@ -38,9 +47,9 @@ interface Measure {
 
 interface TriggerActivityStats {
   /**
-   * dependent parent job id; including this allows the parent's 
-   * expiration/interruption events to cascade; set 
-   * `expire` in the YAML for the dependent graph 
+   * dependent parent job id; including this allows the parent's
+   * expiration/interruption events to cascade; set
+   * `expire` in the YAML for the dependent graph
    * to 0 and provide the parent for dependent,
    * cascading interruption and cleanup
    */
@@ -96,50 +105,50 @@ interface HookActivity extends BaseActivity {
 }
 
 interface SignalActivity extends BaseActivity {
-  type: 'signal';                 //signal activities call hook/hookAll
-  subtype: 'one' | 'all';         //trigger: hook(One) or hookAll
-  topic: string;                  //e.g., 'hook.resume'
-  key_name?: string;              //e.g., 'parent_job_id'
-  key_value?: string;             //e.g., '1234567890'
-  scrub?: boolean;                //if true, the index will be deleted after use
-  signal?: Record<string, any>;   //used to define/map the signal input data (what to send/singnal into the job(s))
+  type: 'signal'; //signal activities call hook/hookAll
+  subtype: 'one' | 'all'; //trigger: hook(One) or hookAll
+  topic: string; //e.g., 'hook.resume'
+  key_name?: string; //e.g., 'parent_job_id'
+  key_value?: string; //e.g., '1234567890'
+  scrub?: boolean; //if true, the index will be deleted after use
+  signal?: Record<string, any>; //used to define/map the signal input data (what to send/singnal into the job(s))
   resolver?: Record<string, any>; //used to define/map the signal key resolver (the key used to lookup the job(s that are assigned to the key)
-  status?: string;                //pending, success (default), error
-  code?: number;                  //202, 200 (default)
+  status?: string; //pending, success (default), error
+  code?: number; //202, 200 (default)
 }
 
 interface InterruptActivity extends BaseActivity {
   type: 'interrupt';
 
-  /** 
+  /**
    * Optional Reason; will be used as the error `message` when thrown
    * @default 'Job Interrupted'
    */
   reason?: string;
 
-  /** 
+  /**
    * throw JobInterrupted error upon interrupting
    * @default true
    */
   throw?: boolean;
 
-  /** 
+  /**
    * Interrupt child/descendant jobs
    * @default false
    */
   descend?: boolean;
 
-  /** 
+  /**
    * Target job id (if not present the current job will be targeted)
    */
   target?: string;
 
-  /** 
+  /**
    * Optional topic to publish the interrupt message (if not present the current job topic will be used
    */
   topic?: string;
 
-  /** 
+  /**
    * Optional Error Code; will be used as the error `code` when thrown
    * @default 410
    */
@@ -151,7 +160,15 @@ interface InterruptActivity extends BaseActivity {
   stack?: string;
 }
 
-type ActivityType = BaseActivity | TriggerActivity | AwaitActivity | WorkerActivity | InterruptActivity | HookActivity | SignalActivity | CycleActivity;
+type ActivityType =
+  | BaseActivity
+  | TriggerActivity
+  | AwaitActivity
+  | WorkerActivity
+  | InterruptActivity
+  | HookActivity
+  | SignalActivity
+  | CycleActivity;
 
 type ActivityData = Record<string, any>;
 
@@ -213,7 +230,7 @@ type ActivityMetadata = {
 type ActivityContext = {
   data?: ActivityData | null;
   metadata: ActivityMetadata;
-  hook?: ActivityData
+  hook?: ActivityData;
 };
 
 type ActivityDuplex = 1 | 2;
@@ -243,5 +260,5 @@ export {
   BaseActivity,
   InterruptActivity,
   TriggerActivity,
-  WorkerActivity
+  WorkerActivity,
 };

@@ -1,8 +1,8 @@
-import { Pipe } from "../pipe";
+import { Pipe } from '../pipe';
 import { StoreService } from '../store';
-import { MappingStatements } from "../../types/map";
-import { HotMeshManifest } from "../../types/hotmesh";
-import { RedisClient, RedisMulti } from "../../types/redis";
+import { MappingStatements } from '../../types/map';
+import { HotMeshManifest } from '../../types/hotmesh';
+import { RedisClient, RedisMulti } from '../../types/redis';
 
 class Validator {
   manifest: HotMeshManifest | null = null;
@@ -11,8 +11,14 @@ class Validator {
   store: StoreService<RedisClient, RedisMulti> | null = null;
 
   static SYS_VARS = ['$app', '$self', '$graph', '$job'];
-  static CONTEXT_VARS = ['{$input}', '{$output}', '{$item}', '{$key}', '{$index}'];
-  
+  static CONTEXT_VARS = [
+    '{$input}',
+    '{$output}',
+    '{$item}',
+    '{$key}',
+    '{$index}',
+  ];
+
   constructor(manifest: HotMeshManifest) {
     this.manifest = manifest;
   }
@@ -54,10 +60,16 @@ class Validator {
   }
 
   isMappingStatement(value: string): boolean {
-    return typeof value === 'string' && value.startsWith('{') && value.endsWith('}');
+    return (
+      typeof value === 'string' && value.startsWith('{') && value.endsWith('}')
+    );
   }
 
-  extractMappingStatements(obj: any, result: MappingStatements, currentActivityId: string): void {
+  extractMappingStatements(
+    obj: any,
+    result: MappingStatements,
+    currentActivityId: string,
+  ): void {
     for (const key in obj) {
       if (typeof obj[key] === 'object' && obj[key] !== null) {
         this.extractMappingStatements(obj[key], result, currentActivityId);
@@ -69,7 +81,7 @@ class Validator {
       }
     }
   }
-  
+
   getMappingStatements() {
     const mappingStatements: MappingStatements = {};
     this.manifest.app.graphs.forEach((graph) => {
@@ -93,8 +105,17 @@ class Validator {
         if (statement.startsWith('{') && statement.endsWith('}')) {
           const statementParts = statement.slice(1, -1).split('.');
           const referencedActivityId = statementParts[0];
-          if (!(Validator.SYS_VARS.includes(referencedActivityId) || activityIds.includes(referencedActivityId) || this.isFunction(statement) || this.isContextVariable(statement))) {
-            throw new Error(`Mapping statement references non-existent activity: ${statement}`);
+          if (
+            !(
+              Validator.SYS_VARS.includes(referencedActivityId) ||
+              activityIds.includes(referencedActivityId) ||
+              this.isFunction(statement) ||
+              this.isContextVariable(statement)
+            )
+          ) {
+            throw new Error(
+              `Mapping statement references non-existent activity: ${statement}`,
+            );
           }
         }
       });
@@ -106,7 +127,9 @@ class Validator {
   }
 
   isContextVariable(value: string): boolean {
-    return ['{$input}', '{$output}', '{$item}', '{$key}', '{$index}'].includes(value);
+    return ['{$input}', '{$output}', '{$item}', '{$key}', '{$index}'].includes(
+      value,
+    );
   }
 
   // 1.3) Validate the mapping/@pipe statements are valid

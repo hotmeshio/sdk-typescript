@@ -1,4 +1,4 @@
-import { sleepFor } from "../../../../modules/utils";
+import { sleepFor } from '../../../../modules/utils';
 
 export default async function greet(name: string): Promise<string> {
   //NOTE: This is a standard node sleep timeout, not a `durable` sleep.

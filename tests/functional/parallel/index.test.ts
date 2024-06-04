@@ -6,7 +6,8 @@ import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import {
   StreamData,
   StreamDataResponse,
-  StreamStatus } from '../../../types/stream';
+  StreamStatus,
+} from '../../../types/stream';
 import { guid } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
@@ -22,7 +23,11 @@ describe('FUNCTIONAL | Parallel', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     //init/activate HotMesh (test both `engine` and `worker` roles)
@@ -30,23 +35,25 @@ describe('FUNCTIONAL | Parallel', () => {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
       workers: [
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
           redis: { class: Redis, options },
-          callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+          callback: async (
+            streamData: StreamData,
+          ): Promise<StreamDataResponse> => {
             return {
               code: 200,
               status: StreamStatus.SUCCESS,
               metadata: { ...streamData.metadata },
-              data: { result:  new Date().toLocaleString('en-US')},
+              data: { result: new Date().toLocaleString('en-US') },
             } as StreamDataResponse;
-          }
-        }
-      ]
+          },
+        },
+      ],
     };
     hotMesh = await HotMesh.init(config);
   });

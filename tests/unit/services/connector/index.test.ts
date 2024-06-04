@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+
 import config from '../../../$setup/config';
 import { ConnectorService } from '../../../../services/connector';
 import { RedisConnection } from '../../../../services/connector/clients/ioredis';

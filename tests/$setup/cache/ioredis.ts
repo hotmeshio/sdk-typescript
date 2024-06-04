@@ -1,10 +1,12 @@
 import { Redis, RedisOptions as RedisClientOptions } from 'ioredis';
+
 import config from '../config';
-import { 
+import {
   IORedisClassType,
   IORedisClientType,
   IORedisClientType as RedisClientType,
-  IORedisMultiType as RedisMultiType } from '../../../types/redis';
+  IORedisMultiType as RedisMultiType,
+} from '../../../types/redis';
 
 class RedisConnection {
   private connection: any | null = null;
@@ -41,7 +43,10 @@ class RedisConnection {
     }
   }
 
-  public static async getConnection(id: string, options?: Partial<RedisClientOptions>): Promise<RedisConnection> {
+  public static async getConnection(
+    id: string,
+    options?: Partial<RedisClientOptions>,
+  ): Promise<RedisConnection> {
     if (this.instances.has(id)) {
       return this.instances.get(id) as RedisConnection;
     }
@@ -54,7 +59,11 @@ class RedisConnection {
   }
 
   public static async disconnectAll(): Promise<void> {
-    await Promise.all(Array.from(this.instances.values()).map((instance) => instance.disconnect()));
+    await Promise.all(
+      Array.from(this.instances.values()).map((instance) =>
+        instance.disconnect(),
+      ),
+    );
     this.instances.clear();
   }
 }

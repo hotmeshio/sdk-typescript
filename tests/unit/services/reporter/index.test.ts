@@ -3,7 +3,10 @@ import { ILogger } from '../../../../services/logger';
 import { ReporterService } from '../../../../services/reporter';
 import { IORedisStoreService as IORedisStore } from '../../../../services/store/clients/ioredis';
 import { JobStatsRange } from '../../../../types/stats';
-import { RedisClientType, RedisConnection } from '../../../$setup/cache/ioredis';
+import {
+  RedisClientType,
+  RedisConnection,
+} from '../../../$setup/cache/ioredis';
 
 jest.mock('../../../../services/store/clients/ioredis', () => {
   return {
@@ -22,12 +25,16 @@ const getTimeSeries = (granularity = '5m', minutesInThePast = 0): string => {
   const granularityUnit = granularity.slice(-1);
   const granularityValue = parseInt(granularity.slice(0, -1), 10);
   if (granularityUnit === 'm') {
-    const minute = Math.floor(now.getMinutes() / granularityValue) * granularityValue;
+    const minute =
+      Math.floor(now.getMinutes() / granularityValue) * granularityValue;
     now.setUTCMinutes(minute, 0, 0);
   } else if (granularityUnit === 'h') {
     now.setUTCMinutes(0, 0, 0);
   }
-  return now.toISOString().replace(/:\d\d\..+|-|T/g, '').replace(':','');
+  return now
+    .toISOString()
+    .replace(/:\d\d\..+|-|T/g, '')
+    .replace(':', '');
 };
 
 describe('ReporterService', () => {
@@ -55,7 +62,11 @@ describe('ReporterService', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    reporter = new ReporterService({ id: appId, version: appVersion }, redisStore, logger);
+    reporter = new ReporterService(
+      { id: appId, version: appVersion },
+      redisStore,
+      logger,
+    );
   });
 
   afterAll(async () => {
@@ -71,32 +82,34 @@ describe('ReporterService', () => {
         end: 'NOW',
       };
       const sampleRedisData: JobStatsRange = {
-        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity, 10)}`]: {
-          'count': 25,
-          'count:color:12315': 5,
-          'count:size:12145': 5,
-          'count:color:12335': 5,
-          'count:size:12345': 5,
-          'count:color:12355': 5,
-          'count:size:12545': 5,
-          'count:color:12375': 5,
-          'count:size:12745': 5,
-          'count:color:12395': 5,
-          'count:size:12945': 5,
-        },
-        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity)}`]: {
-          'count': 15,
-          'count:color:12315': 5,
-          'count:size:12145': 4,
-          'count:color:12335': 3,
-          'count:size:12345': 2,
-          'count:color:12355': 1,
-          'count:size:12545': 5,
-          'count:color:12375': 4,
-          'count:size:12745': 3,
-          'count:color:12395': 2,
-          'count:size:12945': 1,
-        },
+        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity, 10)}`]:
+          {
+            count: 25,
+            'count:color:12315': 5,
+            'count:size:12145': 5,
+            'count:color:12335': 5,
+            'count:size:12345': 5,
+            'count:color:12355': 5,
+            'count:size:12545': 5,
+            'count:color:12375': 5,
+            'count:size:12745': 5,
+            'count:color:12395': 5,
+            'count:size:12945': 5,
+          },
+        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity)}`]:
+          {
+            count: 15,
+            'count:color:12315': 5,
+            'count:size:12145': 4,
+            'count:color:12335': 3,
+            'count:size:12345': 2,
+            'count:color:12355': 1,
+            'count:size:12545': 5,
+            'count:color:12375': 4,
+            'count:size:12745': 3,
+            'count:color:12395': 2,
+            'count:size:12945': 1,
+          },
       };
 
       (redisStore.getJobStats as jest.Mock).mockResolvedValue(sampleRedisData);
@@ -116,32 +129,34 @@ describe('ReporterService', () => {
         sparse: true,
       };
       const sampleRedisData: JobStatsRange = {
-        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity, 10)}`]: {
-          'count': 25,
-          'count:color:12315': 5,
-          'count:size:12145': 5,
-          'count:color:12335': 5,
-          'count:size:12345': 5,
-          'count:color:12355': 5,
-          'count:size:12545': 5,
-          'count:color:12375': 5,
-          'count:size:12745': 5,
-          'count:color:12395': 5,
-          'count:size:12945': 5,
-        },
-        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity)}`]: {
-          'count': 15,
-          'count:color:12315': 5,
-          'count:size:12145': 4,
-          'count:color:12335': 3,
-          'count:size:12345': 2,
-          'count:color:12355': 1,
-          'count:size:12545': 5,
-          'count:color:12375': 4,
-          'count:size:12745': 3,
-          'count:color:12395': 2,
-          'count:size:12945': 1,
-        },
+        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity, 10)}`]:
+          {
+            count: 25,
+            'count:color:12315': 5,
+            'count:size:12145': 5,
+            'count:color:12335': 5,
+            'count:size:12345': 5,
+            'count:color:12355': 5,
+            'count:size:12545': 5,
+            'count:color:12375': 5,
+            'count:size:12745': 5,
+            'count:color:12395': 5,
+            'count:size:12945': 5,
+          },
+        [`${HMNS}:${appId}:s:${options.key}:${getTimeSeries(options.granularity)}`]:
+          {
+            count: 15,
+            'count:color:12315': 5,
+            'count:size:12145': 4,
+            'count:color:12335': 3,
+            'count:size:12345': 2,
+            'count:color:12355': 1,
+            'count:size:12545': 5,
+            'count:color:12375': 4,
+            'count:size:12745': 3,
+            'count:color:12395': 2,
+            'count:size:12945': 1,
+          },
       };
 
       (redisStore.getJobStats as jest.Mock).mockResolvedValue(sampleRedisData);
@@ -170,7 +185,10 @@ describe('ReporterService', () => {
 
       (redisStore.getJobIds as jest.Mock).mockResolvedValue(mockedJobIds);
       const result = await reporter.getIds(getStatsOptions, facets);
-      expect(redisStore.getJobIds).toHaveBeenCalledWith(expect.any(Array), expect.any(Object));
+      expect(redisStore.getJobIds).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.any(Object),
+      );
       expect(result).toHaveProperty('key', getStatsOptions.key);
       expect(result).toHaveProperty('facets', facets);
       expect(result).toHaveProperty('granularity', getStatsOptions.granularity);
@@ -199,8 +217,11 @@ describe('ReporterService', () => {
       ];
       (redisStore.getJobIds as jest.Mock).mockResolvedValue(mockedIdsData);
       const result = await reporter.getWorkItems(getStatsOptions, facets);
-      expect(redisStore.getJobIds).toHaveBeenCalledWith(expect.any(Array), expect.any(Array));
+      expect(redisStore.getJobIds).toHaveBeenCalledWith(
+        expect.any(Array),
+        expect.any(Array),
+      );
       expect(result).toEqual(expectedWorkerLists);
     });
-  });  
+  });
 });
