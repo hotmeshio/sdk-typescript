@@ -12,13 +12,36 @@ abstract class SubService<T, U> {
     this.redisClient = redisClient;
   }
 
-  abstract init(namespace: string, appId: string, engineId: string, logger: ILogger): Promise<void>;
+  abstract init(
+    namespace: string,
+    appId: string,
+    engineId: string,
+    logger: ILogger,
+  ): Promise<void>;
   abstract getMulti(): U;
   abstract mintKey(type: KeyType, params: KeyStoreParams): string;
-  abstract subscribe(keyType: KeyType.QUORUM, callback: SubscriptionCallback, appId: string, engineId?: string): Promise<void>;
-  abstract unsubscribe(keyType: KeyType.QUORUM, appId: string, engineId?: string): Promise<void>;
-  abstract psubscribe(keyType: KeyType.QUORUM, callback: SubscriptionCallback, appId: string, engineId?: string): Promise<void>;
-  abstract punsubscribe(keyType: KeyType.QUORUM, appId: string, engineId?: string): Promise<void>;
+  abstract subscribe(
+    keyType: KeyType.QUORUM,
+    callback: SubscriptionCallback,
+    appId: string,
+    engineId?: string,
+  ): Promise<void>;
+  abstract unsubscribe(
+    keyType: KeyType.QUORUM,
+    appId: string,
+    engineId?: string,
+  ): Promise<void>;
+  abstract psubscribe(
+    keyType: KeyType.QUORUM,
+    callback: SubscriptionCallback,
+    appId: string,
+    engineId?: string,
+  ): Promise<void>;
+  abstract punsubscribe(
+    keyType: KeyType.QUORUM,
+    appId: string,
+    engineId?: string,
+  ): Promise<void>;
   //NOTE: `publish` happens in the 'StoreService' as Redis subscription clients must be read-only
 }
 

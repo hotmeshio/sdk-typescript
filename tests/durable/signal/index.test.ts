@@ -1,11 +1,12 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { Durable } from '../../../services/durable';
-import * as workflows from './src/workflows';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
+
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -20,7 +21,11 @@ describe('DURABLE | signal | `Durable.workflow.signal`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
   });
 
@@ -45,7 +50,7 @@ describe('DURABLE | signal | `Durable.workflow.signal`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
           args: ['ColdMush'],
@@ -81,14 +86,19 @@ describe('DURABLE | signal | `Durable.workflow.signal`', () => {
         //signal using the original client handle
         await sleepFor(3_000);
         await handle.signal('abcdefg', { name: 'WarmMash' });
-        
+
         //signal by instancing a new client connection
         await sleepFor(1_000);
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         await client.workflow.signal('hijklmnop', { name: 'WarnCrash' });
 
         const result = await handle.result();
-        expect(result).toEqual(['Hello, stranger!', {'name': 'WarmMash'}, {'name': 'WarnCrash'}, 'Hello, ColdMush!']);
+        expect(result).toEqual([
+          'Hello, stranger!',
+          { name: 'WarmMash' },
+          { name: 'WarnCrash' },
+          'Hello, ColdMush!',
+        ]);
       }, 15_000);
     });
   });

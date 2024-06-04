@@ -1,12 +1,13 @@
 import * as Redis from 'redis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { deterministicRandom, guid, sleepFor } from '../../../modules/utils';
 import { Durable } from '../../../services/durable';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/redis';
-import * as workflows from './src/workflows';
 import { RedisRedisClassType } from '../../../types';
+
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -53,7 +54,7 @@ describe('DURABLE | basic | `Durable Foundational`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         handle = await client.workflow.start({
           args: ['HotMesh'],
           taskQueue: 'basic-world',
@@ -71,7 +72,7 @@ describe('DURABLE | basic | `Durable Foundational`', () => {
       const connection = {
         class: Redis,
         options,
-      }
+      };
       const taskQueue = 'basic-world';
 
       it('should create and run a parent worker', async () => {
@@ -100,24 +101,27 @@ describe('DURABLE | basic | `Durable Foundational`', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
         const signalId = 'abcdefg';
-        //the test workflow calls   Durable.workflow.sleepFor('2s') 
+        //the test workflow calls   Durable.workflow.sleepFor('2s')
         //...sleep to make sure the workfow is fully paused
         await sleepFor(15_000);
-        //the test workflow uses  Durable.workflow.waitFor(signalId)  
+        //the test workflow uses  Durable.workflow.waitFor(signalId)
         //...signal it and then await the result
-        const signalPayload = { id: signalId, data: { hello: 'world', id: signalId } }
+        const signalPayload = {
+          id: signalId,
+          data: { hello: 'world', id: signalId },
+        };
         await handle.signal(signalId, signalPayload);
         const result = await handle.result();
         const r1 = deterministicRandom(1);
         const r2 = deterministicRandom(4);
         expect(result).toEqual({
-          jobBody: 'Hello from child workflow, start-HotMeshy!', 
-          jobId: 'MyWorkflowId123', 
-          oneTimeGreeting: {'complex': 'Basic, HotMesh!'}, 
-          payload: {'data': {'hello': 'world', 'id': 'abcdefg'}, 'id': 'abcdefg'}, 
-          proxyGreeting: {'complex': 'Basic, HotMesh!'},
-          proxyGreeting3: {'complex': 'Basic, HotMesh3!'},
-          proxyGreeting4: {'complex': 'Basic, HotMesh4!'},
+          jobBody: 'Hello from child workflow, start-HotMeshy!',
+          jobId: 'MyWorkflowId123',
+          oneTimeGreeting: { complex: 'Basic, HotMesh!' },
+          payload: { data: { hello: 'world', id: 'abcdefg' }, id: 'abcdefg' },
+          proxyGreeting: { complex: 'Basic, HotMesh!' },
+          proxyGreeting3: { complex: 'Basic, HotMesh3!' },
+          proxyGreeting4: { complex: 'Basic, HotMesh4!' },
           random1: r1,
           random2: r2,
         });

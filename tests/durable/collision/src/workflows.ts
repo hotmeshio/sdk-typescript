@@ -1,4 +1,5 @@
 import { Durable } from '../../../../services/durable';
+
 import * as activities from './activities';
 
 //NOTE: when `./activities` exports a `default` function,
@@ -8,8 +9,9 @@ type ActivitiesType = {
   greet: typeof greetFunctionType;
 };
 
-const { greet } = Durable.workflow
-  .proxyActivities<ActivitiesType>({ activities });
+const { greet } = Durable.workflow.proxyActivities<ActivitiesType>({
+  activities,
+});
 
 export async function example(name: string): Promise<string> {
   const greet1 = await greet(name);
@@ -27,7 +29,7 @@ export async function childExample(name: string): Promise<string> {
   return await greet(name);
 }
 
-const STATE =  {
+const STATE = {
   count: 0,
 };
 

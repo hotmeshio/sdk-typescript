@@ -3,15 +3,17 @@ import {
   HMSH_OTT_WAIT_TIME,
   HMSH_CODE_SUCCESS,
   HMSH_CODE_PENDING,
-  HMSH_CODE_TIMEOUT, 
-  HMSH_EXPIRE_JOB_SECONDS } from '../../modules/enums';
+  HMSH_CODE_TIMEOUT,
+  HMSH_EXPIRE_JOB_SECONDS,
+} from '../../modules/enums';
 import {
   formatISODate,
   getSubscriptionTopic,
   guid,
   identifyRedisType,
   polyfill,
-  restoreHierarchy } from '../../modules/utils';
+  restoreHierarchy,
+} from '../../modules/utils';
 import Activities from '../activities';
 import { Await } from '../activities/await';
 import { Cycle } from '../activities/cycle';
@@ -37,10 +39,7 @@ import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
 import { RedisSubService as RedisSub } from '../sub/clients/redis';
 import { TaskService } from '../task';
 import { AppVID } from '../../types/app';
-import {
-  ActivityMetadata,
-  ActivityType,
-  Consumes } from '../../types/activity';
+import { ActivityMetadata, ActivityType, Consumes } from '../../types/activity';
 import { CacheMode } from '../../types/cache';
 import { JobExport } from '../../types/exporter';
 import {
@@ -49,30 +48,34 @@ import {
   JobMetadata,
   JobOutput,
   PartialJobState,
-  JobStatus, 
+  JobStatus,
   JobInterruptOptions,
-  JobCompletionOptions, 
-  ExtensionType} from '../../types/job';
+  JobCompletionOptions,
+  ExtensionType,
+} from '../../types/job';
 import {
   HotMeshApps,
   HotMeshConfig,
   HotMeshManifest,
-  HotMeshSettings } from '../../types/hotmesh';
-import { 
+  HotMeshSettings,
+} from '../../types/hotmesh';
+import {
   JobMessage,
   JobMessageCallback,
-  SubscriptionCallback } from '../../types/quorum';
+  SubscriptionCallback,
+} from '../../types/quorum';
 import {
   IORedisClientType,
   RedisClient,
   RedisMulti,
-  RedisRedisClientType as RedisClientType } from '../../types/redis';
+  RedisRedisClientType as RedisClientType,
+} from '../../types/redis';
 import { StringAnyType, StringStringType } from '../../types/serializer';
 import {
   GetStatsOptions,
   IdsResponse,
   JobStatsInput,
-  StatsResponse
+  StatsResponse,
 } from '../../types/stats';
 import {
   StreamCode,
@@ -81,7 +84,8 @@ import {
   StreamDataType,
   StreamError,
   StreamRole,
-  StreamStatus } from '../../types/stream';
+  StreamStatus,
+} from '../../types/stream';
 import { WorkListTaskType } from '../../types/task';
 
 class EngineService {
@@ -103,7 +107,13 @@ class EngineService {
   jobId = 1;
   inited: string;
 
-  static async init(namespace: string, appId: string, guid: string, config: HotMeshConfig, logger: ILogger): Promise<EngineService> {
+  static async init(
+    namespace: string,
+    appId: string,
+    guid: string,
+    config: HotMeshConfig,
+    logger: ILogger,
+  ): Promise<EngineService> {
     if (config.engine) {
       const instance = new EngineService();
       instance.verifyEngineFields(config);
@@ -119,19 +129,13 @@ class EngineService {
 
       instance.router = instance.initRouter(config);
       instance.router.consumeMessages(
-        instance.stream.mintKey(
-          KeyType.STREAMS,
-          { appId: instance.appId },
-        ),
+        instance.stream.mintKey(KeyType.STREAMS, { appId: instance.appId }),
         'ENGINE',
         instance.guid,
-        instance.processStreamMessage.bind(instance)
+        instance.processStreamMessage.bind(instance),
       );
 
-      instance.taskService = new TaskService(
-        instance.store,
-        logger
-      );
+      instance.taskService = new TaskService(instance.store, logger);
       instance.exporter = new ExporterService(
         instance.appId,
         instance.store,
@@ -143,9 +147,11 @@ class EngineService {
   }
 
   verifyEngineFields(config: HotMeshConfig) {
-    if (!identifyRedisType(config.engine.store) || 
+    if (
+      !identifyRedisType(config.engine.store) ||
       !identifyRedisType(config.engine.stream) ||
-      !identifyRedisType(config.engine.sub)) {
+      !identifyRedisType(config.engine.sub)
+    ) {
       throw new Error('engine config must reference 3 redis client instances');
     }
   }
@@ -156,11 +162,7 @@ class EngineService {
     } else {
       this.store = new IORedisStore(store as IORedisClientType);
     }
-    await this.store.init(
-      this.namespace,
-      this.appId,
-      this.logger
-    );
+    await this.store.init(this.namespace, this.appId, this.logger);
   }
 
   async initSubChannel(sub: RedisClient) {
@@ -173,7 +175,7 @@ class EngineService {
       this.namespace,
       this.appId,
       this.guid,
-      this.logger
+      this.logger,
     );
   }
 
@@ -183,11 +185,7 @@ class EngineService {
     } else {
       this.stream = new IORedisStream(stream as IORedisClientType);
     }
-    await this.stream.init(
-      this.namespace,
-      this.appId,
-      this.logger
-    );
+    await this.stream.init(this.namespace, this.appId, this.logger);
   }
 
   initRouter(config: HotMeshConfig): Router {
@@ -226,7 +224,10 @@ class EngineService {
   }
 
   setCacheMode(cacheMode: CacheMode, untilVersion: string) {
-    this.logger.info(`engine-rule-cache-updated`, { mode: cacheMode, until: untilVersion });
+    this.logger.info(`engine-rule-cache-updated`, {
+      mode: cacheMode,
+      until: untilVersion,
+    });
     this.cacheMode = cacheMode;
     this.untilVersion = untilVersion;
   }
@@ -240,11 +241,11 @@ class EngineService {
   }
 
   async processWebHooks() {
-    this.taskService.processWebHooks((this.hook).bind(this));
+    this.taskService.processWebHooks(this.hook.bind(this));
   }
 
   async processTimeHooks() {
-    this.taskService.processTimeHooks((this.hookTime).bind(this));
+    this.taskService.processTimeHooks(this.hookTime.bind(this));
   }
 
   async throttle(delayInMillis: number) {
@@ -252,9 +253,14 @@ class EngineService {
   }
 
   // ************* METADATA/MODEL METHODS *************
-  async initActivity(topic: string, data: JobData = {}, context?: JobState): Promise<Await|Cycle|Hook|Signal|Trigger|Worker|Interrupt> {
+  async initActivity(
+    topic: string,
+    data: JobData = {},
+    context?: JobState,
+  ): Promise<Await | Cycle | Hook | Signal | Trigger | Worker | Interrupt> {
     const [activityId, schema] = await this.getSchema(topic);
-    const ActivityHandler = Activities[polyfill.resolveActivityType(schema.type)];
+    const ActivityHandler =
+      Activities[polyfill.resolveActivityType(schema.type)];
     if (ActivityHandler) {
       const utc = formatISODate(new Date());
       const metadata: ActivityMetadata = {
@@ -262,7 +268,7 @@ class EngineService {
         atp: schema.type,
         stp: schema.subtype,
         ac: utc,
-        au: utc
+        au: utc,
       };
       const hook = null;
       return new ActivityHandler(schema, data, metadata, hook, this, context);
@@ -270,25 +276,38 @@ class EngineService {
       throw new Error(`activity type ${schema.type} not found`);
     }
   }
-  async getSchema(topic: string): Promise<[activityId: string, schema: ActivityType]> {
-    const app = await this.store.getApp(this.appId) as AppVID;
+  async getSchema(
+    topic: string,
+  ): Promise<[activityId: string, schema: ActivityType]> {
+    const app = (await this.store.getApp(this.appId)) as AppVID;
     if (!app) {
       throw new Error(`no app found for id ${this.appId}`);
     }
     if (this.isPrivate(topic)) {
       //private subscriptions use the schema id (.activityId)
-      const activityId = topic.substring(1)
-      const schema = await this.store.getSchema(activityId, await this.getVID(app));
+      const activityId = topic.substring(1);
+      const schema = await this.store.getSchema(
+        activityId,
+        await this.getVID(app),
+      );
       return [activityId, schema];
     } else {
       //public subscriptions use a topic (a.b.c) that is associated with a schema id
-      const activityId = await this.store.getSubscription(topic, await this.getVID(app));
+      const activityId = await this.store.getSubscription(
+        topic,
+        await this.getVID(app),
+      );
       if (activityId) {
-        const schema = await this.store.getSchema(activityId, await this.getVID(app));
+        const schema = await this.store.getSchema(
+          activityId,
+          await this.getVID(app),
+        );
         return [activityId, schema];
       }
     }
-    throw new Error(`no subscription found for topic ${topic} in app ${this.appId} for app version ${app.version}`);
+    throw new Error(
+      `no subscription found for topic ${topic} in app ${this.appId} for app version ${app.version}`,
+    );
   }
   async getSettings(): Promise<HotMeshSettings> {
     return await this.store.getSettings();
@@ -310,18 +329,33 @@ class EngineService {
   // ************* REPORTER METHODS *************
   async getStats(topic: string, query: JobStatsInput): Promise<StatsResponse> {
     const { id, version } = await this.getVID();
-    const reporter = new ReporterService({ id, version }, this.store, this.logger);
+    const reporter = new ReporterService(
+      { id, version },
+      this.store,
+      this.logger,
+    );
     const resolvedQuery = await this.resolveQuery(topic, query);
     return await reporter.getStats(resolvedQuery);
   }
-  async getIds(topic: string, query: JobStatsInput, queryFacets = []): Promise<IdsResponse> {
+  async getIds(
+    topic: string,
+    query: JobStatsInput,
+    queryFacets = [],
+  ): Promise<IdsResponse> {
     const { id, version } = await this.getVID();
-    const reporter = new ReporterService({ id, version }, this.store, this.logger);
+    const reporter = new ReporterService(
+      { id, version },
+      this.store,
+      this.logger,
+    );
     const resolvedQuery = await this.resolveQuery(topic, query);
     return await reporter.getIds(resolvedQuery, queryFacets);
   }
-  async resolveQuery(topic: string, query: JobStatsInput): Promise<GetStatsOptions> {
-    const trigger = await this.initActivity(topic, query.data) as Trigger;
+  async resolveQuery(
+    topic: string,
+    query: JobStatsInput,
+  ): Promise<GetStatsOptions> {
+    const trigger = (await this.initActivity(topic, query.data)) as Trigger;
     await trigger.getState();
     return {
       end: query.end,
@@ -356,30 +390,30 @@ class EngineService {
     };
     if (streamData.type === StreamDataType.TIMEHOOK) {
       //TIMEHOOK AWAKEN
-      const activityHandler = await this.initActivity(
+      const activityHandler = (await this.initActivity(
         `.${streamData.metadata.aid}`,
         context.data,
         context as JobState,
-        ) as Hook;
+      )) as Hook;
       await activityHandler.processTimeHookEvent(streamData.metadata.jid);
     } else if (streamData.type === StreamDataType.WEBHOOK) {
       //WEBHOOK AWAKEN (SIGNAL IN)
-      const activityHandler = await this.initActivity(
+      const activityHandler = (await this.initActivity(
         `.${streamData.metadata.aid}`,
         context.data,
         context as JobState,
-        ) as Hook;
+      )) as Hook;
       await activityHandler.processWebHookEvent(
         streamData.status,
-        streamData.code
+        streamData.code,
       );
     } else if (streamData.type === StreamDataType.TRANSITION) {
       //TRANSITION (ADJACENT ACTIVITY)
-      const activityHandler = await this.initActivity(
+      const activityHandler = (await this.initActivity(
         `.${streamData.metadata.aid}`,
         context.data,
         context as JobState,
-      ) as Hook; //todo: `as Activity` (type is more generic)
+      )) as Hook; //todo: `as Activity` (type is more generic)
       await activityHandler.process();
     } else if (streamData.type === StreamDataType.AWAIT) {
       //TRIGGER JOB
@@ -393,49 +427,52 @@ class EngineService {
         trc: streamData.metadata.trc,
         spn: streamData.metadata.spn,
       };
-      const activityHandler = await this.initActivity(
+      const activityHandler = (await this.initActivity(
         streamData.metadata.topic,
         streamData.data,
-        context as JobState
-      ) as Trigger;
+        context as JobState,
+      )) as Trigger;
       await activityHandler.process();
     } else if (streamData.type === StreamDataType.RESULT) {
       //AWAIT RESULT
-      const activityHandler = await this.initActivity(
+      const activityHandler = (await this.initActivity(
         `.${context.metadata.aid}`,
         streamData.data,
         context as JobState,
-      ) as Await;
-      await activityHandler.processEvent(
-        streamData.status,
-        streamData.code,
-      );
+      )) as Await;
+      await activityHandler.processEvent(streamData.status, streamData.code);
     } else {
       //WORKER RESULT
-      const activityHandler = await this.initActivity(
+      const activityHandler = (await this.initActivity(
         `.${streamData.metadata.aid}`,
         streamData.data,
         context as JobState,
-      ) as Worker;
+      )) as Worker;
       await activityHandler.processEvent(
         streamData.status,
         streamData.code,
-        'output'
+        'output',
       );
     }
     this.logger.debug('engine-process-stream-message-end', {
       jid: streamData.metadata.jid,
       gid: streamData.metadata.gid,
-      aid: streamData.metadata.aid
+      aid: streamData.metadata.aid,
     });
   }
 
   // ***************** `AWAIT` ACTIVITY RETURN RESPONSE ****************
-  async execAdjacentParent(context: JobState, jobOutput: JobOutput, emit = false): Promise<string> {
+  async execAdjacentParent(
+    context: JobState,
+    jobOutput: JobOutput,
+    emit = false,
+  ): Promise<string> {
     if (this.hasParentJob(context)) {
       //errors are stringified `StreamError` objects
       const error = this.resolveError(jobOutput.metadata);
-      const spn = context['$self']?.output?.metadata?.l2s || context['$self']?.output?.metadata?.l1s;
+      const spn =
+        context['$self']?.output?.metadata?.l2s ||
+        context['$self']?.output?.metadata?.l1s;
       const streamData: StreamData = {
         metadata: {
           guid: guid(),
@@ -466,28 +503,37 @@ class EngineService {
   }
   hasParentJob(context: JobState, checkSevered = false): boolean {
     if (checkSevered) {
-      return Boolean(context.metadata.pj && context.metadata.pa && !context.metadata.px);
+      return Boolean(
+        context.metadata.pj && context.metadata.pa && !context.metadata.px,
+      );
     }
     return Boolean(context.metadata.pj && context.metadata.pa);
   }
   resolveError(metadata: JobMetadata): StreamError | undefined {
     if (metadata && metadata.err) {
       return JSON.parse(metadata.err) as StreamError;
-    } 
+    }
   }
 
   // ****************** `INTERRUPT` ACTIVE JOBS *****************
-  async interrupt(topic: string, jobId: string, options: JobInterruptOptions = {}): Promise<string> {
+  async interrupt(
+    topic: string,
+    jobId: string,
+    options: JobInterruptOptions = {},
+  ): Promise<string> {
     //immediately interrupt the job, going directly to the data source
     await this.store.interrupt(topic, jobId, options);
 
     //now that the job is interrupted, we can clean up
-    const context = await this.getState(topic, jobId) as JobState;
+    const context = (await this.getState(topic, jobId)) as JobState;
     const completionOpts: JobCompletionOptions = {
       interrupt: options.descend,
       expire: options.expire,
     };
-    return await this.runJobCompletionTasks(context, completionOpts) as string;
+    return (await this.runJobCompletionTasks(
+      context,
+      completionOpts,
+    )) as string;
   }
 
   // ****************** `SCRUB` CLEAN COMPLETED JOBS *****************
@@ -497,7 +543,12 @@ class EngineService {
   }
 
   // ****************** `HOOK` ACTIVITY RE-ENTRY POINT *****************
-  async hook(topic: string, data: JobData, status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200): Promise<string> {
+  async hook(
+    topic: string,
+    data: JobData,
+    status: StreamStatus = StreamStatus.SUCCESS,
+    code: StreamCode = 200,
+  ): Promise<string> {
     const hookRule = await this.taskService.getHookRule(topic);
     const [aid] = await this.getSchema(`.${hookRule.to}`);
     const streamData: StreamData = {
@@ -507,19 +558,23 @@ class EngineService {
       metadata: {
         guid: guid(),
         aid,
-        topic
+        topic,
       },
       data,
     };
-    return await this.router.publishMessage(null, streamData) as string;
+    return (await this.router.publishMessage(null, streamData)) as string;
   }
-  async hookTime(jobId: string, gId: string, topicOrActivity: string, type?: WorkListTaskType): Promise<string | void> {
+  async hookTime(
+    jobId: string,
+    gId: string,
+    topicOrActivity: string,
+    type?: WorkListTaskType,
+  ): Promise<string | void> {
     if (type === 'interrupt' || type === 'expire') {
-      return await this.interrupt(
-        topicOrActivity,
-        jobId,
-        { suppress: true, expire: 1 },
-      );
+      return await this.interrupt(topicOrActivity, jobId, {
+        suppress: true,
+        expire: 1,
+      });
     }
     const [aid, ...dimensions] = topicOrActivity.split(',');
     const dad = `,${dimensions.join(',')}`;
@@ -536,28 +591,42 @@ class EngineService {
     };
     await this.router.publishMessage(null, streamData);
   }
-  async hookAll(hookTopic: string, data: JobData, keyResolver: JobStatsInput, queryFacets: string[] = []): Promise<string[]> {
+  async hookAll(
+    hookTopic: string,
+    data: JobData,
+    keyResolver: JobStatsInput,
+    queryFacets: string[] = [],
+  ): Promise<string[]> {
     const config = await this.getVID();
     const hookRule = await this.taskService.getHookRule(hookTopic);
     if (hookRule) {
-      const subscriptionTopic = await getSubscriptionTopic(hookRule.to, this.store, config)
-      const resolvedQuery = await this.resolveQuery(subscriptionTopic, keyResolver);
+      const subscriptionTopic = await getSubscriptionTopic(
+        hookRule.to,
+        this.store,
+        config,
+      );
+      const resolvedQuery = await this.resolveQuery(
+        subscriptionTopic,
+        keyResolver,
+      );
       const reporter = new ReporterService(config, this.store, this.logger);
       const workItems = await reporter.getWorkItems(resolvedQuery, queryFacets);
       if (workItems.length) {
         const taskService = new TaskService(this.store, this.logger);
         await taskService.enqueueWorkItems(
-          workItems.map(
-            workItem => [
+          workItems.map((workItem) =>
+            [
               hookTopic,
               workItem,
               keyResolver.scrub || false,
-              JSON.stringify(data)].join(VALSEP)
-        ));
+              JSON.stringify(data),
+            ].join(VALSEP),
+          ),
+        );
         this.store.publish(
           KeyType.QUORUM,
           { type: 'work', originator: this.guid },
-          this.appId
+          this.appId,
         );
       }
       return workItems;
@@ -566,10 +635,14 @@ class EngineService {
     }
   }
 
-
   // ********************** PUB/SUB ENTRY POINT **********************
   //publish (returns just the job id)
-  async pub(topic: string, data: JobData, context?: JobState, extended?: ExtensionType): Promise<string> {
+  async pub(
+    topic: string,
+    data: JobData,
+    context?: JobState,
+    extended?: ExtensionType,
+  ): Promise<string> {
     const activityHandler = await this.initActivity(topic, data, context);
     if (activityHandler) {
       return await activityHandler.process(extended);
@@ -579,10 +652,18 @@ class EngineService {
   }
   //subscribe to all jobs for a topic
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
-    const subscriptionCallback: SubscriptionCallback = async (topic: string, message: {topic: string, job: JobOutput}) => {
+    const subscriptionCallback: SubscriptionCallback = async (
+      topic: string,
+      message: { topic: string; job: JobOutput },
+    ) => {
       callback(message.topic, message.job);
     };
-    return await this.subscribe.subscribe(KeyType.QUORUM, subscriptionCallback, this.appId, topic);
+    return await this.subscribe.subscribe(
+      KeyType.QUORUM,
+      subscriptionCallback,
+      this.appId,
+      topic,
+    );
   }
   //unsubscribe to all jobs for a topic
   async unsub(topic: string): Promise<void> {
@@ -590,23 +671,36 @@ class EngineService {
   }
   //subscribe to all jobs for a wildcard topic
   async psub(wild: string, callback: JobMessageCallback): Promise<void> {
-    const subscriptionCallback: SubscriptionCallback = async (topic: string, message: {topic: string, job: JobOutput}) => {
+    const subscriptionCallback: SubscriptionCallback = async (
+      topic: string,
+      message: { topic: string; job: JobOutput },
+    ) => {
       callback(message.topic, message.job);
     };
-    return await this.subscribe.psubscribe(KeyType.QUORUM, subscriptionCallback, this.appId, wild);
+    return await this.subscribe.psubscribe(
+      KeyType.QUORUM,
+      subscriptionCallback,
+      this.appId,
+      wild,
+    );
   }
   //unsubscribe to all jobs for a wildcard topic
   async punsub(wild: string): Promise<void> {
     return await this.subscribe.punsubscribe(KeyType.QUORUM, this.appId, wild);
   }
   //publish and await (returns the job and data (if ready)); throws error with jobid if not
-  async pubsub(topic: string, data: JobData, context?: JobState | null, timeout = HMSH_OTT_WAIT_TIME): Promise<JobOutput> {
+  async pubsub(
+    topic: string,
+    data: JobData,
+    context?: JobState | null,
+    timeout = HMSH_OTT_WAIT_TIME,
+  ): Promise<JobOutput> {
     context = {
       metadata: {
         ngn: this.guid,
         trc: context?.metadata?.trc,
-        spn: context?.metadata?.spn
-      }
+        spn: context?.metadata?.spn,
+      },
     } as JobState;
     const jobId = await this.pub(topic, data, context);
     return new Promise((resolve, reject) => {
@@ -627,7 +721,7 @@ class EngineService {
         reject({
           code: HMSH_CODE_TIMEOUT,
           message: 'timeout',
-          job_id: jobId
+          job_id: jobId,
         } as StreamError);
       }, timeout);
     });
@@ -640,12 +734,18 @@ class EngineService {
         topic: context.metadata.jid,
         job: restoreHierarchy(jobOutput) as JobOutput,
       };
-      this.store.publish(KeyType.QUORUM, message, this.appId, context.metadata.ngn);
+      this.store.publish(
+        KeyType.QUORUM,
+        message,
+        this.appId,
+        context.metadata.ngn,
+      );
     }
   }
   async getPublishesTopic(context: JobState): Promise<string> {
     const config = await this.getVID();
-    const activityId = context.metadata.aid || context['$self']?.output?.metadata?.aid;
+    const activityId =
+      context.metadata.aid || context['$self']?.output?.metadata?.aid;
     const schema = await this.store.getSchema(activityId, config);
     return schema.publishes;
   }
@@ -657,11 +757,16 @@ class EngineService {
         topic,
         job: restoreHierarchy(jobOutput) as JobOutput,
       };
-      this.store.publish(KeyType.QUORUM, message, this.appId, `${topic}.${context.metadata.jid}`);
+      this.store.publish(
+        KeyType.QUORUM,
+        message,
+        this.appId,
+        `${topic}.${context.metadata.jid}`,
+      );
     }
   }
-  async add(streamData: StreamData|StreamDataResponse): Promise<string> {
-    return await this.router.publishMessage(null, streamData) as string;
+  async add(streamData: StreamData | StreamDataResponse): Promise<string> {
+    return (await this.router.publishMessage(null, streamData)) as string;
   }
 
   registerJobCallback(jobId: string, jobCallback: JobMessageCallback) {
@@ -674,9 +779,11 @@ class EngineService {
     return Boolean(context.metadata.ngn);
   }
 
-
   // ********** JOB COMPLETION/CLEANUP (AND JOB EMIT) ***********
-  async runJobCompletionTasks(context: JobState, options: JobCompletionOptions = {}): Promise<string | void> {
+  async runJobCompletionTasks(
+    context: JobState,
+    options: JobCompletionOptions = {},
+  ): Promise<string | void> {
     //'emit' indicates the job is still active
     const isAwait = this.hasParentJob(context, true);
     const isOneTimeSub = this.hasOneTimeSubscription(context);
@@ -687,11 +794,7 @@ class EngineService {
         context.metadata.tpc,
         context.metadata.jid,
       );
-      msgId = await this.execAdjacentParent(
-        context,
-        jobOutput,
-        options.emit,
-       );
+      msgId = await this.execAdjacentParent(context, jobOutput, options.emit);
       this.pubOneTimeSubs(context, jobOutput, options.emit);
       this.pubPermSubs(context, jobOutput, options.emit);
     }
@@ -714,11 +817,10 @@ class EngineService {
     return options.expire ?? context.metadata.expire ?? HMSH_EXPIRE_JOB_SECONDS;
   }
 
-
   // ****** GET JOB STATE/COLLATION STATUS BY ID *********
   async export(jobId: string): Promise<JobExport> {
     return await this.exporter.export(jobId);
-  } 
+  }
   async getRaw(jobId: string): Promise<StringStringType> {
     return await this.store.getRaw(jobId);
   }
@@ -732,8 +834,8 @@ class EngineService {
   async getState(topic: string, jobId: string): Promise<JobOutput> {
     const jobSymbols = await this.store.getSymbols(`$${topic}`);
     const consumes: Consumes = {
-      [`$${topic}`]: Object.keys(jobSymbols)
-    }
+      [`$${topic}`]: Object.keys(jobSymbols),
+    };
     //job data exists at the 'zero' dimension; pass an empty object
     const dIds = {} as StringStringType;
     const output = await this.store.getState(jobId, consumes, dIds);
@@ -755,7 +857,12 @@ class EngineService {
     const existingSymbols = await this.store.getSymbolValues();
     const startIndex = Object.keys(existingSymbols).length;
     const maxIndex = Math.pow(52, 2) - 1;
-    const newSymbols = SerializerService.filterSymVals(startIndex, maxIndex, existingSymbols, new Set(terms));
+    const newSymbols = SerializerService.filterSymVals(
+      startIndex,
+      maxIndex,
+      existingSymbols,
+      new Set(terms),
+    );
     return await this.store.addSymbolValues(newSymbols);
   }
 }

@@ -1,4 +1,5 @@
 import { Durable } from '../../../../services/durable';
+
 import * as activities from './activities';
 
 //NOTE: when `./activities` exports a `default` function,
@@ -8,13 +9,17 @@ type ActivitiesType = {
   greet: typeof greetFunctionType;
 };
 
-const { greet } = Durable.workflow
-  .proxyActivities<ActivitiesType>({ activities });
+const { greet } = Durable.workflow.proxyActivities<ActivitiesType>({
+  activities,
+});
 
 export async function example(name: string): Promise<string> {
   const random1 = Durable.workflow.random();
   const proxyGreeting = await greet(name);
   const random2 = Durable.workflow.random();
-  const oneTimeGreeting = await Durable.workflow.once<string>(activities.default, name)
+  const oneTimeGreeting = await Durable.workflow.once<string>(
+    activities.default,
+    name,
+  );
   return `${random1} ${proxyGreeting} ${random2} ${oneTimeGreeting}`;
 }

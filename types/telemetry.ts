@@ -12,4 +12,5 @@ export {
   SpanKind,
   trace,
   Tracer,
-  ValueType } from '@opentelemetry/api';
+  ValueType,
+} from '@opentelemetry/api';

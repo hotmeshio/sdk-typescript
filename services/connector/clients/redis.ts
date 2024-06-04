@@ -1,7 +1,8 @@
 import {
   RedisRedisClassType,
   RedisRedisClientType,
-  RedisRedisClientOptions } from '../../../types/redis';
+  RedisRedisClientOptions,
+} from '../../../types/redis';
 
 class RedisConnection {
   private connection: RedisRedisClientType | null = null;
@@ -18,9 +19,14 @@ class RedisConnection {
     //database: config.REDIS_DATABASE,
   };
 
-  private async createConnection(Redis: Partial<RedisRedisClassType>, options: RedisRedisClientOptions): Promise<Partial<RedisRedisClientType>> {
+  private async createConnection(
+    Redis: Partial<RedisRedisClassType>,
+    options: RedisRedisClientOptions,
+  ): Promise<Partial<RedisRedisClientType>> {
     return new Promise((resolve, reject) => {
-      const client = Redis.createClient(options) as unknown as RedisRedisClientType;
+      const client = Redis.createClient(
+        options,
+      ) as unknown as RedisRedisClientType;
 
       client.on('error', (error: any) => {
         reject(error);
@@ -51,20 +57,31 @@ class RedisConnection {
     }
   }
 
-  public static async connect(id: string, Redis: Partial<RedisRedisClassType>, options?: RedisRedisClientOptions): Promise<RedisConnection> {
+  public static async connect(
+    id: string,
+    Redis: Partial<RedisRedisClassType>,
+    options?: RedisRedisClientOptions,
+  ): Promise<RedisConnection> {
     if (this.instances.has(id)) {
       return this.instances.get(id)!;
     }
     const instance = new RedisConnection();
     const opts = options ? { ...options } : { ...this.clientOptions };
-    instance.connection = (await instance.createConnection(Redis as RedisRedisClassType, opts)) as RedisRedisClientType;
+    instance.connection = (await instance.createConnection(
+      Redis as RedisRedisClassType,
+      opts,
+    )) as RedisRedisClientType;
     instance.id = id;
     this.instances.set(id, instance);
     return instance;
   }
 
   public static async disconnectAll(): Promise<void> {
-    await Promise.all(Array.from(this.instances.values()).map((instance) => instance.disconnect()));
+    await Promise.all(
+      Array.from(this.instances.values()).map((instance) =>
+        instance.disconnect(),
+      ),
+    );
     this.instances.clear();
   }
 }

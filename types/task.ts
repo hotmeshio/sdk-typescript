@@ -1,1 +1,7 @@
-export type WorkListTaskType = 'sleep' | 'expire' | 'expire-child' | 'interrupt' | 'delist' | 'child';
+export type WorkListTaskType =
+  | 'sleep'
+  | 'expire'
+  | 'expire-child'
+  | 'interrupt'
+  | 'delist'
+  | 'child';

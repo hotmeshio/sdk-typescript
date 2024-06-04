@@ -1,4 +1,3 @@
-
 interface HookCondition {
   expected: string;
   actual: string;
@@ -23,10 +22,18 @@ interface HookRules {
   [eventName: string]: HookRule[];
 }
 
-type HookSignal = { topic: string, resolved: string, jobId: string};
+type HookSignal = { topic: string; resolved: string; jobId: string };
 
 interface HookInterface {
-  (topic: string, data: { [key: string]: any, id: string }): Promise<void>;
+  (topic: string, data: { [key: string]: any; id: string }): Promise<void>;
 }
 
-export { HookCondition, HookConditions, HookGate, HookInterface, HookRule, HookRules, HookSignal };
+export {
+  HookCondition,
+  HookConditions,
+  HookGate,
+  HookInterface,
+  HookRule,
+  HookRules,
+  HookSignal,
+};

@@ -1,13 +1,15 @@
 import {
   HMSH_ACTIVATION_MAX_RETRY,
-  HMSH_QUORUM_DELAY_MS, 
-  HMSH_QUORUM_ROLLCALL_CYCLES} from '../../modules/enums';
+  HMSH_QUORUM_DELAY_MS,
+  HMSH_QUORUM_ROLLCALL_CYCLES,
+} from '../../modules/enums';
 import {
   XSleepFor,
   formatISODate,
   getSystemHealth,
   identifyRedisType,
-  sleepFor } from '../../modules/utils';
+  sleepFor,
+} from '../../modules/utils';
 import { CompilerService } from '../compiler';
 import { EngineService } from '../engine';
 import { ILogger } from '../logger';
@@ -24,12 +26,14 @@ import {
   QuorumMessageCallback,
   QuorumProfile,
   RollCallMessage,
-  SubscriptionCallback } from '../../types/quorum';
+  SubscriptionCallback,
+} from '../../types/quorum';
 import {
   IORedisClientType,
   RedisClient,
   RedisMulti,
-  RedisRedisClientType as RedisClientType } from '../../types/redis';  
+  RedisRedisClientType as RedisClientType,
+} from '../../types/redis';
 
 class QuorumService {
   namespace: string;
@@ -52,7 +56,7 @@ class QuorumService {
     guid: string,
     config: HotMeshConfig,
     engine: EngineService,
-    logger: ILogger
+    logger: ILogger,
   ): Promise<QuorumService> {
     if (config.engine) {
       const instance = new QuorumService();
@@ -70,15 +74,16 @@ class QuorumService {
       await instance.subscribe.subscribe(
         KeyType.QUORUM,
         instance.subscriptionHandler(),
-        appId
+        appId,
       );
       //app-specific quorum subscription (used for pubsub one-time request/response)
       await instance.subscribe.subscribe(
         KeyType.QUORUM,
         instance.subscriptionHandler(),
-        appId, instance.guid
+        appId,
+        instance.guid,
       );
-      
+
       instance.engine.processWebHooks();
       instance.engine.processTimeHooks();
       return instance;
@@ -86,8 +91,10 @@ class QuorumService {
   }
 
   verifyQuorumFields(config: HotMeshConfig) {
-    if (!identifyRedisType(config.engine.store) ||
-    !identifyRedisType(config.engine.sub)) {
+    if (
+      !identifyRedisType(config.engine.store) ||
+      !identifyRedisType(config.engine.sub)
+    ) {
       throw new Error('quorum config must include `store` and `sub` fields.');
     }
   }
@@ -98,11 +105,7 @@ class QuorumService {
     } else {
       this.store = new IORedisStore(store as IORedisClientType);
     }
-    await this.store.init(
-      this.namespace,
-      this.appId,
-      this.logger
-    );
+    await this.store.init(this.namespace, this.appId, this.logger);
   }
 
   async initSubChannel(sub: RedisClient) {
@@ -115,18 +118,23 @@ class QuorumService {
       this.namespace,
       this.appId,
       this.guid,
-      this.logger
+      this.logger,
     );
   }
 
   subscriptionHandler(): SubscriptionCallback {
     const self = this;
     return async (topic: string, message: QuorumMessage) => {
-      self.logger.debug('quorum-event-received', { topic, type: message.type});
+      self.logger.debug('quorum-event-received', { topic, type: message.type });
       if (message.type === 'activate') {
         self.engine.setCacheMode(message.cache_mode, message.until_version);
       } else if (message.type === 'ping') {
-        self.sayPong(self.appId, self.guid, message.originator, message.details);
+        self.sayPong(
+          self.appId,
+          self.guid,
+          message.originator,
+          message.details,
+        );
       } else if (message.type === 'pong' && self.guid === message.originator) {
         self.quorum = self.quorum + 1;
         if (message.profile) {
@@ -135,9 +143,9 @@ class QuorumService {
       } else if (message.type === 'throttle') {
         self.engine.throttle(message.throttle);
       } else if (message.type === 'work') {
-        self.engine.processWebHooks()
+        self.engine.processWebHooks();
       } else if (message.type === 'job') {
-        self.engine.routeToSubscribers(message.topic, message.job)
+        self.engine.routeToSubscribers(message.topic, message.job);
       } else if (message.type === 'cron') {
         self.engine.processTimeHooks();
       } else if (message.type === 'rollcall') {
@@ -145,18 +153,22 @@ class QuorumService {
       }
       //if there are any callbacks, call them
       if (self.callbacks.length > 0) {
-        self.callbacks.forEach(cb => cb(topic, message));
+        self.callbacks.forEach((cb) => cb(topic, message));
       }
     };
   }
 
-  async sayPong(appId: string, guid: string, originator: string, details = false) {
+  async sayPong(
+    appId: string,
+    guid: string,
+    originator: string,
+    details = false,
+  ) {
     let profile: QuorumProfile;
     if (details) {
-      const stream = this.engine.stream.mintKey(
-        KeyType.STREAMS,
-        { appId: this.appId }
-      );
+      const stream = this.engine.stream.mintKey(KeyType.STREAMS, {
+        appId: this.appId,
+      });
       profile = {
         engine_id: this.guid,
         namespace: this.namespace,
@@ -172,23 +184,27 @@ class QuorumService {
       };
     }
     this.store.publish(
-      KeyType.QUORUM, 
+      KeyType.QUORUM,
       {
         type: 'pong',
-        guid, originator,
+        guid,
+        originator,
         profile,
       },
       appId,
     );
   }
 
-  async requestQuorum(delay = HMSH_QUORUM_DELAY_MS, details = false): Promise<number> {
+  async requestQuorum(
+    delay = HMSH_QUORUM_DELAY_MS,
+    details = false,
+  ): Promise<number> {
     const quorum = this.quorum;
     this.quorum = 0;
     this.profiles.length = 0;
     await this.store.publish(
       KeyType.QUORUM,
-      { 
+      {
         type: 'ping',
         originator: this.guid,
         details,
@@ -201,13 +217,13 @@ class QuorumService {
 
   /**
    * A quorum-wide command to broadcaset system details.
-   * 
+   *
    */
   async doRollCall(message: RollCallMessage) {
     let iteration = 0;
-    let max = !isNaN(message.max) ? message.max : HMSH_QUORUM_ROLLCALL_CYCLES;
+    const max = !isNaN(message.max) ? message.max : HMSH_QUORUM_ROLLCALL_CYCLES;
     if (this.rollCallInterval) clearTimeout(this.rollCallInterval);
-    const base = (message.interval / 2);
+    const base = message.interval / 2;
     const amount = base + Math.ceil(Math.random() * base);
     do {
       await sleepFor(Math.ceil(Math.random() * 1000));
@@ -233,7 +249,12 @@ class QuorumService {
   // ************* PUB/SUB METHODS *************
   //publish a message to the quorum
   async pub(quorumMessage: QuorumMessage) {
-    return await this.store.publish(KeyType.QUORUM, quorumMessage, this.appId, quorumMessage.topic || quorumMessage.guid);
+    return await this.store.publish(
+      KeyType.QUORUM,
+      quorumMessage,
+      this.appId,
+      quorumMessage.topic || quorumMessage.guid,
+    );
   }
   //subscribe user to quorum messages
   async sub(callback: QuorumMessageCallback): Promise<void> {
@@ -243,9 +264,8 @@ class QuorumService {
   //unsubscribe user from quorum messages
   async unsub(callback: QuorumMessageCallback): Promise<void> {
     //the quorum is always subscribed to the `quorum` topic; just unregister the fn
-    this.callbacks = this.callbacks.filter(cb => cb !== callback);
+    this.callbacks = this.callbacks.filter((cb) => cb !== callback);
   }
-
 
   // ************* COMPILER METHODS *************
   async rollCall(delay = HMSH_QUORUM_DELAY_MS): Promise<QuorumProfile[]> {
@@ -258,13 +278,13 @@ class QuorumService {
         this.store.xlen(profile.stream, multi);
       }
     });
-    const stream_depths = await multi.exec() as number[];
+    const stream_depths = (await multi.exec()) as number[];
     this.profiles.forEach(async (profile: QuorumProfile) => {
       const index = targetStreams.indexOf(profile.stream);
       if (index != -1) {
-        profile.stream_depth = Array.isArray(stream_depths[index]) ?
-          stream_depths[index][1] :
-          stream_depths[index];
+        profile.stream_depth = Array.isArray(stream_depths[index])
+          ? stream_depths[index][1]
+          : stream_depths[index];
       }
     });
     return this.profiles;
@@ -272,9 +292,16 @@ class QuorumService {
   /**
    * request a quorum; if successful activate the app version
    */
-  async activate(version: string, delay = HMSH_QUORUM_DELAY_MS, count = 0): Promise<boolean> {
+  async activate(
+    version: string,
+    delay = HMSH_QUORUM_DELAY_MS,
+    count = 0,
+  ): Promise<boolean> {
     version = version.toString();
-    const canActivate = await this.store.reserveScoutRole('activate', Math.ceil(delay * 6 / 1000) + 1);
+    const canActivate = await this.store.reserveScoutRole(
+      'activate',
+      Math.ceil(delay * 6 / 1000) + 1,
+    );
     if (!canActivate) {
       //another engine is already activating the app version
       this.logger.debug('quorum-activation-awaiting', { version });
@@ -292,9 +319,9 @@ class QuorumService {
       this.store.publish(
         KeyType.QUORUM,
         { type: 'activate', cache_mode: 'nocache', until_version: version },
-        this.appId
+        this.appId,
       );
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await new Promise((resolve) => setTimeout(resolve, delay));
       await this.store.releaseScoutRole('activate');
       //confirm we received the activation message
       if (this.engine.untilVersion === version) {
@@ -304,7 +331,9 @@ class QuorumService {
         return await compiler.activate(id, version);
       } else {
         this.logger.error('quorum-activation-error', { version });
-        throw new Error(`UntilVersion Not Received. Version ${version} not activated`);
+        throw new Error(
+          `UntilVersion Not Received. Version ${version} not activated`,
+        );
       }
     } else {
       this.logger.warn('quorum-rollcall-error', { q1, q2, q3, count });
@@ -318,4 +347,4 @@ class QuorumService {
   }
 }
 
-export { QuorumService }
+export { QuorumService };

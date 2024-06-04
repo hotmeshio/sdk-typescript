@@ -1,4 +1,4 @@
-import { JobOutput } from "./job";
+import { JobOutput } from './job';
 
 interface CPULoad {
   [cpu: string]: string;
@@ -71,7 +71,7 @@ interface QuorumMessageBase {
 export interface PingMessage extends QuorumMessageBase {
   type: 'ping';
   originator: string; //guid
-  details?: boolean;  //if true, all endpoints will include their profile
+  details?: boolean; //if true, all endpoints will include their profile
 }
 
 export interface WorkMessage extends QuorumMessageBase {
@@ -86,9 +86,9 @@ export interface CronMessage extends QuorumMessageBase {
 
 export interface PongMessage extends QuorumMessageBase {
   type: 'pong';
-  guid: string;            //call initiator
-  originator: string;      //clone of originator guid passed in ping
-  entity?: string;         //optional entity
+  guid: string; //call initiator
+  originator: string; //clone of originator guid passed in ping
+  entity?: string; //optional entity
   profile?: QuorumProfile; //contains details about the engine/worker
 }
 
@@ -102,25 +102,25 @@ export interface JobMessage extends QuorumMessageBase {
   type: 'job';
   entity?: string;
   topic: string; //this comes from the 'publishes' field in the YAML
-  job: JobOutput
+  job: JobOutput;
 }
 
 export interface ThrottleMessage extends QuorumMessageBase {
   type: 'throttle';
   guid?: string; //target engine AND workers with this guid
   entity?: string;
-  topic?: string;  //target worker(s) matching this topic (pass null to only target the engine, pass undefined to target engine and workers)
+  topic?: string; //target worker(s) matching this topic (pass null to only target the engine, pass undefined to target engine and workers)
   throttle: number; //0-n; millis
 }
 
 export interface RollCallMessage extends QuorumMessageBase {
   type: 'rollcall';
-  guid?: string;    //target the engine quorum
+  guid?: string; //target the engine quorum
   entity?: string;
-  topic?: string | null;   //target a worker if string; suppress if `null`;
+  topic?: string | null; //target a worker if string; suppress if `null`;
   interval: number; //every 'n' seconds
-  max?: number;     //max broadcasts
-  signature?: boolean; //include bound worker function in broadcast   
+  max?: number; //max broadcasts
+  signature?: boolean; //include bound worker function in broadcast
 }
 
 export interface JobMessageCallback {
@@ -144,11 +144,18 @@ export type SubscriptionOptions = {
   namespace?: string;
 };
 
-
 /**
  * The types in this file are used to define those messages that are sent
  * to hotmesh client instances when a new version is about to be activated.
  * These messages serve to coordinate the cache invalidation and switch-over
  * to the new version without any downtime and a coordinating parent server.
  */
-export type QuorumMessage = PingMessage | PongMessage | ActivateMessage | WorkMessage | JobMessage | ThrottleMessage | RollCallMessage | CronMessage;
+export type QuorumMessage =
+  | PingMessage
+  | PongMessage
+  | ActivateMessage
+  | WorkMessage
+  | JobMessage
+  | ThrottleMessage
+  | RollCallMessage
+  | CronMessage;

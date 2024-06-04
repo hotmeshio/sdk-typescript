@@ -6,7 +6,8 @@ import { JobStatsInput } from '../../types/stats';
 import {
   StreamData,
   StreamDataResponse,
-  StreamStatus } from '../../types/stream';
+  StreamStatus,
+} from '../../types/stream';
 import { RedisConnection } from '../../services/connector/clients/ioredis';
 import { JobOutput } from '../../types/job';
 import { guid, sleepFor } from '../../modules/utils';
@@ -24,7 +25,11 @@ describe('FUNCTIONAL | HotMesh', () => {
 
   beforeAll(async () => {
     //flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
   });
 
@@ -40,7 +45,7 @@ describe('FUNCTIONAL | HotMesh', () => {
         logLevel: HMSH_LOGLEVEL,
 
         engine: {
-          redis: { class: Redis, options }
+          redis: { class: Redis, options },
         },
 
         workers: [
@@ -52,11 +57,11 @@ describe('FUNCTIONAL | HotMesh', () => {
                 status: StreamStatus.SUCCESS,
                 metadata: { ...streamData.metadata },
                 data: { some: 'string', is: true, number: 1 },
-              }
+              };
               return streamDataResponse;
-            }
-          }
-        ]
+            },
+          },
+        ],
       };
       hotMesh = await HotMesh.init(config);
     });
@@ -82,11 +87,11 @@ describe('FUNCTIONAL | HotMesh', () => {
 
   describe('run()', () => {
     it('executes an `await` activity that resolves to true', async () => {
-      const payload = { 
+      const payload = {
         id: `wdg_${parseInt((Math.random() * 10_000_000).toString()).toString()}`,
         price: 49.99,
-        object_type: 'widgetA'
-      }
+        object_type: 'widgetA',
+      };
       const topic = 'order.approval.requested';
       const spawned_topic = 'order.approval.price.requested';
       const job: JobOutput = await hotMesh.pubsub(topic, payload);
@@ -100,11 +105,11 @@ describe('FUNCTIONAL | HotMesh', () => {
     });
 
     it('executes an `await` activity that resolves to false', async () => {
-      const payload = { 
-        id: `wdg_${parseInt((Math.random() * 10_000_000).toString()).toString()}`, 
-        price: 149.99, 
-        object_type: 'widgetA'
-      }
+      const payload = {
+        id: `wdg_${parseInt((Math.random() * 10_000_000).toString()).toString()}`,
+        price: 149.99,
+        object_type: 'widgetA',
+      };
       const topic = 'order.approval.requested';
       const spawned_topic = 'order.approval.price.requested';
       const job: JobOutput = await hotMesh.pubsub(topic, payload);
@@ -120,12 +125,15 @@ describe('FUNCTIONAL | HotMesh', () => {
     it('should publish a message to Flow B', async () => {
       let payload: any;
       for (let i = 0; i < 1; i++) {
-        payload = { 
-          id: `ord_${parseInt((Math.random()*1000000).toString()).toString()}`, 
+        payload = {
+          id: `ord_${parseInt((Math.random() * 1000000).toString()).toString()}`,
           price: 49.99 + i,
-          object_type: i % 2 ? 'widget' : 'order'
-        }
-        const job: JobOutput = await hotMesh.pubsub('order.approval.price.requested', payload);
+          object_type: i % 2 ? 'widget' : 'order',
+        };
+        const job: JobOutput = await hotMesh.pubsub(
+          'order.approval.price.requested',
+          payload,
+        );
         expect(job?.data?.id).toBe(payload.id);
         expect(job?.data?.approved).toBe(true);
       }
@@ -138,7 +146,7 @@ describe('FUNCTIONAL | HotMesh', () => {
         primacy: 'primary',
         color: 'red',
         send_date: new Date(),
-        must_release_series: '202304120015'
+        must_release_series: '202304120015',
       };
       const jobId = await hotMesh.pub('order.scheduled', payload);
       expect(jobId).not.toBeNull();
@@ -148,7 +156,7 @@ describe('FUNCTIONAL | HotMesh', () => {
       const payload = {
         id: `ord_10000002`,
         facility: 'acme',
-        actual_release_series: '202304110015'
+        actual_release_series: '202304110015',
       };
       //hook returns the streamId (searchable through open telemetry)
       const streamId = await hotMesh.hook('order.routed', payload);
@@ -173,7 +181,7 @@ describe('FUNCTIONAL | HotMesh', () => {
                   color,
                   facility,
                   send_date: new Date(),
-                  must_release_series: '202304120015'
+                  must_release_series: '202304120015',
                 };
                 await hotMesh.pub('order.scheduled', payload);
               }
@@ -193,7 +201,7 @@ describe('FUNCTIONAL | HotMesh', () => {
           color: 'red',
           facility: 'acme',
           send_date: new Date(),
-          must_release_series: '202304120015'
+          must_release_series: '202304120015',
         };
         await hotMesh.pub('order.scheduled', payload);
         expect(true).toBe(false);
@@ -257,7 +265,7 @@ describe('FUNCTIONAL | HotMesh', () => {
       const payload = { duration: 1 };
       const jobId = await hotMesh.pub('sleep.do', payload);
 
-      while(await hotMesh.getStatus(jobId as string) !== 0) {
+      while (await hotMesh.getStatus(jobId as string) !== 0) {
         await sleepFor(1000);
       }
 
@@ -270,11 +278,11 @@ describe('FUNCTIONAL | HotMesh', () => {
     it('should signal and awaken a sleeping job', async () => {
       const payload = {
         id: 'ord_1054',
-        facility:'spacely',
+        facility: 'spacely',
         actual_release_series: '202304110015',
       };
       await hotMesh.hook('order.routed', payload);
-      while(await hotMesh.getStatus(payload.id) !== 0) {
+      while (await hotMesh.getStatus(payload.id) !== 0) {
         await sleepFor(1000);
       }
       const status = await hotMesh.getStatus(payload.id);
@@ -285,7 +293,7 @@ describe('FUNCTIONAL | HotMesh', () => {
   describe('hookAll()', () => {
     it('should signal and awaken all jobs of a certain type', async () => {
       const payload = {
-        facility:'acme',
+        facility: 'acme',
         actual_release_series: '202304110015',
       };
       const query: JobStatsInput = {
@@ -297,7 +305,9 @@ describe('FUNCTIONAL | HotMesh', () => {
         range: '1h',
         end: 'NOW',
       };
-      const response = await hotMesh.hookAll('order.routed', payload, query, ['color:red']);
+      const response = await hotMesh.hookAll('order.routed', payload, query, [
+        'color:red',
+      ]);
       await sleepFor(1500);
       //todo: verify status of all target jobs by id!
       expect(response).not.toBeNull();
@@ -306,7 +316,10 @@ describe('FUNCTIONAL | HotMesh', () => {
 
   describe('Add strings to compress', () => {
     it('should add symbols', async () => {
-      const registered = await hotMesh.compress(['the quick brown fox', 'jumped over the lazy dog']);
+      const registered = await hotMesh.compress([
+        'the quick brown fox',
+        'jumped over the lazy dog',
+      ]);
       expect(registered).toBe(true);
     });
   });

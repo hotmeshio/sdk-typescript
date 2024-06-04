@@ -5,25 +5,46 @@ import {
   StringAnyType,
   SymbolMap,
   SymbolMaps,
-  SymbolSets, 
-  Symbols } from '../../types/serializer';
+  SymbolSets,
+  Symbols,
+} from '../../types/serializer';
 
 const dateReg = /^"\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z)?"$/;
 
 export const MDATA_SYMBOLS = {
   SLOTS: 26,
   ACTIVITY: {
-    KEYS: ['aid', 'dad', 'as', 'atp', 'stp', 'ac', 'au', 'err','l1s','l2s']
+    KEYS: ['aid', 'dad', 'as', 'atp', 'stp', 'ac', 'au', 'err', 'l1s', 'l2s'],
   },
   ACTIVITY_UPDATE: {
-    KEYS: ['au', 'err', 'l2s']
+    KEYS: ['au', 'err', 'l2s'],
   },
   JOB: {
-    KEYS: ['ngn', 'tpc', 'pj', 'pg', 'pd', 'px', 'pa', 'key', 'app', 'vrs', 'jid', 'gid', 'aid', 'ts', 'jc', 'ju', 'js', 'err', 'trc']
+    KEYS: [
+      'ngn',
+      'tpc',
+      'pj',
+      'pg',
+      'pd',
+      'px',
+      'pa',
+      'key',
+      'app',
+      'vrs',
+      'jid',
+      'gid',
+      'aid',
+      'ts',
+      'jc',
+      'ju',
+      'js',
+      'err',
+      'trc',
+    ],
   },
   JOB_UPDATE: {
-    KEYS: ['ju', 'err']
-  }
+    KEYS: ['ju', 'err'],
+  },
 };
 
 export class SerializerService {
@@ -37,7 +58,11 @@ export class SerializerService {
     this.resetSymbols({}, {}, {});
   }
 
-  abbreviate(consumes: Consumes, symbolNames: string[], fields: string[] = []): string[] {
+  abbreviate(
+    consumes: Consumes,
+    symbolNames: string[],
+    fields: string[] = [],
+  ): string[] {
     for (const symbolName of symbolNames) {
       const symbolSet = this.symKeys.get(symbolName);
       const symbolPaths = consumes[symbolName];
@@ -73,7 +98,11 @@ export class SerializerService {
     return path.startsWith('data/') || path.startsWith('metadata/');
   }
 
-  resetSymbols(symKeys: SymbolSets, symVals: Symbols, dIds: StringStringType): void {
+  resetSymbols(
+    symKeys: SymbolSets,
+    symVals: Symbols,
+    dIds: StringStringType,
+  ): void {
     this.symKeys = new Map();
     this.symReverseKeys = new Map();
     for (const id in symKeys) {
@@ -88,7 +117,7 @@ export class SerializerService {
     let map = this.symReverseKeys.get(id);
     if (!map) {
       map = new Map();
-      for (let [key, val] of keyMap.entries()) {
+      for (const [key, val] of keyMap.entries()) {
         map.set(val, key);
       }
       this.symReverseKeys.set(id, map);
@@ -98,17 +127,24 @@ export class SerializerService {
 
   getReverseValueMap(valueMap: SymbolMap): SymbolMap {
     const map = new Map();
-    for (let [key, val] of valueMap.entries()) {
+    for (const [key, val] of valueMap.entries()) {
       map.set(val, key);
     }
     return map;
   }
 
-  static filterSymVals(startIndex: number, maxIndex: number, existingSymbolValues: Symbols,  proposedValues: Set<string>): Symbols {
-    let newSymbolValues: Symbols = {};
-    let currentSymbolValues: Symbols = { ...existingSymbolValues };
-    let currentValuesSet: Set<string> = new Set(Object.values(currentSymbolValues));
-    for (let value of  proposedValues) {
+  static filterSymVals(
+    startIndex: number,
+    maxIndex: number,
+    existingSymbolValues: Symbols,
+    proposedValues: Set<string>,
+  ): Symbols {
+    const newSymbolValues: Symbols = {};
+    const currentSymbolValues: Symbols = { ...existingSymbolValues };
+    const currentValuesSet: Set<string> = new Set(
+      Object.values(currentSymbolValues),
+    );
+    for (const value of proposedValues) {
       if (!currentValuesSet.has(value)) {
         if (startIndex > maxIndex) {
           return newSymbolValues;
@@ -126,23 +162,27 @@ export class SerializerService {
     if (this.symKeys.size === 0) {
       return document;
     }
-    let source: StringStringType = { ...document };
-    let result: StringStringType = { };
+    const source: StringStringType = { ...document };
+    const result: StringStringType = {};
 
     const compressWithMap = (abbreviationMap: SymbolMap, id: string) => {
-      for (let key in source) {
-        if (key.startsWith(`${id}/`) || (id.startsWith('$') && ['data', 'metadata'].includes(key.split('/')[0]))) {
+      for (const key in source) {
+        if (
+          key.startsWith(`${id}/`) ||
+          id.startsWith('$') &&
+            ['data', 'metadata'].includes(key.split('/')[0])
+        ) {
           const dimensionalIndex = this.resolveDimensionalIndex(key);
-          let shortKey = abbreviationMap.get(key) || key;
+          const shortKey = abbreviationMap.get(key) || key;
           const shortDimensionalKey = `${shortKey}${dimensionalIndex}`;
           result[shortDimensionalKey] = source[key];
         } else if (!(key in result) && this.isLiteralKeyType(key)) {
           //mark (-) and search (_)
           result[key] = source[key];
-        }  
+        }
       }
     };
-    for (let id of ids) {
+    for (const id of ids) {
       const abbreviationMap = this.symKeys.get(id);
       if (abbreviationMap) {
         compressWithMap(abbreviationMap, id);
@@ -159,21 +199,24 @@ export class SerializerService {
     if (this.symKeys.size === 0) {
       return document;
     }
-    let result: StringStringType = { ...document };
+    const result: StringStringType = { ...document };
 
     const inflateWithMap = (abbreviationMap: SymbolMap, id: string) => {
-      const reversedAbbreviationMap = this.getReverseKeyMap(abbreviationMap, id);
-      for (let key in result) {
+      const reversedAbbreviationMap = this.getReverseKeyMap(
+        abbreviationMap,
+        id,
+      );
+      for (const key in result) {
         //strip dimensional index from key
         const shortKey = key.split(',')[0];
-        let longKey = reversedAbbreviationMap.get(shortKey);
+        const longKey = reversedAbbreviationMap.get(shortKey);
         if (longKey) {
           result[longKey] = result[key];
           delete result[key];
         }
       }
     };
-    for (let id of ids) {
+    for (const id of ids) {
       const abbreviationMap = this.symKeys.get(id);
       if (abbreviationMap) {
         inflateWithMap(abbreviationMap, id);
@@ -184,9 +227,9 @@ export class SerializerService {
 
   //stringify: convert a multi-dimensional document to a 2-d hash
   stringify(document: Record<string, any>): StringStringType {
-    let result: StringStringType = {};
-    for (let key in document) {
-      let value = SerializerService.toString(document[key]);
+    const result: StringStringType = {};
+    for (const key in document) {
+      const value = SerializerService.toString(document[key]);
       if (value) {
         // if (/^:*[a-zA-Z]{2}$/.test(value)) {
         //   value = ':' + value;
@@ -201,8 +244,8 @@ export class SerializerService {
 
   //parse: convert a 2-d hash to a multi-dimensional document
   parse(document: StringStringType): any {
-    let result: any = {};
-    for (let [key, value] of Object.entries(document)) {
+    const result: any = {};
+    for (const [key, value] of Object.entries(document)) {
       if (value === undefined || value === null) continue;
       // if (/^:+[a-zA-Z]{2}$/.test(value)) {
       //   result[key] = value.slice(1);
@@ -216,7 +259,7 @@ export class SerializerService {
     return result;
   }
 
-  static toString(value: any): string|undefined {
+  static toString(value: any): string | undefined {
     switch (typeof value) {
       case 'string':
         break;
@@ -239,7 +282,7 @@ export class SerializerService {
     return value;
   }
 
-  static fromString(value: string|undefined): any {
+  static fromString(value: string | undefined): any {
     if (typeof value !== 'string') return undefined;
     const prefix = value.slice(0, 2);
     const rest = value.slice(2);
@@ -262,7 +305,10 @@ export class SerializerService {
     }
   }
 
-  public package(multiDimensionalDocument: StringAnyType, ids: string[]): StringStringType {
+  public package(
+    multiDimensionalDocument: StringAnyType,
+    ids: string[],
+  ): StringStringType {
     const flatDocument = this.stringify(multiDimensionalDocument);
     return this.compress(flatDocument, ids);
   }
@@ -273,7 +319,7 @@ export class SerializerService {
   }
 
   public export(): SymbolSets {
-    const obj: {[key: string]: StringStringType} = {};
+    const obj: { [key: string]: StringStringType } = {};
     for (const [id, map] of this.symKeys.entries()) {
       obj[id] = {};
       for (const [key, value] of map.entries()) {

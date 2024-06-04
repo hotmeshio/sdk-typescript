@@ -1,5 +1,5 @@
-assets/
-coverage/
+build/
+docs/
 coverage-*/
 *.d.ts
-build/
+node_modules/

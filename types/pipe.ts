@@ -1,4 +1,4 @@
-/** 
+/**
  * Represents a single cell value in a pipeline row
  * If the value is a string, the value will be a literal OR mapping expression
  */
@@ -22,20 +22,20 @@ type PipeObject = { '@pipe': Array<PipeItem[] | PipeObject | ReduceObject> };
  * But it also iterates and produces output. The context variables,
  * `$input`, `$output`, `$item`, `$key`, and `$index` are available.
  * @example
- * 
+ *
  * // Example of a reduce expression. The optional object is empty and
  * // serves as the $output during iteration. The last step in the iteration
  * // sets $output. if ther are no more iterations, the $output is returned
- * // and provided to the next step in the pipeline. 
- * 
+ * // and provided to the next step in the pipeline.
+ *
  * // If data is:
  * // { response: ['a', 'b', 'c'] }
- * 
+ *
  * // The reduced/transformed expression will be:
  * // { 'a': 0, 'b': 1, 'c': 2 }
- * 
+ *
  * // Arrays and objects may be iterated over and transformed.
- * 
+ *
  * //YAML
  * '@pipe':
  *   - ['{data.response}', {}]
@@ -48,7 +48,9 @@ type PipeObject = { '@pipe': Array<PipeItem[] | PipeObject | ReduceObject> };
  *           - ['{$index}']
  *       - ['{@object.set}']
  */
-type ReduceObject = { '@reduce': Array<PipeItem[] | PipeObject | ReduceObject> };
+type ReduceObject = {
+  '@reduce': Array<PipeItem[] | PipeObject | ReduceObject>;
+};
 
 /**
  * Represents a sequence in the pipeline that can include arrays of `PipeItem`, `PipeObject`, or `ReduceObject`.

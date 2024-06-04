@@ -4,7 +4,7 @@
  * This HotMesh application spec uses 50 activities and 25 transitions
  * to model and emulate the Temporal Application & Query servers using
  * Redis as the backend.
- * 
+ *
  * It's particularly useful for organizations with high-speed, high-volume
  * use cases as it uses in-memory Redis Streams for transactional,
  * workflow processing, while adhering to Temporal's developer-friendly syntax.
@@ -12,7 +12,7 @@
  * This YAML file can also serve as a useful starting point for building
  * Integration/BPM/Workflow servers in general (MuleSoft, etc) without the need
  * for a physical application server.
- * 
+ *
  * Possible use cases include:
  * * Orchestration servers
  * * Integration servers
@@ -2351,8 +2351,4 @@ const getWorkflowYAML = (app: string, version: string): string => {
 `;
 };
 
-export {
-  getWorkflowYAML,
-  APP_VERSION,
-  APP_ID,
-};
+export { getWorkflowYAML, APP_VERSION, APP_ID };

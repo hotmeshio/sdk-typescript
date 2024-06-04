@@ -7,8 +7,9 @@ import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import {
   StreamData,
   StreamDataResponse,
-  StreamStatus } from '../../../types/stream';
-  import { HMSH_LOGLEVEL } from '../../../modules/enums';
+  StreamStatus,
+} from '../../../types/stream';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Redeploy', () => {
   const appConfig = { id: 'tree' };
@@ -22,7 +23,11 @@ describe('FUNCTIONAL | Redeploy', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     //init/activate HotMesh (test both `engine` and `worker` roles)
@@ -30,23 +35,25 @@ describe('FUNCTIONAL | Redeploy', () => {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
       workers: [
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
           redis: { class: Redis, options },
-          callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+          callback: async (
+            streamData: StreamData,
+          ): Promise<StreamDataResponse> => {
             return {
               code: 200,
               status: StreamStatus.SUCCESS,
               metadata: { ...streamData.metadata },
-              data: { result:  new Date().toLocaleString('en-US')},
+              data: { result: new Date().toLocaleString('en-US') },
             } as StreamDataResponse;
-          }
-        }
-      ]
+          },
+        },
+      ],
     };
     hotMesh = await HotMesh.init(config);
   });
@@ -232,7 +239,7 @@ describe('FUNCTIONAL | Redeploy', () => {
         appId: 'abc',
         logLevel: HMSH_LOGLEVEL,
         engine: {
-          redis: { class: Redis, options }
+          redis: { class: Redis, options },
         },
         workers: [
           {
@@ -241,9 +248,9 @@ describe('FUNCTIONAL | Redeploy', () => {
             callback: async (data: StreamData) => {
               return {
                 metadata: { ...data.metadata },
-                data: { y: `${data?.data?.x} world` }
+                data: { y: `${data?.data?.x} world` },
               };
-            }
+            },
           },
           {
             topic: 'work.do.more',
@@ -251,11 +258,11 @@ describe('FUNCTIONAL | Redeploy', () => {
             callback: async (data: StreamData) => {
               return {
                 metadata: { ...data.metadata },
-                data: { o: `${data?.data?.i} world` }
+                data: { o: `${data?.data?.i} world` },
               };
-            }
-          }
-        ]
+            },
+          },
+        ],
       };
       const hotMesh = await HotMesh.init(config);
 
@@ -281,34 +288,34 @@ describe('FUNCTIONAL | Redeploy', () => {
 
       await hotMesh.deploy('/app/tests/$setup/apps/abc/v5/hotmesh.yaml');
       await hotMesh.activate('5');
-      const response5 = await hotMesh.pubsub('abc.test', { a : 'hello' });
+      const response5 = await hotMesh.pubsub('abc.test', { a: 'hello' });
       expect(response5.data.b).toBe('hello world');
 
       await hotMesh.deploy('/app/tests/$setup/apps/abc/v6/hotmesh.yaml');
       await hotMesh.activate('6');
-      const response6 = await hotMesh.pubsub('abc.test', { a : 'hello' });
+      const response6 = await hotMesh.pubsub('abc.test', { a: 'hello' });
       expect(response6.data.b).toBe('hello world');
       expect(response6.data.c).toBe('hello world');
 
       await hotMesh.deploy('/app/tests/$setup/apps/abc/v7/hotmesh.yaml');
       await hotMesh.activate('7');
-      const response7 = await hotMesh.pubsub('abc.test', { a : 'hello' });
+      const response7 = await hotMesh.pubsub('abc.test', { a: 'hello' });
       expect(response7.data.b).toBe('hello world');
       expect(response7.data.c).toBe('hello world world');
 
       await hotMesh.deploy('/app/tests/$setup/apps/abc/v8/hotmesh.yaml');
       await hotMesh.activate('8');
-      const response8 = await hotMesh.pubsub('abc.test', { a : 'hello' });
+      const response8 = await hotMesh.pubsub('abc.test', { a: 'hello' });
       expect(response8.data.b).toBe('hello world');
 
       await hotMesh.deploy('/app/tests/$setup/apps/abc/v9/hotmesh.yaml');
       await hotMesh.activate('9');
-      const response9a = await hotMesh.pubsub('abc.test', { a : 'hello' });
+      const response9a = await hotMesh.pubsub('abc.test', { a: 'hello' });
       expect(response9a.data.b).toBe('hello world');
       expect(response9a.data.c).toBe('hello world world');
-      const response9b = await hotMesh.pubsub('abc.test', { a : 'goodbye' });
+      const response9b = await hotMesh.pubsub('abc.test', { a: 'goodbye' });
       expect(response9b.data).toBeUndefined();
-      const response9c = await hotMesh.pubsub('abc.test', { a : 'help' });
+      const response9c = await hotMesh.pubsub('abc.test', { a: 'help' });
       expect(response9c.data.b).toBe('help world');
       expect(response9c.data.c).toBeUndefined();
     }, 22_000);

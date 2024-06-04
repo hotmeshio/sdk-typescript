@@ -1,15 +1,17 @@
 import { Durable } from '../../../../services/durable';
+
 import * as activities from './activities';
 
-const { greet, bye } = Durable.workflow
-  .proxyActivities<typeof activities>({ activities });
+const { greet, bye } = Durable.workflow.proxyActivities<typeof activities>({
+  activities,
+});
 
 /**
  * This is the main workflow function that will be executed. The workflow
  * will end and self-clean once the final statement executes. While it
  * is active other hook functions may also run in parallel. Once it ends
  * no hook functions may run.
- * 
+ *
  * @param {string} name
  * @returns {Promise<string>}
  */

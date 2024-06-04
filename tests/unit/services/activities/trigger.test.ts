@@ -2,7 +2,8 @@ import { HotMesh } from '../../../../index';
 import {
   ActivityType,
   ActivityData,
-  ActivityMetadata } from '../../../../types/activity';
+  ActivityMetadata,
+} from '../../../../types/activity';
 import { Trigger } from '../../../../services/activities/trigger';
 import { RedisConnection } from '../../../$setup/cache/ioredis';
 import { EngineService } from '../../../../services/engine';
@@ -16,7 +17,8 @@ describe('Trigger class', () => {
   beforeAll(async () => {
     //get standard redis connections (3 used for this test)
     storeConnection = await RedisConnection.getConnection('test-connection');
-    subscriberConnection = await RedisConnection.getConnection('test-subscriber');
+    subscriberConnection =
+      await RedisConnection.getConnection('test-subscriber');
     streamerConnection = await RedisConnection.getConnection('test-streamer');
     //init hotMesh, with wrapped redis connection clients
     hotMesh = await HotMesh.init({
@@ -25,7 +27,7 @@ describe('Trigger class', () => {
         store: await storeConnection.getClient(),
         stream: await subscriberConnection.getClient(),
         sub: await streamerConnection.getClient(),
-      }
+      },
     });
   });
 
@@ -41,8 +43,8 @@ describe('Trigger class', () => {
       type: 'trigger',
       subtype: 'test-subtype',
       stats: {
-        id: 'job_id'
-      }
+        id: 'job_id',
+      },
     };
     const activityData: ActivityData = {
       input: {},
@@ -57,7 +59,13 @@ describe('Trigger class', () => {
     };
     const activityHookData = null;
 
-    const trigger = new Trigger(ActivityType, activityData, activityMetadata, activityHookData, hotMesh?.engine as EngineService);
+    const trigger = new Trigger(
+      ActivityType,
+      activityData,
+      activityMetadata,
+      activityHookData,
+      hotMesh?.engine as EngineService,
+    );
     const createJobSpy = jest.spyOn(trigger, 'resolveJobId');
     trigger.resolveJobId(trigger.createInputContext());
     expect(createJobSpy).toHaveBeenCalledTimes(1);

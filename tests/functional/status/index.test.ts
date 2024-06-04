@@ -7,7 +7,8 @@ import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import {
   StreamData,
   StreamDataResponse,
-  StreamStatus } from '../../../types/stream';
+  StreamStatus,
+} from '../../../types/stream';
 import config from '../../$setup/config';
 
 describe('FUNCTIONAL | Status Codes', () => {
@@ -23,7 +24,11 @@ describe('FUNCTIONAL | Status Codes', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     //init HotMesh
@@ -32,17 +37,19 @@ describe('FUNCTIONAL | Status Codes', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
 
       workers: [
         {
           topic: 'work.do',
           redis: { class: Redis, options },
-          callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+          callback: async (
+            streamData: StreamData,
+          ): Promise<StreamDataResponse> => {
             let status: StreamStatus;
-            let data: { [key: string]: string | number } = {
-              code: streamData.data.code as number
+            const data: { [key: string]: string | number } = {
+              code: streamData.data.code as number,
             };
             if (streamData.data.code == 202) {
               data.percentage = 49;
@@ -51,12 +58,12 @@ describe('FUNCTIONAL | Status Codes', () => {
               //send a second message on a delay;
               // it's a 'success' message so it will
               //close the channel
-              setTimeout(function() {
+              setTimeout(function () {
                 hotMesh.add({
                   code: 200,
                   status: StreamStatus.SUCCESS,
                   metadata: { ...streamData.metadata },
-                  data: { code: 200, percentage: 99 }
+                  data: { code: 200, percentage: 99 },
                 });
               }, 250);
             } else if (streamData.data.code == 422) {
@@ -71,11 +78,11 @@ describe('FUNCTIONAL | Status Codes', () => {
               code: data.code,
               status,
               metadata: { ...streamData.metadata },
-              data
+              data,
             } as StreamDataResponse;
-          }
-        }
-      ]
+          },
+        },
+      ],
     };
 
     hotMesh = await HotMesh.init(hmshConfig);
@@ -110,7 +117,7 @@ describe('FUNCTIONAL | Status Codes', () => {
       try {
         await hotMesh.pubsub('def.test', payload);
       } catch (err) {
-        data = err
+        data = err;
         expect(data.code).toBe(payload.code);
         expect(data.message).toBe('invalid input');
         expect(data.job_id).not.toBeUndefined();

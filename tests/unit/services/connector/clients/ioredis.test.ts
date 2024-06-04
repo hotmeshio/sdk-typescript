@@ -1,9 +1,11 @@
 import Redis from 'ioredis';
+
 import config from '../../../../$setup/config';
-import { RedisConnection } from '../../../../../services/connector/clients/ioredis'; 
-import { 
-  IORedisClientOptions as RedisClientOptions, 
-  IORedisClientType as RedisClientType } from '../../../../../types/redis';
+import { RedisConnection } from '../../../../../services/connector/clients/ioredis';
+import {
+  IORedisClientOptions as RedisClientOptions,
+  IORedisClientType as RedisClientType,
+} from '../../../../../types/redis';
 
 describe('RedisConnection', () => {
   let redisConnection: RedisConnection;
@@ -39,6 +41,8 @@ describe('RedisConnection', () => {
 
   it('should throw an error if getClient is called without a connection', async () => {
     await redisConnection.disconnect();
-    expect(() => redisConnection.getClient()).toThrow('Redis client is not connected');
+    expect(() => redisConnection.getClient()).toThrow(
+      'Redis client is not connected',
+    );
   });
 });

@@ -2,7 +2,7 @@ import { KeyStoreParams, KeyType } from '../types/hotmesh';
 
 /**
  * Keys
- * 
+ *
  * hmsh ->                                            {hash}    hotmesh config {version: "0.0.1", namespace: "hmsh"}
  * hmsh:a:<appid> ->                                  {hash}    app profile { "id": "appid", "version": "2", "versions/1": "GMT", "versions/2": "GMT"}
  * hmsh:<appid>:e:<engineId> ->                       {string}  setnx to ensure only one engine of given id
@@ -28,27 +28,30 @@ import { KeyStoreParams, KeyType } from '../types/hotmesh';
  * hmsh:<appid>:sym:vals: ->                          {hash}    list of symbols for job values across all app versions
  */
 
-const HMNS = "hmsh";
+const HMNS = 'hmsh';
 
-const KEYSEP = ':';  //default delimiter for keys 
+const KEYSEP = ':'; //default delimiter for keys
 const VALSEP = '::'; //default delimiter for vals
 const WEBSEP = '::'; //default delimiter for webhook vals
 const TYPSEP = '::'; //delimiter for ZSET task typing (how should a list be used?)
 
 class KeyService {
-
   /**
    * returns a key that can be used to access a value in the key/value store
    * appropriate for the given key type; the keys have an implicit hierarchy
    * and are used to organize data in the store in a tree-like structure
    * via the use of colons as separators. The top-level entity is the hmsh manifest.
    * This file will reveal the full scope of what is on the server (apps, versions, etc)
-   * @param namespace 
-   * @param keyType 
-   * @param params 
+   * @param namespace
+   * @param keyType
+   * @param params
    * @returns {string}
    */
-  static mintKey(namespace: string, keyType: KeyType, params: KeyStoreParams): string {
+  static mintKey(
+    namespace: string,
+    keyType: KeyType,
+    params: KeyStoreParams,
+  ): string {
     switch (keyType) {
       case KeyType.HOTMESH:
         return namespace;
@@ -63,7 +66,7 @@ class KeyService {
       case KeyType.QUORUM:
         return `${namespace}:${params.appId}:q:${params.engineId || ''}`;
       case KeyType.JOB_STATE:
-          return `${namespace}:${params.appId}:j:${params.jobId}`;
+        return `${namespace}:${params.appId}:j:${params.jobId}`;
       case KeyType.JOB_DEPENDENTS:
         return `${namespace}:${params.appId}:d:${params.jobId}`;
       case KeyType.JOB_STATS_GENERAL:
@@ -93,9 +96,18 @@ class KeyService {
       case KeyType.STREAMS:
         return `${namespace}:${params.appId || ''}:x:${params.topic || ''}`;
       default:
-        throw new Error("Invalid key type.");
+        throw new Error('Invalid key type.');
     }
   }
 }
 
-export { KeyService, KeyType, KeyStoreParams, HMNS, KEYSEP, TYPSEP, WEBSEP, VALSEP };
+export {
+  KeyService,
+  KeyType,
+  KeyStoreParams,
+  HMNS,
+  KEYSEP,
+  TYPSEP,
+  WEBSEP,
+  VALSEP,
+};

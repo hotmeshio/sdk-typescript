@@ -1,11 +1,16 @@
-import { StringAnyType } from "./serializer";
+import { StringAnyType } from './serializer';
 
-export type ExportItem = [(string | null), string, any];
+export type ExportItem = [string | null, string, any];
 
 /**
  * job export data can be large, particularly transitions the timeline
  */
-export type ExportFields = 'data' | 'state' | 'status' | 'timeline' | 'transitions';
+export type ExportFields =
+  | 'data'
+  | 'state'
+  | 'status'
+  | 'timeline'
+  | 'transitions';
 
 export interface ExportOptions {
   /**
@@ -23,7 +28,7 @@ export interface ExportOptions {
    * @default true
    */
   values?: boolean;
-};
+}
 
 export type JobAction = {
   cursor: number;
@@ -35,7 +40,7 @@ export interface JobActionExport {
     [key: string]: JobAction;
   };
   main: JobAction;
-};
+}
 
 export interface ActivityAction {
   action: string;
@@ -61,11 +66,11 @@ export interface DependencyExport {
 
 export interface ExportTransitions {
   [key: string]: string[];
-};
+}
 
 export interface ExportCycles {
   [key: string]: string[];
-};
+}
 
 export type TimelineType = {
   key: string;
@@ -88,10 +93,10 @@ export interface DurableJobExport {
   status?: number;
   timeline?: TimelineType[];
   transitions?: TransitionType[];
-};
+}
 
 export interface JobExport {
   dependencies: DependencyExport[];
   process: StringAnyType;
   status: string;
-};
+}

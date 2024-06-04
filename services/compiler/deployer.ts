@@ -9,11 +9,13 @@ import { HotMeshGraph, HotMeshManifest } from '../../types/hotmesh';
 import { RedisClient, RedisMulti } from '../../types/redis';
 import { StringAnyType, Symbols } from '../../types/serializer';
 import { Pipe } from '../pipe';
+
 import { Validator } from './validator';
 
 const DEFAULT_METADATA_RANGE_SIZE = 26; //metadata is 26 slots ([a-z] * 1)
 const DEFAULT_DATA_RANGE_SIZE = 260; //data is 260 slots ([a-zA-Z] * 5)
-const DEFAULT_RANGE_SIZE = DEFAULT_METADATA_RANGE_SIZE + DEFAULT_DATA_RANGE_SIZE;
+const DEFAULT_RANGE_SIZE =
+  DEFAULT_METADATA_RANGE_SIZE + DEFAULT_DATA_RANGE_SIZE;
 
 class Deployer {
   manifest: HotMeshManifest | null = null;
@@ -38,7 +40,7 @@ class Deployer {
     await this.generateSymVals();
     await this.deployHookPatterns();
     await this.deployActivitySchemas();
-    await this.deploySubscriptions(); 
+    await this.deploySubscriptions();
     await this.deployTransitions();
     await this.deployConsumerGroups();
   }
@@ -47,28 +49,47 @@ class Deployer {
     return {
       id: this.manifest.app.id,
       version: this.manifest.app.version,
-    }
+    };
   }
 
   async generateSymKeys() {
     //note: symbol ranges are additive (per version); path assignments are immutable
-    const appId = this.manifest.app.id;
     for (const graph of this.manifest.app.graphs) {
       //generate JOB symbols
-      const [,trigger] = this.findTrigger(graph);
+      const [, trigger] = this.findTrigger(graph);
       const topic = trigger.subscribes;
-      const [lower, upper, symbols] = await this.store.reserveSymbolRange(`$${topic}`, DEFAULT_RANGE_SIZE, 'JOB');
+      const [lower, upper, symbols] = await this.store.reserveSymbolRange(
+        `$${topic}`,
+        DEFAULT_RANGE_SIZE,
+        'JOB',
+      );
       const prefix = ''; //job meta/data is NOT namespaced
-      const newSymbols = this.bindSymbols(lower, upper, symbols, prefix, trigger.PRODUCES);
+      const newSymbols = this.bindSymbols(
+        lower,
+        upper,
+        symbols,
+        prefix,
+        trigger.PRODUCES,
+      );
       if (Object.keys(newSymbols).length) {
         await this.store.addSymbols(`$${topic}`, newSymbols);
       }
       //generate ACTIVITY symbols
       for (const [activityId, activity] of Object.entries(graph.activities)) {
-        const [lower, upper, symbols] = await this.store.reserveSymbolRange(activityId, DEFAULT_RANGE_SIZE, 'ACTIVITY');
+        const [lower, upper, symbols] = await this.store.reserveSymbolRange(
+          activityId,
+          DEFAULT_RANGE_SIZE,
+          'ACTIVITY',
+        );
         const prefix = `${activityId}/`; //activity meta/data is namespaced
         this.bindSelf(activity.consumes, activity.produces, activityId);
-        const newSymbols = this.bindSymbols(lower, upper, symbols, prefix, activity.produces);
+        const newSymbols = this.bindSymbols(
+          lower,
+          upper,
+          symbols,
+          prefix,
+          activity.produces,
+        );
         if (Object.keys(newSymbols).length) {
           await this.store.addSymbols(activityId, newSymbols);
         }
@@ -76,7 +97,11 @@ class Deployer {
     }
   }
 
-  bindSelf(consumes: Record<string, string[]>, produces: string[], activityId: string) {
+  bindSelf(
+    consumes: Record<string, string[]>,
+    produces: string[],
+    activityId: string,
+  ) {
     //bind self-referential mappings
     for (const selfId of [activityId, '$self']) {
       const selfConsumes = consumes[selfId];
@@ -90,17 +115,23 @@ class Deployer {
     }
   }
 
-  bindSymbols(startIndex: number, maxIndex: number, existingSymbols: Symbols, prefix: string, produces: string[]): Symbols {
-    let newSymbols: Symbols = {};
-    let currentSymbols: Symbols = {...existingSymbols};
-    for (let path of produces) {
+  bindSymbols(
+    startIndex: number,
+    maxIndex: number,
+    existingSymbols: Symbols,
+    prefix: string,
+    produces: string[],
+  ): Symbols {
+    const newSymbols: Symbols = {};
+    const currentSymbols: Symbols = { ...existingSymbols };
+    for (const path of produces) {
       const fullPath = `${prefix}${path}`;
       if (!currentSymbols[fullPath]) {
         if (startIndex > maxIndex) {
           throw new Error('Symbol index out of bounds');
         }
         const symbol = getSymKey(startIndex);
-        startIndex++
+        startIndex++;
         newSymbols[fullPath] = symbol;
         currentSymbols[fullPath] = symbol; // update the currentSymbols to include this new symbol
       }
@@ -122,7 +153,9 @@ class Deployer {
           const trigger = activities[activityKey];
           if (jobSchema) {
             //possible for trigger to have job mappings
-            if (!trigger.job) { trigger.job = {}; }
+            if (!trigger.job) {
+              trigger.job = {};
+            }
             trigger.job.schema = jobSchema;
           }
           if (outputSchema) {
@@ -170,7 +203,11 @@ class Deployer {
       const activities = graph.activities;
       for (const activityKey in activities) {
         const activity = activities[activityKey];
-        if (['worker', 'await'].includes(activity.type) && activity.topic && !activity.subtype) {
+        if (
+          ['worker', 'await'].includes(activity.type) &&
+          activity.topic &&
+          !activity.subtype
+        ) {
           activity.subtype = activity.topic;
         }
       }
@@ -190,10 +227,9 @@ class Deployer {
     }
   }
 
-
   async bindParents() {
     const graphs = this.manifest.app.graphs;
-    for (const graph of graphs) {  
+    for (const graph of graphs) {
       if (graph.transitions) {
         for (const fromActivity in graph.transitions) {
           const toTransitions = graph.transitions[fromActivity];
@@ -227,7 +263,7 @@ class Deployer {
       }
     }
   }
-  
+
   traverse(obj: any, values: Set<string>) {
     for (const value of Object.values(obj)) {
       if (typeof value === 'object') {
@@ -239,7 +275,7 @@ class Deployer {
       }
     }
   }
-  
+
   async generateSymVals() {
     const uniqueStrings = new Set<string>();
     for (const graph of this.manifest!.app.graphs) {
@@ -248,17 +284,26 @@ class Deployer {
     const existingSymbols = await this.store.getSymbolValues();
     const startIndex = Object.keys(existingSymbols).length;
     const maxIndex = Math.pow(52, 2) - 1;
-    const newSymbols = SerializerService.filterSymVals(startIndex, maxIndex, existingSymbols, uniqueStrings);
+    const newSymbols = SerializerService.filterSymVals(
+      startIndex,
+      maxIndex,
+      existingSymbols,
+      uniqueStrings,
+    );
     await this.store.addSymbolValues(newSymbols);
   }
 
   resolveJobMapsPaths() {
     function parsePaths(obj: StringAnyType): string[] {
-      let result = [];
+      const result = [];
       function traverse(obj: StringAnyType, path = []) {
-        for (let key in obj) {
-          if (typeof obj[key] === 'object' && obj[key] !== null && !('@pipe' in obj[key])) {
-            let newPath = [...path, key];
+        for (const key in obj) {
+          if (
+            typeof obj[key] === 'object' &&
+            obj[key] !== null &&
+            !('@pipe' in obj[key])
+          ) {
+            const newPath = [...path, key];
             traverse(obj[key], newPath);
           } else {
             //wildcard mapping (e.g., 'friends[25]')
@@ -313,7 +358,10 @@ class Deployer {
         if (typeof obj[key] === 'string') {
           const stringValue = obj[key] as string;
           const dynamicMappingRuleMatch = stringValue.match(/^\{[^@].*}$/);
-          if (dynamicMappingRuleMatch && !Validator.CONTEXT_VARS.includes(stringValue)) { 
+          if (
+            dynamicMappingRuleMatch &&
+            !Validator.CONTEXT_VARS.includes(stringValue)
+          ) {
             if (stringValue.split('.')[1] !== 'input') {
               dynamicMappingRules.push(stringValue);
               consumes.push(stringValue);
@@ -371,7 +419,7 @@ class Deployer {
       const prefix = {
         hook: 'hook/data',
         input: 'input/data',
-        output: subtype === 'data' ? 'output/data': 'output/metadata'
+        output: subtype === 'data' ? 'output/data' : 'output/metadata',
       }[type];
       return [group, `${prefix}/${path.join('/')}`];
     }
@@ -422,7 +470,7 @@ class Deployer {
   async deployTransitions() {
     const graphs = this.manifest!.app.graphs;
     const privateSubscriptions: { [key: string]: any } = {};
-    for (const graph of graphs) {  
+    for (const graph of graphs) {
       if (graph.subscribes && graph.subscribes.startsWith('.')) {
         const [triggerId] = this.findTrigger(graph);
         if (triggerId) {
@@ -435,7 +483,7 @@ class Deployer {
           const toValues: { [key: string]: any } = {};
           for (const transition of toTransitions) {
             const to = transition.to;
-          if (transition.conditions) {
+            if (transition.conditions) {
               toValues[to] = transition.conditions;
             } else {
               toValues[to] = true;
@@ -474,7 +522,7 @@ class Deployer {
 
   async deployConsumerGroups() {
     //create one engine group
-    const params: KeyStoreParams = { appId: this.manifest.app.id }
+    const params: KeyStoreParams = { appId: this.manifest.app.id };
     const key = this.store.mintKey(KeyType.STREAMS, params);
     await this.deployConsumerGroup(key, 'ENGINE');
     for (const graph of this.manifest.app.graphs) {
@@ -482,7 +530,10 @@ class Deployer {
       for (const activityKey in activities) {
         const activity = activities[activityKey];
         //only precreate if the topic is concrete and not `mappable`
-        if (activity.type === 'worker' && Pipe.resolve(activity.subtype, {}) === activity.subtype) {
+        if (
+          activity.type === 'worker' &&
+          Pipe.resolve(activity.subtype, {}) === activity.subtype
+        ) {
           params.topic = activity.subtype;
           const key = this.store.mintKey(KeyType.STREAMS, params);
           //create one worker group per unique activity subtype (the topic)

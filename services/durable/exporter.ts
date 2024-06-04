@@ -4,12 +4,17 @@ import { SerializerService } from '../serializer';
 import { StoreService } from '../store';
 import {
   ExportOptions,
-  DurableJobExport, 
+  DurableJobExport,
   TimelineType,
-  TransitionType, 
-  ExportFields} from '../../types/exporter';
+  TransitionType,
+  ExportFields,
+} from '../../types/exporter';
 import { RedisClient, RedisMulti } from '../../types/redis';
-import { StringAnyType, StringStringType, Symbols } from "../../types/serializer";
+import {
+  StringAnyType,
+  StringStringType,
+  Symbols,
+} from '../../types/serializer';
 
 class ExporterService {
   appId: string;
@@ -18,7 +23,11 @@ class ExporterService {
   symbols: Promise<Symbols> | Symbols;
   private static symbols: Map<string, Symbols> = new Map();
 
-  constructor(appId: string, store: StoreService<RedisClient, RedisMulti>, logger: ILogger) {
+  constructor(
+    appId: string,
+    store: StoreService<RedisClient, RedisMulti>,
+    logger: ILogger,
+  ) {
     this.appId = appId;
     this.logger = logger;
     this.store = store;
@@ -28,7 +37,10 @@ class ExporterService {
    * Convert the job hash from its compiles format into a DurableJobExport object with
    * facets that describe the workflow in terms relevant to narrative storytelling.
    */
-  async export(jobId: string, options: ExportOptions = {}): Promise<DurableJobExport> {
+  async export(
+    jobId: string,
+    options: ExportOptions = {},
+  ): Promise<DurableJobExport> {
     if (!ExporterService.symbols.has(this.appId)) {
       const symbols: Symbols | Promise<Symbols> = this.store.getAllSymbols();
       ExporterService.symbols.set(this.appId, await symbols);
@@ -57,15 +69,12 @@ class ExporterService {
       if (match) {
         //transitions
         this.inflateTransition(match, value, transitionsObject);
-
       } else if (key.length === 3) {
         //state
         state[this.inflateKey(key)] = SerializerService.fromString(value);
-
       } else if (key.startsWith('_')) {
         //data
         data[key.substring(1)] = value;
-
       } else if (key.startsWith('-')) {
         //timeline
         const keyParts = this.keyToObject(key); //key parts have meaning
@@ -77,16 +86,23 @@ class ExporterService {
       }
     });
 
-    return this.filterFields({
-      data: restoreHierarchy(data),
-      state: Object.entries(restoreHierarchy(state))[0][1],
-      status: parseInt(jobHash[':'], 10),
-      timeline: this.sortParts(timeline),
-      transitions: this.sortEntriesByCreated(transitionsObject),
-    }, options.block, options.allow);
+    return this.filterFields(
+      {
+        data: restoreHierarchy(data),
+        state: Object.entries(restoreHierarchy(state))[0][1],
+        status: parseInt(jobHash[':'], 10),
+        timeline: this.sortParts(timeline),
+        transitions: this.sortEntriesByCreated(transitionsObject),
+      },
+      options.block,
+      options.allow,
+    );
   }
 
-  resolveValue(raw: string, withValues: boolean): Record<string, any> | string | number | null {
+  resolveValue(
+    raw: string,
+    withValues: boolean,
+  ): Record<string, any> | string | number | null {
     const resolved = SerializerService.fromString(raw);
     if (withValues !== false) {
       return resolved;
@@ -118,19 +134,26 @@ class ExporterService {
     return key;
   }
 
- filterFields(fullObject: DurableJobExport, block: ExportFields[] = [], allow: ExportFields[] = []): Partial<DurableJobExport> {
+  filterFields(
+    fullObject: DurableJobExport,
+    block: ExportFields[] = [],
+    allow: ExportFields[] = [],
+  ): Partial<DurableJobExport> {
     let result: Partial<DurableJobExport> = {};
     if (allow && allow.length > 0) {
-      allow.forEach(field => {
+      allow.forEach((field) => {
         if (field in fullObject) {
-          result[field] = fullObject[field] as StringAnyType & number & TimelineType[] & TransitionType[];
+          result[field] = fullObject[field] as StringAnyType &
+            number &
+            TimelineType[] &
+            TransitionType[];
         }
       });
     } else {
       result = { ...fullObject };
     }
     if (block && block.length > 0) {
-      block.forEach(field => {
+      block.forEach((field) => {
         if (field in result) {
           delete result[field];
         }
@@ -139,7 +162,11 @@ class ExporterService {
     return result as DurableJobExport;
   }
 
-  inflateTransition(match: RegExpMatchArray, value: string, transitionsObject: Record<string, TransitionType>) {
+  inflateTransition(
+    match: RegExpMatchArray,
+    value: string,
+    transitionsObject: Record<string, TransitionType>,
+  ) {
     const [_, letters, dimensions] = match;
     const path = this.inflateKey(letters);
     const parts = path.split('/');
@@ -149,7 +176,7 @@ class ExporterService {
     //for now only export activity start/stop; activity data would also be interesting
     if (isCreate || isUpdate) {
       const targetName = `${activity},${dimensions}`;
-      let target = transitionsObject[targetName];
+      const target = transitionsObject[targetName];
       if (!target) {
         transitionsObject[targetName] = {
           activity,
@@ -163,7 +190,9 @@ class ExporterService {
     }
   }
 
-  sortEntriesByCreated(obj: { [key: string]: TransitionType }): TransitionType[] {
+  sortEntriesByCreated(obj: {
+    [key: string]: TransitionType;
+  }): TransitionType[] {
     const entriesArray: TransitionType[] = Object.values(obj);
     entriesArray.sort((a, b) => {
       return (a.created || a.updated).localeCompare(b.created || b.updated);
@@ -174,7 +203,11 @@ class ExporterService {
   /**
    * marker names are overloaded with details like sequence, type, etc
    */
-  keyToObject(key: string): {index: number, dimension?: string, secondary?: number} {
+  keyToObject(key: string): {
+    index: number;
+    dimension?: string;
+    secondary?: number;
+  } {
     function extractDimension(label: string): string {
       const parts = label.split(',');
       if (parts.length > 1) {
@@ -188,14 +221,14 @@ class ExporterService {
       return {
         index: parseInt(parts[2], 10),
         dimension: extractDimension(parts[1]),
-      }
+      };
     } else {
       //-search,0,0-1-1-    -proxy,0,0-1-
       return {
         index: parseInt(parts[2], 10),
         secondary: parseInt(parts[3], 10),
         dimension: extractDimension(parts[1]),
-      }
+      };
     }
   }
 
@@ -206,27 +239,27 @@ class ExporterService {
     return parts.sort((a, b) => {
       const { dimension: aDim, index: aIdx, secondary: aSec } = a;
       const { dimension: bDim, index: bIdx, secondary: bSec } = b;
-  
+
       if (aDim === undefined && bDim !== undefined) return -1;
       if (aDim !== undefined && bDim === undefined) return 1;
       if (aDim !== undefined && bDim !== undefined) {
         if (aDim < bDim) return -1;
         if (aDim > bDim) return 1;
       }
-  
+
       if (aIdx < bIdx) return -1;
       if (aIdx > bIdx) return 1;
-  
+
       if (aSec === undefined && bSec !== undefined) return -1;
       if (aSec !== undefined && bSec === undefined) return 1;
       if (aSec !== undefined && bSec !== undefined) {
         if (aSec < bSec) return -1;
         if (aSec > bSec) return 1;
       }
-  
+
       return 0;
     });
-  };
+  }
 }
 
 export { ExporterService };

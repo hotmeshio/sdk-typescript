@@ -18,7 +18,11 @@ describe('FUNCTIONAL | Interrupt', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     //init/activate HotMesh
@@ -26,7 +30,7 @@ describe('FUNCTIONAL | Interrupt', () => {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
     };
     hotMesh = await HotMesh.init(config);
@@ -89,7 +93,12 @@ describe('FUNCTIONAL | Interrupt', () => {
       //    (interrupt is configured to tell `job b` NOT to throw an error...just stop and return its current state)
       // 3) `job a` await activity receives final state from `job b`
       //    (the final state is the state at the time of interruption)
-      const payload = { seed: 4, speed: 6, throw: false, workflowId: 'abcSuccess' };
+      const payload = {
+        seed: 4,
+        speed: 6,
+        throw: false,
+        workflowId: 'abcSuccess',
+      };
       const result = await hotMesh.pubsub('winter', payload, null, 30_000);
       //subset of output data model for job as defined in YAML (/v10/hotmesh.yaml)
       const data = result?.data as {

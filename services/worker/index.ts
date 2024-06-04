@@ -1,13 +1,14 @@
-import { KeyType } from "../../modules/key";
+import { KeyType } from '../../modules/key';
 import {
   XSleepFor,
   formatISODate,
   getSystemHealth,
   identifyRedisType,
-  sleepFor } from "../../modules/utils";
-import { ConnectorService } from "../connector";
-import { ILogger } from "../logger";
-import { Router } from "../router";
+  sleepFor,
+} from '../../modules/utils';
+import { ConnectorService } from '../connector';
+import { ILogger } from '../logger';
+import { Router } from '../router';
 import { StoreService } from '../store';
 import { IORedisStoreService as IORedisStore } from '../store/clients/ioredis';
 import { RedisStoreService as RedisStore } from '../store/clients/redis';
@@ -17,22 +18,21 @@ import { RedisStreamService as RedisStream } from '../stream/clients/redis';
 import { SubService } from '../sub';
 import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
 import { RedisSubService as RedisSub } from '../sub/clients/redis';
-import { HotMeshConfig, HotMeshWorker } from "../../types/hotmesh";
+import { HotMeshConfig, HotMeshWorker } from '../../types/hotmesh';
 import {
   QuorumMessage,
   QuorumProfile,
   RollCallMessage,
-  SubscriptionCallback } from "../../types/quorum";
+  SubscriptionCallback,
+} from '../../types/quorum';
 import {
   IORedisClientType,
   RedisClient,
   RedisMulti,
-  RedisRedisClientType as RedisClientType }  from "../../types/redis";
-import {
-  StreamData,
-  StreamRole,
-  StreamDataResponse } from "../../types/stream";
-import { HMSH_QUORUM_ROLLCALL_CYCLES } from "../../modules/enums";
+  RedisRedisClientType as RedisClientType,
+} from '../../types/redis';
+import { StreamData, StreamRole, StreamDataResponse } from '../../types/stream';
+import { HMSH_QUORUM_ROLLCALL_CYCLES } from '../../modules/enums';
 
 class WorkerService {
   namespace: string;
@@ -40,7 +40,7 @@ class WorkerService {
   guid: string;
   topic: string;
   config: HotMeshConfig;
-  callback: (streamData: StreamData) => Promise<StreamDataResponse|void>;
+  callback: (streamData: StreamData) => Promise<StreamDataResponse | void>;
   store: StoreService<RedisClient, RedisMulti> | null;
   stream: StreamService<RedisClient, RedisMulti> | null;
   subscribe: SubService<RedisClient, RedisMulti> | null;
@@ -55,18 +55,17 @@ class WorkerService {
     appId: string,
     guid: string,
     config: HotMeshConfig,
-    logger: ILogger
+    logger: ILogger,
   ): Promise<WorkerService[]> {
     const services: WorkerService[] = [];
     if (Array.isArray(config.workers)) {
       for (const worker of config.workers) {
-
         await ConnectorService.initRedisClients(
           worker.redis?.class,
           worker.redis?.options,
           worker,
         );
-  
+
         const service = new WorkerService();
         service.verifyWorkerFields(worker);
         service.namespace = namespace;
@@ -79,18 +78,35 @@ class WorkerService {
 
         await service.initStoreChannel(service, worker.store);
         await service.initSubChannel(service, worker.sub);
-        await service.subscribe.subscribe(KeyType.QUORUM, service.subscriptionHandler(), appId);
-        await service.subscribe.subscribe(KeyType.QUORUM, service.subscriptionHandler(), appId, service.topic);
-        await service.subscribe.subscribe(KeyType.QUORUM, service.subscriptionHandler(), appId, service.guid);
+        await service.subscribe.subscribe(
+          KeyType.QUORUM,
+          service.subscriptionHandler(),
+          appId,
+        );
+        await service.subscribe.subscribe(
+          KeyType.QUORUM,
+          service.subscriptionHandler(),
+          appId,
+          service.topic,
+        );
+        await service.subscribe.subscribe(
+          KeyType.QUORUM,
+          service.subscriptionHandler(),
+          appId,
+          service.guid,
+        );
         await service.initStreamChannel(service, worker.stream);
         service.router = service.initRouter(worker, logger);
 
-        const key = service.stream.mintKey(KeyType.STREAMS, { appId: service.appId, topic: worker.topic });
+        const key = service.stream.mintKey(KeyType.STREAMS, {
+          appId: service.appId,
+          topic: worker.topic,
+        });
         await service.router.consumeMessages(
           key,
           'WORKER',
           service.guid,
-          worker.callback
+          worker.callback,
         );
         service.inited = formatISODate(new Date());
         services.push(service);
@@ -100,11 +116,15 @@ class WorkerService {
   }
 
   verifyWorkerFields(worker: HotMeshWorker) {
-    if ((!identifyRedisType(worker.store) || 
-      !identifyRedisType(worker.stream)||
-      !identifyRedisType(worker.sub)) ||
-      !(worker.topic && worker.callback)) {
-      throw new Error('worker must include `store`, `stream`, and `sub` fields along with a callback function and topic.');
+    if (
+      !identifyRedisType(worker.store) ||
+      !identifyRedisType(worker.stream) ||
+      !identifyRedisType(worker.sub) ||
+      !(worker.topic && worker.callback)
+    ) {
+      throw new Error(
+        'worker must include `store`, `stream`, and `sub` fields along with a callback function and topic.',
+      );
     }
   }
 
@@ -114,11 +134,7 @@ class WorkerService {
     } else {
       service.store = new IORedisStore(store as IORedisClientType);
     }
-    await service.store.init(
-      service.namespace,
-      service.appId,
-      service.logger
-    );
+    await service.store.init(service.namespace, service.appId, service.logger);
   }
 
   async initSubChannel(service: WorkerService, sub: RedisClient) {
@@ -131,7 +147,7 @@ class WorkerService {
       service.namespace,
       service.appId,
       service.guid,
-      service.logger
+      service.logger,
     );
   }
 
@@ -141,11 +157,7 @@ class WorkerService {
     } else {
       service.stream = new IORedisStream(stream as IORedisClientType);
     }
-    await service.stream.init(
-      service.namespace,
-      service.appId,
-      service.logger
-    );
+    await service.stream.init(service.namespace, service.appId, service.logger);
   }
 
   initRouter(worker: HotMeshWorker, logger: ILogger): Router {
@@ -170,13 +182,20 @@ class WorkerService {
     return async (topic: string, message: QuorumMessage) => {
       self.logger.debug('worker-event-received', { topic, type: message.type });
       if (message.type === 'throttle') {
-        if (message.topic !== null) { //undefined allows passthrough
+        if (message.topic !== null) {
+          //undefined allows passthrough
           self.throttle(message.throttle);
         }
-      } else if(message.type === 'ping') {
-        self.sayPong(self.appId, self.guid, message.originator, message.details);
-      } else if(message.type === 'rollcall') {
-        if (message.topic !== null) { //undefined allows passthrough
+      } else if (message.type === 'ping') {
+        self.sayPong(
+          self.appId,
+          self.guid,
+          message.originator,
+          message.details,
+        );
+      } else if (message.type === 'rollcall') {
+        if (message.topic !== null) {
+          //undefined allows passthrough
           self.doRollCall(message);
         }
       }
@@ -185,13 +204,13 @@ class WorkerService {
 
   /**
    * A quorum-wide command to broadcaset system details.
-   * 
+   *
    */
   async doRollCall(message: RollCallMessage) {
     let iteration = 0;
-    let max = !isNaN(message.max) ? message.max : HMSH_QUORUM_ROLLCALL_CYCLES;
+    const max = !isNaN(message.max) ? message.max : HMSH_QUORUM_ROLLCALL_CYCLES;
     if (this.rollCallInterval) clearTimeout(this.rollCallInterval);
-    const base = (message.interval / 2);
+    const base = message.interval / 2;
     const amount = base + Math.ceil(Math.random() * base);
     do {
       await sleepFor(Math.ceil(Math.random() * 1000));
@@ -214,7 +233,13 @@ class WorkerService {
     this.cancelRollCall();
   }
 
-  async sayPong(appId: string, guid: string, originator?: string, details = false, signature = false) {
+  async sayPong(
+    appId: string,
+    guid: string,
+    originator?: string,
+    details = false,
+    signature = false,
+  ) {
     let profile: QuorumProfile;
     if (details) {
       const params = {
@@ -239,7 +264,7 @@ class WorkerService {
       };
     }
     this.store.publish(
-      KeyType.QUORUM, 
+      KeyType.QUORUM,
       {
         type: 'pong',
         guid,

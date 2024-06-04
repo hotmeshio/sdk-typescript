@@ -66,7 +66,12 @@ class ArrayHandler {
     });
   }
 
-  splice(array: any[], start: number, deleteCount?: number, ...items: any[]): any[] {
+  splice(
+    array: any[],
+    start: number,
+    deleteCount?: number,
+    ...items: any[]
+  ): any[] {
     return array.splice(start, deleteCount, ...items);
   }
 

@@ -1,39 +1,36 @@
 import {
   KeyService,
   KeyStoreParams,
-  KeyType, 
+  KeyType,
   HMNS,
   VALSEP,
-  TYPSEP} from '../../modules/key';
+  TYPSEP,
+} from '../../modules/key';
 import { ILogger } from '../logger';
 import { MDATA_SYMBOLS, SerializerService as Serializer } from '../serializer';
-import { Cache } from './cache';
-import { ActivityType,  Consumes} from '../../types/activity';
+import { ActivityType, Consumes } from '../../types/activity';
 import { AppVID } from '../../types/app';
-import {
-  HookRule,
-  HookSignal } from '../../types/hook';
-import {
-  HotMeshApp,
-  HotMeshApps,
-  HotMeshSettings } from '../../types/hotmesh';
+import { HookRule, HookSignal } from '../../types/hook';
+import { HotMeshApp, HotMeshApps, HotMeshSettings } from '../../types/hotmesh';
 import {
   SymbolSets,
   StringStringType,
   StringAnyType,
-  Symbols } from '../../types/serializer';
-import {
-  IdsData,
-  JobStats,
-  JobStatsRange,
-  StatsType } from '../../types/stats';
+  Symbols,
+} from '../../types/serializer';
+import { IdsData, JobStats, JobStatsRange, StatsType } from '../../types/stats';
 import { Transitions } from '../../types/transition';
-import { formatISODate, getSymKey } from '../../modules/utils';
+import { formatISODate, getSymKey, sleepFor } from '../../modules/utils';
 import { ReclaimedMessageType } from '../../types/stream';
 import { JobCompletionOptions, JobInterruptOptions } from '../../types/job';
-import { HMSH_SCOUT_INTERVAL_SECONDS, HMSH_CODE_INTERRUPT } from '../../modules/enums';
+import {
+  HMSH_SCOUT_INTERVAL_SECONDS,
+  HMSH_CODE_INTERRUPT,
+} from '../../modules/enums';
 import { GetStateError } from '../../modules/errors';
 import { WorkListTaskType } from '../../types/task';
+
+import { Cache } from './cache';
 
 interface AbstractRedisClient {
   exec(): any;
@@ -44,7 +41,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   cache: Cache;
   serializer: Serializer;
   namespace: string;
-  appId: string
+  appId: string;
   logger: ILogger;
   commands: Record<string, string> = {
     set: 'set',
@@ -76,64 +73,67 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     xdel: 'xdel',
   };
 
-
   //todo: standardize signatures and move concrete methods to this class
   abstract getMulti(): U;
-  abstract exec(...args: any[]): Promise<string|string[]|string[][]>;
+  abstract exec(...args: any[]): Promise<string | string[] | string[][]>;
   abstract publish(
     keyType: KeyType.QUORUM,
     message: Record<string, any>,
     appId: string,
-    engineId?: string
+    engineId?: string,
   ): Promise<boolean>;
   abstract xgroup(
     command: 'CREATE',
     key: string,
     groupName: string,
     id: string,
-    mkStream?: 'MKSTREAM'
+    mkStream?: 'MKSTREAM',
   ): Promise<boolean>;
   abstract xadd(
     key: string,
     id: string,
     messageId: string,
     messageValue: string,
-    multi?: U): Promise<string | U>;
+    multi?: U,
+  ): Promise<string | U>;
   abstract xpending(
     key: string,
     group: string,
     start?: string,
     end?: string,
     count?: number,
-    consumer?: string): Promise<[string, string, number, [string, number][]][] | [string, string, number, number] | unknown[]>;
+    consumer?: string,
+  ): Promise<
+    | [string, string, number, [string, number][]][]
+    | [string, string, number, number]
+    | unknown[]
+  >;
   abstract xclaim(
     key: string,
     group: string,
     consumer: string,
     minIdleTime: number,
     id: string,
-    ...args: string[]): Promise<ReclaimedMessageType>;
+    ...args: string[]
+  ): Promise<ReclaimedMessageType>;
   abstract xack(
     key: string,
     group: string,
     id: string,
-    multi?: U
-  ): Promise<number|U>;
-  abstract xdel(
-    key: string,
-    id: string,
-    multi?: U
-  ): Promise<number|U>;
-  abstract xlen(
-    key: string,
-    multi?: U
-  ): Promise<number|U>;
+    multi?: U,
+  ): Promise<number | U>;
+  abstract xdel(key: string, id: string, multi?: U): Promise<number | U>;
+  abstract xlen(key: string, multi?: U): Promise<number | U>;
 
   constructor(redisClient: T) {
     this.redisClient = redisClient;
   }
 
-  async init(namespace = HMNS, appId: string, logger: ILogger): Promise<HotMeshApps> {
+  async init(
+    namespace = HMNS,
+    appId: string,
+    logger: ILogger,
+  ): Promise<HotMeshApps> {
     this.namespace = namespace;
     this.appId = appId;
     this.logger = logger;
@@ -148,21 +148,44 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return result > 0 || result === 'OK' || result === true;
   }
 
-  async zAdd(key: string, score: number | string, value: string | number, redisMulti?: U): Promise<any> {
+  async zAdd(
+    key: string,
+    score: number | string,
+    value: string | number,
+    redisMulti?: U,
+  ): Promise<any> {
     //default call signature uses 'ioredis' NPM Package format
-    return await (redisMulti || this.redisClient)[this.commands.zadd](key, score, value);
+    return await (redisMulti || this.redisClient)[this.commands.zadd](
+      key,
+      score,
+      value,
+    );
   }
 
-  async zRangeByScoreWithScores(key: string, score: number | string, value: string | number): Promise<string | null> {
-    const result = await this.redisClient[this.commands.zrangebyscore_withscores](key, score, value, 'WITHSCORES');
+  async zRangeByScoreWithScores(
+    key: string,
+    score: number | string,
+    value: string | number,
+  ): Promise<string | null> {
+    const result = await this.redisClient[
+      this.commands.zrangebyscore_withscores
+    ](key, score, value, 'WITHSCORES');
     if (result?.length > 0) {
       return result[0];
     }
     return null;
   }
 
-  async zRangeByScore(key: string, score: number | string, value: string | number): Promise<string | null> {
-    const result = await this.redisClient[this.commands.zrangebyscore](key, score, value);
+  async zRangeByScore(
+    key: string,
+    score: number | string,
+    value: string | number,
+  ): Promise<string | null> {
+    const result = await this.redisClient[this.commands.zrangebyscore](
+      key,
+      score,
+      value,
+    );
     if (result?.length > 0) {
       return result[0];
     }
@@ -183,14 +206,32 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * check for and process work items in the
    * time and signal task queues.
    */
-  async reserveScoutRole(scoutType: 'time' | 'signal' | 'activate', delay = HMSH_SCOUT_INTERVAL_SECONDS): Promise<boolean> {
-    const key = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId, scoutType });
-    const success = await this.exec('SET', key, `${scoutType}:${formatISODate(new Date())}`, 'NX', 'EX', `${delay - 1}`);
+  async reserveScoutRole(
+    scoutType: 'time' | 'signal' | 'activate',
+    delay = HMSH_SCOUT_INTERVAL_SECONDS,
+  ): Promise<boolean> {
+    const key = this.mintKey(KeyType.WORK_ITEMS, {
+      appId: this.appId,
+      scoutType,
+    });
+    const success = await this.exec(
+      'SET',
+      key,
+      `${scoutType}:${formatISODate(new Date())}`,
+      'NX',
+      'EX',
+      `${delay - 1}`,
+    );
     return this.isSuccessful(success);
   }
 
-  async releaseScoutRole(scoutType: 'time' | 'signal' | 'activate'): Promise<boolean> {
-    const key = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId, scoutType });
+  async releaseScoutRole(
+    scoutType: 'time' | 'signal' | 'activate',
+  ): Promise<boolean> {
+    const key = this.mintKey(KeyType.WORK_ITEMS, {
+      appId: this.appId,
+      scoutType,
+    });
     const success = await this.exec('DEL', key);
     return this.isSuccessful(success);
   }
@@ -218,30 +259,63 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return await this.redisClient[this.commands.hset](key, manifest);
   }
 
-  async reserveSymbolRange(target: string, size: number, type: 'JOB' | 'ACTIVITY'): Promise<[number, number, Symbols]> {
+  async reserveSymbolRange(
+    target: string,
+    size: number,
+    type: 'JOB' | 'ACTIVITY',
+    tryCount = 1,
+  ): Promise<[number, number, Symbols]> {
     const rangeKey = this.mintKey(KeyType.SYMKEYS, { appId: this.appId });
-    const symbolKey = this.mintKey(KeyType.SYMKEYS, { activityId: target, appId: this.appId });
+    const symbolKey = this.mintKey(KeyType.SYMKEYS, {
+      activityId: target,
+      appId: this.appId,
+    });
     //reserve the slot in a `pending` state (range will be established in the next step)
-    const response = await this.redisClient[this.commands.hsetnx](rangeKey, target, '?:?');
+    const response = await this.redisClient[this.commands.hsetnx](
+      rangeKey,
+      target,
+      '?:?',
+    );
     if (response) {
       //if the key didn't exist, set the inclusive range and seed metadata fields
-      const upperLimit = await this.redisClient[this.commands.hincrby](rangeKey, ':cursor', size);
+      const upperLimit = await this.redisClient[this.commands.hincrby](
+        rangeKey,
+        ':cursor',
+        size,
+      );
       const lowerLimit = upperLimit - size;
       const inclusiveRange = `${lowerLimit}:${upperLimit - 1}`;
-      await this.redisClient[this.commands.hset](rangeKey, target, inclusiveRange);
+      await this.redisClient[this.commands.hset](
+        rangeKey,
+        target,
+        inclusiveRange,
+      );
       const metadataSeeds = this.seedSymbols(target, type, lowerLimit);
       await this.redisClient[this.commands.hset](symbolKey, metadataSeeds);
       return [lowerLimit + MDATA_SYMBOLS.SLOTS, upperLimit - 1, {} as Symbols];
     } else {
       //if the key already existed, get the lower limit and add the number of symbols
-      const range = await this.redisClient[this.commands.hget](rangeKey, target);
-      const  [lowerLimitString] = range.split(':');
-      const lowerLimit = parseInt(lowerLimitString, 10);
-      const symbols = await this.redisClient[this.commands.hgetall](symbolKey);
-      const symbolCount = Object.keys(symbols).length;
-      const actualLowerLimit = lowerLimit + MDATA_SYMBOLS.SLOTS + symbolCount;
-      const upperLimit = Number(lowerLimit + size - 1);
-      return [actualLowerLimit, upperLimit, symbols as Symbols];
+      const range = await this.redisClient[this.commands.hget](
+        rangeKey,
+        target,
+      );
+      const [lowerLimitString] = range.split(':');
+      if (lowerLimitString === '?') {
+        console.log('symbol range collision!!!', tryCount);
+        await sleepFor(tryCount * 1000);
+        if (tryCount < 5) {
+          return this.reserveSymbolRange(target, size, type, tryCount + 1);
+        } else {
+          throw new Error('Symbol range reservation failed due to deployment contention');
+        }
+      } else {
+        const lowerLimit = parseInt(lowerLimitString, 10);
+        const symbols = await this.redisClient[this.commands.hgetall](symbolKey);
+        const symbolCount = Object.keys(symbols).length;
+        const actualLowerLimit = lowerLimit + MDATA_SYMBOLS.SLOTS + symbolCount;
+        const upperLimit = Number(lowerLimit + size - 1);
+        return [actualLowerLimit, upperLimit, symbols as Symbols];        
+      }
     }
   }
 
@@ -253,10 +327,15 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     delete rangeKeys[':cursor'];
     const multi = this.getMulti();
     for (const rangeKey of rangeKeys) {
-      const symbolKey = this.mintKey(KeyType.SYMKEYS, { activityId: rangeKey, appId: this.appId });
+      const symbolKey = this.mintKey(KeyType.SYMKEYS, {
+        activityId: rangeKey,
+        appId: this.appId,
+      });
       multi[this.commands.hgetall](symbolKey);
     }
-    const results = await multi.exec() as Array<[null, Symbols]> | Array<Symbols>;
+    const results = (await multi.exec()) as
+      | Array<[null, Symbols]>
+      | Array<Symbols>;
 
     const symbolSets: Symbols = {};
     results.forEach((result: [null, Symbols] | Symbols, index: number) => {
@@ -268,8 +347,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
           vals = result as Symbols;
         }
         for (const [key, value] of Object.entries(vals)) {
-          symbolSets[value as string] = key.startsWith(rangeKeys[index]) ? key : `${rangeKeys[index]}/${key}`;
-        }        
+          symbolSets[value as string] = key.startsWith(rangeKeys[index])
+            ? key
+            : `${rangeKeys[index]}/${key}`;
+        }
       }
     });
     return symbolSets;
@@ -297,7 +378,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return success > 0;
   }
 
-  seedSymbols(target: string, type: 'JOB'|'ACTIVITY', startIndex: number): StringStringType {
+  seedSymbols(
+    target: string,
+    type: 'JOB' | 'ACTIVITY',
+    startIndex: number,
+  ): StringStringType {
     if (type === 'JOB') {
       return this.seedJobSymbols(startIndex);
     }
@@ -313,7 +398,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return hash;
   }
 
-  seedActivitySymbols(startIndex: number, activityId: string): StringStringType {
+  seedActivitySymbols(
+    startIndex: number,
+    activityId: string,
+  ): StringStringType {
     const hash: StringStringType = {};
     MDATA_SYMBOLS.ACTIVITY.KEYS.forEach((key) => {
       hash[`${activityId}/output/metadata/${key}`] = getSymKey(startIndex);
@@ -403,7 +491,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
         id,
         version: version.toString(),
         [versionId]: `activated:${formatISODate(new Date())}`,
-        active: true
+        active: true,
       };
       Object.entries(payload).forEach(([key, value]) => {
         payload[key] = value.toString();
@@ -430,23 +518,22 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * when `originJobId` is interrupted/expired, the items in the
    * list (added via RPUSH) will be interrupted/expired (removed via LPOPed).
    */
-  async registerJobDependency(depType: WorkListTaskType, originJobId: string, topic: string, jobId: string, gId: string, pd = '',  multi? : U): Promise<any> {
+  async registerJobDependency(
+    depType: WorkListTaskType,
+    originJobId: string,
+    topic: string,
+    jobId: string,
+    gId: string,
+    pd = '',
+    multi?: U,
+  ): Promise<any> {
     const privateMulti = multi || this.getMulti();
     const dependencyParams = {
       appId: this.appId,
       jobId: originJobId,
     };
-    const depKey = this.mintKey(
-      KeyType.JOB_DEPENDENTS,
-      dependencyParams,
-    );
-    const expireTask = [
-      depType,
-      topic,
-      gId,
-      pd,
-      jobId,
-    ].join(VALSEP);
+    const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, dependencyParams);
+    const expireTask = [depType, topic, gId, pd, jobId].join(VALSEP);
     privateMulti[this.commands.rpush](depKey, expireTask);
     if (!multi) {
       return await privateMulti.exec();
@@ -457,7 +544,12 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * Ensures a `hook signal` is delisted when its parent activity/job
    * is interrupted/expired.
    */
-  async registerSignalDependency(jobId: string, signalKey: string, dad: string, multi? : U): Promise<any> {
+  async registerSignalDependency(
+    jobId: string,
+    signalKey: string,
+    dad: string,
+    multi?: U,
+  ): Promise<any> {
     const privateMulti = multi || this.getMulti();
     const dependencyParams = { appId: this.appId, jobId };
     const dependencyKey = this.mintKey(
@@ -465,28 +557,36 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       dependencyParams,
     );
     //persiste dependency tasks as multi-segment composite keys
-    const delistTask = [
-      'delist',
-      'signal',
-      jobId,
-      dad,
-      signalKey].join(VALSEP);
-    privateMulti[this.commands.rpush](
-      dependencyKey,
-      delistTask,
-    );
+    const delistTask = ['delist', 'signal', jobId, dad, signalKey].join(VALSEP);
+    privateMulti[this.commands.rpush](dependencyKey, delistTask);
     if (!multi) {
       return await privateMulti.exec();
     }
   }
 
-  async setStats(jobKey: string, jobId: string, dateTime: string, stats: StatsType, appVersion: AppVID, multi? : U): Promise<any> {
-    const params: KeyStoreParams = { appId: appVersion.id, jobId, jobKey, dateTime };
+  async setStats(
+    jobKey: string,
+    jobId: string,
+    dateTime: string,
+    stats: StatsType,
+    appVersion: AppVID,
+    multi?: U,
+  ): Promise<any> {
+    const params: KeyStoreParams = {
+      appId: appVersion.id,
+      jobId,
+      jobKey,
+      dateTime,
+    };
     const privateMulti = multi || this.getMulti();
     if (stats.general.length) {
       const generalStatsKey = this.mintKey(KeyType.JOB_STATS_GENERAL, params);
       for (const { target, value } of stats.general) {
-        privateMulti[this.commands.hincrbyfloat](generalStatsKey, target, value as number);
+        privateMulti[this.commands.hincrbyfloat](
+          generalStatsKey,
+          target,
+          value as number,
+        );
       }
     }
     for (const { target, value } of stats.index) {
@@ -496,7 +596,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     }
     for (const { target, value } of stats.median) {
       const medianParams = { ...params, facet: target };
-      const medianStatsKey = this.mintKey(KeyType.JOB_STATS_MEDIAN, medianParams);
+      const medianStatsKey = this.mintKey(
+        KeyType.JOB_STATS_MEDIAN,
+        medianParams,
+      );
       this.zAdd(medianStatsKey, value, target, privateMulti);
     }
     if (!multi) {
@@ -520,7 +623,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       const key = jobKeys[index];
       const statsHash: unknown = this.hGetAllResult(result);
       if (statsHash && Object.keys(statsHash).length > 0) {
-        const resolvedStatsHash: JobStats = { ...statsHash as object };
+        const resolvedStatsHash: JobStats = { ...(statsHash as object) };
         for (const [key, val] of Object.entries(resolvedStatsHash)) {
           resolvedStatsHash[key] = Number(val);
         }
@@ -532,7 +635,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return output;
   }
 
-  async getJobIds(indexKeys: string[], idRange: [number, number]): Promise<IdsData> {
+  async getJobIds(
+    indexKeys: string[],
+    idRange: [number, number],
+  ): Promise<IdsData> {
     const multi = this.getMulti();
     for (const idsKey of indexKeys) {
       multi[this.commands.lrange](idsKey, idRange[0], idRange[1]); //0,-1 returns all ids
@@ -554,9 +660,18 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return output;
   }
 
-  async setStatus(collationKeyStatus: number, jobId: string, appId: string, multi? : U): Promise<any> {
+  async setStatus(
+    collationKeyStatus: number,
+    jobId: string,
+    appId: string,
+    multi?: U,
+  ): Promise<any> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
-    return await (multi || this.redisClient)[this.commands.hincrbyfloat](jobKey, ':', collationKeyStatus);
+    return await (multi || this.redisClient)[this.commands.hincrbyfloat](
+      jobKey,
+      ':',
+      collationKeyStatus,
+    );
   }
 
   async getStatus(jobId: string, appId: string): Promise<number> {
@@ -568,9 +683,19 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return Number(status);
   }
 
-  async setState({ ...state }: StringAnyType, status: number | null, jobId: string, symbolNames: string[], dIds: StringStringType, multi? : U): Promise<string> {
+  async setState(
+    { ...state }: StringAnyType,
+    status: number | null,
+    jobId: string,
+    symbolNames: string[],
+    dIds: StringStringType,
+    multi?: U,
+  ): Promise<string> {
     delete state['metadata/js'];
-    const hashKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+    const hashKey = this.mintKey(KeyType.JOB_STATE, {
+      appId: this.appId,
+      jobId,
+    });
     const symKeys = await this.getSymbolKeys(symbolNames);
     const symVals = await this.getSymbolValues();
     this.serializer.resetSymbols(symKeys, symVals, dIds);
@@ -591,8 +716,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    */
   async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
     const key = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
-    const _fields = fields.map(field => `_${field}`);
-    const jobDataArray = await this.redisClient[this.commands.hmget](key, _fields);
+    const _fields = fields.map((field) => `_${field}`);
+    const jobDataArray = await this.redisClient[this.commands.hmget](
+      key,
+      _fields,
+    );
     const jobData: StringAnyType = {};
     fields.forEach((field, index) => {
       jobData[field] = jobDataArray[index];
@@ -600,7 +728,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return jobData;
   }
 
-  async getState(jobId: string, consumes: Consumes, dIds: StringStringType): Promise<[StringAnyType, number] | undefined> {
+  async getState(
+    jobId: string,
+    consumes: Consumes,
+    dIds: StringStringType,
+  ): Promise<[StringAnyType, number] | undefined> {
     //get abbreviated field list (the symbols for the paths)
     const key = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
     const symbolNames = Object.keys(consumes);
@@ -608,7 +740,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     this.serializer.resetSymbols(symKeys, {}, dIds);
     const fields = this.serializer.abbreviate(consumes, symbolNames, [':']);
 
-    const jobDataArray = await this.redisClient[this.commands.hmget](key, fields);
+    const jobDataArray = await this.redisClient[this.commands.hmget](
+      key,
+      fields,
+    );
     const jobData: StringAnyType = {};
     let atLeast1 = false; //if status field (':') isn't present assume 404
     fields.forEach((field, index) => {
@@ -634,7 +769,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   }
 
   async getRaw(jobId: string): Promise<StringStringType> {
-    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+    const jobKey = this.mintKey(KeyType.JOB_STATE, {
+      appId: this.appId,
+      jobId,
+    });
     const job = await this.redisClient[this.commands.hgetall](jobKey);
     if (!job) {
       throw new GetStateError(jobId);
@@ -646,18 +784,31 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * collate is a generic method for incrementing a value in a hash
    * in order to track their progress during processing.
    */
-  async collate(jobId: string, activityId: string, amount: number, dIds: StringStringType, multi? : U): Promise<number> {
-    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+  async collate(
+    jobId: string,
+    activityId: string,
+    amount: number,
+    dIds: StringStringType,
+    multi?: U,
+  ): Promise<number> {
+    const jobKey = this.mintKey(KeyType.JOB_STATE, {
+      appId: this.appId,
+      jobId,
+    });
     const collationKey = `${activityId}/output/metadata/as`; //activity state
     const symbolNames = [activityId];
     const symKeys = await this.getSymbolKeys(symbolNames);
     const symVals = await this.getSymbolValues();
     this.serializer.resetSymbols(symKeys, symVals, dIds);
 
-    const payload = { [collationKey]: amount.toString() }
+    const payload = { [collationKey]: amount.toString() };
     const hashData = this.serializer.package(payload, symbolNames);
     const targetId = Object.keys(hashData)[0];
-    return await (multi || this.redisClient)[this.commands.hincrbyfloat](jobKey, targetId, amount);
+    return await (multi || this.redisClient)[this.commands.hincrbyfloat](
+      jobKey,
+      targetId,
+      amount,
+    );
   }
 
   /**
@@ -666,21 +817,44 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * Synthetic targeting ensures that re-entry due to failure can be distinguished from
    * purposeful re-entry.
    */
-  async collateSynthetic(jobId: string, guid: string, amount: number, multi? : U): Promise<number> {
-    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
-    return await (multi || this.redisClient)[this.commands.hincrbyfloat](jobKey, guid, amount);
+  async collateSynthetic(
+    jobId: string,
+    guid: string,
+    amount: number,
+    multi?: U,
+  ): Promise<number> {
+    const jobKey = this.mintKey(KeyType.JOB_STATE, {
+      appId: this.appId,
+      jobId,
+    });
+    return await (multi || this.redisClient)[this.commands.hincrbyfloat](
+      jobKey,
+      guid,
+      amount,
+    );
   }
 
   async setStateNX(jobId: string, appId: string): Promise<boolean> {
     const hashKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
-    const result = await this.redisClient[this.commands.hsetnx](hashKey, ':', '1');
+    const result = await this.redisClient[this.commands.hsetnx](
+      hashKey,
+      ':',
+      '1',
+    );
     return this.isSuccessful(result);
   }
 
-  async getSchema(activityId: string, appVersion: AppVID): Promise<ActivityType> {
-    const schema = this.cache.getSchema(appVersion.id, appVersion.version, activityId);
+  async getSchema(
+    activityId: string,
+    appVersion: AppVID,
+  ): Promise<ActivityType> {
+    const schema = this.cache.getSchema(
+      appVersion.id,
+      appVersion.version,
+      activityId,
+    );
     if (schema) {
-      return schema
+      return schema;
     } else {
       const schemas = await this.getSchemas(appVersion);
       return schemas[activityId];
@@ -692,7 +866,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     if (schemas && Object.keys(schemas).length > 0) {
       return schemas;
     } else {
-      const params: KeyStoreParams = { appId: appVersion.id, appVersion: appVersion.version };
+      const params: KeyStoreParams = {
+        appId: appVersion.id,
+        appVersion: appVersion.version,
+      };
       const key = this.mintKey(KeyType.SCHEMAS, params);
       schemas = {};
       const hash = await this.redisClient[this.commands.hgetall](key);
@@ -704,10 +881,16 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     }
   }
 
-  async setSchemas(schemas: Record<string, ActivityType>, appVersion: AppVID): Promise<any> {
-    const params: KeyStoreParams = { appId: appVersion.id, appVersion: appVersion.version };
+  async setSchemas(
+    schemas: Record<string, ActivityType>,
+    appVersion: AppVID,
+  ): Promise<any> {
+    const params: KeyStoreParams = {
+      appId: appVersion.id,
+      appVersion: appVersion.version,
+    };
     const key = this.mintKey(KeyType.SCHEMAS, params);
-    const _schemas = {...schemas} as Record<string, string>;
+    const _schemas = { ...schemas } as Record<string, string>;
     Object.entries(_schemas).forEach(([key, value]) => {
       _schemas[key] = JSON.stringify(value);
     });
@@ -716,59 +899,101 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return response;
   }
 
-  async setSubscriptions(subscriptions: Record<string, any>, appVersion: AppVID): Promise<boolean> {
-    const params: KeyStoreParams = { appId: appVersion.id, appVersion: appVersion.version };
+  async setSubscriptions(
+    subscriptions: Record<string, any>,
+    appVersion: AppVID,
+  ): Promise<boolean> {
+    const params: KeyStoreParams = {
+      appId: appVersion.id,
+      appVersion: appVersion.version,
+    };
     const key = this.mintKey(KeyType.SUBSCRIPTIONS, params);
-    const _subscriptions = {...subscriptions};
+    const _subscriptions = { ...subscriptions };
     Object.entries(_subscriptions).forEach(([key, value]) => {
       _subscriptions[key] = JSON.stringify(value);
     });
-    const status = await this.redisClient[this.commands.hset](key, _subscriptions);
-    this.cache.setSubscriptions(appVersion.id, appVersion.version, subscriptions);
+    const status = await this.redisClient[this.commands.hset](
+      key,
+      _subscriptions,
+    );
+    this.cache.setSubscriptions(
+      appVersion.id,
+      appVersion.version,
+      subscriptions,
+    );
     return this.isSuccessful(status);
   }
 
   async getSubscriptions(appVersion: AppVID): Promise<Record<string, string>> {
-    let subscriptions = this.cache.getSubscriptions(appVersion.id, appVersion.version);
+    let subscriptions = this.cache.getSubscriptions(
+      appVersion.id,
+      appVersion.version,
+    );
     if (subscriptions && Object.keys(subscriptions).length > 0) {
       return subscriptions;
     } else {
-      const params: KeyStoreParams = { appId: appVersion.id, appVersion: appVersion.version };
+      const params: KeyStoreParams = {
+        appId: appVersion.id,
+        appVersion: appVersion.version,
+      };
       const key = this.mintKey(KeyType.SUBSCRIPTIONS, params);
-      subscriptions = await this.redisClient[this.commands.hgetall](key) || {};
+      subscriptions =
+        await this.redisClient[this.commands.hgetall](key) || {};
       Object.entries(subscriptions).forEach(([key, value]) => {
         subscriptions[key] = JSON.parse(value as string);
       });
-      this.cache.setSubscriptions(appVersion.id, appVersion.version, subscriptions);
+      this.cache.setSubscriptions(
+        appVersion.id,
+        appVersion.version,
+        subscriptions,
+      );
       return subscriptions;
     }
   }
 
-  async getSubscription(topic: string, appVersion: AppVID): Promise<string | undefined> {
+  async getSubscription(
+    topic: string,
+    appVersion: AppVID,
+  ): Promise<string | undefined> {
     const subscriptions = await this.getSubscriptions(appVersion);
     return subscriptions[topic];
   }
 
-  async setTransitions(transitions: Record<string, any>, appVersion: AppVID): Promise<any> {
-    const params: KeyStoreParams = { appId: appVersion.id, appVersion: appVersion.version };
+  async setTransitions(
+    transitions: Record<string, any>,
+    appVersion: AppVID,
+  ): Promise<any> {
+    const params: KeyStoreParams = {
+      appId: appVersion.id,
+      appVersion: appVersion.version,
+    };
     const key = this.mintKey(KeyType.SUBSCRIPTION_PATTERNS, params);
-    const _subscriptions = {...transitions};
+    const _subscriptions = { ...transitions };
     Object.entries(_subscriptions).forEach(([key, value]) => {
       _subscriptions[key] = JSON.stringify(value);
     });
     if (Object.keys(_subscriptions).length !== 0) {
-      const response = await this.redisClient[this.commands.hset](key, _subscriptions);
+      const response = await this.redisClient[this.commands.hset](
+        key,
+        _subscriptions,
+      );
       this.cache.setTransitions(appVersion.id, appVersion.version, transitions);
       return response;
     }
   }
 
   async getTransitions(appVersion: AppVID): Promise<Transitions> {
-    let transitions = this.cache.getTransitions(appVersion.id, appVersion.version);
+    let transitions = this.cache.getTransitions(
+      appVersion.id,
+      appVersion.version,
+    );
     if (transitions && Object.keys(transitions).length > 0) {
       return transitions;
     } else {
-      const params: KeyStoreParams = { appId: appVersion.id, appVersion: appVersion.version };
+      const params: KeyStoreParams = {
+        appId: appVersion.id,
+        appVersion: appVersion.version,
+      };
       const key = this.mintKey(KeyType.SUBSCRIPTION_PATTERNS, params);
       transitions = {};
       const hash = await this.redisClient[this.commands.hgetall](key);
@@ -782,7 +1007,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
 
   async setHookRules(hookRules: Record<string, HookRule[]>): Promise<any> {
     const key = this.mintKey(KeyType.HOOKS, { appId: this.appId });
-    const _hooks = { };
+    const _hooks = {};
     Object.entries(hookRules).forEach(([key, value]) => {
       _hooks[key.toString()] = JSON.stringify(value);
     });
@@ -812,7 +1037,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   async setHookSignal(hook: HookSignal, multi?: U): Promise<any> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
     //destructure the hook key
-    const { topic, resolved, jobId} = hook;
+    const { topic, resolved, jobId } = hook;
     const signalKey = `${topic}:${resolved}`;
     const payload = { [signalKey]: jobId };
     await (multi || this.redisClient)[this.commands.hset](key, payload);
@@ -821,15 +1046,27 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return await this.registerSignalDependency(jid, signalKey, dad, multi);
   }
 
-  async getHookSignal(topic: string, resolved: string): Promise<string | undefined> {
+  async getHookSignal(
+    topic: string,
+    resolved: string,
+  ): Promise<string | undefined> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-    const response = await this.redisClient[this.commands.hget](key, `${topic}:${resolved}`);
+    const response = await this.redisClient[this.commands.hget](
+      key,
+      `${topic}:${resolved}`,
+    );
     return response ? response.toString() : undefined;
   }
 
-  async deleteHookSignal(topic: string, resolved: string): Promise<number | undefined> {
+  async deleteHookSignal(
+    topic: string,
+    resolved: string,
+  ): Promise<number | undefined> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-    const response = await this.redisClient[this.commands.hdel](key, `${topic}:${resolved}`);
+    const response = await this.redisClient[this.commands.hdel](
+      key,
+      `${topic}:${resolved}`,
+    );
     return response ? Number(response) : undefined;
   }
 
@@ -837,7 +1074,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     const multi = this.getMulti();
     const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
     for (const key of keys) {
-      multi[this.commands.zadd](zsetKey, { score: Date.now().toString(), value: key } as any, { NX: true });
+      multi[this.commands.zadd](
+        zsetKey,
+        { score: Date.now().toString(), value: key } as any,
+        { NX: true },
+      );
     }
     await multi.exec();
   }
@@ -846,7 +1087,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     let workItemKey = this.cache.getActiveTaskQueue(this.appId) || null;
     if (!workItemKey) {
       const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
-      const result = await this.redisClient[this.commands.zrange](zsetKey, 0, 0);
+      const result = await this.redisClient[this.commands.zrange](
+        zsetKey,
+        0,
+        0,
+      );
       workItemKey = result.length > 0 ? result[0] : null;
       if (workItemKey) {
         this.cache.setWorkItem(this.appId, workItemKey);
@@ -855,14 +1100,25 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return workItemKey;
   }
 
-  async deleteProcessedTaskQueue(workItemKey: string, key: string, processedKey: string, scrub = false): Promise<void> {
+  async deleteProcessedTaskQueue(
+    workItemKey: string,
+    key: string,
+    processedKey: string,
+    scrub = false,
+  ): Promise<void> {
     const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
-    const didRemove = await this.redisClient[this.commands.zrem](zsetKey, workItemKey);
+    const didRemove = await this.redisClient[this.commands.zrem](
+      zsetKey,
+      workItemKey,
+    );
     if (didRemove) {
       if (scrub) {
         //indexes can be designed to be self-cleaning; `engine.hookAll` exposes this option
         this.redisClient[this.commands.expire](processedKey, 0);
-        this.redisClient[this.commands.expire](key.split(":").slice(0, 5).join(":"), 0);
+        this.redisClient[this.commands.expire](
+          key.split(':').slice(0, 5).join(':'),
+          0,
+        );
       } else {
         await this.redisClient[this.commands.rename](processedKey, key);
       }
@@ -870,23 +1126,38 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     this.cache.removeWorkItem(this.appId);
   }
 
-  async processTaskQueue(sourceKey: string, destinationKey: string): Promise<any> {
-    return await this.redisClient[this.commands.lmove](sourceKey, destinationKey, 'LEFT', 'RIGHT');
+  async processTaskQueue(
+    sourceKey: string,
+    destinationKey: string,
+  ): Promise<any> {
+    return await this.redisClient[this.commands.lmove](
+      sourceKey,
+      destinationKey,
+      'LEFT',
+      'RIGHT',
+    );
   }
 
   async expireJob(jobId: string, inSeconds: number): Promise<void> {
     if (!isNaN(inSeconds) && inSeconds > 0) {
-      const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+      const jobKey = this.mintKey(KeyType.JOB_STATE, {
+        appId: this.appId,
+        jobId,
+      });
       await this.redisClient[this.commands.expire](jobKey, inSeconds);
     }
   }
 
   /**
-   * register the descendants of an expired origin flow to be 
+   * register the descendants of an expired origin flow to be
    * expired at a future date; options indicate whether this
    * is a standard `expire` or an `interrupt`
    */
-  async registerDependenciesForCleanup(jobId: string, deletionTime: number, options: JobCompletionOptions): Promise<void> {
+  async registerDependenciesForCleanup(
+    jobId: string,
+    deletionTime: number,
+    options: JobCompletionOptions,
+  ): Promise<void> {
     const depParams = { appId: this.appId, jobId };
     const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, depParams);
     const context = options.interrupt ? 'INTERRUPT' : 'EXPIRE';
@@ -907,23 +1178,43 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * for the given sleep group. Sleep groups are
    * organized into 'n'-second blocks (LISTS))
    */
-  async registerTimeHook(jobId: string, gId: string, activityId: string, type: WorkListTaskType, deletionTime: number, dad: string, multi?: U): Promise<void> {
-    const listKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId, timeValue: deletionTime });
+  async registerTimeHook(
+    jobId: string,
+    gId: string,
+    activityId: string,
+    type: WorkListTaskType,
+    deletionTime: number,
+    dad: string,
+    multi?: U,
+  ): Promise<void> {
+    const listKey = this.mintKey(KeyType.TIME_RANGE, {
+      appId: this.appId,
+      timeValue: deletionTime,
+    });
     //construct the composite key (the key has enough info to signal the hook)
-    const timeEvent = [
-      type,
-      activityId,
-      gId,
-      dad,
-      jobId].join(VALSEP);
-    const len = await (multi || this.redisClient)[this.commands.rpush](listKey, timeEvent);
+    const timeEvent = [type, activityId, gId, dad, jobId].join(VALSEP);
+    const len = await (multi || this.redisClient)[this.commands.rpush](
+      listKey,
+      timeEvent,
+    );
     if (multi || len === 1) {
       const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
       await this.zAdd(zsetKey, deletionTime.toString(), listKey, multi);
     }
   }
 
-  async getNextTask(listKey?: string): Promise<[listKey: string, jobId: string, gId: string, activityId: string, type: WorkListTaskType] | boolean> {
+  async getNextTask(
+    listKey?: string,
+  ): Promise<
+    | [
+        listKey: string,
+        jobId: string,
+        gId: string,
+        activityId: string,
+        type: WorkListTaskType,
+      ]
+    | boolean
+  > {
     const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
     listKey = listKey || await this.zRangeByScore(zsetKey, 0, Date.now());
     if (listKey) {
@@ -931,12 +1222,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       const timeEvent = await this.redisClient[this.commands.lpop](pKey);
       if (timeEvent) {
         //deconstruct composite key
-        let [
-          type,
-          activityId,
-          gId,
-          _pd,
-          ...jobId] = timeEvent.split(VALSEP);
+        let [type, activityId, gId, _pd, ...jobId] = timeEvent.split(VALSEP);
         const jid = jobId.join(VALSEP);
 
         if (type === 'delist') {
@@ -977,10 +1263,14 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * This method is called by the engine and not by an activity and is
    * followed by a call to execute job completion/cleanup tasks
    * associated with a job completion event.
-   * 
+   *
    * Todo: move most of this logic to the engine (too much logic for the store)
    */
-  async interrupt(topic: string, jobId: string, options: JobInterruptOptions = {}): Promise<void> {
+  async interrupt(
+    topic: string,
+    jobId: string,
+    options: JobInterruptOptions = {},
+  ): Promise<void> {
     try {
       //verify job exists
       const status = await this.getStatus(jobId, this.appId);
@@ -990,16 +1280,23 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       }
       //decrement job status (:) by 1bil
       const amount = -1_000_000_000;
-      const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
-      const result = await this.redisClient[this.commands.hincrbyfloat](jobKey, ':', amount);
+      const jobKey = this.mintKey(KeyType.JOB_STATE, {
+        appId: this.appId,
+        jobId,
+      });
+      const result = await this.redisClient[this.commands.hincrbyfloat](
+        jobKey,
+        ':',
+        amount,
+      );
       if (result <= amount) {
         //verify active state; job already interrupted
         throw new Error(`Job ${jobId} already completed`);
       }
       //persist the error unless specifically told not to
       if (options.throw !== false) {
-        const errKey = `metadata/err`;       //job errors are stored at the path `metadata/err`
-        const symbolNames = [`$${topic}`];   //the symbol for `metadata/err` is in redis and stored using the job topic
+        const errKey = `metadata/err`; //job errors are stored at the path `metadata/err`
+        const symbolNames = [`$${topic}`]; //the symbol for `metadata/err` is in redis and stored using the job topic
         const symKeys = await this.getSymbolKeys(symbolNames);
         const symVals = await this.getSymbolValues();
         this.serializer.resetSymbols(symKeys, symVals, {});
@@ -1009,10 +1306,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
           code: options.code ?? HMSH_CODE_INTERRUPT,
           message: options.reason ?? `job [${jobId}] interrupted`,
           stack: options.stack ?? '',
-          job_id: jobId
+          job_id: jobId,
         });
 
-        const payload = { [errKey]: amount.toString() }
+        const payload = { [errKey]: amount.toString() };
         const hashData = this.serializer.package(payload, symbolNames);
         const errSymbol = Object.keys(hashData)[0];
         await this.redisClient[this.commands.hset](jobKey, errSymbol, err);
@@ -1021,32 +1318,43 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       if (!options.suppress) {
         throw e;
       } else {
-        this.logger.debug('suppressed-interrupt', { message: e.message })
+        this.logger.debug('suppressed-interrupt', { message: e.message });
       }
     }
   }
 
   async scrub(jobId: string) {
-    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+    const jobKey = this.mintKey(KeyType.JOB_STATE, {
+      appId: this.appId,
+      jobId,
+    });
     await this.redisClient[this.commands.del](jobKey);
   }
 
-  async findJobs(queryString: string = '*', limit: number = 1000, batchSize: number = 1000, cursor = '0'): Promise<[string, string[]]> {
-    const matchKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId: queryString });
+  async findJobs(
+    queryString = '*',
+    limit = 1000,
+    batchSize = 1000,
+    cursor = '0',
+  ): Promise<[string, string[]]> {
+    const matchKey = this.mintKey(KeyType.JOB_STATE, {
+      appId: this.appId,
+      jobId: queryString,
+    });
     let keys: string[];
     const matchingKeys: string[] = [];
     do {
-      const output = await this.exec(
+      const output = (await this.exec(
         'SCAN',
         cursor,
         'MATCH',
         matchKey,
         'COUNT',
         batchSize.toString(),
-      ) as unknown as [string, string[]];
+      )) as unknown as [string, string[]];
       if (Array.isArray(output)) {
         [cursor, keys] = output;
-        for (let key of [...keys]) {
+        for (const key of [...keys]) {
           matchingKeys.push(key);
         }
         if (matchingKeys.length >= limit) {
@@ -1059,13 +1367,22 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return [cursor, matchingKeys];
   }
 
-  async findJobFields(jobId: string, fieldMatchPattern: string = '*', limit: number = 1000, batchSize: number = 1000, cursor = '0'): Promise<[string, StringStringType]> {
+  async findJobFields(
+    jobId: string,
+    fieldMatchPattern = '*',
+    limit = 1000,
+    batchSize = 1000,
+    cursor = '0',
+  ): Promise<[string, StringStringType]> {
     let fields: string[] = [];
     const matchingFields: StringStringType = {};
-    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+    const jobKey = this.mintKey(KeyType.JOB_STATE, {
+      appId: this.appId,
+      jobId,
+    });
     let len = 0;
     do {
-      const output = await this.exec(
+      const output = (await this.exec(
         'HSCAN',
         jobKey,
         cursor,
@@ -1073,7 +1390,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
         fieldMatchPattern,
         'COUNT',
         batchSize.toString(),
-      ) as unknown as [string, string[]];
+      )) as unknown as [string, string[]];
       if (Array.isArray(output)) {
         [cursor, fields] = output;
         for (let i = 0; i < fields.length; i += 2) {
@@ -1085,7 +1402,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       }
     } while (cursor !== '0' && len < limit);
     return [cursor, matchingFields];
-  }  
+  }
 }
 
 export { StoreService };

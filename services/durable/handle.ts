@@ -1,11 +1,12 @@
-import { ExporterService } from './exporter';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import { DurableJobExport, ExportOptions } from '../../types/exporter';
 import { JobInterruptOptions, JobOutput } from '../../types/job';
 import { StreamError } from '../../types/stream';
 
+import { ExporterService } from './exporter';
+
 export class WorkflowHandleService {
-  exporter: ExporterService
+  exporter: ExporterService;
   hotMesh: HotMesh;
   workflowTopic: string;
   workflowId: string;
@@ -21,7 +22,7 @@ export class WorkflowHandleService {
     );
   }
 
-  async export(options?: ExportOptions): Promise<DurableJobExport>  {
+  async export(options?: ExportOptions): Promise<DurableJobExport> {
     return this.exporter.export(this.workflowId, options);
   }
 
@@ -32,7 +33,10 @@ export class WorkflowHandleService {
    * will awaken if no other signals are pending.
    */
   async signal(signalId: string, data: Record<any, any>): Promise<void> {
-    await this.hotMesh.hook(`${this.hotMesh.appId}.wfs.signal`, { id: signalId, data });
+    await this.hotMesh.hook(`${this.hotMesh.appId}.wfs.signal`, {
+      id: signalId,
+      data,
+    });
   }
 
   /**
@@ -42,7 +46,10 @@ export class WorkflowHandleService {
    * the activities that remain.
    */
   async state(metadata = false): Promise<Record<string, any>> {
-    const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
+    const state = await this.hotMesh.getState(
+      `${this.hotMesh.appId}.execute`,
+      this.workflowId,
+    );
     if (!state.data && state.metadata.err) {
       throw new Error(JSON.parse(state.metadata.err));
     }
@@ -73,24 +80,30 @@ export class WorkflowHandleService {
 
   /**
    * Interrupts a running workflow. Standard Job Completion tasks will
-   * run. Subscribers will be notified and the job hash will be expired. 
+   * run. Subscribers will be notified and the job hash will be expired.
    */
   async interrupt(options?: JobInterruptOptions): Promise<string> {
-    return await this.hotMesh.interrupt(`${this.hotMesh.appId}.execute`, this.workflowId, options);
+    return await this.hotMesh.interrupt(
+      `${this.hotMesh.appId}.execute`,
+      this.workflowId,
+      options,
+    );
   }
 
   /**
    * Waits for the workflow to complete and returns the result. If
    * the workflow response includes an error, this method will rethrow
-   * the error, including the stack trace if available. 
+   * the error, including the stack trace if available.
    * Wrap calls in a try/catch as necessary to avoid unhandled exceptions.
    */
-  async result<T>(config?: {state?: boolean, throwOnError?: boolean}): Promise<T | StreamError> {
+  async result<T>(config?: {
+    state?: boolean;
+    throwOnError?: boolean;
+  }): Promise<T | StreamError> {
     const topic = `${this.hotMesh.appId}.executed.${this.workflowId}`;
     let isResolved = false;
 
     return new Promise(async (resolve, reject) => {
-
       /**
        * rejects/resolves the promise based on the `throwOnError`
        * default behavior is to throw if error
@@ -112,11 +125,14 @@ export class WorkflowHandleService {
         if (err) {
           return safeReject(err as StreamError);
         } else if (!response) {
-          const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
+          const state = await this.hotMesh.getState(
+            `${this.hotMesh.appId}.execute`,
+            this.workflowId,
+          );
           if (state.data?.done && !state.data?.$error) {
             return resolve(state.data.response as T);
           } else if (state.data?.$error) {
-            return safeReject(state.data.$error as StreamError)
+            return safeReject(state.data.$error as StreamError);
           } else if (state.metadata.err) {
             return safeReject(JSON.parse(state.metadata.err) as StreamError);
           }
@@ -127,7 +143,10 @@ export class WorkflowHandleService {
 
       //more expensive; fetches the entire job, not just the `status`
       if (config?.state) {
-        const state = await this.hotMesh.getState(`${this.hotMesh.appId}.execute`, this.workflowId);
+        const state = await this.hotMesh.getState(
+          `${this.hotMesh.appId}.execute`,
+          this.workflowId,
+        );
         if (state?.data?.done && !state.data?.$error) {
           return complete(state.data.response as T);
         } else if (state.data?.$error) {
@@ -143,7 +162,7 @@ export class WorkflowHandleService {
         if (state.data.done && !state.data?.$error) {
           await complete(state.data?.response as T);
         } else if (state.data?.$error) {
-          return complete(null, state.data.$error as StreamError)
+          return complete(null, state.data.$error as StreamError);
         } else if (state.metadata.err) {
           const error = JSON.parse(state.metadata.err) as StreamError;
           return await complete(null, error);

@@ -1,25 +1,26 @@
 import {
   GenerationalError,
   GetStateError,
-  InactiveJobError } from '../../modules/errors';
-import { Activity } from './activity';
+  InactiveJobError,
+} from '../../modules/errors';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
 import { TaskService } from '../task';
 import { TelemetryService } from '../telemetry';
-import { 
+import {
   ActivityData,
   ActivityMetadata,
   ActivityType,
-  HookActivity } from '../../types/activity';
+  HookActivity,
+} from '../../types/activity';
 import { HookRule } from '../../types/hook';
 import { JobState, JobStatus } from '../../types/job';
-import {
-  MultiResponseFlags,
-  RedisMulti } from '../../types/redis';
+import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 import { StreamCode, StreamStatus } from '../../types/stream';
+
+import { Activity } from './activity';
 
 /**
  * Supports `signal hook`, `time hook`, and `cycle hook` patterns
@@ -33,8 +34,9 @@ class Hook extends Activity {
     metadata: ActivityMetadata,
     hook: ActivityData | null,
     engine: EngineService,
-    context?: JobState) {
-      super(config, data, metadata, hook, engine, context);
+    context?: JobState,
+  ) {
+    super(config, data, metadata, hook, engine, context);
   }
 
   //********  INITIAL ENTRY POINT (A)  ********//
@@ -49,7 +51,12 @@ class Hook extends Activity {
     try {
       await this.verifyEntry();
 
-      telemetry = new TelemetryService(this.engine.appId, this.config, this.metadata, this.context);
+      telemetry = new TelemetryService(
+        this.engine.appId,
+        this.config,
+        this.metadata,
+        this.context,
+      );
       telemetry.startActivitySpan(this.leg);
 
       if (this.doesHook()) {
@@ -78,7 +85,11 @@ class Hook extends Activity {
       throw error;
     } finally {
       telemetry?.endActivitySpan();
-      this.logger.debug('hook-process-end', { jid: this.context.metadata.jid, gid: this.context.metadata.gid, aid: this.metadata.aid });
+      this.logger.debug('hook-process-end', {
+        jid: this.context.metadata.jid,
+        gid: this.context.metadata.gid,
+        aid: this.metadata.aid,
+      });
     }
   }
 
@@ -87,11 +98,8 @@ class Hook extends Activity {
    */
   doesHook(): boolean {
     if (this.config.sleep) {
-      const duration = Pipe.resolve(
-        this.config.sleep,
-        this.context,
-      );
-      return !isNaN(duration) && Number(duration) > 0
+      const duration = Pipe.resolve(this.config.sleep, this.context);
+      return !isNaN(duration) && Number(duration) > 0;
     }
     return !!this.config.hook?.topic;
   }
@@ -112,7 +120,7 @@ class Hook extends Activity {
   async doPassThrough(telemetry: TelemetryService) {
     const multi = this.store.getMulti();
     let multiResponse: MultiResponseFlags;
-    
+
     this.adjacencyList = await this.filterAdjacent();
     this.mapOutputData();
     this.mapJobData();
@@ -120,13 +128,13 @@ class Hook extends Activity {
     await CollatorService.notarizeEarlyCompletion(this, multi);
 
     await this.setStatus(this.adjacencyList.length - 1, multi);
-    multiResponse = await multi.exec() as MultiResponseFlags;
+    multiResponse = (await multi.exec()) as MultiResponseFlags;
     telemetry.mapActivityAttributes();
     const jobStatus = this.resolveStatus(multiResponse);
     const attrs: StringScalarType = { 'app.job.jss': jobStatus };
     const messageIds = await this.transition(this.adjacencyList, jobStatus);
     if (messageIds.length) {
-      attrs['app.activity.mids'] = messageIds.join(',')
+      attrs['app.activity.mids'] = messageIds.join(',');
     }
     telemetry.setActivityAttributes(attrs);
   }
@@ -142,13 +150,10 @@ class Hook extends Activity {
         this.config.hook.topic,
         this.context,
         this.resolveDad(),
-        multi
+        multi,
       );
     } else if (this.config.sleep) {
-      const duration = Pipe.resolve(
-        this.config.sleep,
-        this.context,
-      );
+      const duration = Pipe.resolve(this.config.sleep, this.context);
       await this.engine.taskService.registerTimeHook(
         this.context.metadata.jid,
         this.context.metadata.gid,
@@ -162,7 +167,10 @@ class Hook extends Activity {
   }
 
   //********  SIGNAL RE-ENTRY POINT  ********//
-  async processWebHookEvent(status: StreamStatus = StreamStatus.SUCCESS, code: StreamCode = 200): Promise<JobStatus | void> {
+  async processWebHookEvent(
+    status: StreamStatus = StreamStatus.SUCCESS,
+    code: StreamCode = 200,
+  ): Promise<JobStatus | void> {
     this.logger.debug('hook-process-web-hook-event', {
       topic: this.config.hook.topic,
       aid: this.metadata.aid,
@@ -171,7 +179,10 @@ class Hook extends Activity {
     });
     const taskService = new TaskService(this.store, this.logger);
     const data = { ...this.data };
-    const signal = await taskService.processWebHookSignal(this.config.hook.topic, data);
+    const signal = await taskService.processWebHookSignal(
+      this.config.hook.topic,
+      data,
+    );
     if (signal) {
       const [jobId, _aid, dad, gId] = signal;
       this.context.metadata.jid = jobId;
@@ -188,7 +199,7 @@ class Hook extends Activity {
     this.logger.debug('hook-process-time-hook-event', {
       jid: jobId,
       gid: this.context.metadata.gid,
-      aid: this.metadata.aid
+      aid: this.metadata.aid,
     });
     await this.processEvent(StreamStatus.SUCCESS, 200, 'hook');
   }

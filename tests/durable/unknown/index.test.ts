@@ -1,18 +1,19 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { Durable } from '../../../services/durable';
-import { example, state as STATE } from './src/workflows';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
 import { DurableMaxedError } from '../../../modules/errors';
 
+import { example, state as STATE } from './src/workflows';
+
 const { Connection, Client, Worker } = Durable;
 
 describe('DURABLE | unknown | `Workflow Retryable Unknown Error`', () => {
   let handle: WorkflowHandleService;
-  let toThrowCount = 3;
+  const toThrowCount = 3;
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -22,7 +23,11 @@ describe('DURABLE | unknown | `Workflow Retryable Unknown Error`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
   });
 
@@ -47,7 +52,7 @@ describe('DURABLE | unknown | `Workflow Retryable Unknown Error`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         handle = await client.workflow.start({
           args: [toThrowCount],
           taskQueue: 'unknown-world',
@@ -59,7 +64,7 @@ describe('DURABLE | unknown | `Workflow Retryable Unknown Error`', () => {
             maximumAttempts: toThrowCount + 1,
             backoffCoefficient: 1,
             maximumInterval: '1s',
-          }
+          },
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -98,7 +103,7 @@ describe('DURABLE | unknown | `Workflow Retryable Unknown Error`', () => {
       STATE.count = 0;
 
       //instance a durable client and start the workflow
-      const client = new Client({ connection: { class: Redis, options }});
+      const client = new Client({ connection: { class: Redis, options } });
       const handle = await client.workflow.start({
         args: [toThrowCount],
         taskQueue: 'unknown-world',
@@ -110,7 +115,7 @@ describe('DURABLE | unknown | `Workflow Retryable Unknown Error`', () => {
           maximumAttempts: toThrowCount - 1,
           backoffCoefficient: 1,
           maximumInterval: '1s',
-        }
+        },
       });
       expect(handle.workflowId).toBeDefined();
 
@@ -129,5 +134,4 @@ describe('DURABLE | unknown | `Workflow Retryable Unknown Error`', () => {
       }
     }, 15_000);
   });
-
 });

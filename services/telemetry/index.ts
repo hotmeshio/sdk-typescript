@@ -1,14 +1,12 @@
 import packageJson from '../../package.json';
 import { MapperService } from '../mapper';
-import {
-  ActivityMetadata,
-  ActivityType,
-  Consumes } from '../../types/activity';
+import { ActivityMetadata, ActivityType, Consumes } from '../../types/activity';
 import { JobState } from '../../types/job';
 import {
   StringAnyType,
   StringScalarType,
-  StringStringType } from '../../types/serializer';
+  StringStringType,
+} from '../../types/serializer';
 import { StreamData, StreamDataType, StreamRole } from '../../types/stream';
 import {
   Span,
@@ -16,8 +14,9 @@ import {
   SpanKind,
   trace,
   Context,
-  context, 
-  SpanStatusCode } from '../../types/telemetry';
+  context,
+  SpanStatusCode,
+} from '../../types/telemetry';
 import { polyfill } from '../../modules/utils';
 
 class TelemetryService {
@@ -88,7 +87,10 @@ class TelemetryService {
       type = 'SYSTEM';
     } else if (role === StreamRole.WORKER) {
       type = 'EXECUTE';
-    } else if (data.type === StreamDataType.RESULT || data.type === StreamDataType.RESPONSE) {
+    } else if (
+      data.type === StreamDataType.RESULT ||
+      data.type === StreamDataType.RESPONSE
+    ) {
       type = 'FANIN';
     } else {
       type = 'FANOUT';
@@ -96,20 +98,30 @@ class TelemetryService {
     const topic = data.metadata.topic ? `/${data.metadata.topic}` : '';
     const spanName = `${type}/${this.appId}/${data.metadata.aid}${topic}`;
     const attributes = this.getStreamSpanAttrs(data);
-    const span: Span = this.startSpan(data.metadata.trc, data.metadata.spn, spanName, attributes);
+    const span: Span = this.startSpan(
+      data.metadata.trc,
+      data.metadata.spn,
+      spanName,
+      attributes,
+    );
     this.span = span;
     return this;
   }
 
-  startSpan(traceId: string, spanId: string, spanName: string, attributes: StringScalarType): Span {
+  startSpan(
+    traceId: string,
+    spanId: string,
+    spanName: string,
+    attributes: StringScalarType,
+  ): Span {
     this.traceId = traceId;
     this.spanId = spanId;
     const tracer = trace.getTracer(packageJson.name, packageJson.version);
-    let parentContext = this.getParentSpanContext();
+    const parentContext = this.getParentSpanContext();
     const span = tracer.startSpan(
       spanName,
       { kind: SpanKind.CLIENT, attributes, root: !parentContext },
-      parentContext
+      parentContext,
     );
     return span;
   }
@@ -117,14 +129,19 @@ class TelemetryService {
   mapActivityAttributes(): void {
     //export user-defined span attributes (app.activity.data.*)
     if (this.config.telemetry) {
-      const telemetryAtts = new MapperService(this.config.telemetry, this.context).mapRules();
+      const telemetryAtts = new MapperService(
+        this.config.telemetry,
+        this.context,
+      ).mapRules();
       const namespacedAtts = {
         ...Object.keys(telemetryAtts).reduce((result, key) => {
-          if (['string', 'boolean', 'number'].includes(typeof telemetryAtts[key])) {
+          if (
+            ['string', 'boolean', 'number'].includes(typeof telemetryAtts[key])
+          ) {
             result[`app.activity.data.${key}`] = telemetryAtts[key];
           }
           return result;
-        }, {})
+        }, {}),
       };
       this.span?.setAttributes(namespacedAtts as StringScalarType);
     }
@@ -166,7 +183,10 @@ class TelemetryService {
         isRemote: true,
         traceFlags: 1, // (todo: revisit sampling strategy/config)
       };
-      const parentContext = trace.setSpanContext(context.active(), restoredSpanContext);
+      const parentContext = trace.setSpanContext(
+        context.active(),
+        restoredSpanContext,
+      );
       return parentContext;
     }
   }
@@ -185,7 +205,7 @@ class TelemetryService {
       }, {}),
       'app.activity.leg': leg,
     };
-  };
+  }
 
   getStreamSpanAttrs(input: StreamData): StringAnyType {
     return {
@@ -194,9 +214,9 @@ class TelemetryService {
           result[`app.stream.${key}`] = input.metadata[key];
         }
         return result;
-      }, {})
+      }, {}),
     };
-  };
+  }
 
   setTelemetryContext(span: Span, leg: number) {
     if (!this.context.metadata.trc) {
@@ -225,12 +245,17 @@ class TelemetryService {
 
   /**
    * Adds the paths (HGET) necessary to restore telemetry state for an activity
-   * @param consumes 
-   * @param config 
-   * @param metadata 
-   * @param leg 
+   * @param consumes
+   * @param config
+   * @param metadata
+   * @param leg
    */
-  static addTargetTelemetryPaths(consumes: Consumes, config: ActivityType, metadata: ActivityMetadata, leg: number): void {
+  static addTargetTelemetryPaths(
+    consumes: Consumes,
+    config: ActivityType,
+    metadata: ActivityMetadata,
+    leg: number,
+  ): void {
     if (leg === 1) {
       if (!(config.parent in consumes)) {
         consumes[config.parent] = [];
@@ -244,28 +269,48 @@ class TelemetryService {
     }
   }
 
-  static bindJobTelemetryToState(state: StringStringType, config: ActivityType, context:JobState) {
+  static bindJobTelemetryToState(
+    state: StringStringType,
+    config: ActivityType,
+    context: JobState,
+  ) {
     if (config.type === 'trigger') {
       state['metadata/trc'] = context.metadata.trc;
     }
   }
 
-  static bindActivityTelemetryToState(state: StringAnyType, config: ActivityType, metadata: ActivityMetadata, context: JobState, leg: number): void {
+  static bindActivityTelemetryToState(
+    state: StringAnyType,
+    config: ActivityType,
+    metadata: ActivityMetadata,
+    context: JobState,
+    leg: number,
+  ): void {
     if (config.type === 'trigger') {
       //trigger activities run non-duplexed and only have a single leg (2)
-      state[`${metadata.aid}/output/metadata/l1s`] = context['$self'].output.metadata.l1s;
-      state[`${metadata.aid}/output/metadata/l2s`] = context['$self'].output.metadata.l2s;
-    } else if (polyfill.resolveActivityType(config.type) === 'hook' && leg === 1) {
+      state[`${metadata.aid}/output/metadata/l1s`] =
+        context['$self'].output.metadata.l1s;
+      state[`${metadata.aid}/output/metadata/l2s`] =
+        context['$self'].output.metadata.l2s;
+    } else if (
+      polyfill.resolveActivityType(config.type) === 'hook' &&
+      leg === 1
+    ) {
       //hook activities run non-duplexed and only have a single leg (1)
-      state[`${metadata.aid}/output/metadata/l1s`] = context['$self'].output.metadata.l1s;
-      state[`${metadata.aid}/output/metadata/l2s`] = context['$self'].output.metadata.l1s;
+      state[`${metadata.aid}/output/metadata/l1s`] =
+        context['$self'].output.metadata.l1s;
+      state[`${metadata.aid}/output/metadata/l2s`] =
+        context['$self'].output.metadata.l1s;
     } else if (config.type === 'signal' && leg === 1) {
       //signal activities run non-duplexed and only have a single leg (1)
-      state[`${metadata.aid}/output/metadata/l1s`] = context['$self'].output.metadata.l1s;
-      state[`${metadata.aid}/output/metadata/l2s`] = context['$self'].output.metadata.l1s;
+      state[`${metadata.aid}/output/metadata/l1s`] =
+        context['$self'].output.metadata.l1s;
+      state[`${metadata.aid}/output/metadata/l2s`] =
+        context['$self'].output.metadata.l1s;
     } else {
       const target = `l${leg}s`;
-      state[`${metadata.aid}/output/metadata/${target}`] = context['$self'].output.metadata[target];
+      state[`${metadata.aid}/output/metadata/${target}`] =
+        context['$self'].output.metadata[target];
     }
   }
 }

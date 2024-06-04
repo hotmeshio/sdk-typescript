@@ -20,7 +20,11 @@ describe('FUNCTIONAL | Activity Cycles', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     //init HotMesh
@@ -29,25 +33,26 @@ describe('FUNCTIONAL | Activity Cycles', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
 
       workers: [
-
         //this worker will return a 200 status code; the yaml
         //model is cofigured to cycle as long as `counter < 5`
         //this worker runs as part of flow v1
         {
           topic: 'cycle.count',
           redis: { class: Redis, options },
-          callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+          callback: async (
+            streamData: StreamData,
+          ): Promise<StreamDataResponse> => {
             return {
               metadata: { ...streamData.metadata },
               data: {
-                counter: ++counter
-              }
+                counter: ++counter,
+              },
             } as StreamDataResponse;
-          }
+          },
         },
 
         //this worker will return a 500 status code for 5 times and then a 200
@@ -57,18 +62,20 @@ describe('FUNCTIONAL | Activity Cycles', () => {
         {
           topic: 'cycle.err',
           redis: { class: Redis, options },
-          callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+          callback: async (
+            streamData: StreamData,
+          ): Promise<StreamDataResponse> => {
             counter++;
             return {
               metadata: { ...streamData.metadata },
               code: counter == 5 ? 200 : 500,
               data: {
-                counter: counter
-              }
+                counter: counter,
+              },
             } as StreamDataResponse;
-          }
+          },
         },
-      ]
+      ],
     };
 
     hotMesh = await HotMesh.init(hmshConfig);
@@ -89,7 +96,6 @@ describe('FUNCTIONAL | Activity Cycles', () => {
       expect(data.counter).toBe(5);
     }, 10_000);
   });
-
 
   describe('Pending', () => {
     it('should hot deploy version 2', async () => {

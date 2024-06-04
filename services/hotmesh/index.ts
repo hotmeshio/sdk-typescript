@@ -11,32 +11,32 @@ import { WorkerService } from '../worker';
 import {
   JobState,
   JobData,
-  JobOutput, 
-  JobStatus, 
+  JobOutput,
+  JobStatus,
   JobInterruptOptions,
-  ExtensionType} from '../../types/job';
-import {
-  HotMeshConfig,
-  HotMeshManifest } from '../../types/hotmesh';
+  ExtensionType,
+} from '../../types/job';
+import { HotMeshConfig, HotMeshManifest } from '../../types/hotmesh';
 import { JobExport } from '../../types/exporter';
 import {
   JobMessageCallback,
   QuorumProfile,
   ThrottleMessage,
-  ThrottleOptions } from '../../types/quorum';
-import {
-  StringAnyType,
-  StringStringType } from '../../types/serializer';
+  ThrottleOptions,
+} from '../../types/quorum';
+import { StringAnyType, StringStringType } from '../../types/serializer';
 import {
   JobStatsInput,
   GetStatsOptions,
   IdsResponse,
-  StatsResponse } from '../../types/stats';
+  StatsResponse,
+} from '../../types/stats';
 import {
   StreamCode,
   StreamData,
   StreamDataResponse,
-  StreamStatus } from '../../types/stream';
+  StreamStatus,
+} from '../../types/stream';
 
 class HotMeshService {
   namespace: string;
@@ -74,7 +74,12 @@ class HotMeshService {
     instance.guid = guid();
     instance.verifyAndSetNamespace(config.namespace);
     instance.verifyAndSetAppId(config.appId);
-    instance.logger = new LoggerService(config.appId, instance.guid, config.name || '', config.logLevel);
+    instance.logger = new LoggerService(
+      config.appId,
+      instance.guid,
+      config.name || '',
+      config.logLevel,
+    );
     await instance.initEngine(config, instance.logger);
     await instance.initQuorum(config, instance.engine, instance.logger);
     await instance.doWork(config, instance.logger);
@@ -102,7 +107,11 @@ class HotMeshService {
     }
   }
 
-  async initQuorum(config: HotMeshConfig, engine: EngineService, logger: ILogger): Promise<void> {
+  async initQuorum(
+    config: HotMeshConfig,
+    engine: EngineService,
+    logger: ILogger,
+  ): Promise<void> {
     if (engine) {
       this.quorum = await QuorumService.init(
         this.namespace,
@@ -110,7 +119,7 @@ class HotMeshService {
         this.guid,
         config,
         engine,
-        logger
+        logger,
       );
     }
   }
@@ -121,12 +130,17 @@ class HotMeshService {
       this.appId,
       this.guid,
       config,
-      logger
+      logger,
     );
   }
 
   // ************* PUB/SUB METHODS *************
-  async pub(topic: string, data: JobData = {}, context?: JobState, extended?: ExtensionType): Promise<string> {
+  async pub(
+    topic: string,
+    data: JobData = {},
+    context?: JobState,
+    extended?: ExtensionType,
+  ): Promise<string> {
     return await this.engine?.pub(topic, data, context, extended);
   }
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
@@ -141,13 +155,17 @@ class HotMeshService {
   async punsub(wild: string): Promise<void> {
     return await this.engine?.punsub(wild);
   }
-  async pubsub(topic: string, data: JobData = {}, context?: JobState | null, timeout?: number): Promise<JobOutput> {
+  async pubsub(
+    topic: string,
+    data: JobData = {},
+    context?: JobState | null,
+    timeout?: number,
+  ): Promise<JobOutput> {
     return await this.engine?.pubsub(topic, data, context, timeout);
   }
-  async add(streamData: StreamData|StreamDataResponse): Promise<string> {
-    return await this.engine.add(streamData) as string;
+  async add(streamData: StreamData | StreamDataResponse): Promise<string> {
+    return (await this.engine.add(streamData)) as string;
   }
-
 
   // ************* QUORUM METHODS *************
   async rollCall(delay?: number): Promise<QuorumProfile[]> {
@@ -197,15 +215,26 @@ class HotMeshService {
   async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
     return await this.engine?.getQueryState(jobId, fields);
   }
-  async getIds(topic: string, query: JobStatsInput, queryFacets = []): Promise<IdsResponse> {
+  async getIds(
+    topic: string,
+    query: JobStatsInput,
+    queryFacets = [],
+  ): Promise<IdsResponse> {
     return await this.engine?.getIds(topic, query, queryFacets);
   }
-  async resolveQuery(topic: string, query: JobStatsInput): Promise<GetStatsOptions> {
+  async resolveQuery(
+    topic: string,
+    query: JobStatsInput,
+  ): Promise<GetStatsOptions> {
     return await this.engine?.resolveQuery(topic, query);
   }
 
   // ****************** `INTERRUPT` ACTIVE JOBS *****************
-  async interrupt(topic: string, jobId: string, options: JobInterruptOptions = {}): Promise<string> {
+  async interrupt(
+    topic: string,
+    jobId: string,
+    options: JobInterruptOptions = {},
+  ): Promise<string> {
     return await this.engine?.interrupt(topic, jobId, options);
   }
 
@@ -215,10 +244,20 @@ class HotMeshService {
   }
 
   // ****** `HOOK` ACTIVITY RE-ENTRY POINT ******
-  async hook(topic: string, data: JobData, status?: StreamStatus, code?: StreamCode): Promise<string> {
+  async hook(
+    topic: string,
+    data: JobData,
+    status?: StreamStatus,
+    code?: StreamCode,
+  ): Promise<string> {
     return await this.engine?.hook(topic, data, status, code);
   }
-  async hookAll(hookTopic: string, data: JobData, query: JobStatsInput, queryFacets: string[] = []): Promise<string[]> {
+  async hookAll(
+    hookTopic: string,
+    data: JobData,
+    query: JobStatsInput,
+    queryFacets: string[] = [],
+  ): Promise<string[]> {
     return await this.engine?.hookAll(hookTopic, data, query, queryFacets);
   }
 

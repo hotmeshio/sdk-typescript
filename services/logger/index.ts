@@ -1,10 +1,17 @@
 import { Logger, createLogger, transports, format } from 'winston';
+
 import { ILogger } from '../../types/logger';
 
 class LoggerService implements ILogger {
   private logger: Logger;
 
-  constructor(private appId: string = 'appId', private instanceId: string = 'instanceId', private name: string = 'name', private logLevel: string = 'info', customLogger?: Logger) {
+  constructor(
+    private appId: string = 'appId',
+    private instanceId: string = 'instanceId',
+    private name: string = 'name',
+    private logLevel: string = 'info',
+    customLogger?: Logger,
+  ) {
     this.logger = customLogger || this.createDefaultLogger();
   }
 
@@ -18,14 +25,16 @@ class LoggerService implements ILogger {
           const { timestamp, level, message } = info;
           // Extract the object from the `info` object's `Symbol(splat)` field
           const symbols = Object.getOwnPropertySymbols(info);
-          const splatSymbol = symbols.find(symbol => symbol.toString() === 'Symbol(splat)');
+          const splatSymbol = symbols.find(
+            (symbol) => symbol.toString() === 'Symbol(splat)',
+          );
           let splatData = {};
           if (splatSymbol) {
             splatData = info[splatSymbol][0] || {};
           }
           // Pass it to the `tagify` method
           const tags = this.tagify(splatData);
-  
+
           return `${timestamp} [${level}] [${this.name || this.appId}:${this.instanceId}] ${message} ${tags}`;
         }),
       ),

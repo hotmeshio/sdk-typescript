@@ -1,12 +1,13 @@
 import * as Redis from 'redis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { guid, sleepFor } from '../../../modules/utils';
 import { Durable } from '../../../services/durable';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/redis';
-import * as workflows from './src/workflows';
 import { RedisRedisClassType } from '../../../types';
+
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -54,7 +55,7 @@ describe('DURABLE | collision | `Naming Conflict Fatal Error`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         handle = await client.workflow.start({
           args: ['HotMesh'],
           taskQueue: 'collision-world',
@@ -113,7 +114,7 @@ describe('DURABLE | collision | `Naming Conflict Fatal Error`', () => {
 
   describe('WorkflowHandle', () => {
     describe('result', () => {
-      it('should throw a \'DuplicateName\' error and stop due to insufficient retries', async () => {
+      it("should throw a 'DuplicateName' error and stop due to insufficient retries", async () => {
         try {
           const result = await handle.result();
           expect(result).toEqual(`Hello, HotMesh! Hello, HotMesh!`);
@@ -125,8 +126,8 @@ describe('DURABLE | collision | `Naming Conflict Fatal Error`', () => {
   });
 
   describe('End to End', () => {
-    it('should throw a \'DuplicateName\' error and then > retry, resolve (fix the name), succeed', async () => {
-      const client = new Client({ connection: { class: Redis, options }});
+    it("should throw a 'DuplicateName' error and then > retry, resolve (fix the name), succeed", async () => {
+      const client = new Client({ connection: { class: Redis, options } });
       const badCount = 1;
       const handle = await client.workflow.start({
         args: [badCount],

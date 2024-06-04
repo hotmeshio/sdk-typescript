@@ -9,8 +9,14 @@ import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import {
   StreamData,
   StreamDataResponse,
-  StreamStatus } from '../../../types/stream';
-import { PongMessage, QuorumMessage, RollCallMessage, ThrottleMessage } from '../../../types/quorum';
+  StreamStatus,
+} from '../../../types/stream';
+import {
+  PongMessage,
+  QuorumMessage,
+  RollCallMessage,
+  ThrottleMessage,
+} from '../../../types/quorum';
 import { QuorumService } from '../../../services/quorum';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
@@ -26,7 +32,11 @@ describe('FUNCTIONAL | Quorum', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     //init/activate HotMesh (test both `engine` and `worker` roles)
@@ -35,24 +45,32 @@ describe('FUNCTIONAL | Quorum', () => {
       namespace: HMNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
       workers: [
         {
           topic: 'calculation.execute',
           redis: { class: Redis, options },
-          callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
-            const values = JSON.parse(streamData.data.values as string) as number[];
-            const operation = streamData.data.operation as 'add'|'subtract'|'multiply'|'divide';
+          callback: async (
+            streamData: StreamData,
+          ): Promise<StreamDataResponse> => {
+            const values = JSON.parse(
+              streamData.data.values as string,
+            ) as number[];
+            const operation = streamData.data.operation as
+              | 'add'
+              | 'subtract'
+              | 'multiply'
+              | 'divide';
             const result = new MathHandler()[operation](values);
             return {
               status: StreamStatus.SUCCESS,
               metadata: { ...streamData.metadata },
               data: { result },
             } as StreamDataResponse;
-          }
-        }
-      ]
+          },
+        },
+      ],
     };
     hotMesh = await HotMesh.init(config);
     await hotMesh.deploy('/app/tests/$setup/apps/calc/v1/hotmesh.yaml');
@@ -81,10 +99,15 @@ describe('FUNCTIONAL | Quorum', () => {
         hotMesh.pubsub('calculate', payload, null, 5000),
         hotMesh.pubsub('calculate', payload, null, 5000),
         hotMesh.pubsub('calculate', payload, null, 5000),
-        hotMesh.pubsub('calculate', {
-          operation: 'multiply',
-          values: JSON.stringify([10, 10, 10]),
-        }, null, 7_500),
+        hotMesh.pubsub(
+          'calculate',
+          {
+            operation: 'multiply',
+            values: JSON.stringify([10, 10, 10]),
+          },
+          null,
+          7_500,
+        ),
       ]);
       expect(divide?.data.result).toBe(10);
       expect(multiply?.data.result).toBe(1000);
@@ -144,7 +167,10 @@ describe('FUNCTIONAL | Quorum', () => {
     it('sends a `rollcall` message to WORKER quorum members', async () => {
       let count = 0;
       const callback = (topic: string, message: QuorumMessage) => {
-        if (message.type === 'pong' && message.profile?.worker_topic === 'calculation.execute') {
+        if (
+          message.type === 'pong' &&
+          message.profile?.worker_topic === 'calculation.execute'
+        ) {
           if (message.originator === null) {
             //make sure rollcall pong message doesn't have an originator
             expect(message.profile.signature).not.toBeUndefined();

@@ -43,42 +43,60 @@ describe('FUNCTIONAL | Compile', () => {
 
   describe('plan()', () => {
     it('should plan an app deployment, using a path', async () => {
-      const compilerService = new CompilerService(redisStore, new LoggerService());
+      const compilerService = new CompilerService(
+        redisStore,
+        new LoggerService(),
+      );
       await compilerService.plan('/app/tests/$setup/seeds/hotmesh.yaml');
     });
   });
 
   describe('deploy()', () => {
     it('should deploy an app to Redis, using a path', async () => {
-      const compilerService = new CompilerService(redisStore, new LoggerService());
+      const compilerService = new CompilerService(
+        redisStore,
+        new LoggerService(),
+      );
       await compilerService.deploy('/app/tests/$setup/seeds/hotmesh.yaml');
     });
   });
 
   describe('activate()', () => {
     it('should activate a deployed app version', async () => {
-      const compilerService = new CompilerService(redisStore, new LoggerService());
+      const compilerService = new CompilerService(
+        redisStore,
+        new LoggerService(),
+      );
       await compilerService.activate('test-app', '1');
     });
   });
 
   describe('plan()', () => {
     it('should plan an app deployment, using a model', async () => {
-      const compilerService = new CompilerService(redisStore, new LoggerService());
+      const compilerService = new CompilerService(
+        redisStore,
+        new LoggerService(),
+      );
       await compilerService.plan(APP_YAML);
     });
   });
 
   describe('deploy()', () => {
     it('should deploy an app to Redis, using a model', async () => {
-      const compilerService = new CompilerService(redisStore, new LoggerService());
+      const compilerService = new CompilerService(
+        redisStore,
+        new LoggerService(),
+      );
       await compilerService.deploy(APP_YAML);
     });
   });
 
   describe('activate()', () => {
     it('should activate a deployed app model', async () => {
-      const compilerService = new CompilerService(redisStore, new LoggerService());
+      const compilerService = new CompilerService(
+        redisStore,
+        new LoggerService(),
+      );
       await compilerService.activate('test-app', '1');
     });
   });

@@ -35,7 +35,7 @@ class MathHandler {
     if (operands.length === 0) {
       throw new Error('At least one operand is required.');
     }
-  
+
     // @ts-ignore
     return operands.reduce((a: number, b: number | number[]) => {
       if (Array.isArray(b)) {
@@ -45,7 +45,7 @@ class MathHandler {
       }
     }, 1);
   }
-  
+
   divide(...operands: (number | number[])[]): number {
     if (operands.length === 0) {
       throw new Error('At least one operand is required.');

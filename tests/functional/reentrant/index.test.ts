@@ -7,7 +7,8 @@ import {
   HMSH_CODE_DURABLE_PROXY,
   HMSH_CODE_DURABLE_SLEEP,
   HMSH_CODE_DURABLE_WAIT,
-  HMSH_LOGLEVEL } from '../../../modules/enums';
+  HMSH_LOGLEVEL,
+} from '../../../modules/enums';
 import {
   DurableChildError,
   DurableFatalError,
@@ -16,7 +17,8 @@ import {
   DurableSleepError,
   DurableTimeoutError,
   DurableWaitForAllError,
-  DurableWaitForError } from '../../../modules/errors';
+  DurableWaitForError,
+} from '../../../modules/errors';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
 import config from '../../$setup/config';
@@ -26,8 +28,9 @@ import {
   StringAnyType,
   StreamData,
   StreamDataResponse,
-  StreamStatus, 
-  WorkflowOptions} from '../../../types';
+  StreamStatus,
+  WorkflowOptions,
+} from '../../../types';
 
 describe('FUNCTIONAL | DURABLE', () => {
   const appConfig = { id: 'durable', version: '1' };
@@ -42,12 +45,18 @@ describe('FUNCTIONAL | DURABLE', () => {
   const collatorSignalTopic = 'durable.wfs.signal';
   const signalId = 'abcdefg';
 
-  type SignalResponseType = { response: string, id: string };
-  type ProxyResponseType = { response: string, errorCount: number };
+  type SignalResponseType = { response: string; id: string };
+  type ProxyResponseType = { response: string; errorCount: number };
   type ChildResponseType = { response: string };
 
-  const signalResponse: SignalResponseType = { response: 'signal response', id: '' };
-  const proxyResponse: ProxyResponseType = { response: 'proxy response', errorCount: activityErrorCounter };
+  const signalResponse: SignalResponseType = {
+    response: 'signal response',
+    id: '',
+  };
+  const proxyResponse: ProxyResponseType = {
+    response: 'proxy response',
+    errorCount: activityErrorCounter,
+  };
   const childResponse: ChildResponseType = { response: 'child response' };
 
   let shouldSleep = false;
@@ -77,16 +86,20 @@ describe('FUNCTIONAL | DURABLE', () => {
     if (err instanceof DurableSleepError) {
       interruptionList.push({
         code: err.code,
-        message: JSON.stringify({ duration: err.duration, index: err.index, workflowDimension: err.workflowDimension }),
+        message: JSON.stringify({
+          duration: err.duration,
+          index: err.index,
+          workflowDimension: err.workflowDimension,
+        }),
         duration: err.duration,
         index: err.index,
-        workflowDimension: err.workflowDimension
+        workflowDimension: err.workflowDimension,
       });
     } else if (err instanceof DurableWaitForError) {
       interruptionList.push({
         code: err.code,
         message: JSON.stringify(err.signalId),
-        signalId: err.signalId
+        signalId: err.signalId,
       });
     } else if (err instanceof DurableProxyError) {
       interruptionList.push({
@@ -130,10 +143,10 @@ describe('FUNCTIONAL | DURABLE', () => {
     } else {
       console.error('Retrying forever!!!');
     }
-  }
+  };
 
   //588: HMSH_CODE_DURABLE_SLEEP
-  const xSleepFor = async(millis: string): Promise<number> => {
+  const xSleepFor = async (millis: string): Promise<number> => {
     const seconds = Number(millis) / 1000;
     if (shouldSleep) {
       shouldSleep = false;
@@ -145,20 +158,27 @@ describe('FUNCTIONAL | DURABLE', () => {
         workflowDimension: '',
       });
       await sleepFor(0);
-      throw new DurableSleepError({ workflowId, duration: seconds, index: execIndex, workflowDimension:'' });
+      throw new DurableSleepError({
+        workflowId,
+        duration: seconds,
+        index: execIndex,
+        workflowDimension: '',
+      });
     }
     return seconds;
-  }
+  };
 
   //590: HMSH_CODE_DURABLE_CHILD
-  const xChild = async<T>(options: WorkflowOptions): Promise<T> => {
+  const xChild = async <T>(options: WorkflowOptions): Promise<T> => {
     if (shouldChild) {
       //SYNC
       shouldChild = false;
       const execIndex = counter++;
       const workflowDimension = '';
       const entityOrEmptyString = options.entity ?? '';
-      const childJobId = options.workflowId ?? `${entityOrEmptyString}-${workflowId}-$${options.entity ?? options.workflowName}${workflowDimension}-${execIndex}`;
+      const childJobId =
+        options.workflowId ??
+        `${entityOrEmptyString}-${workflowId}-$${options.entity ?? options.workflowName}${workflowDimension}-${execIndex}`;
       const taskQueueName = options.entity ?? options.taskQueue;
       const workflowName = options.entity ?? options.workflowName;
       const workflowTopic = `${taskQueueName}-${workflowName}`;
@@ -188,11 +208,11 @@ describe('FUNCTIONAL | DURABLE', () => {
       });
     }
     return childResponse as T;
-  }
+  };
 
   //591: HMSH_CODE_DURABLE_PROXY
-  const xProxyActivity = async<T>(...args: any[]): Promise<T> => {
-    if (shouldProxy) {      
+  const xProxyActivity = async <T>(...args: any[]): Promise<T> => {
+    if (shouldProxy) {
       //SYNC
       shouldProxy = false;
       const execIndex = counter++;
@@ -223,11 +243,13 @@ describe('FUNCTIONAL | DURABLE', () => {
         workflowTopic: activityTopic,
       });
     }
-    return { response: { ...proxyResponse, errorCount: activityErrorCounter }} as T;
-  }
+    return {
+      response: { ...proxyResponse, errorCount: activityErrorCounter },
+    } as T;
+  };
 
   //595: HMSH_CODE_DURABLE_WAIT
-  const xWaitFor = async<T>(key: string): Promise<T> => {
+  const xWaitFor = async <T>(key: string): Promise<T> => {
     if (shouldWait) {
       //SYNC
       shouldWait = false;
@@ -248,11 +270,15 @@ describe('FUNCTIONAL | DURABLE', () => {
       });
     }
     return { ...signalResponse, id: key } as T;
-  }
+  };
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
 
     const config: HotMeshConfig = {
@@ -261,36 +287,38 @@ describe('FUNCTIONAL | DURABLE', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options }
+        redis: { class: Redis, options },
       },
 
       workers: [
         {
           topic: workflowTopic,
           redis: { class: Redis, options },
-  
+
           callback: async (data: StreamData): Promise<StreamDataResponse> => {
             let sleepData: number | null = null;
-            let signalData: { response: string, id: string } | null = null;
+            let signalData: { response: string; id: string } | null = null;
             let proxyData: { response: string } | null = null;
             let childData: { response: string } | null = null;
             let allData: any[] = [];
-  
+
             try {
               //sleep
               sleepData = await xSleepFor('2000');
-  
+
               //wait
               signalData = await xWaitFor<SignalResponseType>(signalId);
 
               //proxy
-              proxyData = await xProxyActivity<ProxyResponseType>(...data.data.arguments as any[]);
+              proxyData = await xProxyActivity<ProxyResponseType>(
+                ...(data.data.arguments as any[]),
+              );
 
               //child (the entity format used by pluck)
               childData = await xChild<ChildResponseType>({
                 args: ['f', { g: 7 }],
-                await: awaitChild,  // if this is false, use startChild, otherwise execChild
-                workflowName,       // `entity` clobbers this
+                await: awaitChild, // if this is false, use startChild, otherwise execChild
+                workflowName, // `entity` clobbers this
                 entity: entityName, // hotmesh syntax (use taskQueue in durable function)
               });
 
@@ -305,15 +333,17 @@ describe('FUNCTIONAL | DURABLE', () => {
                 allData = await Promise.all([
                   xSleepFor('3000'),
                   xWaitFor<SignalResponseType>(`${signalId}hi`),
-                  xProxyActivity<ProxyResponseType>(...data.data.arguments as any[]),
+                  xProxyActivity<ProxyResponseType>(
+                    ...(data.data.arguments as any[]),
+                  ),
                   //standard durable format with taskQueue and workflowName
                   //this is standard format (combining workflowName and taskQueue)
                   //xstream address is always taskQueue + workflowName
                   xChild<ChildResponseType>({
                     args: ['f', { g: 7 }],
-                    workflowName,       
+                    workflowName,
                     taskQueue: entityName,
-                  })
+                  }),
                 ]);
               } else {
                 //data was fetched or not testing...regardless, just return the sync test data
@@ -324,15 +354,16 @@ describe('FUNCTIONAL | DURABLE', () => {
                 allData = [
                   await xSleepFor('3000'),
                   await xWaitFor<SignalResponseType>(`${signalId}hi`),
-                  await xProxyActivity<ProxyResponseType>(...data.data.arguments as any[]),
+                  await xProxyActivity<ProxyResponseType>(
+                    ...(data.data.arguments as any[]),
+                  ),
                   await xChild<ChildResponseType>({
                     args: ['f', { g: 7 }],
                     workflowName,
                     taskQueue: entityName,
-                  })
+                  }),
                 ];
               }
-
             } catch (err) {
               xHandleError(err, interruptionList);
             }
@@ -341,7 +372,10 @@ describe('FUNCTIONAL | DURABLE', () => {
               let errData: Record<string, unknown>;
               const workflowDimension = '';
               const execIndex = counter++;
-              if (interruptionRegistry.length === 1 && interruptionRegistry[0].code !== HMSH_CODE_DURABLE_WAIT) {
+              if (
+                interruptionRegistry.length === 1 &&
+                interruptionRegistry[0].code !== HMSH_CODE_DURABLE_WAIT
+              ) {
                 //signals are the exception (HMSH_CODE_DURABLE_WAIT). They are bundled as an array
                 errData = interruptionList[0];
               } else {
@@ -356,7 +390,7 @@ describe('FUNCTIONAL | DURABLE', () => {
                   parentWorkflowId: workflowId,
                   workflowId: collatorFlowId,
                   workflowTopic: activityTopic,
-                }
+                };
               }
               const interruptResponse = {
                 status: StreamStatus.SUCCESS,
@@ -383,46 +417,67 @@ describe('FUNCTIONAL | DURABLE', () => {
                   childResponse: childData,
                   allResponse: allData,
                 },
-                done: true
+                done: true,
               },
             } as StreamDataResponse;
-          }
+          },
         },
 
         {
           topic: activityTopic,
           redis: { class: Redis, options },
-  
+
           callback: async (data: StreamData): Promise<StreamDataResponse> => {
             try {
               if (activityErrorCounter++ < 2) {
-                throw new Error(`my test activity error message [${activityErrorCounter}]`);
+                throw new Error(
+                  `my test activity error message [${activityErrorCounter}]`,
+                );
               }
               return {
                 status: StreamStatus.SUCCESS,
                 metadata: { ...data.metadata },
-                data: { response: { ...proxyResponse, errorCount: activityErrorCounter }},
+                data: {
+                  response: {
+                    ...proxyResponse,
+                    errorCount: activityErrorCounter,
+                  },
+                },
               } as StreamDataResponse;
             } catch (error) {
-              if (error instanceof DurableFatalError || error instanceof DurableMaxedError || error instanceof DurableTimeoutError) {
+              if (
+                error instanceof DurableFatalError ||
+                error instanceof DurableMaxedError ||
+                error instanceof DurableTimeoutError
+              ) {
                 return {
                   status: StreamStatus.SUCCESS, //todo: might be better to return .ERROR status
                   code: error.code, //these errors are fatal
                   metadata: { ...data.metadata },
-                  data: { status: 'error', code: 'error.code', message: error.message },
+                  data: {
+                    status: 'error',
+                    code: 'error.code',
+                    message: error.message,
+                  },
                 } as StreamDataResponse;
               } else {
                 return {
                   status: StreamStatus.SUCCESS,
                   code: 599, //retry forever
                   metadata: { ...data.metadata },
-                  data: { status: 'error', code: 599, message: error.message, stack: error.stack, name: error.name },
+                  data: {
+                    status: 'error',
+                    code: 599,
+                    message: error.message,
+                    stack: error.stack,
+                    name: error.name,
+                  },
                 } as StreamDataResponse;
               }
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     };
     hotMesh = await HotMesh.init(config);
     await hotMesh.deploy('/app/tests/$setup/apps/durable/v1/hotmesh.yaml');
@@ -437,7 +492,7 @@ describe('FUNCTIONAL | DURABLE', () => {
 
   describe('Durable Function State', () => {
     afterEach(async () => {
-      interruptionRegistry. length = 0;
+      interruptionRegistry.length = 0;
       interruptionList.length = 0;
       activityErrorCounter = 0;
       awaitChild = true;
@@ -457,7 +512,7 @@ describe('FUNCTIONAL | DURABLE', () => {
       const response = await hotMesh.pubsub('durable.execute', payload);
       expect(response.data.done).toBe(true);
     });
-  
+
     it('should SLEEP, exit, reenter, complete', async () => {
       shouldSleep = true;
       workflowId = 'reentrant588';
@@ -469,7 +524,12 @@ describe('FUNCTIONAL | DURABLE', () => {
         maximumAttempts: 3,
         expire: 120,
       };
-      const response = await hotMesh.pubsub('durable.execute', payload, null, 10_000);
+      const response = await hotMesh.pubsub(
+        'durable.execute',
+        payload,
+        null,
+        10_000,
+      );
       expect(response.data.done).toBe(true);
       expect(shouldSleep).toBe(false);
     }, 10_000);
@@ -488,7 +548,10 @@ describe('FUNCTIONAL | DURABLE', () => {
       const jobId = await hotMesh.pub('durable.execute', payload);
       await sleepFor(2_500);
 
-      await hotMesh.hook(collatorSignalTopic, { id: signalId, data: {...signalResponse, id: signalId } });
+      await hotMesh.hook(collatorSignalTopic, {
+        id: signalId,
+        data: { ...signalResponse, id: signalId },
+      });
 
       //loop until the change percolates up and the job is complete
       let response: JobOutput;
@@ -511,7 +574,12 @@ describe('FUNCTIONAL | DURABLE', () => {
         expire: 120,
       };
       //activity is designed to throw three errors before completing successfully
-      const response = await hotMesh.pubsub('durable.execute', payload, null, 15_000);
+      const response = await hotMesh.pubsub(
+        'durable.execute',
+        payload,
+        null,
+        15_000,
+      );
       expect(response.data.done).toBe(true);
       expect(shouldProxy).toBe(false);
     }, 20_000);
@@ -528,7 +596,12 @@ describe('FUNCTIONAL | DURABLE', () => {
         maximumAttempts: 3,
         expire: 120,
       };
-      const response = await hotMesh.pubsub('durable.execute', payload, null, 2_500);
+      const response = await hotMesh.pubsub(
+        'durable.execute',
+        payload,
+        null,
+        2_500,
+      );
       expect(response.data.done).toBe(true);
       expect(shouldChild).toBe(false);
     }, 10_000);
@@ -545,7 +618,12 @@ describe('FUNCTIONAL | DURABLE', () => {
         maximumAttempts: 3,
         expire: 120,
       };
-      const response = await hotMesh.pubsub('durable.execute', payload, null, 2_500);
+      const response = await hotMesh.pubsub(
+        'durable.execute',
+        payload,
+        null,
+        2_500,
+      );
       expect(response.data.done).toBe(true);
       expect(shouldChild).toBe(false);
     }, 10_000);
@@ -566,7 +644,10 @@ describe('FUNCTIONAL | DURABLE', () => {
       await sleepFor(2_500);
 
       //send the signal so that the workflow can continue
-      await hotMesh.hook(collatorSignalTopic, { id: `${signalId}hi`, data: { ...signalResponse, id: `${signalId}hi` } });
+      await hotMesh.hook(collatorSignalTopic, {
+        id: `${signalId}hi`,
+        data: { ...signalResponse, id: `${signalId}hi` },
+      });
 
       //wait for all jobs to complete
       let response: JobOutput;
@@ -577,6 +658,5 @@ describe('FUNCTIONAL | DURABLE', () => {
 
       expect(shouldPromise).toBe(false);
     }, 20_000);
-
   });
 });

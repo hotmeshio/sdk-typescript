@@ -1,10 +1,12 @@
 import * as Redis from 'redis';
+
 import config from '../../../../$setup/config';
-import { RedisConnection } from '../../../../../services/connector/clients/redis'; 
+import { RedisConnection } from '../../../../../services/connector/clients/redis';
 import {
   RedisRedisClientOptions as RedisClientOptions,
-  RedisRedisClientType as RedisClientType, 
-  RedisRedisClassType} from '../../../../../types/redis';
+  RedisRedisClientType as RedisClientType,
+  RedisRedisClassType,
+} from '../../../../../types/redis';
 
 describe('RedisConnection', () => {
   let redisConnection: RedisConnection;
@@ -47,6 +49,8 @@ describe('RedisConnection', () => {
 
   it('should throw an error if getClient is called without a connection', async () => {
     await redisConnection.disconnect();
-    expect(() => redisConnection.getClient()).toThrow('Redis client is not connected');
+    expect(() => redisConnection.getClient()).toThrow(
+      'Redis client is not connected',
+    );
   });
 });

@@ -1,8 +1,10 @@
 import { Durable } from '../../../../services/durable';
+
 import * as activities from './activities';
 
-const { greet, bye } = Durable.workflow
-  .proxyActivities<typeof activities>({ activities });
+const { greet, bye } = Durable.workflow.proxyActivities<typeof activities>({
+  activities,
+});
 
 export async function example(name: string): Promise<string> {
   //set values (they're added to the workflow HASH AND are indexed)
@@ -27,7 +29,7 @@ export async function example(name: string): Promise<string> {
 
   //val4 is 120.00000000009 (rounding error due to logarithmic math)
   const val4 = await search.mult('multer', 10);
-  const signal1 = await Durable.workflow.waitFor<{data: string}>('abcdefg');
+  const signal1 = await Durable.workflow.waitFor<{ data: string }>('abcdefg');
 
   return `${hello} - ${goodbye}`;
 }

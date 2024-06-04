@@ -1,7 +1,6 @@
-
 type AsyncSignal = {
-  topic: string,
-  jobId: string
+  topic: string;
+  jobId: string;
 };
 
 export { AsyncSignal };

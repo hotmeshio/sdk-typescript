@@ -1,6 +1,6 @@
 /** Represents a policy for retrying stream operations based on error codes */
 export interface StreamRetryPolicy {
-  /** 
+  /**
    * Key is error code, value is the retry profile.
    * Tuple contains: [max retry count, retry type].
    * 'x' denotes exponential backoff (default). Only 10, 100, 1000, 10000 are allowed retry intervals.
@@ -27,7 +27,7 @@ export type StreamError = {
   error?: Record<string, unknown>;
   /** True if originating via a standard transition message with an `error` status */
   is_stream_error?: boolean;
-}
+};
 
 /** Enumerated status values for stream operations */
 export enum StreamStatus {
@@ -73,7 +73,7 @@ export interface StreamData {
     spn?: string;
     /** Current try count, used for retry logic */
     try?: number;
-    /** 
+    /**
      * Indicates if the message should wait for a response.
      * If explicitly false, the connection is severed immediately
      * upon verifying (and returning) the Job ID.
@@ -97,15 +97,15 @@ export interface StreamData {
 }
 
 /** Extends StreamData for responses, allowing for inheritance of the base properties */
-export interface StreamDataResponse extends StreamData {}
+export type StreamDataResponse = StreamData;
 
 export enum StreamRole {
   WORKER = 'worker',
   ENGINE = 'engine',
   SYSTEM = 'system', //reserved for system use (i.e, if worker or engine fails)
 }
-/** 
- * Represents a type for messages that have been reclaimed from a stream. 
+/**
+ * Represents a type for messages that have been reclaimed from a stream.
  * Each item is a tuple containing a messageId and its details.
  */
 export type ReclaimedMessageType = [
@@ -116,8 +116,8 @@ export type ReclaimedMessageType = [
     /** Key is always 'message' */
     key: string,
     /** Value is a stringified representation of StreamData */
-    value: string
-  ]
+    value: string,
+  ],
 ][];
 
 /** Configuration parameters for a stream */
@@ -136,4 +136,4 @@ export type StreamConfig = {
   reclaimDelay?: number;
   /** Maximum number of reclaims allowed, defaults to 3. Values greater throw an error */
   reclaimCount?: number;
-}
+};

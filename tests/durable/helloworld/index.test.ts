@@ -1,12 +1,13 @@
 import * as Redis from 'redis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { deterministicRandom, guid, sleepFor } from '../../../modules/utils';
 import { Durable } from '../../../services/durable';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/redis';
-import * as workflows from './src/workflows';
 import { RedisRedisClassType } from '../../../types';
+
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -53,7 +54,7 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
           args: ['HotMesh'],

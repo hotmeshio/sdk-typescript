@@ -3,7 +3,10 @@ import { LoggerService } from '../../../../services/logger';
 import { IORedisStoreService } from '../../../../services/store/clients/ioredis';
 import { IORedisSubService } from '../../../../services/sub/clients/ioredis';
 import { SubscriptionCallback } from '../../../../types/quorum';
-import { RedisConnection, RedisClientType } from '../../../$setup/cache/ioredis';
+import {
+  RedisConnection,
+  RedisClientType,
+} from '../../../$setup/cache/ioredis';
 import { sleepFor } from '../../../../modules/utils';
 
 describe('FUNCTIONAL | IORedisSubService', () => {
@@ -22,7 +25,8 @@ describe('FUNCTIONAL | IORedisSubService', () => {
 
   beforeAll(async () => {
     redisConnection = await RedisConnection.getConnection('test-connection-1');
-    redisPublisherConnection = await RedisConnection.getConnection('test-publisher-1');
+    redisPublisherConnection =
+      await RedisConnection.getConnection('test-publisher-1');
     redisClient = await redisConnection.getClient();
     redisPublisherClient = await redisPublisherConnection.getClient();
     await redisPublisherClient.flushdb();
@@ -38,14 +42,25 @@ describe('FUNCTIONAL | IORedisSubService', () => {
     it('subscribes and unsubscribes for an app', async () => {
       let responded = false;
       const subscriptionHandler: SubscriptionCallback = (topic, message) => {
-        const topicKey = redisSubService.mintKey(KeyType.QUORUM, { appId: appConfig.id });
+        const topicKey = redisSubService.mintKey(KeyType.QUORUM, {
+          appId: appConfig.id,
+        });
         expect(topic).toEqual(topicKey);
         expect(message).toEqual(payload);
         responded = true;
       };
-      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
-      const payload = { 'any': 'data' };
-      await redisSubService.subscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id);
+      await redisSubService.init(
+        HMNS,
+        appConfig.id,
+        engineId,
+        new LoggerService(),
+      );
+      const payload = { any: 'data' };
+      await redisSubService.subscribe(
+        KeyType.QUORUM,
+        subscriptionHandler,
+        appConfig.id,
+      );
       await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id);
       sleepFor(250); //give time to run
       await redisSubService.unsubscribe(KeyType.QUORUM, appConfig.id);
@@ -56,15 +71,33 @@ describe('FUNCTIONAL | IORedisSubService', () => {
       const engineId = 'cat';
       let responded = false;
       const subscriptionHandler: SubscriptionCallback = (topic, message) => {
-        const topicKey = redisSubService.mintKey(KeyType.QUORUM, { appId: appConfig.id, engineId });
+        const topicKey = redisSubService.mintKey(KeyType.QUORUM, {
+          appId: appConfig.id,
+          engineId,
+        });
         expect(topic).toEqual(topicKey);
         expect(message).toEqual(payload);
         responded = true;
       };
-      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
-      const payload = { 'any': 'data' };
-      await redisSubService.subscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id, engineId);
-      await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id, engineId);
+      await redisSubService.init(
+        HMNS,
+        appConfig.id,
+        engineId,
+        new LoggerService(),
+      );
+      const payload = { any: 'data' };
+      await redisSubService.subscribe(
+        KeyType.QUORUM,
+        subscriptionHandler,
+        appConfig.id,
+        engineId,
+      );
+      await redisPubService.publish(
+        KeyType.QUORUM,
+        payload,
+        appConfig.id,
+        engineId,
+      );
       sleepFor(250); //give time to run
       await redisSubService.unsubscribe(KeyType.QUORUM, appConfig.id, engineId);
       expect(responded).toBeTruthy();
@@ -73,23 +106,40 @@ describe('FUNCTIONAL | IORedisSubService', () => {
 
   describe('psubscribe/punsubscribe', () => {
     it('psubscribes and punsubscribes', async () => {
-      const payload = { 'any': 'data' };
+      const payload = { any: 'data' };
       let responded = false;
       const word = 'dog';
       const wild = 'd*g';
       const subscriptionHandler: SubscriptionCallback = (topic, message) => {
-        const topicKey = redisSubService.mintKey(KeyType.QUORUM, { appId: appConfig.id, engineId: word });
+        const topicKey = redisSubService.mintKey(KeyType.QUORUM, {
+          appId: appConfig.id,
+          engineId: word,
+        });
         expect(topic).toEqual(topicKey);
         expect(message).toEqual(payload);
         responded = true;
       };
-      await redisSubService.init(HMNS, appConfig.id, engineId, new LoggerService());
-      await redisSubService.psubscribe(KeyType.QUORUM, subscriptionHandler, appConfig.id, wild);
-      await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id, word );
+      await redisSubService.init(
+        HMNS,
+        appConfig.id,
+        engineId,
+        new LoggerService(),
+      );
+      await redisSubService.psubscribe(
+        KeyType.QUORUM,
+        subscriptionHandler,
+        appConfig.id,
+        wild,
+      );
+      await redisPubService.publish(
+        KeyType.QUORUM,
+        payload,
+        appConfig.id,
+        word,
+      );
       sleepFor(250); //give time to run
       await redisSubService.punsubscribe(KeyType.QUORUM, appConfig.id, wild);
       expect(responded).toBeTruthy();
     });
   });
-
 });

@@ -1,13 +1,14 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { Durable } from '../../../services/durable';
-import * as workflows from './src/workflows';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
 import { StreamError } from '../../../types';
 import { HMSH_CODE_INTERRUPT } from '../../../modules/enums';
+
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -24,7 +25,11 @@ describe('DURABLE | sleep | `Durable.workflow.sleepFor`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
   });
 
@@ -68,7 +73,7 @@ describe('DURABLE | sleep | `Durable.workflow.sleepFor`', () => {
       workflowGuid = guid();
       interruptedWorkflowGuid = guid();
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
 
         handle = await client.workflow.start({
           args: ['ColdMush'],
@@ -78,7 +83,7 @@ describe('DURABLE | sleep | `Durable.workflow.sleepFor`', () => {
         });
         expect(handle.workflowId).toBeDefined();
 
-        let localHandle = await client.workflow.start({
+        const localHandle = await client.workflow.start({
           args: ['ColdMush'],
           taskQueue: 'hello-world',
           workflowName: 'example',
@@ -92,15 +97,18 @@ describe('DURABLE | sleep | `Durable.workflow.sleepFor`', () => {
   describe('WorkflowHandle', () => {
     describe('result', () => {
       it('should interrupt a workflow execution and throw a `410` error', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         const localHandle = await client.workflow.getHandle(
           'hello-world',
           workflows.example.name,
-          interruptedWorkflowGuid
+          interruptedWorkflowGuid,
         );
         const hotMesh = localHandle.hotMesh;
         await sleepFor(1_000); //let the activity start running
-        hotMesh.interrupt(`${hotMesh.appId}.execute`, interruptedWorkflowGuid, { descend: true, expire: 1 });
+        hotMesh.interrupt(`${hotMesh.appId}.execute`, interruptedWorkflowGuid, {
+          descend: true,
+          expire: 1,
+        });
         try {
           //subscribe to the workflow result (this will throw an `interrupted` error)
           await localHandle.result();
@@ -111,11 +119,11 @@ describe('DURABLE | sleep | `Durable.workflow.sleepFor`', () => {
       });
 
       it('should return the workflow execution result', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         const localHandle = await client.workflow.getHandle(
           'hello-world',
           workflows.example.name,
-          workflowGuid
+          workflowGuid,
         );
         const result = await localHandle.result();
         expect(result).toEqual('Hello, ColdMush!');

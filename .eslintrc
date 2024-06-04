@@ -1,10 +1,14 @@
 {
   "parser": "@typescript-eslint/parser",
-  "plugins": ["@typescript-eslint"],
+  "plugins": ["@typescript-eslint", "import", "prettier"],
   "extends": [
     "eslint:recommended",
     "plugin:@typescript-eslint/eslint-recommended",
-    "plugin:@typescript-eslint/recommended"
+    "plugin:@typescript-eslint/recommended",
+    "plugin:import/errors",
+    "plugin:import/warnings",
+    "plugin:import/typescript",
+    "prettier"
   ],
   "env": {
     "browser": true,
@@ -25,7 +29,24 @@
     "no-extra-parens": "off",
     "space-before-function-paren": "off",
     "prefer-arrow-callback": "off",
-    "prefer-reflect": "off", // This has been deprecated https://eslint.org/docs/latest/rules/prefer-reflect
-    "brace-style": "off"
+    "prefer-reflect": "off",
+    "brace-style": "off",
+    "import/order": ["error", {
+      "groups": ["builtin", "external", "internal", "parent", "sibling", "index"],
+      "newlines-between": "always"
+    }],
+    "prettier/prettier": ["error", {
+      "singleQuote": true,
+      "semi": true
+    }],
+    "@typescript-eslint/explicit-module-boundary-types": "off",
+    "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
+  },
+  "settings": {
+    "import/resolver": {
+      "node": {
+        "extensions": [".js", ".jsx", ".ts", ".tsx"]
+      }
+    }
   }
 }

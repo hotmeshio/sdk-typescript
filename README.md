@@ -1,5 +1,5 @@
 # HotMesh
-![alpha release](https://img.shields.io/badge/release-alpha-yellow)
+![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
 HotMesh transforms Redis into an Orchestration Engine.
 

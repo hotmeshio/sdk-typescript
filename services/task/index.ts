@@ -1,7 +1,8 @@
 import {
   HMSH_EXPIRE_DURATION,
-  HMSH_FIDELITY_SECONDS, 
-  HMSH_SCOUT_INTERVAL_SECONDS} from '../../modules/enums';
+  HMSH_FIDELITY_SECONDS,
+  HMSH_SCOUT_INTERVAL_SECONDS,
+} from '../../modules/enums';
 import { XSleepFor, sleepFor } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { Pipe } from '../pipe';
@@ -17,13 +18,10 @@ class TaskService {
   store: StoreService<RedisClient, RedisMulti>;
   logger: ILogger;
   cleanupTimeout: NodeJS.Timeout | null = null;
-  isScout: boolean = false;
+  isScout = false;
   errorCount = 0;
 
-  constructor(
-    store: StoreService<RedisClient, RedisMulti>,
-    logger: ILogger
-  ) {
+  constructor(store: StoreService<RedisClient, RedisMulti>, logger: ILogger) {
     this.logger = logger;
     this.store = store;
   }
@@ -34,7 +32,10 @@ class TaskService {
       const [topic, sourceKey, scrub, ...sdata] = workItemKey.split(WEBSEP);
       const data = JSON.parse(sdata.join(WEBSEP));
       const destinationKey = `${sourceKey}:processed`;
-      const jobId = await this.store.processTaskQueue(sourceKey, destinationKey);
+      const jobId = await this.store.processTaskQueue(
+        sourceKey,
+        destinationKey,
+      );
       if (jobId) {
         //todo: don't use 'id', make configurable using hook rule
         await hookEventCallback(topic, { ...data, id: jobId });
@@ -43,7 +44,7 @@ class TaskService {
           workItemKey,
           sourceKey,
           destinationKey,
-          scrub === 'true'
+          scrub === 'true',
         );
       }
       setImmediate(() => this.processWebHooks(hookEventCallback));
@@ -54,17 +55,17 @@ class TaskService {
     await this.store.addTaskQueues(keys);
   }
 
-  async registerJobForCleanup(jobId: string, inSeconds = HMSH_EXPIRE_DURATION, options: JobCompletionOptions): Promise<void> {
+  async registerJobForCleanup(
+    jobId: string,
+    inSeconds = HMSH_EXPIRE_DURATION,
+    options: JobCompletionOptions,
+  ): Promise<void> {
     if (inSeconds > 0) {
       await this.store.expireJob(jobId, inSeconds);
-      const fromNow = Date.now() + (inSeconds * 1000);
+      const fromNow = Date.now() + inSeconds * 1000;
       const fidelityMS = HMSH_FIDELITY_SECONDS * 1000;
       const timeSlot = Math.floor(fromNow / fidelityMS) * fidelityMS;
-      await this.store.registerDependenciesForCleanup(
-        jobId,
-        timeSlot,
-        options,
-      );
+      await this.store.registerDependenciesForCleanup(jobId, timeSlot, options);
     }
   }
 
@@ -77,7 +78,7 @@ class TaskService {
     dad: string,
     multi?: RedisMulti,
   ): Promise<void> {
-    const fromNow = Date.now() + (inSeconds * 1000);
+    const fromNow = Date.now() + inSeconds * 1000;
     const fidelityMS = HMSH_FIDELITY_SECONDS * 1000;
     const awakenTimeSlot = Math.floor(fromNow / fidelityMS) * fidelityMS;
     await this.store.registerTimeHook(
@@ -98,7 +99,8 @@ class TaskService {
    */
   async shouldScout() {
     const wasScout = this.isScout;
-    const isScout = wasScout || (this.isScout = await this.store.reserveScoutRole('time'));
+    const isScout =
+      wasScout || (this.isScout = await this.store.reserveScoutRole('time'));
     if (isScout) {
       if (!wasScout) {
         setTimeout(() => {
@@ -114,7 +116,15 @@ class TaskService {
    * Callback handler that takes an item from a work list and
    * processes according to its type
    */
-  async processTimeHooks(timeEventCallback: (jobId: string, gId: string, activityId: string, type: WorkListTaskType) => Promise<void>, listKey?: string): Promise<void> {
+  async processTimeHooks(
+    timeEventCallback: (
+      jobId: string,
+      gId: string,
+      activityId: string,
+      type: WorkListTaskType,
+    ) => Promise<void>,
+    listKey?: string,
+  ): Promise<void> {
     if (await this.shouldScout()) {
       try {
         const workListTask = await this.store.getNextTask(listKey);
@@ -126,7 +136,9 @@ class TaskService {
             //  will be expired by an origin ancestor and is listed there
           } else if (type === 'delist') {
             //delist the signalKey (target)
-            const key = this.store.mintKey(KeyType.SIGNALS, { appId: this.store.appId });
+            const key = this.store.mintKey(KeyType.SIGNALS, {
+              appId: this.store.appId,
+            });
             await this.store.redisClient[this.store.commands.hdel](key, target);
           } else {
             //awaken/expire/interrupt
@@ -142,7 +154,7 @@ class TaskService {
           this.processTimeHooks(timeEventCallback);
         } else {
           //no worklists exist; sleep before checking
-          let sleep = XSleepFor(HMSH_FIDELITY_SECONDS * 1000);
+          const sleep = XSleepFor(HMSH_FIDELITY_SECONDS * 1000);
           this.cleanupTimeout = sleep.timerId;
           await sleep.promise;
           this.errorCount = 0;
@@ -159,7 +171,9 @@ class TaskService {
       }
     } else {
       //didn't get the scout role; try again in 'one-ish' minutes
-      let sleep = XSleepFor(HMSH_SCOUT_INTERVAL_SECONDS * 1_000 * 2 * Math.random());
+      const sleep = XSleepFor(
+        HMSH_SCOUT_INTERVAL_SECONDS * 1_000 * 2 * Math.random(),
+      );
       this.cleanupTimeout = sleep.timerId;
       await sleep.promise;
       this.processTimeHooks(timeEventCallback);
@@ -178,7 +192,12 @@ class TaskService {
     return rules?.[topic]?.[0] as HookRule;
   }
 
-  async registerWebHook(topic: string, context: JobState, dad: string, multi?: RedisMulti): Promise<string> {
+  async registerWebHook(
+    topic: string,
+    context: JobState,
+    dad: string,
+    multi?: RedisMulti,
+  ): Promise<string> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
       const mapExpression = hookRule.conditions.match[0].expected;
@@ -187,18 +206,13 @@ class TaskService {
       const gId = context.metadata.gid;
       const activityId = hookRule.to;
       //composite keys are used to fully describe the task target
-      const compositeJobKey = [
-        activityId,
-        dad,
-        gId,
-        jobId
-      ].join(WEBSEP);
+      const compositeJobKey = [activityId, dad, gId, jobId].join(WEBSEP);
 
       const hook: HookSignal = {
         topic,
         resolved,
         jobId: compositeJobKey,
-      }
+      };
       await this.store.setHookSignal(hook, multi);
       return jobId;
     } else {
@@ -206,12 +220,15 @@ class TaskService {
     }
   }
 
-  async processWebHookSignal(topic: string, data: Record<string, unknown>): Promise<[string, string, string, string] | undefined> {
+  async processWebHookSignal(
+    topic: string,
+    data: Record<string, unknown>,
+  ): Promise<[string, string, string, string] | undefined> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
       //NOTE: both formats are supported by the mapping engine:
       //      `$self.hook.data` OR `$hook.data`
-      const context = { $self: { hook: { data }}, $hook: { data }};
+      const context = { $self: { hook: { data } }, $hook: { data } };
       const mapExpression = hookRule.conditions.match[0].actual;
       const resolved = Pipe.resolve(mapExpression, context);
       const hookSignalId = await this.store.getHookSignal(topic, resolved);
@@ -232,12 +249,15 @@ class TaskService {
     }
   }
 
-  async deleteWebHookSignal(topic: string, data: Record<string, unknown>): Promise<number> {
+  async deleteWebHookSignal(
+    topic: string,
+    data: Record<string, unknown>,
+  ): Promise<number> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
       //NOTE: both formats are supported by the mapping engine:
       //      `$self.hook.data` OR `$hook.data`
-      const context = { $self: { hook: { data }}, $hook: { data }};
+      const context = { $self: { hook: { data } }, $hook: { data } };
       const mapExpression = hookRule.conditions.match[0].actual;
       const resolved = Pipe.resolve(mapExpression, context);
       return await this.store.deleteHookSignal(topic, resolved);

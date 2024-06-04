@@ -55,7 +55,11 @@ class StringHandler {
     return input.padEnd(maxLength, padString);
   }
 
-  replace(input: string, searchValue: string | RegExp, replaceValue: string): string {
+  replace(
+    input: string,
+    searchValue: string | RegExp,
+    replaceValue: string,
+  ): string {
     return input.replace(searchValue, replaceValue);
   }
 
@@ -77,10 +81,12 @@ class StringHandler {
 
   repeat(str: string, count: number): string {
     if (count < 0 || count === Infinity) {
-      throw new RangeError('Invalid repeat count. Must be a positive finite number.');
+      throw new RangeError(
+        'Invalid repeat count. Must be a positive finite number.',
+      );
     }
     return str.repeat(count);
   }
 }
-  
+
 export { StringHandler };

@@ -1,15 +1,21 @@
 import os from 'os';
+
 import si from 'systeminformation';
-import { nanoid } from "nanoid";
-import { StoreService } from "../services/store";
-import { AppSubscriptions, AppTransitions, AppVID } from "../types/app";
-import { RedisClient, RedisMulti } from "../types/redis";
-import { StringAnyType } from "../types/serializer";
-import { StreamCode, StreamStatus } from "../types/stream";
+import { nanoid } from 'nanoid';
+
+import { StoreService } from '../services/store';
+import { AppSubscriptions, AppTransitions, AppVID } from '../types/app';
+import { RedisClient, RedisMulti } from '../types/redis';
+import { StringAnyType } from '../types/serializer';
+import { StreamCode, StreamStatus } from '../types/stream';
 import { SystemHealth } from '../types/quorum';
+
 import { HMSH_GUID_SIZE } from './enums';
 
-async function safeExecute<T>(operation: Promise<T>, defaultValue: T): Promise<T> {
+async function safeExecute<T>(
+  operation: Promise<T>,
+  defaultValue: T,
+): Promise<T> {
   try {
     return await operation;
   } catch (error) {
@@ -55,32 +61,39 @@ export function sleepImmediate(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function s4() {
-  return Math.floor((1 + Math.random()) * 0x10000).toString(16).substring(1);
-}
-
 export function guid(size: number = HMSH_GUID_SIZE): string {
-  return s4() + `H` + nanoid(size);
+  return `H` + nanoid(size);
 }
 
 export function deterministicRandom(seed: number): number {
-  let x = Math.sin(seed) * 10000;
+  const x = Math.sin(seed) * 10000;
   return x - Math.floor(x);
 }
 
-export function identifyRedisType(redisInstance: any): 'redis' | 'ioredis' | null {
+export function identifyRedisType(
+  redisInstance: any,
+): 'redis' | 'ioredis' | null {
   const prototype = Object.getPrototypeOf(redisInstance);
-  if ('defineCommand' in prototype || Object.keys(prototype).includes('multi')) {
+  if (
+    'defineCommand' in prototype ||
+    Object.keys(prototype).includes('multi')
+  ) {
     return 'ioredis';
   } else if (Object.keys(prototype).includes('Multi')) {
     return 'redis';
   }
   if (redisInstance.constructor) {
-    if (redisInstance.constructor.name === 'Redis' || redisInstance.constructor.name === 'EventEmitter') {
+    if (
+      redisInstance.constructor.name === 'Redis' ||
+      redisInstance.constructor.name === 'EventEmitter'
+    ) {
       if ('hset' in redisInstance) {
         return 'ioredis';
       }
-    } else if (redisInstance.constructor.name === 'RedisClient' || redisInstance.constructor.name === 'Commander') {
+    } else if (
+      redisInstance.constructor.name === 'RedisClient' ||
+      redisInstance.constructor.name === 'Commander'
+    ) {
       if ('HSET' in redisInstance) {
         return 'redis';
       }
@@ -96,12 +109,16 @@ export const polyfill = {
       return 'hook';
     }
     return activityType;
-  }
-}
+  },
+};
 
-
-export function identifyRedisTypeFromClass(redisClass: any): 'redis' | 'ioredis' | null {
-  if (redisClass && redisClass.name === 'Redis' || redisClass.name === 'EventEmitter') {
+export function identifyRedisTypeFromClass(
+  redisClass: any,
+): 'redis' | 'ioredis' | null {
+  if (
+    redisClass && redisClass.name === 'Redis' ||
+    redisClass.name === 'EventEmitter'
+  ) {
     return 'ioredis';
   } else if (redisClass && 'createClient' in redisClass) {
     return 'redis';
@@ -109,23 +126,32 @@ export function identifyRedisTypeFromClass(redisClass: any): 'redis' | 'ioredis'
   return null;
 }
 
-export function matchesStatusCode(code: StreamCode, pattern: string | RegExp): boolean {
+export function matchesStatusCode(
+  code: StreamCode,
+  pattern: string | RegExp,
+): boolean {
   if (typeof pattern === 'string') {
     // Convert '*' wildcard to its regex equivalent (\d)
-    const regexPattern = `^${pattern.replace(/\*/g, "\\d")}$`;
+    const regexPattern = `^${pattern.replace(/\*/g, '\\d')}$`;
     return new RegExp(regexPattern).test(code.toString());
   }
   return pattern.test(code.toString());
 }
 
-export function matchesStatus(status: StreamStatus, targetStatus: StreamStatus): boolean {
+export function matchesStatus(
+  status: StreamStatus,
+  targetStatus: StreamStatus,
+): boolean {
   return status === targetStatus;
 }
 
-export function XSleepFor(ms: number): { promise: Promise<unknown>, timerId: NodeJS.Timeout } {
+export function XSleepFor(ms: number): {
+  promise: Promise<unknown>;
+  timerId: NodeJS.Timeout;
+} {
   //can be interrupted with `clearTimeout`
   let timerId: NodeJS.Timeout;
-  let promise = new Promise((resolve) => {
+  const promise = new Promise((resolve) => {
     timerId = setTimeout(resolve, ms);
   });
   return { promise, timerId };
@@ -141,7 +167,10 @@ export function findTopKey(obj: AppTransitions, input: string): string | null {
   return null;
 }
 
-export function findSubscriptionForTrigger(obj: AppSubscriptions, value: string): string | null {
+export function findSubscriptionForTrigger(
+  obj: AppSubscriptions,
+  value: string,
+): string | null {
   for (const [key, itemValue] of Object.entries(obj)) {
     if (itemValue === value) {
       return key;
@@ -154,7 +183,11 @@ export function findSubscriptionForTrigger(obj: AppSubscriptions, value: string)
  * Get the subscription topic for the flow to which @activityId belongs.
  * TODO: resolve this value in the compiler...do not call this at runtime
  */
-export async function getSubscriptionTopic(activityId: string, store: StoreService<RedisClient, RedisMulti>, appVID: AppVID): Promise<string | undefined> {
+export async function getSubscriptionTopic(
+  activityId: string,
+  store: StoreService<RedisClient, RedisMulti>,
+  appVID: AppVID,
+): Promise<string | undefined> {
   const appTransitions = await store.getTransitions(appVID);
   const appSubscriptions = await store.getSubscriptions(appVID);
   const triggerId = findTopKey(appTransitions, activityId);
@@ -174,12 +207,16 @@ export function getTimeSeries(granularity: string): string {
   const granularityUnit = granularity.slice(-1);
   const granularityValue = parseInt(granularity.slice(0, -1), 10);
   if (granularityUnit === 'm') {
-    const minute = Math.floor(now.getMinutes() / granularityValue) * granularityValue;
+    const minute =
+      Math.floor(now.getMinutes() / granularityValue) * granularityValue;
     now.setUTCMinutes(minute, 0, 0);
   } else if (granularityUnit === 'h') {
     now.setUTCMinutes(0, 0, 0);
   }
-  return now.toISOString().replace(/:\d\d\..+|-|T/g, '').replace(':','');
+  return now
+    .toISOString()
+    .replace(/:\d\d\..+|-|T/g, '')
+    .replace(':', '');
 }
 
 export function formatISODate(input: Date | string): string {
@@ -193,8 +230,8 @@ export function getSymKey(number: number): string {
   if (number < 0 || number >= Math.pow(base, 3)) {
     throw new Error('Number out of range');
   }
-  let [q1, r1] = divmod(number, base);
-  let [q2, r2] = divmod(q1, base);
+  const [q1, r1] = divmod(number, base);
+  const [q2, r2] = divmod(q1, base);
   return alphabet[q2] + alphabet[r1] + alphabet[r2];
 }
 
@@ -204,7 +241,7 @@ export function getSymVal(number: number): string {
   if (number < 0 || number >= Math.pow(base, 2)) {
     throw new Error('Number out of range');
   }
-  let [q, r] = divmod(number, base);
+  const [q, r] = divmod(number, base);
   return alphabet[q] + alphabet[r];
 }
 
@@ -213,7 +250,7 @@ function divmod(m: number, n: number): number[] {
 }
 
 export function getIndexedHash<T>(hash: T, target: string): [number, T] {
-  const index = hash[target] as number || 0;
+  const index = (hash[target] as number) || 0;
   const newHash = { ...hash };
   delete newHash[target];
   return [index, newHash as T];

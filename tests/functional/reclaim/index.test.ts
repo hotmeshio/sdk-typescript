@@ -9,7 +9,8 @@ import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import {
   StreamData,
   StreamDataResponse,
-  StreamStatus } from '../../../types/stream';
+  StreamStatus,
+} from '../../../types/stream';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
 describe('FUNCTIONAL | Reclaim', () => {
@@ -30,9 +31,15 @@ describe('FUNCTIONAL | Reclaim', () => {
   // the quorum of workers. When the latter calls complete, they' claim the
   // message out from under the first worker (the reclaim timeout is configured to
   // be short during testing (1500ms))
-  const callback =  async (streamData: StreamData): Promise<StreamDataResponse> => {
+  const callback = async (
+    streamData: StreamData,
+  ): Promise<StreamDataResponse> => {
     const values = JSON.parse(streamData.data.values as string) as number[];
-    const operation = streamData.data.operation as 'add'|'subtract'|'multiply'|'divide';
+    const operation = streamData.data.operation as
+      | 'add'
+      | 'subtract'
+      | 'multiply'
+      | 'divide';
     const result = new MathHandler()[operation](values);
 
     if (isSlow) {
@@ -49,20 +56,23 @@ describe('FUNCTIONAL | Reclaim', () => {
   };
 
   beforeAll(async () => {
-
     const hmshFactory = async (version: string, first = false) => {
       if (first) {
-        const redisConnection = await RedisConnection.connect(guid(), Redis, options);
-        redisConnection.getClient().flushdb();    
+        const redisConnection = await RedisConnection.connect(
+          guid(),
+          Redis,
+          options,
+        );
+        redisConnection.getClient().flushdb();
       }
- 
+
       const config: HotMeshConfig = {
         appId: appConfig.id,
         namespace: HMNS,
         logLevel: HMSH_LOGLEVEL,
         engine: {
           redis: { class: Redis, options },
-          reclaimDelay: 1_500,  //default 5_000
+          reclaimDelay: 1_500, //default 5_000
         },
         workers: [
           {
@@ -70,12 +80,12 @@ describe('FUNCTIONAL | Reclaim', () => {
             redis: { class: Redis, options },
             reclaimDelay: 1_500, //default 60_000
             callback,
-          }
-        ]
+          },
+        ],
       };
       const instance = await HotMesh.init(config);
       return instance;
-    }
+    };
     hotMesh = await hmshFactory('1', true);
     hotMesh2 = await hmshFactory('2');
     await hotMesh.deploy('/app/tests/$setup/apps/calc/v1/hotmesh.yaml');
@@ -87,9 +97,7 @@ describe('FUNCTIONAL | Reclaim', () => {
     await HotMesh.stop();
   });
 
-  beforeEach(() => {
-
-  });
+  beforeEach(() => {});
 
   describe('Claim failed tasks', () => {
     it('continues stalled jobs using xclaim', async () => {
@@ -111,9 +119,10 @@ describe('FUNCTIONAL | Reclaim', () => {
       expect(status1).toEqual(1);
 
       //as long as the other jobs are in process the first job will be 1
-      while(
+      while (
         await hotMesh.getStatus(jobId2 as string) !== 0 ||
-        await hotMesh.getStatus(jobId3 as string) !== 0) {
+        await hotMesh.getStatus(jobId3 as string) !== 0
+      ) {
         status1 = await hotMesh2.getStatus(jobId1 as string);
         expect(status1).toEqual(1);
         await sleepFor(1000);

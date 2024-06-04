@@ -1,10 +1,11 @@
+import { HotMeshService } from '../hotmesh';
+import { ContextType } from '../../types/durable';
+
 import { ClientService } from './client';
 import { ConnectionService } from './connection';
 import { Search } from './search';
 import { WorkerService } from './worker';
 import { WorkflowService } from './workflow';
-import { HotMeshService } from '../hotmesh';
-import { ContextType } from '../../types/durable';
 
 export const Durable = {
   Client: ClientService,
@@ -21,7 +22,7 @@ export const Durable = {
     await ClientService.shutdown();
     await WorkerService.shutdown();
     await HotMeshService.stop();
-  }
+  },
 };
 
 export type { ContextType };

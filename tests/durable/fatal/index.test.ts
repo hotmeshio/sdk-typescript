@@ -1,12 +1,13 @@
 import Redis from 'ioredis';
 
-import config from '../../$setup/config'
+import config from '../../$setup/config';
 import { Durable } from '../../../services/durable';
-import * as workflows from './src/workflows';
 import { WorkflowHandleService } from '../../../services/durable/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { DurableFatalError } from '../../../modules/errors';
 import { guid, sleepFor } from '../../../modules/utils';
+
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -22,7 +23,11 @@ describe('DURABLE | fatal | `Workflow Promise.all proxyActivities`', () => {
 
   beforeAll(async () => {
     //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(guid(), Redis, options);
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis,
+      options,
+    );
     redisConnection.getClient().flushdb();
   });
 
@@ -47,7 +52,7 @@ describe('DURABLE | fatal | `Workflow Promise.all proxyActivities`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options }});
+        const client = new Client({ connection: { class: Redis, options } });
         handle = await client.workflow.start({
           args: [{ name: NAME }],
           taskQueue: 'fatal-world',
