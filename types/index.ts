@@ -44,6 +44,7 @@ export {
   WorkerOptions,
   WorkflowContext,
   WorkflowSearchOptions,
+  WorkflowSearchSchema,
   WorkflowDataType,
   WorkflowOptions,
 } from './durable';

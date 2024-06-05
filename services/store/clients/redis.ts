@@ -52,7 +52,148 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
     };
   }
 
+  /**
+   * When in cluster mode, the getMulti wrapper only
+   * sends commands to the same node/shard.
+   * All other commands are sent simultaneously 
+   * using Promise.all and are then collated
+   */
   getMulti(): RedisMultiType {
+    const my = this;
+    if (process.env.HMSH_IS_CLUSTER === 'true') {
+      const commands: { command: string; args: any[]}[] = [];
+
+      const addCommand = (command: string, args: any[]) => {
+        commands.push({ command: command.toUpperCase(), args });
+        return multiInstance;
+      };
+
+      const multiInstance: RedisMultiType = {
+        sendCommand(command: string, ...args) {
+          return my.redisClient.sendCommand([command, ...args]);
+        },
+        async exec() {
+          if (commands.length === 0) return [];
+
+          const sameCommand = commands.every(cmd => cmd.command === commands[0].command);
+
+          if (sameCommand) {
+            const multi = my.redisClient.multi();
+
+            commands.forEach(cmd => {
+              if (cmd.command === 'ZADD') {
+                return multi.ZADD(cmd.args[0], cmd.args[1], cmd.args[2]);
+              }
+              return multi[cmd.command](...cmd.args as unknown as any[]);
+            });
+            const results = await multi.exec();
+            return results.map(item => item); // Extract the results from multi.exec response format
+          } else {
+            return Promise.all(commands.map(cmd => {
+              if (cmd.command === 'ZADD') {
+                return my.redisClient.ZADD(cmd.args[0], cmd.args[1], cmd.args[2]);
+              }
+              return my.redisClient[cmd.command](...cmd.args as unknown as any[]);
+            }));
+          }
+        },
+        XADD(key: string, id: string, fields: any, message?: string) {
+          return addCommand('XADD', [key, id, fields, message]);
+        },
+        XACK(key: string, group: string, id: string) {
+          return addCommand('XACK', [key, group, id]);
+        },
+        XDEL(key: string, id: string) {
+          return addCommand('XDEL', [key, id]);
+        },
+        XLEN(key: string) {
+          return addCommand('XLEN', [key]);
+        },
+        XCLAIM(
+          key: string,
+          group: string,
+          consumer: string,
+          minIdleTime: number,
+          id: string,
+          ...args: string[]
+        ) {
+          return addCommand('XCLAIM', [key, group, consumer, minIdleTime, id, ...args]);
+        },
+        XPENDING(
+          key: string,
+          group: string,
+          start?: string,
+          end?: string,
+          count?: number,
+          consumer?: string
+        ) {
+          return addCommand('XPENDING', [key, group, start, end, count, consumer]);
+        },
+        HDEL(key: string, itemId: string) {
+          return addCommand('HDEL', [key, itemId]);
+        },
+        HGET(key: string, itemId: string) {
+          return addCommand('HGET', [key, itemId]);
+        },
+        HGETALL(key: string) {
+          return addCommand('HGETALL', [key]);
+        },
+        HINCRBYFLOAT(key: string, itemId: string, value: number) {
+          return addCommand('HINCRBYFLOAT', [key, itemId, value]);
+        },
+        HMGET(key: string, itemIds: string[]) {
+          return addCommand('HMGET', [key, itemIds]);
+        },
+        HSET(key: string, values: Record<string, string>) {
+          return addCommand('HSET', [key, values]);
+        },
+        LRANGE(key: string, start: number, end: number) {
+          return addCommand('LRANGE', [key, start, end]);
+        },
+        RPUSH(key: string, items: string[]) {
+          return addCommand('RPUSH', [key, items]);
+        },
+        ZADD(key: string, args: { score: number | string; value: string; }, opts?: { NX: boolean }) {
+          return addCommand('ZADD', [key, args, opts]);
+        },
+        XGROUP(
+          command: 'CREATE',
+          key: string,
+          groupName: string,
+          id: string,
+          mkStream?: 'MKSTREAM'
+        ) {
+          return addCommand('XGROUP', [command, key, groupName, id, mkStream]);
+        },
+        DEL: function (key: string): RedisMultiType {
+          throw new Error('Function not implemented.');
+        },
+        EXISTS: function (key: string): RedisMultiType {
+          throw new Error('Function not implemented.');
+        },
+        HMPUSH: function (key: string, values: Record<string, string>): RedisMultiType {
+          throw new Error('Function not implemented.');
+        },
+        LPUSH: function (key: string, items: string[]): RedisMultiType {
+          throw new Error('Function not implemented.');
+        },
+        SET: function (key: string, value: string): RedisMultiType {
+          throw new Error('Function not implemented.');
+        },
+        ZRANGE_WITHSCORES: function (key: string, start: number, end: number): RedisMultiType {
+          throw new Error('Function not implemented.');
+        },
+        ZRANK: function (key: string, member: string): RedisMultiType {
+          throw new Error('Function not implemented.');
+        },
+        ZSCORE: function (key: string, value: string): RedisMultiType {
+          throw new Error('Function not implemented.');
+        }
+      };
+
+      return multiInstance;
+    }
+
     return this.redisClient.multi() as unknown as RedisMultiType;
   }
 

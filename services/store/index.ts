@@ -73,7 +73,6 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     xdel: 'xdel',
   };
 
-  //todo: standardize signatures and move concrete methods to this class
   abstract getMulti(): U;
   abstract exec(...args: any[]): Promise<string | string[] | string[][]>;
   abstract publish(
@@ -301,7 +300,6 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       );
       const [lowerLimitString] = range.split(':');
       if (lowerLimitString === '?') {
-        console.log('symbol range collision!!!', tryCount);
         await sleepFor(tryCount * 1000);
         if (tryCount < 5) {
           return this.reserveSymbolRange(target, size, type, tryCount + 1);

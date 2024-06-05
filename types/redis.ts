@@ -78,12 +78,37 @@ interface RedisRedisMultiType {
   HGET(key: string, itemId: string): this;
   HGETALL(key: string): this;
   HINCRBYFLOAT(key: string, itemId: string, value: number): this;
-  HMGET(key: string, itemIds: string[]): Promise<string[]>;
+  HMPUSH(key: string, values: Record<string, string>): this;
+  RPUSH(key: string, items: string[]): this;
+  HMGET(key: string, itemIds: string[]): this;
   HSET(key: string, values: Record<string, string>): this;
   LPUSH(key: string, items: string[]): this;
   LRANGE(key: string, start: number, end: number): this;
   RPUSH(key: string, items: string[]): this;
   SET(key: string, value: string): this;
+  XCLAIM(
+    key: string,
+    group: string,
+    consumer: string,
+    minIdleTime: number,
+    id: string,
+    ...args: string[]
+  ): this;
+  XGROUP(
+    command: 'CREATE' | string,
+    key: string,
+    groupName: string,
+    id: string,
+    mkStream?: 'MKSTREAM',
+  ): this;
+  XPENDING(
+    key: string,
+    group: string,
+    start?: string,
+    end?: string,
+    count?: number,
+    consumer?: string,
+  ): this;
   ZADD(
     key: string,
     values: { score: string; value: string },

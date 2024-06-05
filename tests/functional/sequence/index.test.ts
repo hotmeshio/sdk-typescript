@@ -1,8 +1,8 @@
-import Redis from 'ioredis';
+import * as Redis from 'redis';
 
 import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/clients/redis';
 import {
   StreamData,
   StreamDataResponse,
@@ -10,14 +10,18 @@ import {
 } from '../../../types/stream';
 import { guid } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import { RedisRedisClassType } from '../../../types/redis';
 
 describe('FUNCTIONAL | Sequence', () => {
   const appConfig = { id: 'tree' };
   const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
+    socket: {
+      host: config.REDIS_HOST,
+      port: config.REDIS_PORT,
+      tls: false,
+    },
     password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
+    database: config.REDIS_DATABASE,
   };
   let hotMesh: HotMesh;
 
@@ -25,10 +29,10 @@ describe('FUNCTIONAL | Sequence', () => {
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
-      Redis,
+      Redis as unknown as RedisRedisClassType,
       options,
     );
-    redisConnection.getClient().flushdb();
+    redisConnection.getClient().flushDb();
 
     //init/activate HotMesh (test both `engine` and `worker` roles)
     const config: HotMeshConfig = {

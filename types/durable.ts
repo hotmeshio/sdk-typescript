@@ -108,6 +108,100 @@ type WorkflowContext = {
   raw: StreamData;
 };
 
+/**
+ * The schema for the full-text-search (RediSearch) index.
+ */
+export type WorkflowSearchSchema = Record<
+  string,
+  {
+    /**
+     * The FT.SEARCH field type. One of: TEXT, NUMERIC, TAG. TEXT is
+     * most expensive, but also most expressive.
+     */
+    type: 'TEXT' | 'NUMERIC' | 'TAG';
+
+    /**
+     * FT.SEARCH SORTABLE field. If true, results may be sorted according to this field
+     * @default false
+     */
+    sortable?: boolean;
+
+    /**
+     * FT.SEARCH NOSTEM field. applies to TEXT fields types.
+     * If true, the text field index will not stem words
+     * @default false
+     */
+    nostem?: boolean;
+
+    /**
+     * FT.SEARCH NOINDEX field. If true and if the field is sortable, the field will aid
+     * in sorting results but not be directly indexed as a standalone
+     * @default false
+     */
+    noindex?: boolean;
+
+    /**
+     * if true, the field is indexed and searchable within the FT.SEARCH index
+     * This is different from `noindex` which is FT.SEARCH specific and relates
+     * to sorting and indexing. This is a general flag for the field that will
+     * enable or disable indexing and searching entirely. Use for fields with
+     * absolutely no meaning to query or sorting but which are important
+     * nonetheless as part of the data record that is saved and returned.
+     * @default true
+     */
+    indexed?: boolean;
+
+    /**
+     * An array of possible values for the field
+     */
+    examples?: string[];
+
+    /**
+     * The 'nilable' setting may NOT be set to `true` for
+     * NUMBER types as it causes an indexing error;
+     * consider a custom (e.g., negative number) value to represent
+     * `null` if desired for a NUMERIC field.
+     * Set to true only if the field is a TEXT or TAG type and
+     * you wish to save the string `null` as a value to search
+     * on (the tag, {null}, or the string, (null)
+     * @default false
+     */
+    nilable?: boolean;
+
+    /**
+     * possible scalar/primitive types for the field. Use when
+     * serializing and restoring data to ensure the field is
+     * properly typed. If not provided, the field will be
+     * treated as a string.
+     */
+    primitive?: 'string' | 'number' | 'boolean' | 'array' | 'object';
+
+    /**
+     * if true, the field is required to be present in the data record
+     * @default false
+     */
+    required?: boolean;
+
+    /**
+     * an enumerated list of allowed values; if field is nilable, it is implied
+     * and therefore not necessary to include `null` in the list
+     * @default []
+     */
+    enum?: string[];
+
+    /**
+     * a regular expression pattern for the field
+     * @default '.*'
+     * @example '^[a-zA-Z0-9_]*$'
+     */
+    pattern?: string;
+
+    /**
+     * literal value to use for the indexed field name (without including the standard underscore (_) prefix isolate)
+     */
+    fieldName?: string;
+  }>;
+
 type WorkflowSearchOptions = {
   /** FT index name (myapp:myindex) */
   index?: string;
@@ -122,97 +216,7 @@ type WorkflowSearchOptions = {
    * key will be used as the indexed field name with an underscore prefix.
    *
    */
-  schema?: Record<
-    string,
-    {
-      /**
-       * The FT.SEARCH field type. One of: TEXT, NUMERIC, TAG. TEXT is
-       * most expensive, but also most expressive.
-       */
-      type: 'TEXT' | 'NUMERIC' | 'TAG';
-
-      /**
-       * FT.SEARCH SORTABLE field. If true, results may be sorted according to this field
-       * @default false
-       */
-      sortable?: boolean;
-
-      /**
-       * FT.SEARCH NOSTEM field. applies to TEXT fields types.
-       * If true, the text field index will not stem words
-       * @default false
-       */
-      nostem?: boolean;
-
-      /**
-       * FT.SEARCH NOINDEX field. If true and if the field is sortable, the field will aid
-       * in sorting results but not be directly indexed as a standalone
-       * @default false
-       */
-      noindex?: boolean;
-
-      /**
-       * if true, the field is indexed and searchable within the FT.SEARCH index
-       * This is different from `noindex` which is FT.SEARCH specific and relates
-       * to sorting and indexing. This is a general flag for the field that will
-       * enable or disable indexing and searching entirely. Use for fields with
-       * absolutely no meaning to query or sorting but which are important
-       * nonetheless as part of the data record that is saved and returned.
-       * @default true
-       */
-      indexed?: boolean;
-
-      /**
-       * An array of possible values for the field
-       */
-      examples?: string[];
-
-      /**
-       * The 'nilable' setting may NOT be set to `true` for
-       * NUMBER types as it causes an indexing error;
-       * consider a custom (e.g., negative number) value to represent
-       * `null` if desired for a NUMERIC field.
-       * Set to true only if the field is a TEXT or TAG type and
-       * you wish to save the string `null` as a value to search
-       * on (the tag, {null}, or the string, (null)
-       * @default false
-       */
-      nilable?: boolean;
-
-      /**
-       * possible scalar/primitive types for the field. Use when
-       * serializing and restoring data to ensure the field is
-       * properly typed. If not provided, the field will be
-       * treated as a string.
-       */
-      primitive?: 'string' | 'number' | 'boolean' | 'array' | 'object';
-
-      /**
-       * if true, the field is required to be present in the data record
-       * @default false
-       */
-      required?: boolean;
-
-      /**
-       * an enumerated list of allowed values; if field is nilable, it is implied
-       * and therefore not necessary to include `null` in the list
-       * @default []
-       */
-      enum?: string[];
-
-      /**
-       * a regular expression pattern for the field
-       * @default '.*'
-       * @example '^[a-zA-Z0-9_]*$'
-       */
-      pattern?: string;
-
-      /**
-       * literal value to use for the indexed field name (without including the standard underscore (_) prefix isolate)
-       */
-      fieldName?: string;
-    }
-  >;
+  schema?: WorkflowSearchSchema;
 
   /** Additional data as a key-value record */
   data?: StringStringType;

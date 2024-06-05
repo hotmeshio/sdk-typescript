@@ -61,6 +61,10 @@ export function sleepImmediate(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+export function deepCopy<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 export function guid(size: number = HMSH_GUID_SIZE): string {
   return `H` + nanoid(size);
 }

@@ -1,12 +1,13 @@
-import Redis from 'ioredis';
+import * as Redis from 'redis';
 
 import config from '../../$setup/config';
 import { Durable } from '../../../services/durable';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/clients/redis';
 import { ClientService } from '../../../services/durable/client';
 import { guid, sleepFor } from '../../../modules/utils';
 
 import * as workflows from './src/workflows';
+import { RedisRedisClassType } from '../../../types';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -16,20 +17,23 @@ describe('DURABLE | goodbye | `Workflow Promise.all proxyActivities`', () => {
   let client: ClientService;
   let workflowGuid: string;
   const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
+    socket: {
+      host: config.REDIS_HOST,
+      port: config.REDIS_PORT,
+      tls: false,
+    },
     password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
+    database: config.REDIS_DATABASE,
   };
 
   beforeAll(async () => {
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
-      Redis,
+      Redis as unknown as RedisRedisClassType,
       options,
     );
-    redisConnection.getClient().flushdb();
+    redisConnection.getClient().flushDb();
   });
 
   afterAll(async () => {
