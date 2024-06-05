@@ -2,6 +2,7 @@ import { LogLevel } from '../types/logger';
 
 // HOTMESH SYSTEM
 export const HMSH_LOGLEVEL = (process.env.HMSH_LOGLEVEL as LogLevel) || 'info';
+export const HMSH_IS_CLUSTER = process.env.HMSH_IS_CLUSTER === 'true';
 
 // HOTMESH STATUS CODES
 export const HMSH_CODE_SUCCESS = 200;
