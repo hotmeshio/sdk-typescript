@@ -154,7 +154,6 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
           return addCommand('RPUSH', [key, items]);
         },
         ZADD(key: string, args: { score: number | string; value: string; }, opts?: { NX: boolean }) {
-          //xxconsole.log('inputting zadd', key, args, opts)
           return addCommand('ZADD', [key, args, opts]);
         },
         XGROUP(

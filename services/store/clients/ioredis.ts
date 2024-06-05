@@ -50,13 +50,11 @@ class IORedisStoreService extends StoreService<
           const sameCommand = commands.every(cmd => cmd.command === commands[0].command);
           
           if (sameCommand) {
-            //xxconsole.log('optimizing with same command')
             const multi = my.redisClient.multi();
             commands.forEach(cmd => multi[cmd.command](...cmd.args));
             const results = await multi.exec();
             return results.map(item => item); // Extract the results from multi.exec response format
           } else {
-            //xxconsole.log('not optimizing')
             return Promise.all(commands.map(cmd => my.redisClient[cmd.command](...cmd.args)));
           }
         },
