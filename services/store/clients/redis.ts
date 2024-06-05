@@ -8,6 +8,7 @@ import {
   RedisRedisMultiType as RedisMultiType,
 } from '../../../types/redis';
 import { ReclaimedMessageType } from '../../../types/stream';
+import { HMSH_IS_CLUSTER } from '../../../modules/enums';
 
 class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
   redisClient: RedisClientType;
@@ -54,13 +55,13 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
 
   /**
    * When in cluster mode, the getMulti wrapper only
-   * sends commands to the same node/shard.
-   * All other commands are sent simultaneously 
-   * using Promise.all and are then collated
+   * sends commands to the same node/shard if they share a key.
+   * All other commands are sent simultaneouslyusing Promise.all
+   * and are then collated
    */
   getMulti(): RedisMultiType {
     const my = this;
-    if (process.env.HMSH_IS_CLUSTER === 'true') {
+    if (HMSH_IS_CLUSTER) {
       const commands: { command: string; args: any[]}[] = [];
 
       const addCommand = (command: string, args: any[]) => {
@@ -75,11 +76,12 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
         async exec() {
           if (commands.length === 0) return [];
 
-          const sameCommand = commands.every(cmd => cmd.command === commands[0].command);
+          const sameKey = commands.every(cmd => {
+            return cmd.args[0] === commands[0].args[0];
+          });
 
-          if (sameCommand) {
+          if (sameKey) {
             const multi = my.redisClient.multi();
-
             commands.forEach(cmd => {
               if (cmd.command === 'ZADD') {
                 return multi.ZADD(cmd.args[0], cmd.args[1], cmd.args[2]);
@@ -87,7 +89,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
               return multi[cmd.command](...cmd.args as unknown as any[]);
             });
             const results = await multi.exec();
-            return results.map(item => item); // Extract the results from multi.exec response format
+            return results.map(item => item);
           } else {
             return Promise.all(commands.map(cmd => {
               if (cmd.command === 'ZADD') {
