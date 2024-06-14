@@ -84,7 +84,7 @@ class Trigger extends Activity {
       } else {
         this.logger.error('trigger-process-error', { ...error });
       }
-      telemetry.setActivityError(error.message);
+      telemetry?.setActivityError(error.message);
       throw error;
     } finally {
       telemetry?.endJobSpan();

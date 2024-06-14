@@ -3,7 +3,7 @@
 
 HotMesh transforms Redis into an Orchestration Engine.
 
-*Write functions in your own preferred style, and let Redis govern their execution, reliably and durably.*
+*Write functions in your own style, and let Redis govern their execution, reliably and durably.*
 
 ## Install
 [![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
@@ -13,7 +13,7 @@ npm install @hotmeshio/hotmesh
 ```
 
 ## Understanding HotMesh
-HotMesh inverts the relationship to Redis: those functions that once used Redis as a cache, are instead *cached and governed* by Redis. Consider the following. It's a typical microservices network, with a tangled mess of services and functions. There's important business logic in there (functions *A*, *B* and *C* are critical!), but they're hard to find and access.
+HotMesh inverts the relationship to Redis: those functions that once used Redis as a cache, are instead *cached and governed* by Redis. Consider the following. It's a typical microservices network, with a tangled mess of services and functions. There's important business logic in there (functions *A*, *B* and *C* are critical), but it's hard to find and access.
 
 <img src="./docs/img/operational_data_layer.png" alt="A Tangled Microservices Network with 3 valuable functions buried within" style="max-width:100%;width:600px;">
 
