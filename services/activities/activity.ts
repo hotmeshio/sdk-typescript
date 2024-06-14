@@ -176,7 +176,7 @@ class Activity {
         stack: error.stack,
         name: error.name,
       });
-      telemetry && telemetry.setActivityError(error.message);
+      telemetry?.setActivityError(error.message);
       throw error;
     } finally {
       telemetry?.endActivitySpan();
