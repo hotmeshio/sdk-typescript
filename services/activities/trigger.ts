@@ -51,9 +51,9 @@ class Trigger extends Activity {
       telemetry.startJobSpan();
       telemetry.startActivitySpan(this.leg);
       this.mapJobData();
-      await this.setStateNX();
+      await this.setStateNX(options?.expired ? -1 : undefined);
       this.adjacencyList = await this.filterAdjacent();
-      await this.setStatus(this.adjacencyList.length);
+      await this.setStatus(options?.expired ? -1 : this.adjacencyList.length);
 
       this.bindSearchData(options);
       this.bindMarkerData(options);
@@ -61,7 +61,11 @@ class Trigger extends Activity {
       const multi = this.store.getMulti();
       await this.setState(multi);
       await this.setStats(multi);
-      await this.registerJobDependency(multi);
+      if (options?.expired) {
+        await this.setExpired(options?.expired, multi);
+      } else {
+        await this.registerJobDependency(multi);
+      }
       await multi.exec();
 
       //if the parent (spawner) chose not to await,
@@ -72,10 +76,15 @@ class Trigger extends Activity {
       const jobStatus = Number(this.context.metadata.js);
       telemetry.setJobAttributes({ 'app.job.jss': jobStatus });
       const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-      const messageIds = await this.transition(this.adjacencyList, jobStatus);
-      if (messageIds.length) {
-        attrs['app.activity.mids'] = messageIds.join(',');
+      //only transition if not inited in an expired state
+      //todo: enable resume from expired state
+      if (jobStatus !== -1) {
+        const messageIds = await this.transition(this.adjacencyList, jobStatus);
+        if (messageIds.length) {
+          attrs['app.activity.mids'] = messageIds.join(',');
+        }
       }
+
       telemetry.setActivityAttributes(attrs);
       return this.context.metadata.jid;
     } catch (error) {
@@ -95,6 +104,10 @@ class Trigger extends Activity {
         gid: this.context.metadata.gid,
       });
     }
+  }
+
+  async setExpired(seconds: number, multi: RedisMulti) {
+    await this.store.expireJob(this.context.metadata.jid, seconds, multi);
   }
 
   safeKey(key: string): string {
@@ -237,9 +250,9 @@ class Trigger extends Activity {
     return jobKey ? Pipe.resolve(jobKey, context) : '';
   }
 
-  async setStateNX(): Promise<void> {
+  async setStateNX(status?: number): Promise<void> {
     const jobId = this.context.metadata.jid;
-    if (!await this.store.setStateNX(jobId, this.engine.appId)) {
+    if (!await this.store.setStateNX(jobId, this.engine.appId, status)) {
       throw new DuplicateJobError(jobId);
     }
   }

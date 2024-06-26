@@ -33,6 +33,7 @@ import {
 } from '../../types/redis';
 import { StreamData, StreamRole, StreamDataResponse } from '../../types/stream';
 import { HMSH_QUORUM_ROLLCALL_CYCLES } from '../../modules/enums';
+import { StringStringType } from '../../types';
 
 class WorkerService {
   namespace: string;
@@ -96,7 +97,7 @@ class WorkerService {
           service.guid,
         );
         await service.initStreamChannel(service, worker.stream);
-        service.router = service.initRouter(worker, logger);
+        service.router = await service.initRouter(worker, logger);
 
         const key = service.stream.mintKey(KeyType.STREAMS, {
           appId: service.appId,
@@ -160,7 +161,9 @@ class WorkerService {
     await service.stream.init(service.namespace, service.appId, service.logger);
   }
 
-  initRouter(worker: HotMeshWorker, logger: ILogger): Router {
+  async initRouter(worker: HotMeshWorker, logger: ILogger): Promise<Router> {
+    const throttle = await this.store.getThrottleRate(worker.topic);
+
     return new Router(
       {
         namespace: this.namespace,
@@ -170,6 +173,7 @@ class WorkerService {
         topic: worker.topic,
         reclaimDelay: worker.reclaimDelay,
         reclaimCount: worker.reclaimCount,
+        throttle,
       },
       this.stream,
       this.store,

@@ -74,6 +74,7 @@ interface RedisRedisMultiType {
   XLEN(key: string): this;
   DEL(key: string): this;
   EXISTS(key: string): this;
+  EXPIRE(key: string, seconds: number): this;
   HDEL(key: string, itemId: string): this;
   HGET(key: string, itemId: string): this;
   HGETALL(key: string): this;
@@ -303,6 +304,8 @@ interface IORedisMultiType {
     id: string,
     ...args: string[]
   ): this;
+  del(key: string): this;
+  expire(key: string, seconds: number): this;
   hdel(key: string, itemId: string): this;
   hget(key: string, itemId: string): this;
   hgetall(key: string): this;

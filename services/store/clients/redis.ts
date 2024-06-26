@@ -62,7 +62,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
   getMulti(): RedisMultiType {
     const my = this;
     if (HMSH_IS_CLUSTER) {
-      const commands: { command: string; args: any[]}[] = [];
+      const commands: { command: string; args: any[] }[] = [];
 
       const addCommand = (command: string, args: any[]) => {
         commands.push({ command: command.toUpperCase(), args });
@@ -76,27 +76,35 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
         async exec() {
           if (commands.length === 0) return [];
 
-          const sameKey = commands.every(cmd => {
+          const sameKey = commands.every((cmd) => {
             return cmd.args[0] === commands[0].args[0];
           });
 
           if (sameKey) {
             const multi = my.redisClient.multi();
-            commands.forEach(cmd => {
+            commands.forEach((cmd) => {
               if (cmd.command === 'ZADD') {
                 return multi.ZADD(cmd.args[0], cmd.args[1], cmd.args[2]);
               }
-              return multi[cmd.command](...cmd.args as unknown as any[]);
+              return multi[cmd.command](...(cmd.args as unknown as any[]));
             });
             const results = await multi.exec();
-            return results.map(item => item);
+            return results.map((item) => item);
           } else {
-            return Promise.all(commands.map(cmd => {
-              if (cmd.command === 'ZADD') {
-                return my.redisClient.ZADD(cmd.args[0], cmd.args[1], cmd.args[2]);
-              }
-              return my.redisClient[cmd.command](...cmd.args as unknown as any[]);
-            }));
+            return Promise.all(
+              commands.map((cmd) => {
+                if (cmd.command === 'ZADD') {
+                  return my.redisClient.ZADD(
+                    cmd.args[0],
+                    cmd.args[1],
+                    cmd.args[2],
+                  );
+                }
+                return my.redisClient[cmd.command](
+                  ...(cmd.args as unknown as any[]),
+                );
+              }),
+            );
           }
         },
         XADD(key: string, id: string, fields: any, message?: string) {
@@ -119,7 +127,14 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
           id: string,
           ...args: string[]
         ) {
-          return addCommand('XCLAIM', [key, group, consumer, minIdleTime, id, ...args]);
+          return addCommand('XCLAIM', [
+            key,
+            group,
+            consumer,
+            minIdleTime,
+            id,
+            ...args,
+          ]);
         },
         XPENDING(
           key: string,
@@ -127,9 +142,22 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
           start?: string,
           end?: string,
           count?: number,
-          consumer?: string
+          consumer?: string,
         ) {
-          return addCommand('XPENDING', [key, group, start, end, count, consumer]);
+          return addCommand('XPENDING', [
+            key,
+            group,
+            start,
+            end,
+            count,
+            consumer,
+          ]);
+        },
+        DEL: function (key: string): RedisMultiType {
+          return addCommand('DEL', [key]);
+        },
+        EXPIRE: function (key: string, seconds: number): RedisMultiType {
+          return addCommand('EXPIRE', [key, seconds]);
         },
         HDEL(key: string, itemId: string) {
           return addCommand('HDEL', [key, itemId]);
@@ -155,7 +183,11 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
         RPUSH(key: string, items: string[]) {
           return addCommand('RPUSH', [key, items]);
         },
-        ZADD(key: string, args: { score: number | string; value: string; }, opts?: { NX: boolean }) {
+        ZADD(
+          key: string,
+          args: { score: number | string; value: string },
+          opts?: { NX: boolean },
+        ) {
           return addCommand('ZADD', [key, args, opts]);
         },
         XGROUP(
@@ -163,17 +195,17 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
           key: string,
           groupName: string,
           id: string,
-          mkStream?: 'MKSTREAM'
+          mkStream?: 'MKSTREAM',
         ) {
           return addCommand('XGROUP', [command, key, groupName, id, mkStream]);
-        },
-        DEL: function (key: string): RedisMultiType {
-          throw new Error('Function not implemented.');
         },
         EXISTS: function (key: string): RedisMultiType {
           throw new Error('Function not implemented.');
         },
-        HMPUSH: function (key: string, values: Record<string, string>): RedisMultiType {
+        HMPUSH: function (
+          key: string,
+          values: Record<string, string>,
+        ): RedisMultiType {
           throw new Error('Function not implemented.');
         },
         LPUSH: function (key: string, items: string[]): RedisMultiType {
@@ -182,7 +214,11 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
         SET: function (key: string, value: string): RedisMultiType {
           throw new Error('Function not implemented.');
         },
-        ZRANGE_WITHSCORES: function (key: string, start: number, end: number): RedisMultiType {
+        ZRANGE_WITHSCORES: function (
+          key: string,
+          start: number,
+          end: number,
+        ): RedisMultiType {
           throw new Error('Function not implemented.');
         },
         ZRANK: function (key: string, member: string): RedisMultiType {
@@ -190,7 +226,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
         },
         ZSCORE: function (key: string, value: string): RedisMultiType {
           throw new Error('Function not implemented.');
-        }
+        },
       };
 
       return multiInstance;

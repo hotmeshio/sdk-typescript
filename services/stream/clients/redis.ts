@@ -59,14 +59,14 @@ class RedisStreamService extends StreamService<
           ...args,
         ])) === 1
       );
-    } catch (err) {
+    } catch (error) {
       const streamType =
         mkStream === 'MKSTREAM' ? 'with MKSTREAM' : 'without MKSTREAM';
       this.logger.error(
         `x-group-error ${streamType} for key: ${key} and group: ${groupName}`,
-        err,
+        { ...error },
       );
-      throw err;
+      throw error;
     }
   }
 
@@ -83,9 +83,9 @@ class RedisStreamService extends StreamService<
       return await (multi || this.redisClient).XADD(key, id, {
         [args[0]]: args[1],
       });
-    } catch (err) {
-      this.logger.error(`Error publishing 'xadd'; key: ${key}`, err);
-      throw err;
+    } catch (error) {
+      this.logger.error(`Error publishing 'xadd'; key: ${key}`, { ...error });
+      throw error;
     }
   }
 
@@ -111,12 +111,12 @@ class RedisStreamService extends StreamService<
         streamName,
         id,
       ]);
-    } catch (err) {
+    } catch (error) {
       this.logger.error(
-        `Error in reading data from group: ${groupName} in stream: ${streamName}`,
-        err,
+        `Error reading stream data [Stream ${streamName}] [Group ${groupName}]`,
+        { ...error },
       );
-      throw err;
+      throw error;
     }
   }
 
@@ -139,15 +139,15 @@ class RedisStreamService extends StreamService<
       if (consumer) args.push(consumer);
       try {
         return await this.redisClient.sendCommand(['XPENDING', ...args]);
-      } catch (err) {
-        this.logger.error('err, args', err, args);
+      } catch (error) {
+        this.logger.error('error, args', { ...error }, args);
       }
-    } catch (err) {
+    } catch (error) {
       this.logger.error(
-        `Error in retrieving pending messages for group: ${group} in key: ${key}`,
-        err,
+        `Error retrieving pending messages for group: ${group} in key: ${key}`,
+        { ...error },
       );
-      throw err;
+      throw error;
     }
   }
 
@@ -169,12 +169,12 @@ class RedisStreamService extends StreamService<
         id,
         ...args,
       ])) as unknown as ReclaimedMessageType;
-    } catch (err) {
+    } catch (error) {
       this.logger.error(
-        `Error in claiming message with id: ${id} in group: ${group} for key: ${key}`,
-        err,
+        `Error claiming message with id: ${id} in group: ${group} for key: ${key}`,
+        { ...error },
       );
-      throw err;
+      throw error;
     }
   }
 
@@ -191,12 +191,12 @@ class RedisStreamService extends StreamService<
       } else {
         return await this.redisClient.XACK(key, group, id);
       }
-    } catch (err) {
+    } catch (error) {
       this.logger.error(
-        `Error in acknowledging messages in group: ${group} for key: ${key}`,
-        err,
+        `Error acknowledging messages in group: ${group} for key: ${key}`,
+        { ...error },
       );
-      throw err;
+      throw error;
     }
   }
 
@@ -212,12 +212,12 @@ class RedisStreamService extends StreamService<
       } else {
         return await this.redisClient.XDEL(key, id);
       }
-    } catch (err) {
+    } catch (error) {
       this.logger.error(
-        `Error in deleting messages with ids: ${id} for key: ${key}`,
-        err,
+        `Error deleting messages with ids: ${id} for key: ${key}`,
+        { ...error },
       );
-      throw err;
+      throw error;
     }
   }
 

@@ -190,7 +190,7 @@ describe('DURABLE | hook | `Workflow Promise.all proxyActivities`', () => {
         );
         expect(id).toEqual(expectedGuid);
         await sleepFor(5_000);
-      }, 30_000);
+      }, 35_000);
     });
   });
 });

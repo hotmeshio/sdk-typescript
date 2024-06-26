@@ -127,7 +127,7 @@ class EngineService {
       await instance.initSubChannel(config.engine.sub);
       await instance.initStreamChannel(config.engine.stream);
 
-      instance.router = instance.initRouter(config);
+      instance.router = await instance.initRouter(config);
       instance.router.consumeMessages(
         instance.stream.mintKey(KeyType.STREAMS, { appId: instance.appId }),
         'ENGINE',
@@ -188,7 +188,9 @@ class EngineService {
     await this.stream.init(this.namespace, this.appId, this.logger);
   }
 
-  initRouter(config: HotMeshConfig): Router {
+  async initRouter(config: HotMeshConfig): Promise<Router> {
+    const throttle = await this.store.getThrottleRate(':');
+
     return new Router(
       {
         namespace: this.namespace,
@@ -197,6 +199,7 @@ class EngineService {
         role: StreamRole.ENGINE,
         reclaimDelay: config.engine.reclaimDelay,
         reclaimCount: config.engine.reclaimCount,
+        throttle,
       },
       this.stream,
       this.store,
@@ -224,7 +227,7 @@ class EngineService {
   }
 
   setCacheMode(cacheMode: CacheMode, untilVersion: string) {
-    this.logger.info(`engine-rule-cache-updated`, {
+    this.logger.info(`engine-cache-updated`, {
       mode: cacheMode,
       until: untilVersion,
     });
@@ -249,7 +252,11 @@ class EngineService {
   }
 
   async throttle(delayInMillis: number) {
-    this.router.setThrottle(delayInMillis);
+    try {
+      this.router.setThrottle(delayInMillis);
+    } catch (e) {
+      this.logger.error('engine-throttle-error', { error: e });
+    }
   }
 
   // ************* METADATA/MODEL METHODS *************
@@ -369,7 +376,7 @@ class EngineService {
 
   // ****************** STREAM RE-ENTRY POINT *****************
   async processStreamMessage(streamData: StreamDataResponse): Promise<void> {
-    this.logger.debug('engine-process-stream-message', {
+    this.logger.debug('engine-process', {
       jid: streamData.metadata.jid,
       gid: streamData.metadata.gid,
       dad: streamData.metadata.dad,
@@ -454,7 +461,7 @@ class EngineService {
         'output',
       );
     }
-    this.logger.debug('engine-process-stream-message-end', {
+    this.logger.debug('engine-process-end', {
       jid: streamData.metadata.jid,
       gid: streamData.metadata.gid,
       aid: streamData.metadata.aid,

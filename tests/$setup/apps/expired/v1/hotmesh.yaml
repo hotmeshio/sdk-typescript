@@ -1,0 +1,41 @@
+app:
+  id: expired
+  version: '1'
+  graphs:
+    - subscribes: expired.test
+      publishes: expired.tested
+      expire: 120
+
+      output:
+        schema:
+          type: object
+          properties:
+            status:
+              type: string
+            done:
+              type: boolean
+
+      activities:
+        t1:
+          type: trigger
+          job:
+            maps:
+              done: false
+
+        w1:
+          type: worker
+          topic: expired.test.worker
+
+          output:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+          job:
+            maps:
+              status: '{$self.output.data.status}'
+
+      transitions:
+        t1:
+          - to: w1

@@ -59,9 +59,7 @@ class IORedisStreamService extends StreamService<
           )) === 'OK'
         );
       } catch (error) {
-        this.logger.info(
-          `Consumer group not created with MKSTREAM for key: ${key} and group: ${groupName}`,
-        );
+        this.logger.debug('stream-mkstream-caught', { key, group: groupName });
         throw error;
       }
     } else {

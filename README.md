@@ -185,7 +185,7 @@ Externalizing state fundamentally changes the execution profile for your functio
       const value = await search.mult('name', 12);
       ```
 
-Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) repo for usage examples. 
+Refer to the [hotmeshio/samples-javascript](https://github.com/hotmeshio/samples-javascript) repo for usage examples.
 
 ### Design | Advanced
 The *Pluck* and *Durable* modules are the easiest way to use HotMesh. But if you need full control over your function lifecycles (including high-volume, high-speed use cases), you can use HotMesh's underlying YAML models to optimize your durable workflows. The following model depicts a sequence of activities orchestrated by HotMesh. Any function you associate with a `topic` in your YAML definition is guaranteed to be durable.
@@ -315,8 +315,11 @@ Exchanging data between activities is central to HotMesh. For detailed informati
 ## Composition
 While the simplest graphs are linear, detailing a consistent sequence of non-cyclical activities, graphs can be layered to represent intricate business scenarios. Some can even be designed to accommodate long-lasting workflows that span months. For more details, check out the [Composable Workflow Guide](./docs/composable_workflow.md).
 
-## Distributed Orchestration
-HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](./docs/distributed_orchestration.md) for a detailed breakdown of the approach.
-
 ## System Lifecycle
 Gain insight into HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](./docs/system_lifecycle.md).
+
+## Distributed Orchestration | System Overview
+HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](./docs/distributed_orchestration.md) for a high-level overview of the approach.
+
+## Distributed Orchestration | System Design
+HotMesh is more than Redis and TypeScript. The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).

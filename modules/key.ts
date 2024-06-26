@@ -5,14 +5,13 @@ import { KeyStoreParams, KeyType } from '../types/hotmesh';
  *
  * hmsh ->                                            {hash}    hotmesh config {version: "0.0.1", namespace: "hmsh"}
  * hmsh:a:<appid> ->                                  {hash}    app profile { "id": "appid", "version": "2", "versions/1": "GMT", "versions/2": "GMT"}
- * hmsh:<appid>:e:<engineId> ->                       {string}  setnx to ensure only one engine of given id
+ * hmsh:<appid>:r: ->                                 {hash}    throttle rates {':': '23', 'topic.thing': '555'} => {':i': 'all', 'topic.thing': '555seconds'}
  * hmsh:<appid>:w: ->                                 {zset}    work items/tasks an engine must do like garbage collect or hook a set of matching records (hookAll)
  * hmsh:<appid>:t: ->                                 {zset}    an ordered set of list (work lists) ids
  * hmsh:<appid>:t:<timeValue?> ->                     {list}    a worklist of `jobId+activityId` items that should be awakened
  * hmsh:<appid>:q: ->                                 {hash}    quorum-wide messages
  * hmsh:<appid>:q:<ngnid> ->                          {hash}    engine-targeted messages (targeted quorum-oriented message)
  * hmsh:<appid>:j:<jobid> ->                          {hash}    job data
- * hmsh:<appid>:j:<jobid>:<activityid>  ->            {hash}    job activity data (a1)
  * hmsh:<appid>:s:<jobkey>:<dateTime> ->              {hash}    job stats (general)
  * hmsh:<appid>:s:<jobkey>:<dateTime>:mdn:<field/path>:<fieldvalue> ->      {zset}    job stats (median)
  * hmsh:<appid>:s:<jobkey>:<dateTime>:index:<field/path>:<fieldvalue> ->    {list}    job stats (index of jobid[])
@@ -55,8 +54,8 @@ class KeyService {
     switch (keyType) {
       case KeyType.HOTMESH:
         return namespace;
-      case KeyType.ENGINE_ID:
-        return `${namespace}:${params.appId}:e:${params.engineId}`;
+      case KeyType.THROTTLE_RATE:
+        return `${namespace}:${params.appId}:r:`;
       case KeyType.WORK_ITEMS:
         return `${namespace}:${params.appId}:w:${params.scoutType || ''}`;
       case KeyType.TIME_RANGE:

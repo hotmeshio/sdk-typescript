@@ -16,6 +16,7 @@ import {
   QuorumMessage,
   RollCallMessage,
   ThrottleMessage,
+  ThrottleOptions,
 } from '../../../types/quorum';
 import { QuorumService } from '../../../services/quorum';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
@@ -131,7 +132,41 @@ describe('FUNCTIONAL | Quorum', () => {
       hotMesh.quorum?.unsub(callback);
     });
 
-    it('sends a `throttle` message targeting an engine (guid)', async () => {
+    it('sends a topic `throttle` message via the SDK and persists', async () => {
+      const throttleOpts: ThrottleOptions = {
+        topic: 'calculation.execute',
+        throttle: 1000,
+      };
+      hotMesh.throttle(throttleOpts);
+      await sleepFor(1000);
+      const savedRate = await hotMesh.engine?.store?.getThrottleRate(
+        'calculation.execute',
+      );
+      expect(savedRate).toBe(1000);
+    });
+
+    it('sends a global `throttle` message via the SDK and persists', async () => {
+      const callback = (topic: string, message: QuorumMessage) => {
+        expect((message as ThrottleOptions).throttle).toBe(5000);
+      };
+      hotMesh.quorum?.sub(callback);
+
+      const throttleOpts: ThrottleOptions = {
+        throttle: 5000,
+      };
+      hotMesh.throttle(throttleOpts);
+      await sleepFor(1000);
+      hotMesh.quorum?.unsub(callback);
+      const savedRate = await hotMesh.engine?.store?.getThrottleRate(':');
+      expect(savedRate).toBe(5000);
+      //setting global rate always removes prior topic-specific rates
+      const topicRate = await hotMesh.engine?.store?.getThrottleRate(
+        'calculation.execute',
+      );
+      expect(topicRate).toBe(0);
+    });
+
+    it('publishes a `throttle` message targeting an engine (guid)', async () => {
       const callback = (topic: string, message: QuorumMessage) => {
         expect(['throttle', 'job'].includes(message.type)).toBeTruthy();
         expect((message as ThrottleMessage).guid).toBe(hotMesh.quorum?.guid);
@@ -147,7 +182,7 @@ describe('FUNCTIONAL | Quorum', () => {
       hotMesh.quorum?.unsub(callback);
     });
 
-    it('sends a `throttle` message to ALL quorum members', async () => {
+    it('publishes a `throttle` message to ALL quorum members', async () => {
       const callback = (topic: string, message: QuorumMessage) => {
         expect(['throttle', 'job'].includes(message.type)).toBeTruthy();
         expect((message as ThrottleMessage).guid).toBeUndefined();
