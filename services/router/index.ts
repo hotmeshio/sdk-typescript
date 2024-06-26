@@ -9,6 +9,7 @@ import {
   HMSH_XCLAIM_COUNT,
   HMSH_XCLAIM_DELAY_MS,
   HMSH_XPENDING_COUNT,
+  MAX_DELAY,
 } from '../../modules/enums';
 import { KeyType } from '../../modules/key';
 import { guid, sleepFor } from '../../modules/utils';
@@ -61,6 +62,7 @@ class Router {
     this.topic = config.topic;
     this.stream = stream;
     this.store = store;
+    this.throttle = config.throttle;
     this.reclaimDelay = config.reclaimDelay || HMSH_XCLAIM_DELAY_MS;
     this.reclaimCount = config.reclaimCount || HMSH_XCLAIM_COUNT;
     this.logger = logger;
@@ -78,7 +80,7 @@ class Router {
     try {
       await this.store.xgroup('CREATE', stream, group, '$', 'MKSTREAM');
     } catch (err) {
-      this.logger.debug('consumer-group-exists', { stream, group });
+      this.logger.debug('router-stream-group-exists', { stream, group });
     }
   }
 
@@ -142,7 +144,7 @@ class Router {
     consumer: string,
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ): Promise<void> {
-    this.logger.info(`stream-consumer-starting`, { group, consumer, stream });
+    this.logger.info(`router-stream-starting`, { group, consumer, stream });
     Router.instances.add(this);
     this.shouldConsume = true;
     await this.createGroup(stream, group);
@@ -150,12 +152,10 @@ class Router {
 
     async function consume() {
       await this.customSleep();
-      if (!this.shouldConsume) {
-        this.logger.info(`stream-consumer-stopping`, {
-          group,
-          consumer,
-          stream,
-        });
+      if (this.isStopped(group, consumer, stream)) {
+        return;
+      } else if (this.isPaused()) {
+        setImmediate(consume.bind(this));
         return;
       }
 
@@ -173,6 +173,12 @@ class Router {
           stream,
           '>',
         );
+        if (this.isStopped(group, consumer, stream)) {
+          return;
+        } else if (this.isPaused()) {
+          setImmediate(consume.bind(this));
+          return;
+        }
         if (this.isStreamMessage(result)) {
           const [[, messages]] = result;
           for (const [id, message] of messages) {
@@ -196,7 +202,7 @@ class Router {
         setImmediate(consume.bind(this));
       } catch (err) {
         if (this.shouldConsume && process.env.NODE_ENV !== 'test') {
-          this.logger.error(`stream-consume-message-error`, {
+          this.logger.error(`router-stream-error`, {
             err,
             stream,
             group,
@@ -218,6 +224,21 @@ class Router {
     return Array.isArray(result) && Array.isArray(result[0]);
   }
 
+  isPaused(): boolean {
+    return this.throttle === MAX_DELAY;
+  }
+
+  isStopped(group: string, consumer: string, stream: string): boolean {
+    if (!this.shouldConsume) {
+      this.logger.info(`router-stream-stopped`, {
+        group,
+        consumer,
+        stream,
+      });
+    }
+    return !this.shouldConsume;
+  }
+
   async consumeOne(
     stream: string,
     group: string,
@@ -225,7 +246,7 @@ class Router {
     message: string[],
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ) {
-    this.logger.debug(`stream-consume-one`, { group, stream, id });
+    this.logger.debug(`stream-read-one`, { group, stream, id });
     const [err, input] = this.parseStreamData(message[1]);
     let output: StreamDataResponse | void;
     let telemetry: TelemetryService;
@@ -240,14 +261,14 @@ class Router {
       }
       this.errorCount = 0;
     } catch (err) {
-      this.logger.error(`stream-consume-one-error`, { group, stream, id, err });
+      this.logger.error(`stream-read-one-error`, { group, stream, id, err });
       telemetry.setStreamError(err.message);
     }
     const messageId = await this.publishResponse(input, output);
     telemetry.setStreamAttributes({ 'app.worker.mid': messageId });
     await this.ackAndDelete(stream, group, id);
     telemetry.endStreamSpan();
-    this.logger.debug(`stream-consume-one-end`, { group, stream, id });
+    this.logger.debug(`stream-read-one-end`, { group, stream, id });
   }
 
   async execStreamLeg(
@@ -404,7 +425,7 @@ class Router {
   async stopConsuming() {
     this.shouldConsume = false;
     this.logger.info(
-      `stream-consumer-stopping`,
+      `router-stream-stopping`,
       this.topic ? { topic: this.topic } : undefined,
     );
     this.cancelThrottle();
@@ -418,8 +439,14 @@ class Router {
   }
 
   public setThrottle(delayInMillis: number): void {
-    if (!Number.isInteger(delayInMillis) || delayInMillis < 0) {
-      throw new Error('Throttle must be a non-negative integer');
+    if (
+      !Number.isInteger(delayInMillis) ||
+      delayInMillis < 0 ||
+      delayInMillis > MAX_DELAY
+    ) {
+      throw new Error(
+        `Throttle must be a non-negative integer and not exceed ${MAX_DELAY} ms; send -1 to throttle indefinitely`,
+      );
     }
     const wasDecreased = delayInMillis < this.throttle;
     this.throttle = delayInMillis;

@@ -48,17 +48,19 @@ class IORedisStoreService extends StoreService<
         async exec() {
           if (commands.length === 0) return [];
 
-          const sameKey = commands.every(cmd => {
+          const sameKey = commands.every((cmd) => {
             return cmd.args[0] === commands[0].args[0];
           });
 
           if (sameKey) {
             const multi = my.redisClient.multi();
-            commands.forEach(cmd => multi[cmd.command](...cmd.args));
+            commands.forEach((cmd) => multi[cmd.command](...cmd.args));
             const results = await multi.exec();
-            return results.map(item => item);
+            return results.map((item) => item);
           } else {
-            return Promise.all(commands.map(cmd => my.redisClient[cmd.command](...cmd.args)));
+            return Promise.all(
+              commands.map((cmd) => my.redisClient[cmd.command](...cmd.args)),
+            );
           }
         },
         xadd(key: string, id: string, fields: any, message?: string) {
@@ -81,7 +83,14 @@ class IORedisStoreService extends StoreService<
           count?: number,
           consumer?: string,
         ) {
-          return addCommand('xpending', [key, group, start, end, count, consumer]);
+          return addCommand('xpending', [
+            key,
+            group,
+            start,
+            end,
+            count,
+            consumer,
+          ]);
         },
         xclaim(
           key: string,
@@ -91,7 +100,20 @@ class IORedisStoreService extends StoreService<
           id: string,
           ...args: string[]
         ) {
-          return addCommand('xclaim', [key, group, consumer, minIdleTime, id, ...args]);
+          return addCommand('xclaim', [
+            key,
+            group,
+            consumer,
+            minIdleTime,
+            id,
+            ...args,
+          ]);
+        },
+        del(key: string) {
+          return addCommand('del', [key]);
+        },
+        expire: function (key: string, seconds: number): RedisMultiType {
+          return addCommand('expire', [key, seconds]);
         },
         hdel(key: string, itemId: string) {
           return addCommand('hdel', [key, itemId]);
@@ -128,7 +150,7 @@ class IORedisStoreService extends StoreService<
           mkStream?: 'MKSTREAM',
         ) {
           return addCommand('xgroup', [command, key, groupName, id, mkStream]);
-        }
+        },
       };
 
       return multiInstance;
@@ -200,9 +222,7 @@ class IORedisStoreService extends StoreService<
           )) === 'OK'
         );
       } catch (err) {
-        this.logger.debug(
-          `Consumer group not created with MKSTREAM for key: ${key} and group: ${groupName}`,
-        );
+        this.logger.debug('stream-mkstream-caught', { key, group: groupName });
         throw err;
       }
     } else {

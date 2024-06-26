@@ -130,6 +130,8 @@ export type StreamConfig = {
   guid: string;
   /** Role associated with the stream */
   role: StreamRole;
+  /** Default throttle (read from KeyType.THROTTLE_RATE) */
+  throttle: number;
   /** Optional topic for the stream */
   topic?: string;
   /** Delay before a message can be reclaimed, defaults to 60,000 milliseconds */

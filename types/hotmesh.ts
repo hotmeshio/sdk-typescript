@@ -11,7 +11,7 @@ import { LogLevel } from './logger';
  */
 enum KeyType {
   APP = 'APP',
-  ENGINE_ID = 'ENGINE',
+  THROTTLE_RATE = 'THROTTLE_RATE',
   HOOKS = 'HOOKS',
   JOB_DEPENDENTS = 'JOB_DEPENDENTS',
   JOB_STATE = 'JOB_STATE',

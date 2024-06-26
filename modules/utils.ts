@@ -28,26 +28,26 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
   const usedMemory = totalMemory - freeMemory;
-  const cpus = os.cpus();
+  //const cpus = os.cpus();
 
   // CPU load calculation remains unchanged
-  const cpuLoad = cpus.map((cpu, i) => {
-    const total = Object.values(cpu.times).reduce((acc, tv) => acc + tv, 0);
-    const idle = cpu.times.idle;
-    const usage = ((total - idle) / total) * 100;
-    return { [`CPU ${i} Usage`]: `${usage.toFixed(2)}%` };
-  });
+  // const cpuLoad = cpus.map((cpu, i) => {
+  //   const total = Object.values(cpu.times).reduce((acc, tv) => acc + tv, 0);
+  //   const idle = cpu.times.idle;
+  //   const usage = ((total - idle) / total) * 100;
+  //   return { [`CPU ${i} Usage`]: `${usage.toFixed(2)}%` };
+  // });
 
   // Wrap each systeminformation call with safeExecute
-  const networkStats = await safeExecute(si.networkStats(), []);
+  //const networkStats = await safeExecute(si.networkStats(), []);
 
   // Construct the system health object with error handling in mind
   const systemHealth = {
     TotalMemoryGB: `${(totalMemory / 1024 / 1024 / 1024).toFixed(2)} GB`,
     FreeMemoryGB: `${(freeMemory / 1024 / 1024 / 1024).toFixed(2)} GB`,
     UsedMemoryGB: `${(usedMemory / 1024 / 1024 / 1024).toFixed(2)} GB`,
-    CPULoad: cpuLoad,
-    NetworkStats: networkStats,
+    CPULoad: [],
+    NetworkStats: [],
   };
 
   return systemHealth as SystemHealth;

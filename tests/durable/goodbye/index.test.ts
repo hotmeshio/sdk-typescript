@@ -5,9 +5,9 @@ import { Durable } from '../../../services/durable';
 import { RedisConnection } from '../../../services/connector/clients/redis';
 import { ClientService } from '../../../services/durable/client';
 import { guid, sleepFor } from '../../../modules/utils';
+import { RedisRedisClassType } from '../../../types';
 
 import * as workflows from './src/workflows';
-import { RedisRedisClassType } from '../../../types';
 
 const { Connection, Client, Worker } = Durable;
 

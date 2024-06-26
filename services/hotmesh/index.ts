@@ -37,6 +37,7 @@ import {
   StreamDataResponse,
   StreamStatus,
 } from '../../types/stream';
+import { MAX_DELAY } from '../../modules/enums';
 
 class HotMeshService {
   namespace: string;
@@ -172,15 +173,27 @@ class HotMeshService {
     return await this.quorum?.rollCall(delay);
   }
   async throttle(options: ThrottleOptions): Promise<boolean> {
+    let throttle: number;
+    if (options.throttle === -1) {
+      throttle = MAX_DELAY;
+    } else {
+      throttle = options.throttle;
+    }
+    if (!Number.isInteger(throttle) || throttle < 0 || throttle > MAX_DELAY) {
+      throw new Error(
+        `Throttle must be a non-negative integer and not exceed ${MAX_DELAY} ms; send -1 to throttle indefinitely`,
+      );
+    }
     const throttleMessage: ThrottleMessage = {
       type: 'throttle',
-      throttle: options.throttle,
+      throttle: throttle,
     };
     if (options.guid) {
       throttleMessage.guid = options.guid;
     } else if (options.topic) {
       throttleMessage.topic = options.topic;
     }
+    await this.engine.store.setThrottleRate(throttleMessage);
     return await this.quorum?.pub(throttleMessage);
   }
 

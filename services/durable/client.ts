@@ -160,7 +160,11 @@ export class ClientService {
         `${options.namespace ?? APP_ID}.execute`,
         payload,
         context as JobState,
-        { search: options?.search?.data, marker: options?.marker },
+        {
+          search: options?.search?.data,
+          marker: options?.marker,
+          expired: options?.expired,
+        },
       );
       return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
     },

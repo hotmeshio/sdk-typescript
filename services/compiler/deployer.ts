@@ -547,7 +547,7 @@ class Deployer {
     try {
       await this.store.xgroup('CREATE', stream, group, '$', 'MKSTREAM');
     } catch (err) {
-      this.store.logger.info('consumer-group-exists', { stream, group });
+      this.store.logger.info('router-stream-group-exists', { stream, group });
     }
   }
 }

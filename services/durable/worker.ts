@@ -159,7 +159,7 @@ export class WorkerService {
   }
 
   async run() {
-    this.workflowRunner.engine.logger.info('WorkerService is running');
+    this.workflowRunner.engine.logger.info('durable-worker-running');
   }
 
   async initActivityWorker(

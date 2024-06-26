@@ -258,7 +258,10 @@ class Activity {
 
   mapJobData(): void {
     if (this.config.job?.maps) {
-      const mapper = new MapperService(deepCopy(this.config.job.maps), this.context);
+      const mapper = new MapperService(
+        deepCopy(this.config.job.maps),
+        this.context,
+      );
       const output = mapper.mapRules();
       if (output) {
         for (const key in output) {
@@ -288,7 +291,10 @@ class Activity {
 
   mapInputData(): void {
     if (this.config.input?.maps) {
-      const mapper = new MapperService(deepCopy(this.config.input.maps), this.context);
+      const mapper = new MapperService(
+        deepCopy(this.config.input.maps),
+        this.context,
+      );
       this.context.data = mapper.mapRules();
     }
   }
@@ -296,7 +302,10 @@ class Activity {
   mapOutputData(): void {
     //activity YAML may include output map data that produces/extends activity output data.
     if (this.config.output?.maps) {
-      const mapper = new MapperService(deepCopy(this.config.output.maps), this.context);
+      const mapper = new MapperService(
+        deepCopy(this.config.output.maps),
+        this.context,
+      );
       const actOutData = mapper.mapRules();
       const activityId = this.metadata.aid;
       const data = { ...this.context[activityId].output, ...actOutData };

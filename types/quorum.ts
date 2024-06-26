@@ -34,11 +34,9 @@ export type ThrottleOptions = {
   topic?: string;
   /** entity/noun */
   entity?: string;
-  /** in milliseconds; default is 0 */
+  /** in milliseconds; set to -1 for indefinite throttle */
   throttle: number;
-  /** namespace
-   * @default 'durable'
-   */
+  /** namespace */
   namespace?: string;
 };
 

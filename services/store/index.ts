@@ -1,3 +1,4 @@
+import { GetStateError } from '../../modules/errors';
 import {
   KeyService,
   KeyStoreParams,
@@ -26,9 +27,11 @@ import { JobCompletionOptions, JobInterruptOptions } from '../../types/job';
 import {
   HMSH_SCOUT_INTERVAL_SECONDS,
   HMSH_CODE_INTERRUPT,
+  HMSH_MAX_TIMEOUT_MS,
+  MAX_DELAY,
 } from '../../modules/enums';
-import { GetStateError } from '../../modules/errors';
 import { WorkListTaskType } from '../../types/task';
+import { ThrottleOptions } from '../../types/quorum';
 
 import { Cache } from './cache';
 
@@ -304,15 +307,18 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
         if (tryCount < 5) {
           return this.reserveSymbolRange(target, size, type, tryCount + 1);
         } else {
-          throw new Error('Symbol range reservation failed due to deployment contention');
+          throw new Error(
+            'Symbol range reservation failed due to deployment contention',
+          );
         }
       } else {
         const lowerLimit = parseInt(lowerLimitString, 10);
-        const symbols = await this.redisClient[this.commands.hgetall](symbolKey);
+        const symbols =
+          await this.redisClient[this.commands.hgetall](symbolKey);
         const symbolCount = Object.keys(symbols).length;
         const actualLowerLimit = lowerLimit + MDATA_SYMBOLS.SLOTS + symbolCount;
         const upperLimit = Number(lowerLimit + size - 1);
-        return [actualLowerLimit, upperLimit, symbols as Symbols];        
+        return [actualLowerLimit, upperLimit, symbols as Symbols];
       }
     }
   }
@@ -832,12 +838,16 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     );
   }
 
-  async setStateNX(jobId: string, appId: string): Promise<boolean> {
+  async setStateNX(
+    jobId: string,
+    appId: string,
+    status?: number,
+  ): Promise<boolean> {
     const hashKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
     const result = await this.redisClient[this.commands.hsetnx](
       hashKey,
       ':',
-      '1',
+      status?.toString() ?? '1',
     );
     return this.isSuccessful(result);
   }
@@ -1136,13 +1146,20 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     );
   }
 
-  async expireJob(jobId: string, inSeconds: number): Promise<void> {
+  async expireJob(
+    jobId: string,
+    inSeconds: number,
+    redisMulti?: U,
+  ): Promise<void> {
     if (!isNaN(inSeconds) && inSeconds > 0) {
       const jobKey = this.mintKey(KeyType.JOB_STATE, {
         appId: this.appId,
         jobId,
       });
-      await this.redisClient[this.commands.expire](jobKey, inSeconds);
+      await (redisMulti || this.redisClient)[this.commands.expire](
+        jobKey,
+        inSeconds,
+      );
     }
   }
 
@@ -1400,6 +1417,42 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       }
     } while (cursor !== '0' && len < limit);
     return [cursor, matchingFields];
+  }
+
+  async setThrottleRate(options: ThrottleOptions): Promise<void> {
+    const key = this.mintKey(KeyType.THROTTLE_RATE, { appId: this.appId });
+    //engine guids are session specific. no need to persist
+    if (options.guid) {
+      return;
+    }
+    //if a topic, update
+    if (options.topic) {
+      await this.redisClient[this.commands.hset](
+        key,
+        options.topic,
+        options.throttle.toString(),
+      );
+    } else {
+      //if no topic, update all
+      const multi = this.getMulti();
+      multi[this.commands.del](key);
+      multi[this.commands.hset](key, ':', options.throttle.toString());
+      await multi.exec();
+    }
+  }
+
+  async getThrottleRates(): Promise<StringStringType> {
+    const key = this.mintKey(KeyType.THROTTLE_RATE, { appId: this.appId });
+    const response = await this.redisClient[this.commands.hgetall](key);
+    return response ?? {};
+  }
+
+  async getThrottleRate(topic: string): Promise<number> {
+    const response = await this.getThrottleRates();
+    const rate = topic in response ? Number(response[topic]) : 0;
+    if (isNaN(rate)) return 0;
+    if (rate == -1) return MAX_DELAY;
+    return Math.max(Math.min(rate, MAX_DELAY), 0);
   }
 }
 
