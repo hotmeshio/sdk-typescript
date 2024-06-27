@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Unbreakable Workflows",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -48,7 +48,7 @@
     "test:interrupt": "NODE_ENV=test jest ./tests/functional/interrupt/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:parallel": "NODE_ENV=test jest ./tests/functional/parallel/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:pipe": "NODE_ENV=test jest ./tests/unit/services/pipe/index.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:quorum": "NODE_ENV=test jest ./tests/functional/quorum/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:quorum": "HMSH_IS_CLUSTER=true NODE_ENV=test jest ./tests/functional/quorum/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:reclaim": "NODE_ENV=test jest ./tests/functional/reclaim/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:redeploy": "NODE_ENV=test jest ./tests/functional/redeploy/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:reentrant": "NODE_ENV=test jest ./tests/functional/reentrant/index.test.ts --detectOpenHandles --forceExit --verbose",

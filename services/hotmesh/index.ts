@@ -190,7 +190,8 @@ class HotMeshService {
     };
     if (options.guid) {
       throttleMessage.guid = options.guid;
-    } else if (options.topic) {
+    }
+    if (options.topic !== undefined) {
       throttleMessage.topic = options.topic;
     }
     await this.engine.store.setThrottleRate(throttleMessage);

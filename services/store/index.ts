@@ -1425,18 +1425,15 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     if (options.guid) {
       return;
     }
-    //if a topic, update
+    //if a topic, update one
+    const rate = options.throttle.toString();
     if (options.topic) {
-      await this.redisClient[this.commands.hset](
-        key,
-        options.topic,
-        options.throttle.toString(),
-      );
+      await this.redisClient[this.commands.hset](key, { [options.topic]: rate });
     } else {
       //if no topic, update all
       const multi = this.getMulti();
       multi[this.commands.del](key);
-      multi[this.commands.hset](key, ':', options.throttle.toString());
+      multi[this.commands.hset](key, { ':': rate });
       await multi.exec();
     }
   }
