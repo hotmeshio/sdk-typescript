@@ -1428,7 +1428,9 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     //if a topic, update one
     const rate = options.throttle.toString();
     if (options.topic) {
-      await this.redisClient[this.commands.hset](key, { [options.topic]: rate });
+      await this.redisClient[this.commands.hset](key, {
+        [options.topic]: rate,
+      });
     } else {
       //if no topic, update all
       const multi = this.getMulti();
@@ -1445,11 +1447,21 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   }
 
   async getThrottleRate(topic: string): Promise<number> {
+    //always return a valid number range
+    const resolveRate = (response: StringStringType, topic: string) => {
+      const rate = topic in response ? Number(response[topic]) : 0;
+      if (isNaN(rate)) return 0;
+      if (rate == -1) return MAX_DELAY;
+      return Math.max(Math.min(rate, MAX_DELAY), 0);
+    };
+
     const response = await this.getThrottleRates();
-    const rate = topic in response ? Number(response[topic]) : 0;
-    if (isNaN(rate)) return 0;
-    if (rate == -1) return MAX_DELAY;
-    return Math.max(Math.min(rate, MAX_DELAY), 0);
+    const globalRate = resolveRate(response, ':');
+    if (topic === ':' || !(topic in response)) {
+      //use global rate unless worker specifies rate
+      return globalRate;
+    }
+    return resolveRate(response, topic);
   }
 }
 

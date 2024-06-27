@@ -227,9 +227,9 @@ class EngineService {
   }
 
   setCacheMode(cacheMode: CacheMode, untilVersion: string) {
-    this.logger.info(`engine-cache-updated`, {
+    this.logger.info(`engine-executable-cache`, {
       mode: cacheMode,
-      until: untilVersion,
+      [cacheMode === 'cache' ? 'target' : 'until']: untilVersion,
     });
     this.cacheMode = cacheMode;
     this.untilVersion = untilVersion;
