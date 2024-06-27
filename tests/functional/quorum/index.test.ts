@@ -159,11 +159,11 @@ describe('FUNCTIONAL | Quorum', () => {
       hotMesh.quorum?.unsub(callback);
       const savedRate = await hotMesh.engine?.store?.getThrottleRate(':');
       expect(savedRate).toBe(5000);
-      //setting global rate always removes prior topic-specific rates
+      //setting global rate always overrides all prior topic-specific rates
       const topicRate = await hotMesh.engine?.store?.getThrottleRate(
         'calculation.execute',
       );
-      expect(topicRate).toBe(0);
+      expect(topicRate).toBe(5000);
     });
 
     it('publishes a `throttle` message targeting an engine (guid)', async () => {

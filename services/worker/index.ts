@@ -33,7 +33,6 @@ import {
 } from '../../types/redis';
 import { StreamData, StreamRole, StreamDataResponse } from '../../types/stream';
 import { HMSH_QUORUM_ROLLCALL_CYCLES } from '../../modules/enums';
-import { StringStringType } from '../../types';
 
 class WorkerService {
   namespace: string;
