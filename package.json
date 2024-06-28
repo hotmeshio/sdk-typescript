@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Unbreakable Workflows",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -41,7 +41,7 @@
     "test:durable:signal": "NODE_ENV=test jest ./tests/durable/signal/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:durable:unknown": "NODE_ENV=test jest ./tests/durable/unknown/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:emit": "NODE_ENV=test jest ./tests/functional/emit/index.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:expired": "NODE_ENV=test jest ./tests/functional/expired/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:pending": "NODE_ENV=test jest ./tests/functional/pending/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:functional": "NODE_ENV=test jest ./tests/functional/*/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:hmsh": "NODE_ENV=test jest ./tests/functional/index.test.ts --detectOpenHandles --verbose",
     "test:hook": "NODE_ENV=test jest ./tests/functional/hook/index.test.ts --detectOpenHandles --forceExit --verbose",

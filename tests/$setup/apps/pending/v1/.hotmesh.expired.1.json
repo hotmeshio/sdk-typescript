@@ -1,11 +1,11 @@
 {
   "app": {
-    "id": "expired",
+    "id": "pending",
     "version": "1",
     "graphs": [
       {
-        "subscribes": "expired.test",
-        "publishes": "expired.tested",
+        "subscribes": "pending.test",
+        "publishes": "pending.tested",
         "expire": 120,
         "output": {
           "schema": {
@@ -31,7 +31,7 @@
           },
           "w1": {
             "type": "worker",
-            "topic": "expired.test.worker",
+            "topic": "pending.test.worker",
             "output": {
               "schema": {
                 "type": "object",

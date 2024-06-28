@@ -163,7 +163,7 @@ export class ClientService {
         {
           search: options?.search?.data,
           marker: options?.marker,
-          expired: options?.expired,
+          pending: options?.pending,
         },
       );
       return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
