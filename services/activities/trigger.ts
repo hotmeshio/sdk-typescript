@@ -51,9 +51,9 @@ class Trigger extends Activity {
       telemetry.startJobSpan();
       telemetry.startActivitySpan(this.leg);
       this.mapJobData();
-      await this.setStateNX(options?.expired ? -1 : undefined);
+      await this.setStateNX(options?.pending ? -1 : undefined);
       this.adjacencyList = await this.filterAdjacent();
-      await this.setStatus(options?.expired ? -1 : this.adjacencyList.length);
+      await this.setStatus(options?.pending ? -1 : this.adjacencyList.length);
 
       this.bindSearchData(options);
       this.bindMarkerData(options);
@@ -61,8 +61,8 @@ class Trigger extends Activity {
       const multi = this.store.getMulti();
       await this.setState(multi);
       await this.setStats(multi);
-      if (options?.expired) {
-        await this.setExpired(options?.expired, multi);
+      if (options?.pending) {
+        await this.setExpired(options?.pending, multi);
       } else {
         await this.registerJobDependency(multi);
       }
@@ -76,8 +76,7 @@ class Trigger extends Activity {
       const jobStatus = Number(this.context.metadata.js);
       telemetry.setJobAttributes({ 'app.job.jss': jobStatus });
       const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-      //only transition if not inited in an expired state
-      //todo: enable resume from expired state
+      //todo: enable resume from pending state
       if (jobStatus !== -1) {
         const messageIds = await this.transition(this.adjacencyList, jobStatus);
         if (messageIds.length) {

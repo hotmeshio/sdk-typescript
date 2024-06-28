@@ -69,20 +69,20 @@ class ExporterService {
       if (match) {
         //transitions
         this.inflateTransition(match, value, transitionsObject);
-      } else if (key.length === 3) {
-        //state
-        state[this.inflateKey(key)] = SerializerService.fromString(value);
       } else if (key.startsWith('_')) {
         //data
         data[key.substring(1)] = value;
       } else if (key.startsWith('-')) {
         //timeline
-        const keyParts = this.keyToObject(key); //key parts have meaning
+        const keyParts = this.keyToObject(key);
         timeline.push({
           ...keyParts,
           key,
           value: this.resolveValue(value, options.values),
         });
+      } else if (key.length === 3) {
+        //state
+        state[this.inflateKey(key)] = SerializerService.fromString(value);
       }
     });
 

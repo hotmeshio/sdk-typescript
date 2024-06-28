@@ -12,8 +12,8 @@ import {
 } from '../../../types/stream';
 import config from '../../$setup/config';
 
-describe('FUNCTIONAL | EXPIRED', () => {
-  const appConfig = { id: 'expired', version: '1' };
+describe('FUNCTIONAL | PENDING', () => {
+  const appConfig = { id: 'pending', version: '1' };
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -42,7 +42,7 @@ describe('FUNCTIONAL | EXPIRED', () => {
 
       workers: [
         {
-          topic: 'expired.test.worker',
+          topic: 'pending.test.worker',
           redis: { class: Redis, options },
           callback: async (
             streamData: StreamData,
@@ -57,7 +57,7 @@ describe('FUNCTIONAL | EXPIRED', () => {
       ],
     };
     hotMesh = await HotMesh.init(config);
-    await hotMesh.deploy('/app/tests/$setup/apps/expired/v1/hotmesh.yaml');
+    await hotMesh.deploy('/app/tests/$setup/apps/pending/v1/hotmesh.yaml');
     await hotMesh.activate(appConfig.version);
   });
 
@@ -66,16 +66,16 @@ describe('FUNCTIONAL | EXPIRED', () => {
     await HotMesh.stop();
   });
 
-  describe('Create Expired Job', () => {
-    it('should create a job and scrub (after a delay)', async () => {
-      //create a job in an expired state
+  describe('Create Pending Job', () => {
+    it('should create a pending job and scrub (after a delay)', async () => {
+      //create a job in a pending state
       const secondsToWaitBeforeScrubbing = 2;
-      const jobId = await hotMesh.pub('expired.test', {}, undefined, {
-        expired: secondsToWaitBeforeScrubbing,
+      const jobId = await hotMesh.pub('pending.test', {}, undefined, {
+        pending: secondsToWaitBeforeScrubbing,
       });
       expect(jobId).toBeDefined();
       const status = await hotMesh.getStatus(jobId);
-      expect(status).toBe(-1); //expired jobs are set to -1
+      expect(status).toBe(-1); //pending jobs are set to -1
 
       //wait longer than 2 seconds to ensure redis scrubs the job
       await sleepFor(2_250);
