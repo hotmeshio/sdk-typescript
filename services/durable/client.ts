@@ -15,10 +15,9 @@ import {
   Connection,
   HookOptions,
   WorkflowOptions,
-  WorkflowSearchOptions,
 } from '../../types/durable';
 import { JobState } from '../../types/job';
-import { KeyService, KeyType } from '../../modules/key';
+import { KeyType } from '../../modules/key';
 import { StreamStatus } from '../../types';
 
 import { Search } from './search';
@@ -38,10 +37,11 @@ export class ClientService {
   getHotMeshClient = async (workflowTopic: string, namespace?: string) => {
     const targetNS = namespace ?? APP_ID;
     if (ClientService.instances.has(targetNS)) {
+      const targetTopic = `${namespace ?? APP_ID}.${workflowTopic}`;
       const hotMeshClient = await ClientService.instances.get(targetNS);
       await this.verifyWorkflowActive(hotMeshClient, targetNS);
-      if (!ClientService.topics.includes(workflowTopic)) {
-        ClientService.topics.push(workflowTopic);
+      if (!ClientService.topics.includes(targetTopic)) {
+        ClientService.topics.push(targetTopic);
         await ClientService.createStream(
           hotMeshClient,
           workflowTopic,
@@ -99,11 +99,12 @@ export class ClientService {
    * exists and if not, create it.
    */
   static verifyStream = async (workflowTopic: string, namespace?: string) => {
+    const targetTopic = `${namespace ?? APP_ID}.${workflowTopic}`;
     const targetNS = namespace ?? APP_ID;
     if (ClientService.instances.has(targetNS)) {
       const hotMeshClient = await ClientService.instances.get(targetNS);
-      if (!ClientService.topics.includes(workflowTopic)) {
-        ClientService.topics.push(workflowTopic);
+      if (!ClientService.topics.includes(targetTopic)) {
+        ClientService.topics.push(targetTopic);
         await ClientService.createStream(
           hotMeshClient,
           workflowTopic,

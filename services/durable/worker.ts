@@ -41,7 +41,7 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
-  static connection: Connection;
+  static connections = new Map<string, Connection>();
   static instances = new Map<string, HotMesh | Promise<HotMesh>>();
   workflowRunner: HotMesh;
   activityRunner: HotMesh;
@@ -51,17 +51,33 @@ export class WorkerService {
     config?: Partial<WorkerConfig>,
     options?: WorkerOptions,
   ) => {
-    if (WorkerService.instances.has(workflowTopic)) {
-      return await WorkerService.instances.get(workflowTopic);
+    const targetNamespace = config?.namespace ?? APP_ID;
+    const targetTopic = `${targetNamespace}.${workflowTopic}`;
+    if (WorkerService.instances.has(targetTopic)) {
+      return await WorkerService.instances.get(targetTopic);
     }
     const hotMeshClient = HotMesh.init({
       logLevel: options?.logLevel ?? HMSH_LOGLEVEL,
-      appId: config.namespace ?? APP_ID,
-      engine: { redis: { ...WorkerService.connection } },
+      appId: targetNamespace,
+      engine: {
+        redis: { ...WorkerService.findConnectionByNamespace(targetNamespace) },
+      },
     });
-    WorkerService.instances.set(workflowTopic, hotMeshClient);
+    WorkerService.instances.set(targetTopic, hotMeshClient);
     await WorkerService.activateWorkflow(await hotMeshClient);
     return hotMeshClient;
+  };
+
+  static findConnectionByNamespace = (namespace: string): Connection => {
+    let defaultConnection: Connection;
+    for (const [ns, value] of WorkerService.connections) {
+      if (ns === namespace) {
+        return value as Connection;
+      } else if (!defaultConnection) {
+        defaultConnection = value as Connection;
+      }
+    }
+    return defaultConnection;
   };
 
   static async activateWorkflow(hotMesh: HotMesh) {
@@ -114,7 +130,8 @@ export class WorkerService {
   }
 
   static async create(config: WorkerConfig): Promise<WorkerService> {
-    WorkerService.connection = config.connection;
+    const targetNamespace = config.namespace ?? APP_ID;
+    WorkerService.connections.set(targetNamespace, config.connection);
     const workflow = config.workflow;
     const [workflowFunctionName, workflowFunction] =
       WorkerService.resolveWorkflowTarget(workflow);
