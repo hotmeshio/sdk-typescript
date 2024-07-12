@@ -77,7 +77,10 @@ export {
   HookRules,
   HookSignal,
 } from './hook';
-export { ILogger } from './logger';
+export {
+  ILogger,
+  LogLevel,
+} from './logger';
 export {
   ExtensionType,
   JobCompletionOptions,
