@@ -106,6 +106,11 @@ type WorkflowContext = {
    * the native HotMesh message that encapsulates the arguments, metadata, and raw data for the workflow
    */
   raw: StreamData;
+
+  /**
+   * the HotMesh connection configuration (io/redis NPM package reference and login credentials)
+   */
+  connection: Connection;
 };
 
 /**

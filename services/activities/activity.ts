@@ -79,8 +79,7 @@ class Activity {
   }
 
   /**
-   * Upon entering leg 1 of a duplexed activty, verify
-   * all aspects of the entry including job and activty state
+   * Upon entering leg 1 of a duplexed activity
    */
   async verifyEntry() {
     this.setLeg(1);
@@ -94,8 +93,7 @@ class Activity {
   }
 
   /**
-   * Upon entering leg 2 of a duplexed activty, verify
-   * all aspects of the re-entry including job and activty state
+   * Upon entering leg 2 of a duplexed activity
    */
   async verifyReentry(): Promise<number> {
     const guid = this.context.metadata.guid;
@@ -149,11 +147,11 @@ class Activity {
       let multiResponse: MultiResponseFlags;
 
       if (status === StreamStatus.PENDING) {
-        multiResponse = await this.processPending(telemetry, type);
+        multiResponse = await this.processPending(type);
       } else if (status === StreamStatus.SUCCESS) {
-        multiResponse = await this.processSuccess(telemetry, type);
+        multiResponse = await this.processSuccess(type);
       } else {
-        multiResponse = await this.processError(telemetry, type);
+        multiResponse = await this.processError();
       }
       this.transitionAdjacent(multiResponse, telemetry);
     } catch (error) {
@@ -184,10 +182,7 @@ class Activity {
     }
   }
 
-  async processPending(
-    telemetry: TelemetryService,
-    type: 'hook' | 'output',
-  ): Promise<MultiResponseFlags> {
+  async processPending(type: 'hook' | 'output'): Promise<MultiResponseFlags> {
     this.bindActivityData(type);
     this.adjacencyList = await this.filterAdjacent();
     this.mapJobData();
@@ -199,10 +194,7 @@ class Activity {
     return (await multi.exec()) as MultiResponseFlags;
   }
 
-  async processSuccess(
-    telemetry: TelemetryService,
-    type: 'hook' | 'output',
-  ): Promise<MultiResponseFlags> {
+  async processSuccess(type: 'hook' | 'output'): Promise<MultiResponseFlags> {
     this.bindActivityData(type);
     this.adjacencyList = await this.filterAdjacent();
     this.mapJobData();
@@ -214,10 +206,7 @@ class Activity {
     return (await multi.exec()) as MultiResponseFlags;
   }
 
-  async processError(
-    telemetry: TelemetryService,
-    type: string,
-  ): Promise<MultiResponseFlags> {
+  async processError(): Promise<MultiResponseFlags> {
     this.bindActivityError(this.data);
     this.adjacencyList = await this.filterAdjacent();
     if (!this.adjacencyList.length) {
