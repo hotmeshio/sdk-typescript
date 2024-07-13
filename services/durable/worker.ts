@@ -19,11 +19,10 @@ import {
   DurableWaitForError,
 } from '../../modules/errors';
 import { asyncLocalStorage } from '../../modules/storage';
-import { formatISODate, guid } from '../../modules/utils';
+import { formatISODate, guid, hashOptions } from '../../modules/utils';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
   ActivityWorkflowDataType,
-  Connection,
   Registry,
   WorkerConfig,
   WorkerOptions,
@@ -41,7 +40,6 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
-  static connections = new Map<string, Connection>();
   static instances = new Map<string, HotMesh | Promise<HotMesh>>();
   workflowRunner: HotMesh;
   activityRunner: HotMesh;
@@ -52,7 +50,9 @@ export class WorkerService {
     options?: WorkerOptions,
   ) => {
     const targetNamespace = config?.namespace ?? APP_ID;
-    const targetTopic = `${targetNamespace}.${workflowTopic}`;
+    const optionsHash = hashOptions(config?.connection?.options);
+    const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
+
     if (WorkerService.instances.has(targetTopic)) {
       return await WorkerService.instances.get(targetTopic);
     }
@@ -60,24 +60,12 @@ export class WorkerService {
       logLevel: options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
       engine: {
-        redis: { ...WorkerService.findConnectionByNamespace(targetNamespace) },
+        redis: { ...config?.connection },
       },
     });
     WorkerService.instances.set(targetTopic, hotMeshClient);
     await WorkerService.activateWorkflow(await hotMeshClient);
     return hotMeshClient;
-  };
-
-  static findConnectionByNamespace = (namespace: string): Connection => {
-    let defaultConnection: Connection;
-    for (const [ns, value] of WorkerService.connections) {
-      if (ns === namespace) {
-        return value as Connection;
-      } else if (!defaultConnection) {
-        defaultConnection = value as Connection;
-      }
-    }
-    return defaultConnection;
   };
 
   static async activateWorkflow(hotMesh: HotMesh) {
@@ -130,8 +118,6 @@ export class WorkerService {
   }
 
   static async create(config: WorkerConfig): Promise<WorkerService> {
-    const targetNamespace = config.namespace ?? APP_ID;
-    WorkerService.connections.set(targetNamespace, config.connection);
     const workflow = config.workflow;
     const [workflowFunctionName, workflowFunction] =
       WorkerService.resolveWorkflowTarget(workflow);
@@ -187,9 +173,12 @@ export class WorkerService {
       class: config.connection.class as RedisClass,
       options: config.connection.options as RedisOptions,
     };
+    const targetNamespace = config?.namespace ?? APP_ID;
+    const optionsHash = hashOptions(config?.connection?.options);
+    const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
     const hotMeshWorker = await HotMesh.init({
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
-      appId: config.namespace ?? APP_ID,
+      appId: targetNamespace,
       engine: { redis: redisConfig },
       workers: [
         {
@@ -199,11 +188,10 @@ export class WorkerService {
         },
       ],
     });
-    WorkerService.instances.set(activityTopic, hotMeshWorker);
+    WorkerService.instances.set(targetTopic, hotMeshWorker);
     return hotMeshWorker;
   }
 
-  //this is the linked worker function in the reentrant workflow test
   wrapActivityFunctions(): Function {
     return async (data: StreamData): Promise<StreamDataResponse> => {
       try {
@@ -277,6 +265,9 @@ export class WorkerService {
       class: config.connection.class as RedisClass,
       options: config.connection.options as RedisOptions,
     };
+    const targetNamespace = config?.namespace ?? APP_ID;
+    const optionsHash = hashOptions(config?.connection?.options);
+    const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
     const hotMeshWorker = await HotMesh.init({
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
@@ -293,7 +284,7 @@ export class WorkerService {
         },
       ],
     });
-    WorkerService.instances.set(workflowTopic, hotMeshWorker);
+    WorkerService.instances.set(targetTopic, hotMeshWorker);
     return hotMeshWorker;
   }
 
@@ -322,6 +313,7 @@ export class WorkerService {
         context.set('canRetry', workflowInput.canRetry);
         context.set('counter', counter);
         context.set('interruptionRegistry', interruptionRegistry);
+        context.set('connection', config.connection);
         context.set('namespace', config.namespace ?? APP_ID);
         context.set('raw', data);
         context.set('workflowId', workflowInput.workflowId);

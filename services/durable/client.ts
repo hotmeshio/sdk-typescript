@@ -8,7 +8,7 @@ import {
   HMSH_DURABLE_MAX_ATTEMPTS,
   HMSH_DURABLE_MAX_INTERVAL,
 } from '../../modules/enums';
-import { sleepFor } from '../../modules/utils';
+import { hashOptions, sleepFor } from '../../modules/utils';
 import { HotMeshService as HotMesh } from '../hotmesh';
 import {
   ClientConfig,
@@ -35,19 +35,14 @@ export class ClientService {
   }
 
   getHotMeshClient = async (workflowTopic: string, namespace?: string) => {
+    //namespace isolation requires the connection options to be hashed
+    //as multiple intersecting databases can be used by the same service
+    const optionsHash = hashOptions(this.connection.options);
     const targetNS = namespace ?? APP_ID;
-    if (ClientService.instances.has(targetNS)) {
-      const targetTopic = `${namespace ?? APP_ID}.${workflowTopic}`;
-      const hotMeshClient = await ClientService.instances.get(targetNS);
+    const connectionNS = `${optionsHash}.${targetNS}`;
+    if (ClientService.instances.has(connectionNS)) {
+      const hotMeshClient = await ClientService.instances.get(connectionNS);
       await this.verifyWorkflowActive(hotMeshClient, targetNS);
-      if (!ClientService.topics.includes(targetTopic)) {
-        ClientService.topics.push(targetTopic);
-        await ClientService.createStream(
-          hotMeshClient,
-          workflowTopic,
-          namespace,
-        );
-      }
       return hotMeshClient;
     }
 
@@ -62,12 +57,7 @@ export class ClientService {
         },
       },
     });
-    ClientService.instances.set(targetNS, hotMeshClient);
-    await ClientService.createStream(
-      await hotMeshClient,
-      workflowTopic,
-      namespace,
-    );
+    ClientService.instances.set(connectionNS, hotMeshClient);
     await this.activateWorkflow(await hotMeshClient, targetNS);
     return hotMeshClient;
   };
@@ -98,20 +88,17 @@ export class ClientService {
    * creating the stream. This method will verify that the stream
    * exists and if not, create it.
    */
-  static verifyStream = async (workflowTopic: string, namespace?: string) => {
-    const targetTopic = `${namespace ?? APP_ID}.${workflowTopic}`;
+  verifyStream = async (hotMeshClient: HotMesh, workflowTopic: string, namespace?: string) => {
+    const optionsHash = hashOptions(this.connection.options);
     const targetNS = namespace ?? APP_ID;
-    if (ClientService.instances.has(targetNS)) {
-      const hotMeshClient = await ClientService.instances.get(targetNS);
-      if (!ClientService.topics.includes(targetTopic)) {
-        ClientService.topics.push(targetTopic);
-        await ClientService.createStream(
-          hotMeshClient,
-          workflowTopic,
-          namespace,
-        );
-      }
-      return hotMeshClient;
+    const targetTopic = `${optionsHash}.${targetNS}.${workflowTopic}`;
+    if (!ClientService.topics.includes(targetTopic)) {
+      ClientService.topics.push(targetTopic);
+      await ClientService.createStream(
+        hotMeshClient,
+        workflowTopic,
+        namespace,
+      );
     }
   };
 
@@ -133,12 +120,17 @@ export class ClientService {
       const workflowName = options.entity ?? options.workflowName;
       const trc = options.workflowTrace;
       const spn = options.workflowSpan;
-      //NOTE: HotMesh 'workflowTopic' is a created by concatenating
-      //     the taskQueue and workflowName used by the Durable module
+      //hotmesh topic is a combination of the durable queue+workflowname
       const workflowTopic = `${taskQueueName}-${workflowName}`;
       const hotMeshClient = await this.getHotMeshClient(
         workflowTopic,
         options.namespace,
+      );
+      //verify that the stream channel exists before enqueueing
+      await this.verifyStream(
+        hotMeshClient,
+        workflowTopic,
+        options.namespace
       );
       const payload = {
         arguments: [...options.args],

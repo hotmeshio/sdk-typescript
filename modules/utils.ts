@@ -1,6 +1,6 @@
 import os from 'os';
+import { createHash } from 'crypto';
 
-import si from 'systeminformation';
 import { nanoid } from 'nanoid';
 
 import { StoreService } from '../services/store';
@@ -24,10 +24,19 @@ async function safeExecute<T>(
   }
 }
 
+export const hashOptions = (options: any): string =>{
+  const str = JSON.stringify(options);
+  return createHash('sha256').update(str).digest('hex');
+}
+
 export async function getSystemHealth(): Promise<SystemHealth> {
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
   const usedMemory = totalMemory - freeMemory;
+
+  //NOTE: enable the following if desired; for now, only
+  //      `memory` is emitted when system health is requested
+
   //const cpus = os.cpus();
 
   // CPU load calculation remains unchanged
@@ -38,10 +47,9 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   //   return { [`CPU ${i} Usage`]: `${usage.toFixed(2)}%` };
   // });
 
-  // Wrap each systeminformation call with safeExecute
+  // Wrap each systeminformation call with safeExecute (systeminformation npm package)
   //const networkStats = await safeExecute(si.networkStats(), []);
 
-  // Construct the system health object with error handling in mind
   const systemHealth = {
     TotalMemoryGB: `${(totalMemory / 1024 / 1024 / 1024).toFixed(2)} GB`,
     FreeMemoryGB: `${(freeMemory / 1024 / 1024 / 1024).toFixed(2)} GB`,

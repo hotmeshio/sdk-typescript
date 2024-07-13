@@ -123,6 +123,7 @@ export class WorkflowService {
     const interruptionRegistry = store.get('interruptionRegistry');
     const workflowDimension = store.get('workflowDimension') ?? '';
     const workflowTopic = store.get('workflowTopic');
+    const connection = store.get('connection');
     const namespace = store.get('namespace');
     const originJobId = store.get('originJobId');
     const workflowTrace = store.get('workflowTrace');
@@ -136,6 +137,7 @@ export class WorkflowService {
       counter: COUNTER.counter,
       cursor,
       interruptionRegistry,
+      connection,
       namespace,
       originJobId,
       raw,
@@ -155,8 +157,12 @@ export class WorkflowService {
   static async getHotMesh(): Promise<HotMesh> {
     const store = asyncLocalStorage.getStore();
     const workflowTopic = store.get('workflowTopic');
+    const connection = store.get('connection');
     const namespace = store.get('namespace');
-    return await WorkerService.getHotMesh(workflowTopic, { namespace });
+    return await WorkerService.getHotMesh(
+      workflowTopic,
+      { connection, namespace },
+    );
   }
 
   /**
@@ -404,10 +410,12 @@ export class WorkflowService {
     const workflowId = store.get('workflowId');
     const workflowDimension = store.get('workflowDimension') ?? '';
     const workflowTopic = store.get('workflowTopic');
+    const connection = store.get('connection');
     const namespace = store.get('namespace');
     const COUNTER = store.get('counter');
     const execIndex = COUNTER.counter = COUNTER.counter + 1;
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      connection,
       namespace,
     });
     //this ID is used as a item key with a hash (dash prefix ensures no collision)
@@ -441,8 +449,10 @@ export class WorkflowService {
   ): Promise<string> {
     const store = asyncLocalStorage.getStore();
     const workflowTopic = store.get('workflowTopic');
+    const connection = store.get('connection');
     const namespace = store.get('namespace');
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      connection,
       namespace,
     });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'signal')) {
@@ -460,9 +470,10 @@ export class WorkflowService {
    * @param {HookOptions} options - the hook options
    */
   static async hook(options: HookOptions): Promise<string> {
-    const { workflowId, namespace, workflowTopic } =
+    const { workflowId, connection, namespace, workflowTopic } =
       WorkflowService.getContext();
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      connection,
       namespace,
     });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'hook')) {
@@ -502,6 +513,7 @@ export class WorkflowService {
   ): Promise<T> {
     const {
       COUNTER,
+      connection,
       namespace,
       workflowId,
       workflowTopic,
@@ -514,6 +526,7 @@ export class WorkflowService {
       return SerializerService.fromString(replay[sessionId]).data as T;
     }
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      connection,
       namespace,
     });
     const keyParams = {
@@ -549,8 +562,13 @@ export class WorkflowService {
     jobId: string,
     options: JobInterruptOptions = {},
   ): Promise<string | void> {
-    const { workflowTopic, namespace } = WorkflowService.getContext();
+    const {
+      workflowTopic,
+      connection,
+      namespace,
+    } = WorkflowService.getContext();
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      connection,
       namespace,
     });
     if (await WorkflowService.isSideEffectAllowed(hotMeshClient, 'interrupt')) {
