@@ -6,6 +6,8 @@ In this section, various conditional functions will be explored, which are avail
 - [conditional.ternary](#conditionalternary)
 - [conditional.equality](#conditionalequality)
 - [conditional.strict_equality](#conditionalstrict_equality)
+- [conditional.inequality](#conditionalinequality)
+- [conditional.strict_inequality](#conditionalstrict_inequality)
 - [conditional.greater_than](#conditionalgreater_than)
 - [conditional.less_than](#conditionalless_than)
 - [conditional.greater_than_or_equal](#conditionalgreater_than_or_equal)
@@ -114,6 +116,75 @@ After executing the mapping rules, the resulting JSON object will be:
 ```json
 {
   "are_values_strictly_equal": false
+}
+```
+## conditional.inequality
+
+The `conditional.inequality` function checks whether two values are not equal, using non-strict inequality (!=). It takes two parameters: the first value (`value1`) and the second value (`value2`).
+
+### Example
+
+Suppose there are the following input JSON objects:
+
+**Object A:**
+```json
+{
+  "data": {
+    "value1": 42,
+    "value2": "42"
+  }
+}
+```
+
+The goal is to create a new object with a boolean value indicating whether `value1` and `value2` are not equal. The `conditional.inequality` function can be used in the mapping rules as follows:
+
+```yaml
+are_values_not_equal:
+  "@pipe":
+    - ["{a.data.value1}", "{a.data.value2}"]
+    - ["{@conditional.inequality}"]
+```
+
+After executing the mapping rules, the resulting JSON object will be `false` as `42` and "42" are assumed to be equal when loosely compared.
+
+```json
+{
+  "are_values_not_equal": false
+}
+```
+
+## conditional.strict_inequality
+
+The `conditional.strict_inequality` function checks whether two values are not equal, using strict inequality (!==). It takes two parameters: the first value (`value1`) and the second value (`value2`).
+
+### Example
+
+Suppose there are the following input JSON objects:
+
+**Object A:**
+```json
+{
+  "data": {
+    "value1": 42,
+    "value2": "42"
+  }
+}
+```
+
+The goal is to create a new object with a boolean value indicating whether `value1` and `value2` are strictly not equal. The `conditional.strict_inequality` function can be used in the mapping rules as follows:
+
+```yaml
+are_values_strictly_not_equal:
+  "@pipe":
+    - ["{a.data.value1}", "{a.data.value2}"]
+    - ["{@conditional.strict_inequality}"]
+```
+
+After executing the mapping rules, the resulting JSON object will be:
+
+```json
+{
+  "are_values_strictly_not_equal": true
 }
 ```
 

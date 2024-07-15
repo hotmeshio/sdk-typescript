@@ -61,6 +61,9 @@ describe('DURABLE | hello | `Workflow Sleepy Hello-World`', () => {
           taskQueue: 'hello-world',
           workflowName: 'example',
           workflowId: 'workflow-' + guid(),
+          expire: 180,
+          //NOTE: default is true; set to false to optimize any workflow that doesn't use hooks
+          signalIn: false,
         });
         expect(handle.workflowId).toBeDefined();
       });

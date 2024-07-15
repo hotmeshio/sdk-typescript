@@ -22,7 +22,7 @@
  * * Master Data Management systems
  */
 
-const APP_VERSION = '1';
+const APP_VERSION = '2';
 const APP_ID = 'durable';
 
 /**
@@ -78,6 +78,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
             expire:
               description: the time in seconds to expire the workflow in Redis once it completes
               type: number
+            signalIn:
+              description: if false, the job will not support subordinated hooks
+              type: boolean
 
       output:
         schema:
@@ -803,6 +806,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
         signaler:
           title: Signal-In Reentry point for subordinated hook flows
           type: hook
+          statusThreshold: 1
           hook:
             type: object
             properties:
@@ -1459,6 +1463,13 @@ const getWorkflowYAML = (app: string, version: string): string => {
         trigger:
           - to: cycle_hook
           - to: signaler
+            conditions:
+              match:
+                - expected: true
+                  actual: 
+                    '@pipe':
+                      - ['{$self.output.data.signalIn}', true]
+                      - ['{@conditional.nullish}']
         ## MAIN PROCESS TRANSITIONS ##
         cycle_hook:
           - to: throttler

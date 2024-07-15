@@ -270,3 +270,67 @@ app:
               match:
                 - expected: "{$job.metadata.jid}"
                   actual: "{$self.hook.data.id}"
+
+    - subscribes: signal.toggle
+      publishes: signal.toggled
+
+      input:
+        schema:
+          type: object
+          properties:
+            jobId:
+              type: string
+            statusThreshold:
+              type: number
+      output:
+        schema:
+          type: object
+          properties:
+            done:
+              type: boolean
+            howdy:
+              type: string
+
+      expire: 180
+
+      activities:
+        toggleTrigger:
+          title: Entry Point for status threshold test
+          type: trigger
+          stats:
+            id: "{$self.input.data.jobId}"
+          job:
+            maps:
+              done: false
+
+        waitForSignaler:
+          title: Conditionally registers a signal-in listener if statusThreshold is met
+          type: hook
+          statusThreshold: '{toggleTrigger.output.data.statusThreshold}'
+          emit:
+            '@pipe':
+              - ['{toggleTrigger.output.data.statusThreshold}', true, false]
+              - ['{@conditional.ternary}']
+          hook:
+            type: object
+            properties:
+              done:
+                type: boolean
+              howdy:
+                type: string
+          job:
+            maps:
+              done: "{$self.hook.data.done}"
+              howdy: "{$self.hook.data.howdy}"
+
+      transitions:
+        toggleTrigger:
+          - to: waitForSignaler
+
+      hooks:
+        waitForSignaler.doPleaseResume:
+          - to: waitForSignaler
+            conditions:
+              match:
+                - expected: "{$job.metadata.jid}"
+                  actual: "{$self.hook.data.id}"

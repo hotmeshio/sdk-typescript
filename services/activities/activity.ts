@@ -79,16 +79,47 @@ class Activity {
   }
 
   /**
+   * A job is assumed to be complete when its status (a semaphore)
+   * reaches `0`. A different threshold can be set in the
+   * activity YAML, in support of Dynamic Activation Control.
+   */
+  mapStatusThreshold(): number {
+    if (this.config.statusThreshold !== undefined) {
+      const threshold = Pipe.resolve(this.config.statusThreshold, this.context);
+      if (threshold !== undefined && !isNaN(Number(threshold))) {
+        return threshold;
+      }
+    }
+    return 0;
+  }
+
+  /**
    * Upon entering leg 1 of a duplexed activity
    */
   async verifyEntry() {
     this.setLeg(1);
     await this.getState();
-    CollatorService.assertJobActive(
-      this.context.metadata.js,
-      this.context.metadata.jid,
-      this.metadata.aid,
-    );
+    const threshold = this.mapStatusThreshold();
+    try {
+      CollatorService.assertJobActive(
+        this.context.metadata.js,
+        this.context.metadata.jid,
+        this.metadata.aid,
+        threshold,
+      );
+    } catch (error) {
+      if (threshold > 0) {
+        if(this.context.metadata.js === threshold) {
+          //conclude job EXACTLY ONCE
+          const status = await this.setStatus(-threshold);
+          if (Number(status) === 0) {
+            await this.engine.runJobCompletionTasks(this.context);
+          }
+        }
+      } else {
+        throw error;
+      }
+    }
     await CollatorService.notarizeEntry(this);
   }
 
@@ -338,9 +369,9 @@ class Activity {
     return null;
   }
 
-  async setStatus(amount: number, multi?: RedisMulti): Promise<void> {
+  async setStatus(amount: number, multi?: RedisMulti): Promise<void|any> {
     const { id: appId } = await this.engine.getVID();
-    await this.store.setStatus(amount, this.context.metadata.jid, appId, multi);
+    return await this.store.setStatus(amount, this.context.metadata.jid, appId, multi);
   }
 
   authorizeEntry(state: StringAnyType): string[] {

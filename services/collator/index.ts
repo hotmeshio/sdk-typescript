@@ -17,8 +17,9 @@ class CollatorService {
     status: number,
     jobId: string,
     activityId: string,
+    threshold = 0,
   ): void {
-    if (status <= 0) {
+    if (status <= threshold) {
       throw new InactiveJobError(jobId, status, activityId);
     }
   }
