@@ -37,6 +37,7 @@ import {
 
 import { Search } from './search';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
+import exp from 'constants';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
@@ -430,6 +431,7 @@ export class WorkerService {
               index: err.index,
               originJobId: err.originJobId,
               parentWorkflowId: err.parentWorkflowId,
+              expire: err.expire,
               workflowId: err.workflowId,
               workflowTopic: err.workflowTopic,
               activityName: err.activityName,
@@ -463,6 +465,8 @@ export class WorkerService {
                 err.maximumInterval || ms(HMSH_DURABLE_MAX_INTERVAL) / 1000,
               originJobId: err.originJobId,
               parentWorkflowId: err.parentWorkflowId,
+              expire: err.expire,
+              signalIn: err.signalIn,
               workflowDimension: err.workflowDimension,
               workflowId: err.workflowId,
               workflowTopic: err.workflowTopic,

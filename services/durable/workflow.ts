@@ -259,6 +259,8 @@ export class WorkflowService {
         ms(options?.config?.maximumInterval ?? HMSH_DURABLE_MAX_INTERVAL) /
         1000,
       originJobId: originJobId ?? workflowId,
+      expire: options.expire,
+      signalIn: options.signalIn,
       parentWorkflowId,
       workflowDimension: workflowDimension,
       workflowId: childJobId,
@@ -394,6 +396,7 @@ export class WorkflowService {
       workflowId: activityJobId,
       workflowTopic: activityTopic,
       activityName,
+      expire: options.expire,
       backoffCoefficient: options?.retryPolicy?.backoffCoefficient ?? undefined,
       maximumAttempts: options?.retryPolicy?.maximumAttempts ?? undefined,
       maximumInterval: maximumInterval ?? undefined,
