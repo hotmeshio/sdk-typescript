@@ -37,7 +37,6 @@ import {
 
 import { Search } from './search';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
-import exp from 'constants';
 
 export class WorkerService {
   static activityRegistry: Registry = {}; //user's activities
