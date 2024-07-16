@@ -8,6 +8,7 @@ import { guid, sleepFor } from '../../../modules/utils';
 
 import * as childWorkflows from './child/workflows';
 import * as parentWorkflows from './parent/workflows';
+import { APP_VERSION } from '../../../services/durable/schemas/factory';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -54,19 +55,21 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
         try {
           const client = new Client({ connection: { class: Redis, options } });
           const h = client.workflow.start({
-            args: ['PARENT'],
+            args: ['PARENT', false], //setting to false optimizes workflow by suppressing the reentrant branch
             taskQueue: 'parent-world',
             workflowName: 'parentExample',
             workflowId: guid(),
+            signalIn: false, //setting to false optimizes workflow by suppressing the reentrant branch
             expire: 500,
           });
           //start another workflow to simulate startup collisions
           let handle2: WorkflowHandleService;
           const localH = client.workflow.start({
-            args: ['PARENT'],
+            args: ['PARENT', false],
             taskQueue: 'parent-world',
             workflowName: 'parentExample',
             workflowId: guid(),
+            signalIn: false,
             expire: 500,
           });
           [handle, handle2] = await Promise.all([h, localH]);
@@ -114,4 +117,17 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
       }, 10_000);
     });
   });
+
+  describe('Durable Control Plane', () => {
+    describe('deployAndActivate', () => {
+      it('should re/deploy the distributed executable', async () => {
+        const client = new Client({ connection: { class: Redis, options } });
+        //redeploy current version
+        await client.deployAndActivate('durable', APP_VERSION);
+        //redeploy next version
+        await client.deployAndActivate('durable', (Number(APP_VERSION) + 1).toString());
+      });
+    });
+  });
+
 });

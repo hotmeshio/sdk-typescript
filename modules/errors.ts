@@ -60,6 +60,7 @@ class DurableProxyError extends Error {
   maximumInterval: number;
   originJobId: string | null;
   parentWorkflowId: string;
+  expire: number;
   workflowDimension: string;
   workflowId: string;
   workflowTopic: string;
@@ -69,6 +70,7 @@ class DurableProxyError extends Error {
     this.workflowId = params.workflowId;
     this.workflowTopic = params.workflowTopic;
     this.parentWorkflowId = params.parentWorkflowId;
+    this.expire = params.expire;
     this.originJobId = params.originJobId;
     this.index = params.index;
     this.activityName = params.activityName;
@@ -85,6 +87,8 @@ class DurableChildError extends Error {
   arguments: string[];
   backoffCoefficient: number;
   code: number;
+  expire: number;
+  signalIn: boolean;
   workflowDimension: string;
   index: number;
   maximumAttempts: number;
@@ -99,6 +103,8 @@ class DurableChildError extends Error {
     this.workflowId = params.workflowId;
     this.workflowTopic = params.workflowTopic;
     this.parentWorkflowId = params.parentWorkflowId;
+    this.expire = params.expire;
+    this.signalIn = params.signalIn;
     this.originJobId = params.originJobId;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;

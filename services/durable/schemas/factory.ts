@@ -232,6 +232,10 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     type: number
                   maximumInterval:
                     type: number
+                  expire:
+                    type: number
+                  signalIn:
+                    type: boolean
                   await:
                     type: string
                     description: when set to false, do not await the child flow's completion
@@ -335,6 +339,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
                 expire:
                   type: number
+                signalIn:
+                  type: boolean
                 parentWorkflowId:
                   type: string
                   description: used to forge the cleanup key
@@ -355,6 +361,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
               index: '{worker.output.data.index}'
               originJobId: '{worker.output.data.originJobId}'
               parentWorkflowId: '{worker.output.data.parentWorkflowId}'
+              expire: '{worker.output.data.expire}'
+              signalIn: '{worker.output.data.signalIn}'
               workflowId: '{worker.output.data.workflowId}'
               workflowName: '{worker.output.data.workflowName}'
               workflowTopic: '{worker.output.data.workflowTopic}'
@@ -512,6 +520,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   description: the arguments to pass to the activity
                   items:
                     type: string
+                expire:
+                  type: number
                 backoffCoefficient:
                   type: number
                 maximumAttempts:
@@ -527,6 +537,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               parentWorkflowId: '{worker.output.data.workflowId}'
               workflowId: '{worker.output.data.workflowId}'
               workflowTopic: '{worker.output.data.workflowTopic}'
+              expire: '{worker.output.data.expire}'
               backoffCoefficient:
                 '@pipe':
                   - ['{worker.output.data.backoffCoefficient}','{trigger.output.data.backoffCoefficient}']
@@ -754,6 +765,17 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     - ['{trigger.output.data.maximumInterval}', 120]
                     - ['{@logical.or}']
                   - ['{@math.min}']
+        ender:
+          title: Sets job data; ignores the \`Signal In\` Hook Channel which was suppressed
+          type: hook
+          job:
+            maps:
+              done: true
+              $error: '{worker.output.data.$error}'
+              jc: '{$job.metadata.jc}'
+              ju:
+                '@pipe':
+                  - ['{@date.toISOXString}']
 
         closer:
           title: Closes the \`Signal In\` Hook Channel, so the workflow can exit
@@ -939,6 +961,11 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   maximumInterval:
                     type: number
                     description: the maximum time in seconds to wait between retries; provides a fixed limit to exponential backoff growth
+                  expire:
+                    type: number
+                  signalIn:
+                    type: boolean
+                    description: if false, the spawned child will not support subordinated hooks
                   await:
                     type: string
                     description: when set to false, do not await the child flow's completion
@@ -966,6 +993,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     type: string
                   originJobId:
                     type: string
+                  expire:
+                    type: number
                   backoffCoefficient:
                     type: number
                   maximumAttempts:
@@ -1039,6 +1068,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
                 expire:
                   type: number
+                signalIn:
+                  type: boolean
                 parentWorkflowId:
                   type: string
                   description: used to forge the cleanup key
@@ -1059,6 +1090,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
               index: '{signaler_worker.output.data.index}'
               originJobId: '{signaler_worker.output.data.originJobId}'
               parentWorkflowId: '{signaler_worker.output.data.parentWorkflowId}'
+              expire: '{signaler_worker.output.data.expire}'
+              signalIn: '{signaler_worker.output.data.signalIn}'
               workflowId: '{signaler_worker.output.data.workflowId}'
               workflowName: '{signaler_worker.output.data.workflowName}'
               workflowTopic: '{signaler_worker.output.data.workflowTopic}'
@@ -1216,6 +1249,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   description: the arguments to pass to the activity
                   items:
                     type: string
+                expire:
+                  type: number
                 backoffCoefficient:
                   type: number
                 maximumAttempts:
@@ -1231,6 +1266,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               parentWorkflowId: '{signaler_worker.output.data.workflowId}'
               workflowId: '{signaler_worker.output.data.workflowId}'
               workflowTopic: '{signaler_worker.output.data.workflowTopic}'
+              expire: '{signaler_worker.output.data.expire}'
               backoffCoefficient:
                 '@pipe':
                   - ['{signaler_worker.output.data.backoffCoefficient}','{trigger.output.data.backoffCoefficient}']
@@ -1476,9 +1512,24 @@ const getWorkflowYAML = (app: string, version: string): string => {
         throttler:
           - to: worker
         worker:
+          - to: ender
+            conditions:
+              code: [200, 596, 597, 598]
+              match:
+                - expected: false
+                  actual: 
+                    '@pipe':
+                      - ['{trigger.output.data.signalIn}', true]
+                      - ['{@conditional.nullish}']
           - to: closer
             conditions:
               code: [200, 596, 597, 598]
+              match:
+                - expected: true
+                  actual: 
+                    '@pipe':
+                      - ['{trigger.output.data.signalIn}', true]
+                      - ['{@conditional.nullish}']
           - to: sleeper
             conditions:
               code: 588

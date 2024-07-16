@@ -34,7 +34,7 @@ export class ClientService {
     this.connection = config.connection;
   }
 
-  getHotMeshClient = async (workflowTopic: string, namespace?: string) => {
+  getHotMeshClient = async (workflowTopic: string | null, namespace?: string) => {
     //namespace isolation requires the connection options to be hashed
     //as multiple intersecting databases can be used by the same service
     const optionsHash = hashOptions(this.connection.options);
@@ -262,6 +262,18 @@ export class ClientService {
     },
   };
 
+  /**
+   * Any point of presence can be used to deploy and activate the HotMesh
+   * distributed executable to the active quorum.
+   */
+  async deployAndActivate(namespace = APP_ID, version = APP_VERSION): Promise<void> {
+    if (isNaN(Number(version))) {
+      throw new Error('Invalid version number');
+    }
+    const hotMesh = await this.getHotMeshClient('', namespace);
+    await this.activateWorkflow(hotMesh, namespace, version);
+  }
+
   async verifyWorkflowActive(
     hotMesh: HotMesh,
     appId = APP_ID,
@@ -285,8 +297,15 @@ export class ClientService {
     version = APP_VERSION,
   ): Promise<void> {
     const app = await hotMesh.engine.store.getApp(appId);
-    const appVersion = app?.version as unknown as number;
-    if (isNaN(appVersion)) {
+    const appVersion = app?.version as unknown as string;
+    if (appVersion === version && !app.active) {
+      try {
+        await hotMesh.activate(version);
+      } catch (error) {
+        hotMesh.engine.logger.error('durable-client-activate-err', { error });
+        throw error;
+      }
+    } else if (isNaN(Number(appVersion)) || appVersion <= version) {
       try {
         await hotMesh.deploy(getWorkflowYAML(appId, version));
         await hotMesh.activate(version);
@@ -294,13 +313,6 @@ export class ClientService {
         hotMesh.engine.logger.error('durable-client-deploy-activate-err', {
           ...error,
         });
-        throw error;
-      }
-    } else if (app && !app.active) {
-      try {
-        await hotMesh.activate(version);
-      } catch (error) {
-        hotMesh.engine.logger.error('durable-client-activate-err', { error });
         throw error;
       }
     }

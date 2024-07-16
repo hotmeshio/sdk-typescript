@@ -11,12 +11,14 @@ const { parentActivity } = Durable.workflow.proxyActivities<
 
 export async function parentExample(
   name: string,
+  signalIn: boolean,
 ): Promise<Record<string, string>> {
   const activityOutput = await parentActivity(name);
   const childWorkflowOutput = await Durable.workflow.execChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
+    signalIn,
   });
   return { activityOutput, childWorkflowOutput };
 }

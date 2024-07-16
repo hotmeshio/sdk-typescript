@@ -3,6 +3,8 @@ export type DurableChildErrorType = {
   await?: boolean;
   backoffCoefficient?: number;
   index: number;
+  expire?: number;
+  signalIn?: boolean;
   maximumAttempts?: number;
   maximumInterval?: number;
   originJobId: string | null;
@@ -28,6 +30,7 @@ export type DurableProxyErrorType = {
   activityName: string;
   backoffCoefficient?: number;
   index: number;
+  expire?: number;
   maximumAttempts?: number;
   maximumInterval?: number;
   originJobId: string | null;

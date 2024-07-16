@@ -521,6 +521,9 @@ type ProxyType<ACT> = {
  * Configuration settings for activities within a workflow.
  */
 type ActivityConfig = {
+  /** place holder setting; unused at this time (re: activity workflow expire configuration) */
+  expire?: number;
+
   /** Start to close timeout for the activity; not yet implemented */
   startToCloseTimeout?: string;
 
