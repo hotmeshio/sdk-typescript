@@ -22,7 +22,6 @@ export async function example(name: string): Promise<string> {
   await search.incr('counter', 10);
   const j2 = await search.get('jimbo');
   const j3 = await search.mget('jimbo');
-  //console.log(j1, j2, j3[0]);
   const val1 = await search.incr('counter', 1);
   const val2 = await search.get('counter');
   const val3 = await search.mult('multer', 12);

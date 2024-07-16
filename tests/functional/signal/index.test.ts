@@ -46,6 +46,58 @@ describe('FUNCTIONAL | Signal', () => {
     await HotMesh.stop();
   });
 
+  describe('Dynamic Activation Control', () => {
+    it('it exits early and does not register for outside signals', async () => {
+      let isDone = false;
+      const jobId = 'xyz123';
+      await hotMesh.sub(
+        'signal.toggled.xyz123',
+        (topic: string, message: JobOutput) => {
+          expect(topic).toBe('signal.toggled');
+          expect(message.data.done).toBe(false);
+          expect(message.metadata.jid).toBe(jobId);
+          isDone = true;
+        },
+      );
+
+      await hotMesh.pub('signal.toggle', { jobId, statusThreshold: 1 });
+      while (!isDone) {
+        await sleepFor(100);
+      }
+
+      await hotMesh.unsub('signal.toggled.xyz123');
+    });
+
+    it('exits as expected after processing an outside signal', async () => {
+      let isDone = false;
+      const jobId = 'pdq123';
+      const signal = { id: jobId, done: true, howdy: 'pardner' };
+      //subscribe to the workflow output
+      await hotMesh.sub(
+        'signal.toggled.pdq123',
+        (topic: string, message: JobOutput) => {
+          expect(topic).toBe('signal.toggled');
+          expect(message.data.done).toBe(signal.done);
+          expect(message.data.howdy).toBe(signal.howdy);
+          expect(message.metadata.jid).toBe(jobId);
+          isDone = true;
+        },
+      );
+      //kick off the test by publishing a message
+      await hotMesh.pub('signal.toggle', { jobId });
+      //sleep for a bit to make sure the job registers for signals and then goes to sleep
+      await sleepFor(500);
+      //send a signal to awaken the job
+      await hotMesh.hook('waitForSignaler.doPleaseResume', signal);
+      while (!isDone) {
+        //loop until we know the job is complete
+        await sleepFor(100);
+      }
+      //unsubscribe and cleanup
+      await hotMesh.unsub('signal.toggled.pdq123');
+    });
+  });
+
   describe('Signal All', () => {
     it('sends a signal to awaken all paused jobs', async () => {
       let isDone = false;

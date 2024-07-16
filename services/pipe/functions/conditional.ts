@@ -11,6 +11,14 @@ class ConditionalHandler {
     return value1 === value2;
   }
 
+  inequality(value1: any, value2: any): boolean {
+    return value1 != value2;
+  }
+
+  strict_inequality(value1: any, value2: any): boolean {
+    return value1 !== value2;
+  }
+
   greater_than(value1: number, value2: number): boolean {
     return value1 > value2;
   }

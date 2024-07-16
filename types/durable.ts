@@ -315,6 +315,11 @@ type WorkflowOptions = {
   expire?: number;
 
   /**
+   * default is true; set to false to optimize workflows that do not require a `signal in`
+   */
+  signalIn?: boolean;
+
+  /**
    * default is true; if false, will not await the execution
    */
   await?: boolean;
