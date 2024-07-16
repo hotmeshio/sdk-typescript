@@ -305,7 +305,7 @@ export class ClientService {
         hotMesh.engine.logger.error('durable-client-activate-err', { error });
         throw error;
       }
-    } else if (isNaN(Number(appVersion)) || appVersion <= version) {
+    } else if (isNaN(Number(appVersion)) || appVersion < version) {
       try {
         await hotMesh.deploy(getWorkflowYAML(appId, version));
         await hotMesh.activate(version);

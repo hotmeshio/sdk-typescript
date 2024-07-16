@@ -120,11 +120,9 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
 
   describe('Durable Control Plane', () => {
     describe('deployAndActivate', () => {
-      it('should re/deploy the distributed executable', async () => {
+      it('should deploy the distributed executable', async () => {
         const client = new Client({ connection: { class: Redis, options } });
-        //redeploy current version
-        await client.deployAndActivate('durable', APP_VERSION);
-        //redeploy next version
+        //deploy next version
         await client.deployAndActivate('durable', (Number(APP_VERSION) + 1).toString());
       });
     });
