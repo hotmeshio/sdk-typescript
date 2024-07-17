@@ -22,7 +22,7 @@
  * * Master Data Management systems
  */
 
-const APP_VERSION = '2';
+const APP_VERSION = '3';
 const APP_ID = 'durable';
 
 /**
