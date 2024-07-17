@@ -5,6 +5,7 @@ import {
   HMSH_CODE_PENDING,
   HMSH_CODE_TIMEOUT,
   HMSH_EXPIRE_JOB_SECONDS,
+  HMSH_QUORUM_DELAY_MS,
 } from '../../modules/enums';
 import {
   formatISODate,
@@ -13,6 +14,7 @@ import {
   identifyRedisType,
   polyfill,
   restoreHierarchy,
+  sleepFor,
 } from '../../modules/utils';
 import Activities from '../activities';
 import { Await } from '../activities/await';
@@ -207,6 +209,28 @@ class EngineService {
     );
   }
 
+  /**
+   * resolves the distributed executable version using a delay
+   * to allow deployment race conditions to resolve
+   * @private 
+   */
+  async fetchAndVerifyVID(vid: AppVID, count = 0): Promise<AppVID> {
+    if (isNaN(Number(vid.version))) {
+      const app = await this.store.getApp(vid.id, true);
+      if (!isNaN(Number(app.version))) {
+        if (!this.apps) this.apps = {};
+        this.apps[vid.id] = app;
+        return { id: vid.id, version: app.version };
+      } else if (count < 10) {
+        await sleepFor(HMSH_QUORUM_DELAY_MS * 2);
+        return await this.fetchAndVerifyVID(vid, count + 1);
+      } else {
+        this.logger.error('engine-vid-resolution-error', { id: vid.id, guid: this.guid });
+      }
+    }
+    return vid;
+  }
+
   async getVID(vid?: AppVID): Promise<AppVID> {
     if (this.cacheMode === 'nocache') {
       const app = await this.store.getApp(this.appId, true);
@@ -222,7 +246,10 @@ class EngineService {
       this.apps[this.appId] = vid;
       return vid;
     } else {
-      return { id: this.appId, version: this.apps?.[this.appId].version };
+      return await this.fetchAndVerifyVID({
+        id: this.appId,
+        version: this.apps?.[this.appId].version
+      });
     }
   }
 
