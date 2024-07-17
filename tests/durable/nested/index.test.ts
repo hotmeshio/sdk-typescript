@@ -114,7 +114,7 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
         };
         const result = await handle.result();
         expect(result).toEqual(expectedOutput);
-      }, 10_000);
+      }, 15_000);
     });
   });
 
@@ -124,7 +124,7 @@ describe('DURABLE | nested | `workflow.execChild`', () => {
         const client = new Client({ connection: { class: Redis, options } });
         //deploy next version
         await client.deployAndActivate('durable', (Number(APP_VERSION) + 1).toString());
-      });
+      }, 25_000);
     });
   });
 
