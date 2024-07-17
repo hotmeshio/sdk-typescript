@@ -1824,6 +1824,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
                 expire:
                   type: number
+                signalIn:
+                  type: boolean
                 parentWorkflowId:
                   type: string
                   description: used to forge the cleanup key
@@ -1857,6 +1859,16 @@ const getWorkflowYAML = (app: string, version: string): string => {
                 '@pipe':
                   - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                   - ['{@array.get}', originJobId]
+                  - ['{@object.get}']
+              expire:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', expire]
+                  - ['{@object.get}']
+              signalIn:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', signalIn]
                   - ['{@object.get}']
               parentWorkflowId:
                 '@pipe':
@@ -2021,6 +2033,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   description: the arguments to pass to the activity
                   items:
                     type: string
+                expire:
+                  type: number
                 backoffCoefficient:
                   type: number
                 maximumAttempts:
@@ -2068,9 +2082,26 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                   - ['{@array.get}', workflowTopic]
                   - ['{@object.get}']
-              backoffCoefficient: '{collator_trigger.output.data.backoffCoefficient}'
-              maximumAttempts: '{collator_trigger.output.data.maximumAttempts}'
-              maximumInterval: '{collator_trigger.output.data.maximumInterval}'
+              expire:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', expire]
+                  - ['{@object.get}']
+              backoffCoefficient:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', backoffCoefficient]
+                  - ['{@object.get}']
+              maximumAttempts:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', maximumAttempts]
+                  - ['{@object.get}']
+              maximumInterval:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', maximumInterval]
+                  - ['{@object.get}']
           output:
             schema:
               type: object
