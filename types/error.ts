@@ -1,4 +1,4 @@
-export type DurableChildErrorType = {
+export type MeshFlowChildErrorType = {
   arguments: string[];
   await?: boolean;
   backoffCoefficient?: number;
@@ -14,7 +14,7 @@ export type DurableChildErrorType = {
   workflowTopic: string;
 };
 
-export type DurableWaitForAllErrorType = {
+export type MeshFlowWaitForAllErrorType = {
   items: string[];
   workflowId: string;
   workflowTopic: string;
@@ -25,7 +25,7 @@ export type DurableWaitForAllErrorType = {
   workflowDimension: string;
 };
 
-export type DurableProxyErrorType = {
+export type MeshFlowProxyErrorType = {
   arguments: string[];
   activityName: string;
   backoffCoefficient?: number;
@@ -40,14 +40,14 @@ export type DurableProxyErrorType = {
   workflowTopic: string;
 };
 
-export type DurableWaitForErrorType = {
+export type MeshFlowWaitForErrorType = {
   signalId: string;
   index: number;
   workflowDimension: string;
   workflowId: string;
 };
 
-export type DurableSleepErrorType = {
+export type MeshFlowSleepErrorType = {
   duration: number;
   index: number;
   workflowDimension: string;

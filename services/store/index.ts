@@ -717,6 +717,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   /**
    * Returns custom search fields and values.
    * NOTE: The `fields` param should NOT prefix items with an underscore.
+   * TODO: Allow literals if quote provided
    */
   async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
     const key = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });

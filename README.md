@@ -1,37 +1,160 @@
 # HotMesh
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-HotMesh transforms Redis into an Orchestration Engine.
-
-*Write functions in your own style, and let Redis govern their execution, reliably and durably.*
+<span style="font-size:1.05em">**HotMesh**</span> transforms <span style="font-size:1.05em">**Redis**</span> into indispensable <span style="font-size:1.05em">**Middleware**</span>. Effortlessly connect <span style="font-size:1.05em">**everything**</span>.
 
 ## Install
-[![npm version](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh.svg)](https://badge.fury.io/js/%40hotmeshio%2Fhotmesh)
-
 ```sh
 npm install @hotmeshio/hotmesh
 ```
+You have a Redis instance? Good. You're ready to go.
 
-## Understanding HotMesh
-HotMesh inverts the relationship to Redis: those functions that once used Redis as a cache, are instead *cached and governed* by Redis. Consider the following. It's a typical microservices network, with a tangled mess of services and functions. There's important business logic in there (functions *A*, *B* and *C* are critical), but it's hard to find and access.
+## MeshCall
+The **MeshCall** module connects any function to the mesh. Calls are brokered via Redis Streams, reducing the overhead of HTTP without backpressure risk.
 
-<img src="./docs/img/operational_data_layer.png" alt="A Tangled Microservices Network with 3 valuable functions buried within" style="max-width:100%;width:600px;">
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Call a function in another service</summary>
 
-HotMesh creates an *ad hoc*, Redis-backed network of functions and organizes them into a unified service mesh. *Any service with access to Redis can join in the network, bypassing the legacy clutter.*
+  ### Overview
+  Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
 
-## Design
-HotMesh uses your existing Redis installation. If you already have an instance available, you have all the infrastructure you'll ever need.
+1. Use `MeshCall.connect` to link your function. Choose a `topic` to identify it and a `namespace` to group related functions. Replace `callback` with your function logic. Return the response; the `data` field is your payload.
 
-### Design | Pluck
-The simplest way to get started is to use the [HotMesh Pluck](https://github.com/hotmeshio/pluck-typescript) package. It's designed for usability, and is backed by the HotMesh system if you need advanced features. It includes a detailed [SDK](https://hotmeshio.github.io/pluck-typescript/) and a wide variety of examples.
+    ```javascript
+    //myFunctionWrapper.ts
+    import { MeshCall } from '@hotmeshio/hotmesh';
+    import * as Redis from 'redis';
 
-### Design | Durable
-HotMesh's *Durable* module is a TypeScript Library modeled after Temporal.io. If you're familiar with their SDK, the principles are the same.
+    export const connectMyFunction = () => {
+      MeshCall.connect({
+        namespace: 'sandbox',
+        topic: 'my.serviceb.function',
+        redis: {
+          class: Redis,
+          options: { url: 'redis://:key_admin@localhost:6379' }
+        },
+        callback: async (input: StreamData) => {
+          //return the response; data field is your payload
+          return {
+            metadata: { ...input.metadata },
+            data: { youSent: input.data.IamSending }
+          };
+        },
+      });
+    };
+      ```
 
-1. Start by defining **activities**. Activities can be written in any style, using any framework, and can even be legacy functions you've already written. The only requirement is that they return a Promise. *Note how the `saludar` example throws an error 50% of the time. It doesn't matter how unpredictable your functions are, HotMesh will retry as necessary until they succeed.*
+2. Call `connectMyFunction` once at server startup to connect your function to the mesh.
+
+    ```javascript
+    //server.ts
+    import { connectMyFunction } from './myFunctionWrapper';
+    
+    connectMyFunction();
+    ```
+
+3. Call your function from anywhere on the network (or even the same service). Send any payload as long as it's JSON serializable.
+
+    ```javascript
+    import { MeshCall } from '@hotmeshio/hotmesh';
+    import * as Redis from 'redis';
+
+    const result = await MeshCall.exec({
+      namespace: 'sandbox',
+      topic: 'my.serviceb.function',
+      payload: { IamSending: 'something' },
+      redis: {
+        class: Redis,
+        options: { url: 'redis://:key_admin@localhost:6379' }
+      },
+    }); //returns `{ youSent: 'something'}`
+    ```
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Call and <b>cache</b> a function</summary>
+
+  ### Overview
+  Redis is great for unburdening stressed services. This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies a `ttl`.
+
+1. Make the call from another service (or even the same service). Include a `ttl` to cache the result for the specified duration.
+
+    ```javascript
+    import { MeshCall } from '@hotmeshio/hotmesh';
+    import * as Redis from 'redis';
+
+    const result = await MeshCall.exec({
+      namespace: 'sandbox',
+      topic: 'my.serviceb.function',
+      payload: { IamSending: 'something' },
+      redis: {
+        class: Redis,
+        options: { url: 'redis://:key_admin@localhost:6379' }
+      },
+      options: { ttl: '15 minutes' },
+    }); //returns `{ youSent: 'something'}`
+    ```
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Run a cron job</summary>
+
+  ### Overview
+  This example demonstrates an *idempotent* cron that runs every day. Optionally set `maxCycles` or `maxDuration` to limit the number of cycles. Use your chosen `id` to cancel the cron job.
+
+1. Define the cron function.
+    ```javascript
+    //cron.ts
+    import { MeshCall } from '@hotmeshio/hotmesh';
+    import * as Redis from 'redis';
+
+    export const runMyCron = () => {
+      MeshCall.cron({
+        namespace: 'sandbox',
+        topic: 'my.cron.function',
+        redis: {
+          class: Redis,
+          options: { url: 'redis://:key_admin@localhost:6379' }
+        },
+        callback: async () => {
+          //run your cron function
+        },
+        options: {
+          id: 'myDailyCron',
+          interval: '1 day'
+        }
+      });
+    };
+    ```
+
+2. Call `runMyCron` once at server startup or call as needed.
+    ```javascript
+    //server.ts
+    import { runMyCron } from './cron';
+
+    runMyCron();
+    ```
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Interrupt a cron job</summary>
+</details>
+
+## MeshFlow
+The **MeshFlow** module is designed as a drop-in replacement for Temporal.io. If you need to orchestrate your functions as durable workflows, MeshFlow provides a familiar set of tools with *in-memory execution speed*.
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Orchestrate unpredictable activities</summary>
+
+### Overview
+When an endpoint is unpredictable, use `proxyActivities`; HotMesh will retry as necessary until it succeeds. This example demonstrates a simple workflow that greets a user in both English and Spanish. But both only succeed 50% of the time.
+
+1. Start by defining **activities**. Note how each throws an error 50% of the time.
+
     ```javascript
     //activities.ts
     export async function greet(name: string): Promise<string> {
+      if (Math.random() > 0.5) throw new Error('Random error');
       return `Hello, ${name}!`;
     }
 
@@ -40,59 +163,64 @@ HotMesh's *Durable* module is a TypeScript Library modeled after Temporal.io. If
       return `¡Hola, ${nombre}!`;
     }
     ```
-2. Define your **workflow** logic. Include conditional branching, loops, etc to control activity execution. It's vanilla code written in your own coding style. The only requirement is to use `proxyActivities`, ensuring your activities are executed with HotMesh's durability guarantee.
+
+2. Define the **workflow** logic. Include conditional branching, loops, etc to control activity execution. It's vanilla code written in your own coding style. The only requirement is to use `proxyActivities`, ensuring your activities are executed with HotMesh's durability guarantee.
+
     ```javascript
     //workflows.ts
-    import { Durable } from '@hotmeshio/hotmesh';
+    import { MeshFlow } from '@hotmeshio/hotmesh';
     import * as activities from './activities';
 
-    const { greet, saludar } = Durable.workflow
+    const { greet, saludar } = MeshFlow.workflow
       .proxyActivities<typeof activities>({
         activities
       });
 
-    export async function example(name: string, lang: string): Promise<string> {
-      if (lang === 'es') {
-        return await saludar(name);
-      } else {
-        return await greet(name);
-      }
+    export async function example(name: string): Promise<[string, string]> {
+      return Promise.all([
+        greet(name),
+        saludar(name)
+      ]);
     }
     ```
+
 3. Instance a HotMesh **client** to invoke the workflow.
+
     ```javascript
     //client.ts
-    import { Durable, HotMesh } from '@hotmeshio/hotmesh';
-    import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
+    import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
+    import Redis from 'ioredis';
 
     async function run(): Promise<string> {
-      const client = new Durable.Client({
+      const client = new MeshFlow.Client({
         connection: {
           class: Redis,
           options: { host: 'localhost', port: 6379 }
         }
       });
 
-      const handle = await client.workflow.start({
-        args: ['HotMesh', 'es'],
+      const handle = await client.workflow.start<[string,string]>({
+        args: ['HotMesh'],
         taskQueue: 'default',
         workflowName: 'example',
         workflowId: HotMesh.guid()
       });
 
       return await handle.result();
-      //returns '¡Hola, HotMesh!'
+      //returns ['Hello HotMesh', '¡Hola, HotMesh!']
     }
     ```
-4. Finally, create a **worker** and link your workflow function. Workers listen for tasks on their assigned Redis stream and invoke your workflow function each time they receive an event.
+
+4. Finally, create a **worker** and link the workflow function. Workers listen for tasks on their assigned Redis stream and invoke the workflow function each time they receive an event.
+
     ```javascript
     //worker.ts
-    import { Durable } from '@hotmeshio/hotmesh';
+    import { MeshFlow } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
     import * as workflows from './workflows';
 
     async function run() {
-      const worker = await Durable.Worker.create({
+      const worker = await MeshFlow.Worker.create({
         connection: {
           class: Redis,
           options: { host: 'localhost', port: 6379 },
@@ -104,13 +232,69 @@ HotMesh's *Durable* module is a TypeScript Library modeled after Temporal.io. If
       await worker.run();
     }
     ```
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Pause and wait for a signal</summary>
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Wait for multiple signals (collation)</summary>
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Create a recurring, cyclical workflow</summary>
+</details>
+
+## MeshData
+The **MeshData** service extends the MeshFlow service, combining data record concepts and transactional workflow principles into a single "Operational Data Layer" (ODL). Deployments with the Redis FT.SEARCH module enabled can use MeshData to merge OLTP and OLAP operations into a single operational data layer.
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Create an indexed, searchable record</summary>
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Attach recurring, cyclical subflows to a record</summary>
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Transactionally update a record</summary>
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Run real-time aggregation Statistics</summary>
+</details>
+
+## Visualize | OpenTelemetry
+Add your Honeycomb credentials to `.env`, and view the full *OpenTelemetry* execution tree organized as a DAG.
+
+<img src="./docs/img/visualize/opentelemetry.png" alt="Open Telemetry" style="width:600px;max-width:600px;">
+
+## Visualize | RedisInsight
+View commands, streams, data, etc using RedisInsight.
+
+<img src="./docs/img/visualize/redisinsight.png" alt="Redis Insight" style="width:600px;max-width:600px;">
+
+## Visualize | HotMesh Dashboard
+The HotMesh dashboard provides a visual representation of the network, including the number of engines, workers, and workflows. It also provides a real-time view of the network's health and performance, linking to the OpenTelemetry dashboard for more detailed information.
+
+An LLM is also included to simplify querying and analyzing workflow data for those deployments that include the Redis `FT.SEARCH` module.
+
+<img src="./docs/img/visualize/hotmesh_dashboard.png" alt="HotMesh Dashboard" style="width:600px;max-width:600px;">
+
+## Understanding HotMesh
+HotMesh inverts the relationship to Redis: those functions that once used Redis as a cache, are instead *cached and governed* by Redis. Consider the following. It's a typical microservices network, with a tangled mess of services and functions. There's important business logic in there (functions *A*, *B* and *C* are critical), but it's hard to find and access.
+
+<img src="./docs/img/operational_data_layer.png" alt="A Tangled Microservices Network with 3 valuable functions buried within" style="max-width:100%;width:600px;">
+
+HotMesh creates an *ad hoc*, Redis-backed network of functions and organizes them into a unified service mesh. *Any service with access to Redis can join in the network, bypassing the legacy clutter.*
 
 #### Workflow Extensions
-Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `Durable` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
+Externalizing state fundamentally changes the execution profile for your functions, allowing you to design long-running, durable workflows. The `MeshFlow` base class (shown in the examples above) provides additional methods for solving the most common state management challenges.
 
  - `waitFor` Pause your function using your chosen signal key, and only awaken when the signal is received from the outide. Use a standard `Promise` to collate and cache the signals and only awaken your function once all signals have arrived.
     ```javascript
-    const { waitFor } = Durable.workflow;
+    const { waitFor } = MeshFlow.workflow;
     const [a, b] = await Promise.all([
       waitFor<{payload: string}>('sig1'),
       waitFor<number>('sig2')
@@ -118,11 +302,11 @@ Externalizing state fundamentally changes the execution profile for your functio
     ```
  - `signal` Send a signal (and payload) to a paused function awaiting the signal. Signals may also be sent from the outside to awaken a paused function.
     ```javascript
-    await Durable.workflow.signal('sig1', {payload: 'hi!'});
+    await MeshFlow.workflow.signal('sig1', {payload: 'hi!'});
     ```
  - `hook` Redis governance converts your functions into 're-entrant processes'. Optionally use the *hook* method to spawn parallel execution threads to augment a running workflow.
     ```javascript
-    await Durable.workflow.hook({
+    await MeshFlow.workflow.hook({
       workflowName: 'newsletter',
       taskQueue: 'default',
       args: []
@@ -130,15 +314,15 @@ Externalizing state fundamentally changes the execution profile for your functio
     ```
  - `sleepFor` Pause function execution for a ridiculous amount of time (months, years, etc). There's no risk of information loss, as Redis governs function state. When your function awakens, function state is efficiently (and automatically) restored and your function will resume right where it left off.
     ```javascript
-    await Durable.workflow.sleepFor('1 month');
+    await MeshFlow.workflow.sleepFor('1 month');
     ```
  - `random` Generate a deterministic random number that can be used in a reentrant process workflow (replaces `Math.random()`).
     ```javascript
-    const random = await Durable.workflow.random();
+    const random = await MeshFlow.workflow.random();
     ```
  - `execChild` Call another durable function and await the response. *Design sophisticated, multi-process solutions by leveraging this command.*
     ```javascript
-    const jobResponse = await Durable.workflow.execChild({
+    const jobResponse = await MeshFlow.workflow.execChild({
       workflowName: 'newsletter',
       taskQueue: 'default',
       args: [{ id, user_id, etc }],
@@ -146,7 +330,7 @@ Externalizing state fundamentally changes the execution profile for your functio
     ```
  - `startChild` Call another durable function, but do not await the response.
     ```javascript
-    const jobId = await Durable.workflow.startChild({
+    const jobId = await MeshFlow.workflow.startChild({
       workflowName: 'newsletter',
       taskQueue: 'default',
       args: [{ id, user_id, etc }],
@@ -154,11 +338,11 @@ Externalizing state fundamentally changes the execution profile for your functio
     ```
  - `getContext` Get the current workflow context (workflowId, replay history, replay index, etc).
     ```javascript
-    const context = await Durable.workflow.getContext();
+    const context = await MeshFlow.workflow.getContext();
     ```
  - `search` Instance a search session
     ```javascript
-    const search = await Durable.workflow.search();
+    const search = await MeshFlow.workflow.search();
     ```
     - `set` Set one or more name/value pairs
       ```javascript
@@ -188,7 +372,7 @@ Externalizing state fundamentally changes the execution profile for your functio
 Refer to the [hotmeshio/samples-javascript](https://github.com/hotmeshio/samples-javascript) repo for usage examples.
 
 ### Design | Advanced
-The *Pluck* and *Durable* modules are the easiest way to use HotMesh. But if you need full control over your function lifecycles (including high-volume, high-speed use cases), you can use HotMesh's underlying YAML models to optimize your durable workflows. The following model depicts a sequence of activities orchestrated by HotMesh. Any function you associate with a `topic` in your YAML definition is guaranteed to be durable.
+The *Pluck* and *MeshFlow* modules are the easiest way to use HotMesh. But if you need full control over your function lifecycles (including high-volume, high-speed use cases), you can use HotMesh's underlying YAML models to optimize your durable workflows. The following model depicts a sequence of activities orchestrated by HotMesh. Any function you associate with a `topic` in your YAML definition is guaranteed to be durable.
 
 ```yaml
 app:
@@ -283,9 +467,9 @@ const hotMesh = await HotMesh.init({
         class: Redis,
         options: { host, port, password, db }
       }
-      callback: async (data: StreamData) => {
+      callback: async (input: StreamData) => {
         return {
-          metadata: { ...data.metadata },
+          metadata: { ...input.metadata },
           data: { }
         };
       }
@@ -295,31 +479,31 @@ const hotMesh = await HotMesh.init({
 ```
 
 ### Observability
-Workflows and activities are run according to the rules you define, offering [Graph-Oriented](./docs/system_lifecycle.md#telemetry) telemetry insights into your legacy function executions.
+Workflows and activities are run according to the rules you define, offering [Graph-Oriented](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/system_lifecycle.md#telemetry) telemetry insights into your legacy function executions.
 
 ## FAQ
-Refer to the [FAQ](./docs/faq.md) for terminology, definitions, and an exploration of how HotMesh facilitates orchestration use cases.
+Refer to the [FAQ](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/faq.md) for terminology, definitions, and an exploration of how HotMesh facilitates orchestration use cases.
 
 ## Quick Start
-Refer to the [Quick Start](./docs/quickstart.md) for sample YAML workflows you can copy, paste, and modify to get started.
+Refer to the [Quick Start](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/quickstart.md) for sample YAML workflows you can copy, paste, and modify to get started.
 
 ## Developer Guide
-For more details on the complete development process, including information about schemas, APIs, and deployment, consult the [Developer Guide](./docs/developer_guide.md).
+For more details on the complete development process, including information about schemas, APIs, and deployment, consult the [Developer Guide](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/developer_guide.md).
 
 ## Model Driven Development
-[Model Driven Development](./docs/model_driven_development.md) is an established strategy for managing process-oriented tasks. Check out this guide to understand its foundational principles.
+[Model Driven Development](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/model_driven_development.md) is an established strategy for managing process-oriented tasks. Check out this guide to understand its foundational principles.
 
 ## Data Mapping
-Exchanging data between activities is central to HotMesh. For detailed information on supported functions and the functional mapping syntax (@pipes), see the [Data Mapping Overview](./docs/data_mapping.md).
+Exchanging data between activities is central to HotMesh. For detailed information on supported functions and the functional mapping syntax (@pipes), see the [Data Mapping Overview](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/data_mapping.md).
 
 ## Composition
-While the simplest graphs are linear, detailing a consistent sequence of non-cyclical activities, graphs can be layered to represent intricate business scenarios. Some can even be designed to accommodate long-lasting workflows that span months. For more details, check out the [Composable Workflow Guide](./docs/composable_workflow.md).
+While the simplest graphs are linear, detailing a consistent sequence of non-cyclical activities, graphs can be layered to represent intricate business scenarios. Some can even be designed to accommodate long-lasting workflows that span months. For more details, check out the [Composable Workflow Guide](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/composable_workflow.md).
 
 ## System Lifecycle
-Gain insight into HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](./docs/system_lifecycle.md).
+Gain insight into HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/system_lifecycle.md).
 
 ## Distributed Orchestration | System Overview
-HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](./docs/distributed_orchestration.md) for a high-level overview of the approach.
+HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/distributed_orchestration.md) for a high-level overview of the approach.
 
 ## Distributed Orchestration | System Design
 HotMesh is more than Redis and TypeScript. The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).

@@ -87,7 +87,7 @@ export interface TransitionType {
   updated: string;
 }
 
-export interface DurableJobExport {
+export interface MeshFlowJobExport {
   data?: StringAnyType;
   state?: StringAnyType;
   status?: number;

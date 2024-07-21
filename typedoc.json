@@ -1,0 +1,38 @@
+{
+  "entryPoints": [
+    "modules/enums.ts",
+    "modules/errors.ts",
+    "modules/key.ts",
+    "modules/utils.ts",
+    "services/hotmesh/index.ts",
+    "services/meshcall/index.ts",
+    "services/meshdata/index.ts",
+    "services/meshflow/index.ts",
+    "services/meshflow/client.ts",
+    "services/meshflow/handle.ts",
+    "services/meshflow/worker.ts",
+    "services/meshflow/workflow.ts",
+    "services/meshflow/connection.ts",
+    "services/meshflow/search.ts",
+    "types/*.ts"
+  ],
+  "highlightLanguages": [
+    "bash",
+    "console",
+    "css",
+    "html",
+    "javascript",
+    "json",
+    "jsonc",
+    "json5",
+    "tsx",
+    "typescript",
+    "yaml"
+  ],
+  "exclude": ["types/index.ts"],
+  "out": "docs/hotmesh",
+  "name": "",
+  "excludePrivate": true,
+  "theme": "default",
+  "customCss": "docs/css/custom.css"
+}

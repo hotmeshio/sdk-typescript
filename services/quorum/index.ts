@@ -49,7 +49,14 @@ class QuorumService {
   quorum: number | null = null;
   callbacks: QuorumMessageCallback[] = [];
   rollCallInterval: NodeJS.Timeout;
+  /**
+   * @private
+   */
+  constructor() {}
 
+  /**
+   * @private
+   */
   static async init(
     namespace: string,
     appId: string,
@@ -90,6 +97,9 @@ class QuorumService {
     }
   }
 
+  /**
+   * @private
+   */
   verifyQuorumFields(config: HotMeshConfig) {
     if (
       !identifyRedisType(config.engine.store) ||
@@ -99,7 +109,10 @@ class QuorumService {
     }
   }
 
-  async initStoreChannel(store: RedisClient) {
+  /**
+   * @private
+   */
+   async initStoreChannel(store: RedisClient) {
     if (identifyRedisType(store) === 'redis') {
       this.store = new RedisStore(store as RedisClientType);
     } else {
@@ -108,6 +121,9 @@ class QuorumService {
     await this.store.init(this.namespace, this.appId, this.logger);
   }
 
+  /**
+   * @private
+   */
   async initSubChannel(sub: RedisClient) {
     if (identifyRedisType(sub) === 'redis') {
       this.subscribe = new RedisSub(sub as RedisClientType);
@@ -122,6 +138,9 @@ class QuorumService {
     );
   }
 
+  /**
+   * @private
+   */
   subscriptionHandler(): SubscriptionCallback {
     const self = this;
     return async (topic: string, message: QuorumMessage) => {
@@ -158,6 +177,9 @@ class QuorumService {
     };
   }
 
+  /**
+   * @private
+   */
   async sayPong(
     appId: string,
     guid: string,
@@ -195,6 +217,10 @@ class QuorumService {
     );
   }
 
+  /**
+   * A quorum-wide command to request a quorum count.
+   * @private
+   */
   async requestQuorum(
     delay = HMSH_QUORUM_DELAY_MS,
     details = false,
@@ -216,8 +242,7 @@ class QuorumService {
   }
 
   /**
-   * A quorum-wide command to broadcaset system details.
-   *
+   * @private
    */
   async doRollCall(message: RollCallMessage) {
     let iteration = 0;
@@ -235,6 +260,9 @@ class QuorumService {
     } while (this.rollCallInterval && iteration++ < max - 1);
   }
 
+  /**
+   * @private
+   */
   cancelRollCall() {
     if (this.rollCallInterval) {
       clearTimeout(this.rollCallInterval);
@@ -242,12 +270,15 @@ class QuorumService {
     }
   }
 
+  /**
+   * @private
+   */
   stop() {
     this.cancelRollCall();
   }
-
-  // ************* PUB/SUB METHODS *************
-  //publish a message to the quorum
+  /**
+   * @private
+   */
   async pub(quorumMessage: QuorumMessage) {
     return await this.store.publish(
       KeyType.QUORUM,
@@ -256,18 +287,21 @@ class QuorumService {
       quorumMessage.topic || quorumMessage.guid,
     );
   }
-  //subscribe user to quorum messages
+  /**
+   * @private
+   */
   async sub(callback: QuorumMessageCallback): Promise<void> {
-    //the quorum is always subscribed to the `quorum` topic; just register the fn
     this.callbacks.push(callback);
   }
-  //unsubscribe user from quorum messages
+  /**
+   * @private
+   */
   async unsub(callback: QuorumMessageCallback): Promise<void> {
-    //the quorum is always subscribed to the `quorum` topic; just unregister the fn
     this.callbacks = this.callbacks.filter((cb) => cb !== callback);
   }
-
-  // ************* COMPILER METHODS *************
+  /**
+   * @private
+   */
   async rollCall(delay = HMSH_QUORUM_DELAY_MS): Promise<QuorumProfile[]> {
     await this.requestQuorum(delay, true);
     const targetStreams = [];
@@ -290,7 +324,7 @@ class QuorumService {
     return this.profiles;
   }
   /**
-   * request a quorum; if successful activate the app version
+   * @private
    */
   async activate(
     version: string,

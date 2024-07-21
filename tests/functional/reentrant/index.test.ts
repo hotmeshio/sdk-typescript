@@ -2,22 +2,22 @@ import Redis from 'ioredis';
 
 import { HotMesh, HotMeshConfig } from '../../../index';
 import {
-  HMSH_CODE_DURABLE_ALL,
-  HMSH_CODE_DURABLE_CHILD,
-  HMSH_CODE_DURABLE_PROXY,
-  HMSH_CODE_DURABLE_SLEEP,
-  HMSH_CODE_DURABLE_WAIT,
+  HMSH_CODE_MESHFLOW_ALL,
+  HMSH_CODE_MESHFLOW_CHILD,
+  HMSH_CODE_MESHFLOW_PROXY,
+  HMSH_CODE_MESHFLOW_SLEEP,
+  HMSH_CODE_MESHFLOW_WAIT,
   HMSH_LOGLEVEL,
 } from '../../../modules/enums';
 import {
-  DurableChildError,
-  DurableFatalError,
-  DurableMaxedError,
-  DurableProxyError,
-  DurableSleepError,
-  DurableTimeoutError,
-  DurableWaitForAllError,
-  DurableWaitForError,
+  MeshFlowChildError,
+  MeshFlowFatalError,
+  MeshFlowMaxedError,
+  MeshFlowProxyError,
+  MeshFlowSleepError,
+  MeshFlowTimeoutError,
+  MeshFlowWaitForAllError,
+  MeshFlowWaitForError,
 } from '../../../modules/errors';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
@@ -32,7 +32,7 @@ import {
   WorkflowOptions,
 } from '../../../types';
 
-describe('FUNCTIONAL | DURABLE', () => {
+describe('FUNCTIONAL | MESHFLOW', () => {
   const appConfig = { id: 'durable', version: '1' };
   let activityErrorCounter = 0;
   let workflowId = 'durable';
@@ -83,7 +83,7 @@ describe('FUNCTIONAL | DURABLE', () => {
   let hotMesh: HotMesh;
 
   const xHandleError = (err: any, interruptionList: any[]) => {
-    if (err instanceof DurableSleepError) {
+    if (err instanceof MeshFlowSleepError) {
       interruptionList.push({
         code: err.code,
         message: JSON.stringify({
@@ -95,13 +95,13 @@ describe('FUNCTIONAL | DURABLE', () => {
         index: err.index,
         workflowDimension: err.workflowDimension,
       });
-    } else if (err instanceof DurableWaitForError) {
+    } else if (err instanceof MeshFlowWaitForError) {
       interruptionList.push({
         code: err.code,
         message: JSON.stringify(err.signalId),
         signalId: err.signalId,
       });
-    } else if (err instanceof DurableProxyError) {
+    } else if (err instanceof MeshFlowProxyError) {
       interruptionList.push({
         arguments: err.arguments,
         code: err.code,
@@ -116,7 +116,7 @@ describe('FUNCTIONAL | DURABLE', () => {
         maximumAttempts: err.maximumAttempts,
         maximumInterval: err.maximumInterval,
       });
-    } else if (err instanceof DurableChildError) {
+    } else if (err instanceof MeshFlowChildError) {
       interruptionList.push({
         arguments: err.arguments,
         code: err.code,
@@ -128,7 +128,7 @@ describe('FUNCTIONAL | DURABLE', () => {
         workflowTopic: err.workflowTopic,
         await: err.await,
       });
-    } else if (err instanceof DurableWaitForAllError) {
+    } else if (err instanceof MeshFlowWaitForAllError) {
       interruptionList.push({
         items: err.items,
         code: err.code,
@@ -145,20 +145,20 @@ describe('FUNCTIONAL | DURABLE', () => {
     }
   };
 
-  //588: HMSH_CODE_DURABLE_SLEEP
+  //588: HMSH_CODE_MESHFLOW_SLEEP
   const xSleepFor = async (millis: string): Promise<number> => {
     const seconds = Number(millis) / 1000;
     if (shouldSleep) {
       shouldSleep = false;
       const execIndex = counter++;
       interruptionRegistry.push({
-        code: HMSH_CODE_DURABLE_SLEEP,
+        code: HMSH_CODE_MESHFLOW_SLEEP,
         duration: seconds,
         index: execIndex,
         workflowDimension: '',
       });
       await sleepFor(0);
-      throw new DurableSleepError({
+      throw new MeshFlowSleepError({
         workflowId,
         duration: seconds,
         index: execIndex,
@@ -168,7 +168,7 @@ describe('FUNCTIONAL | DURABLE', () => {
     return seconds;
   };
 
-  //590: HMSH_CODE_DURABLE_CHILD
+  //590: HMSH_CODE_MESHFLOW_CHILD
   const xChild = async <T>(options: WorkflowOptions): Promise<T> => {
     if (shouldChild) {
       //SYNC
@@ -183,7 +183,7 @@ describe('FUNCTIONAL | DURABLE', () => {
       const workflowName = options.entity ?? options.workflowName;
       const workflowTopic = `${taskQueueName}-${workflowName}`;
       interruptionRegistry.push({
-        code: HMSH_CODE_DURABLE_CHILD,
+        code: HMSH_CODE_MESHFLOW_CHILD,
         arguments: options.args,
         workflowDimension: workflowDimension,
         index: execIndex,
@@ -196,7 +196,7 @@ describe('FUNCTIONAL | DURABLE', () => {
 
       //ASYNC
       await sleepFor(0);
-      throw new DurableChildError({
+      throw new MeshFlowChildError({
         arguments: options.args,
         workflowDimension: workflowDimension,
         index: execIndex,
@@ -210,7 +210,7 @@ describe('FUNCTIONAL | DURABLE', () => {
     return childResponse as T;
   };
 
-  //591: HMSH_CODE_DURABLE_PROXY
+  //591: HMSH_CODE_MESHFLOW_PROXY
   const xProxyActivity = async <T>(...args: any[]): Promise<T> => {
     if (shouldProxy) {
       //SYNC
@@ -221,7 +221,7 @@ describe('FUNCTIONAL | DURABLE', () => {
       const activityTopic = `${workflowName}-${workflowName}-activity`;
       interruptionRegistry.push({
         arguments: args,
-        code: HMSH_CODE_DURABLE_PROXY,
+        code: HMSH_CODE_MESHFLOW_PROXY,
         workflowDimension: workflowDimension,
         index: execIndex,
         originJobId: originJobId || workflowId,
@@ -232,7 +232,7 @@ describe('FUNCTIONAL | DURABLE', () => {
 
       //ASYNC
       await sleepFor(0);
-      throw new DurableProxyError({
+      throw new MeshFlowProxyError({
         activityName,
         arguments: args,
         workflowDimension: workflowDimension,
@@ -248,21 +248,21 @@ describe('FUNCTIONAL | DURABLE', () => {
     } as T;
   };
 
-  //595: HMSH_CODE_DURABLE_WAIT
+  //595: HMSH_CODE_MESHFLOW_WAIT
   const xWaitFor = async <T>(key: string): Promise<T> => {
     if (shouldWait) {
       //SYNC
       shouldWait = false;
       const execIndex = counter++;
       interruptionRegistry.push({
-        code: HMSH_CODE_DURABLE_WAIT,
+        code: HMSH_CODE_MESHFLOW_WAIT,
         signalId: key,
         index: execIndex,
         workflowDimension: '',
       });
       //ASYNC
       await sleepFor(0);
-      throw new DurableWaitForError({
+      throw new MeshFlowWaitForError({
         signalId: key,
         index: execIndex,
         workflowDimension: '',
@@ -374,14 +374,14 @@ describe('FUNCTIONAL | DURABLE', () => {
               const execIndex = counter++;
               if (
                 interruptionRegistry.length === 1 &&
-                interruptionRegistry[0].code !== HMSH_CODE_DURABLE_WAIT
+                interruptionRegistry[0].code !== HMSH_CODE_MESHFLOW_WAIT
               ) {
-                //signals are the exception (HMSH_CODE_DURABLE_WAIT). They are bundled as an array
+                //signals are the exception (HMSH_CODE_MESHFLOW_WAIT). They are bundled as an array
                 errData = interruptionList[0];
               } else {
                 const collatorFlowId = `-${workflowId}-$${workflowDimension}-$${execIndex}`;
                 errData = {
-                  code: HMSH_CODE_DURABLE_ALL,
+                  code: HMSH_CODE_MESHFLOW_ALL,
                   items: [...interruptionRegistry],
                   size: interruptionRegistry.length,
                   workflowDimension: '',
@@ -446,9 +446,9 @@ describe('FUNCTIONAL | DURABLE', () => {
               } as StreamDataResponse;
             } catch (error) {
               if (
-                error instanceof DurableFatalError ||
-                error instanceof DurableMaxedError ||
-                error instanceof DurableTimeoutError
+                error instanceof MeshFlowFatalError ||
+                error instanceof MeshFlowMaxedError ||
+                error instanceof MeshFlowTimeoutError
               ) {
                 return {
                   status: StreamStatus.SUCCESS, //todo: might be better to return .ERROR status
@@ -490,7 +490,7 @@ describe('FUNCTIONAL | DURABLE', () => {
     await HotMesh.stop();
   }, 15_000);
 
-  describe('Durable Function State', () => {
+  describe('MeshFlow Function State', () => {
     afterEach(async () => {
       interruptionRegistry.length = 0;
       interruptionList.length = 0;
