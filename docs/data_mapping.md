@@ -2,17 +2,17 @@
 
 This document describes the data mapping functions available in HotMesh. The functions are organized based on their data type categories, such as array, object, number, string, etc.
 
- - [Array Functions](./functions/array.md)
- - [Bitwise Functions](./functions/bitwise.md)
- - [Conditional Functions](./functions/conditional.md)
- - [Date/Time Functions](./functions/date.md)
- - [JSON Functions](./functions/json.md)
- - [Math Functions](./functions/math.md)
- - [Number Functions](./functions/number.md)
- - [Object Functions](./functions/object.md)
- - [String Functions](./functions/string.md)
- - [Symbol Functions](./functions/symbol.md)
- - [Unary Functions](./functions/unary.md)
+ - [Array Functions](./fns/array.md)
+ - [Bitwise Functions](./fns/bitwise.md)
+ - [Conditional Functions](./fns/conditional.md)
+ - [Date/Time Functions](./fns/date.md)
+ - [JSON Functions](./fns/json.md)
+ - [Math Functions](./fns/math.md)
+ - [Number Functions](./fns/number.md)
+ - [Object Functions](./fns/object.md)
+ - [String Functions](./fns/string.md)
+ - [Symbol Functions](./fns/symbol.md)
+ - [Unary Functions](./fns/unary.md)
 
 ## Quick Start
 This section demonstrates how to map data from multiple source objects to a single destination object.

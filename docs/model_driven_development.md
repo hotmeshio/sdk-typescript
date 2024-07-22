@@ -656,17 +656,17 @@ The use of '@pipes' in conditions enables developers to create more advanced and
 ### 6.3. Supported Functions
 The '@pipes' functional mapper provides a range of built-in functions for common operations, such as mathematical calculations, string manipulation, and logical comparisons. The functions are organized based on their data type categories, such as array, object, number, string, etc., which should be familiar to JavaScript developers. However, it's essential to understand that the approach in HotMesh is functional. Each transformation is a function that expects one or more input parameters from the prior row in the mapping rules.
 
- - [Array Functions](./functions/array.md)
- - [Bitwise Functions](./functions/bitwise.md)
- - [Conditional Functions](./functions/conditional.md)
- - [Date/Time Functions](./functions/date.md)
- - [JSON Functions](./functions/json.md)
- - [Math Functions](./functions/math.md)
- - [Number Functions](./functions/number.md)
- - [Object Functions](./functions/object.md)
- - [String Functions](./functions/string.md)
- - [Symbol Functions](./functions/symbol.md)
- - [Unary Functions](./functions/unary.md)
+ - [Array Functions](./fns/array.md)
+ - [Bitwise Functions](./fns/bitwise.md)
+ - [Conditional Functions](./fns/conditional.md)
+ - [Date/Time Functions](./fns/date.md)
+ - [JSON Functions](./fns/json.md)
+ - [Math Functions](./fns/math.md)
+ - [Number Functions](./fns/number.md)
+ - [Object Functions](./fns/object.md)
+ - [String Functions](./fns/string.md)
+ - [Symbol Functions](./fns/symbol.md)
+ - [Unary Functions](./fns/unary.md)
 
 ## 7. Stats
 Stats are used to collect and aggregate data generated during the execution of activities in the graph model. They allow for the calculation of metrics such as averages, counts, sums, and other aggregations based on the activity output data.
