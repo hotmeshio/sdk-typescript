@@ -128,7 +128,7 @@ class MeshData {
    * // Instantiate MeshData with `ioredis`
    * import Redis from 'ioredis';
    *
-   * const pluck = new MeshData(Redis, {
+   * const meshData = new MeshData(Redis, {
    *   host: 'localhost',
    *   port: 6379,
    *   password: 'shhh123',
@@ -138,7 +138,7 @@ class MeshData {
    * // Instantiate MeshData with `redis`
    * import * as Redis from 'redis';
    *
-   * const pluck = new MeshData(Redis, { url: 'redis://:shhh123@localhost:6379' });
+   * const meshData = new MeshData(Redis, { url: 'redis://:shhh123@localhost:6379' });
    */
   redisOptions: RedisOptions;
 
@@ -247,7 +247,7 @@ class MeshData {
    * // Instantiate MeshData with `ioredis`
    * import Redis from 'ioredis';
    * 
-   * const pluck = new MeshData(Redis, {
+   * const meshData = new MeshData(Redis, {
    *   host: 'localhost',
    *   port: 6379,
    *   password: 'shhh123',
@@ -257,7 +257,7 @@ class MeshData {
    * // Instantiate MeshData with `redis`
    * import * as Redis from 'redis';
    * 
-   * const pluck = new MeshData(Redis, { url: 'redis://:shhh123@localhost:6379' });
+   * const meshData = new MeshData(Redis, { url: 'redis://:shhh123@localhost:6379' });
    */
   constructor(redisClass: Partial<RedisClass>, redisOptions: Partial<RedisOptions>, search?: WorkflowSearchOptions) {
     this.redisClass = redisClass as RedisClass;
@@ -410,7 +410,7 @@ class MeshData {
    * @returns {Promise<string>}
    * @example
    * // mint a key
-   * const key = await pluck.mintKey('greeting', 'jsmith123');
+   * const key = await meshData.mintKey('greeting', 'jsmith123');
    * 
    * // returns 'hmsh:durable:j:greeting-jsmith123'
    */
@@ -494,11 +494,11 @@ class MeshData {
    * 
    * @example
    * // Instantiate MeshData with Redis configuration.
-   * const pluck = new MeshData(Redis, { host: 'localhost', port: 6379 });
+   * const meshData = new MeshData(Redis, { host: 'localhost', port: 6379 });
    * 
    * // Define and connect a function with the 'greeting' entity.
    * // The function will be cached indefinitely (infinite TTL).
-   * pluck.connect({
+   * meshData.connect({
    *   entity: 'greeting',
    *   target: (email, user) => `Hello, ${user.first}.`,
    *   options: { ttl: 'infinity' }
@@ -595,7 +595,7 @@ class MeshData {
         //job will only exit upon receiving a flush signal
         await MeshData.workflow.waitFor(`flush-${options.$guid}`)
       } else {
-        //pluck will exit after sleeping for 'ttl'
+        //will exit after sleeping for 'ttl'
         await MeshData.workflow.sleepFor(options.ttl);
       }
     }
@@ -655,7 +655,7 @@ class MeshData {
    * 
    * @example
    * // Flush a function
-   * await pluck.flush('greeting', 'jsmith123');
+   * await meshData.flush('greeting', 'jsmith123');
    */
   async flush(entity: string, id: string, namespace?: string): Promise<string | void> {
     const workflowId = MeshData.mintGuid(entity, id);
@@ -695,7 +695,7 @@ class MeshData {
    * 
    * @example
    * // Interrupt a function
-   * await pluck.interrupt('greeting', 'jsmith123');
+   * await meshData.interrupt('greeting', 'jsmith123');
    */
   async interrupt(entity: string, id: string, options: JobInterruptOptions = {}, namespace?: string): Promise<void> {
     const workflowId = MeshData.mintGuid(entity, id);
@@ -719,7 +719,7 @@ class MeshData {
    * @returns {Promise<string>} - the signal id
    * @example
    * // Signal a function with a payload
-   * await pluck.signal('signal123', { message: 'hi!' });
+   * await meshData.signal('signal123', { message: 'hi!' });
    * 
    * // returns '123456732345-0' (redis stream message receipt)
    */
@@ -751,7 +751,7 @@ class MeshData {
    * 
    * @example
    * // Throttle a worker or engine
-   * await pluck.throttle({ guid: '1234567890', throttle: 10_000 });
+   * await meshData.throttle({ guid: '1234567890', throttle: 10_000 });
    */
   async throttle(options: ThrottleOptions): Promise<boolean> {
     return (await this.getHotMesh(options.namespace || 'durable')).throttle(options as ThrottleOptions);
@@ -770,7 +770,7 @@ class MeshData {
    * 
    * @example
    * // Hook a function
-   * const signalId = await pluck.hook({
+   * const signalId = await meshData.hook({
    *   entity: 'greeting',
    *   id: 'jsmith123',
    *   hookEntity: 'greeting.newsletter',
@@ -812,9 +812,9 @@ class MeshData {
    * 
    * @example
    * // Invoke a remote function with arguments and options
-   * const response = await pluck.exec({
+   * const response = await meshData.exec({
    *   entity: 'greeting',
-   *   args: ['jsmith@pluck', { first: 'Jan' }],
+   *   args: ['jsmith@hotmesh', { first: 'Jan' }],
    *   options: { ttl: '15 minutes', id: 'jsmith123' }
    * });
    */
@@ -878,7 +878,7 @@ class MeshData {
    * 
    * @example
    * // Retrieve information about a remote function's execution by job ID
-   * const jobInfoById = await pluck.info('greeting', 'job-12345');
+   * const jobInfoById = await meshData.info('greeting', 'job-12345');
    * 
    * // Response: JobOutput
    * {
@@ -895,7 +895,7 @@ class MeshData {
    *   },
    *   data: {
    *    done: true,
-   *    response: 'Hello, Jan. Your email is [jsmith@pluck.com].',
+   *    response: 'Hello, Jan. Your email is [jsmith@hotmesh.com].',
    *    workflowId: 'greeting-jsmith123'
    *   }
    * }
@@ -921,7 +921,7 @@ class MeshData {
    * 
    * @example
    * // Export a function
-   * await pluck.export('greeting', 'jsmith123');
+   * await meshData.export('greeting', 'jsmith123');
    */
   async export(entity: string, id: string, options?: ExportOptions, namespace?: string): Promise<MeshFlowJobExport> {
     const workflowId = MeshData.mintGuid(entity, id);
@@ -937,7 +937,7 @@ class MeshData {
    * 1) when the record is first created (provide `options.search.data` to `exec`)
    * 2) during function execution ((await MeshData.workflow.search()).set(...))
    * 3) during hook execution ((await MeshData.workflow.search()).set(...))
-   * 4) via the pluck SDK (`pluck.set(...)`)
+   * 4) via the meshData SDK (`meshData.set(...)`)
    * 
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - the job id
@@ -947,7 +947,7 @@ class MeshData {
    * 
    * @example
    * // get the state of a function
-   * const state = await pluck.get('greeting', 'jsmith123', { fields: ['fred', 'barney'] });
+   * const state = await meshData.get('greeting', 'jsmith123', { fields: ['fred', 'barney'] });
    * 
    * // returns { fred: 'flintstone', barney: 'rubble' }
    */
@@ -993,7 +993,7 @@ class MeshData {
    * 
    * @example
    * // get the state of the job (this is not the response...this is job state)
-   * const state = await pluck.all('greeting', 'jsmith123');
+   * const state = await meshData.all('greeting', 'jsmith123');
    * 
    * // returns { fred: 'flintstone', barney: 'rubble', ...  }
    */
@@ -1026,9 +1026,9 @@ class MeshData {
    * 
    * @example
    * // get the state of a function
-   * const state = await pluck.raw('greeting', 'jsmith123');
+   * const state = await meshData.raw('greeting', 'jsmith123');
    * 
-   * // returns { : '0', _barney: 'rubble', aBa: 'Hello, John Doe. Your email is [jsmith@pluck].', ... }
+   * // returns { : '0', _barney: 'rubble', aBa: 'Hello, John Doe. Your email is [jsmith@hotmesh].', ... }
    */
   async raw(entity: string, id: string, options: CallOptions = {}): Promise<StringAnyType> {
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
@@ -1057,7 +1057,7 @@ class MeshData {
    * @returns {Promise<number>} - count
    * @example
    * // set the state of a function
-   * const count = await pluck.set('greeting', 'jsmith123', { search: { data: { fred: 'flintstone', barney: 'rubble' } } });
+   * const count = await meshData.set('greeting', 'jsmith123', { search: { data: { fred: 'flintstone', barney: 'rubble' } } });
    */
   async set(entity: string, id: string, options: CallOptions = {}): Promise<number> {
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
@@ -1083,7 +1083,7 @@ class MeshData {
    * @returns {Promise<number>} - the new value
    * @example
    * // increment a field in the function state
-   * const count = await pluck.incr('greeting', 'jsmith123', 'counter', 1);
+   * const count = await meshData.incr('greeting', 'jsmith123', 'counter', 1);
    */
   async incr(entity: string, id: string, field: string, amount: number, options: CallOptions = {}): Promise<number> {
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
@@ -1104,7 +1104,7 @@ class MeshData {
    * @returns {Promise<number>} - the count of fields deleted
    * @example
    * // remove two hash fields from the function state
-   * const count = await pluck.del('greeting', 'jsmith123', { fields: ['fred', 'barney'] });
+   * const count = await meshData.del('greeting', 'jsmith123', { fields: ['fred', 'barney'] });
    */
   async del(entity: string, id: string, options: CallOptions): Promise<number>{
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
@@ -1129,7 +1129,7 @@ class MeshData {
    * @returns {Promise<[string, string[]]>}
    * @example
    * // find jobs
-   * const [cursor, jobs] = await pluck.findJobs({ match: 'greeting*' });
+   * const [cursor, jobs] = await meshData.findJobs({ match: 'greeting*' });
    * 
    * // returns [ '0', [ 'hmsh:durable:j:greeting-jsmith123', 'hmsh:durable:j:greeting-jdoe456' ] ]
    */
@@ -1171,7 +1171,7 @@ class MeshData {
    * @param {FindWhereOptions} options - find options (the query). A custom search schema may be provided to target any index on the Redis backend.
    * @returns {Promise<SearchResults | number>} Returns a number if `count` is true, otherwise a SearchResults object.
    * @example
-   * const results = await pluck.findWhere('greeting', {
+   * const results = await meshData.findWhere('greeting', {
    *  query: [
    *   { field: 'name', is: '=', value: 'John' },
    *   { field: 'age', is: '>', value: 2 },
@@ -1280,10 +1280,10 @@ class MeshData {
    * @returns {Promise<string>} - the search index name
    * @example
    * // create a search index for the 'greeting' entity. pass in search options.
-   * const index = await pluck.createSearchIndex('greeting', {}, { prefix: 'greeting', ... });
+   * const index = await meshData.createSearchIndex('greeting', {}, { prefix: 'greeting', ... });
    * 
    * // creates a search index for the 'greeting' entity, using the default search options.
-   * const index = await pluck.createSearchIndex('greeting');
+   * const index = await meshData.createSearchIndex('greeting');
    */
   async createSearchIndex(entity: string, options: CallOptions = {}, searchOptions?: WorkflowSearchOptions): Promise<void> {
     const workflowTopic = `${options.taskQueue ?? entity}-${entity}`;
@@ -1297,7 +1297,7 @@ class MeshData {
    * @returns {Promise<string[]>}
    * @example
    * // list all search indexes
-   * const indexes = await pluck.listSearchIndexes();
+   * const indexes = await meshData.listSearchIndexes();
    * 
    * // returns ['greeting', 'user', 'order', 'product']
    */

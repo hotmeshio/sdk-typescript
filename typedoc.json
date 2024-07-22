@@ -10,10 +10,10 @@
     "services/meshflow/index.ts",
     "services/meshflow/client.ts",
     "services/meshflow/handle.ts",
+    "services/meshflow/search.ts",
     "services/meshflow/worker.ts",
     "services/meshflow/workflow.ts",
     "services/meshflow/connection.ts",
-    "services/meshflow/search.ts",
     "types/*.ts"
   ],
   "highlightLanguages": [

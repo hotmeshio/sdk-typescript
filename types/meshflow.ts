@@ -1,3 +1,4 @@
+import { WorkflowHandleService } from '../services/meshflow/handle';
 import { LogLevel } from './logger';
 import { RedisClass, RedisOptions } from './redis';
 import { StringAnyType, StringStringType } from './serializer';
@@ -335,6 +336,13 @@ type WorkflowOptions = {
    * will be added after the job is resumed if relevant.
    */
   pending?: number;
+
+  /**
+   * Provide to set the engine name. This MUST be unique, so do not
+   * provide unless it is guaranteed to be a unique engine/worker guid
+   * when identifying the point of presence within the mesh.
+   */
+  guid?: string;
 };
 
 /**
@@ -446,6 +454,13 @@ type WorkerConfig = {
 
   /** Search options for workflow execution details */
   search?: WorkflowSearchOptions;
+
+  /**
+   * Provide to set the engine name. This MUST be unique, so do not
+   * provide unless it is guaranteed to be a unique engine/worker guid
+   * when identifying the point of presence within the mesh.
+   */
+  guid?: string;
 };
 
 type FindWhereQuery = {
@@ -565,11 +580,20 @@ type ChildResponseType<T> = {
   ju: string;
 };
 
+interface ClientWorkflow {
+  start(options: WorkflowOptions): Promise<WorkflowHandleService>;
+  signal(signalId: string, data: StringAnyType, namespace?: string): Promise<string>;
+  hook(options: HookOptions): Promise<string>;
+  getHandle(taskQueue: string, workflowName: string, workflowId: string, namespace?: string): Promise<WorkflowHandleService>;
+  search(taskQueue: string, workflowName: string, namespace: string | null, index: string, ...query: string[]): Promise<string[]>;
+}
+
 export {
   ActivityConfig,
   ActivityWorkflowDataType,
   ChildResponseType,
   ClientConfig,
+  ClientWorkflow,
   ContextType,
   ConnectionConfig,
   Connection,

@@ -52,14 +52,40 @@ import {
 import { WorkerService } from './worker';
 import { Search } from './search';
 
+/**
+ * The workflow module provides a set of static extension methods
+ * that can be called from within a workflow function. In this example,
+ * the `waitFor` extension method is called to add collation to the
+ * workflow, only continuing once both outside signals have been received.
+ * 
+ * @example
+ * ```typescript
+ * //waitForWorkflow.ts
+ * import { MeshFlow } from '@hotmeshio/hotmesh';
+
+ * export async function waitForExample(): Promise<[boolean, number]> {
+ *   const [s1, s2] = await Promise.all([
+ *     Meshflow.workflow.waitFor<boolean>('my-sig-nal-1'),
+ *     Meshflow.workflow.waitFor<number>('my-sig-nal-2')
+ *   ]);
+ *   //do something with the signal payloads (s1, s2)
+ *   return [s1, s2];
+ * }
+ * ```
+ */
 export class WorkflowService {
+
+  /**
+   * @private
+   */
+  constructor() {}
+
   /**
    * Returns the synchronous output from the activity (replay)
    * if available locally, revealing whether or not the activity already
    * ran during a prior execution cycle
    * @param {string} prefix - one of: proxy, child, start, wait etc
    * @private
-   * @returns
    */
   static async didRun(prefix: string): Promise<[boolean, number, any]> {
     const { COUNTER, replay, workflowDimension } = WorkflowService.getContext();
@@ -153,7 +179,6 @@ export class WorkflowService {
 
   /**
    * Return a handle to the hotmesh client hosting the workflow execution
-   * @returns {Promise<HotMesh>} - a hotmesh client
    */
   static async getHotMesh(): Promise<HotMesh> {
     const store = asyncLocalStorage.getStore();

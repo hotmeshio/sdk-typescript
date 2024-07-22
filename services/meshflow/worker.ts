@@ -38,12 +38,50 @@ import {
 import { Search } from './search';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 
+/**
+ * The *Worker* service Registers worker functions and connects them to the mesh.
+ * 
+ * @example
+ * ```typescript
+ * import { MeshFlow } from '@hotmeshio/hotmesh';
+ * import Redis from 'ioredis';
+ * import * as workflows from './workflows';
+ * 
+ * async function run() {
+ *   const worker = await MeshFlow.Worker.create({
+ *     connection: {
+ *       class: Redis,
+ *       options: { host: 'redis', port: 6379 },
+ *     },
+ *     taskQueue: 'default',
+ *     workflow: workflows.example,
+ *   });
+ * 
+ *   await worker.run();
+ * }
+ * ```
+ */
 export class WorkerService {
+  /**
+   * @private
+   */
   static activityRegistry: Registry = {}; //user's activities
+  /**
+   * @private
+   */
   static instances = new Map<string, HotMesh | Promise<HotMesh>>();
+  /**
+   * @private
+   */
   workflowRunner: HotMesh;
+  /**
+   * @private
+   */
   activityRunner: HotMesh;
 
+  /**
+   * @private
+   */
   static getHotMesh = async (
     workflowTopic: string,
     config?: Partial<WorkerConfig>,
@@ -67,6 +105,11 @@ export class WorkerService {
     await WorkerService.activateWorkflow(await hotMeshClient);
     return hotMeshClient;
   };
+
+  /**
+   * @private
+   */
+  constructor() {}
 
   /**
    * @private
@@ -123,6 +166,29 @@ export class WorkerService {
     return WorkerService.activityRegistry;
   }
 
+  /**
+   * Connects a worker to the mesh.
+   * 
+   * @example
+   * ```typescript
+   * import { MeshFlow } from '@hotmeshio/hotmesh';
+   * import Redis from 'ioredis';
+   * import * as workflows from './workflows';
+   * 
+   * async function run() {
+   *   const worker = await MeshFlow.Worker.create({
+   *     connection: {
+   *       class: Redis,
+   *       options: { host: 'redis', port: 6379 },
+   *     },
+   *     taskQueue: 'default',
+   *     workflow: workflows.example,
+   *   });
+   * 
+   *   await worker.run();
+   * }
+   * ```
+   */
   static async create(config: WorkerConfig): Promise<WorkerService> {
     const workflow = config.workflow;
     const [workflowFunctionName, workflowFunction] =
@@ -170,6 +236,9 @@ export class WorkerService {
     }
   }
 
+  /**
+   * Run the connected worker; no-op (unnecessary to call)
+   */
   async run() {
     this.workflowRunner.engine.logger.info('durable-worker-running');
   }
@@ -189,6 +258,7 @@ export class WorkerService {
     const optionsHash = hashOptions(config?.connection?.options);
     const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
     const hotMeshWorker = await HotMesh.init({
+      guid: config.guid ? `${config.guid}XA`: undefined,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
       engine: { redis: redisConfig },
@@ -287,6 +357,7 @@ export class WorkerService {
     const optionsHash = hashOptions(config?.connection?.options);
     const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
     const hotMeshWorker = await HotMesh.init({
+      guid: config.guid,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
       engine: { redis: redisConfig },
@@ -518,6 +589,9 @@ export class WorkerService {
     };
   }
 
+  /**
+   * @private
+   */
   static async shutdown(): Promise<void> {
     for (const [_, hotMeshInstance] of WorkerService.instances) {
       (await hotMeshInstance).stop();

@@ -12,13 +12,14 @@ import { hashOptions, sleepFor } from '../../modules/utils';
 import { HotMesh } from '../hotmesh';
 import {
   ClientConfig,
+  ClientWorkflow,
   Connection,
   HookOptions,
   WorkflowOptions,
 } from '../../types/meshflow';
 import { JobState } from '../../types/job';
 import { KeyType } from '../../modules/key';
-import { StreamStatus } from '../../types';
+import { StreamStatus, StringAnyType } from '../../types';
 
 import { Search } from './search';
 import { WorkflowHandleService } from './handle';
@@ -27,8 +28,34 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 /**
  * The MeshFlow `Client` service is functionally
  * equivalent to the Temporal `Client` service.
- * Starting a workflow is the primary use case and
- * is accessed by calling workflow.start().
+ * Start a new workflow execution by calling
+ * `workflow.start` on the client instance
+ * @example
+
+ * ```typescript
+ * //client.ts
+ * import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
+ * import Redis from 'ioredis';
+
+ * async function run(): Promise<string> {
+ *   const client = new MeshFlow.Client({
+ *     connection: {
+ *       class: Redis,
+ *       options: { host: 'localhost', port: 6379 }
+ *     }
+ *   });
+
+ *   const handle = await client.workflow.start<[string,string]>({
+ *     args: ['HotMesh'],
+ *     taskQueue: 'default',
+ *     workflowName: 'example',
+ *     workflowId: HotMesh.guid()
+ *   });
+
+ *   return await handle.result();
+ *   //returns ['Hello HotMesh', '¡Hola, HotMesh!']
+ * }
+ * ```
  */
 export class ClientService {
   /**
@@ -149,13 +176,11 @@ export class ClientService {
    * Starting a workflow is the primary use case and
    * is accessed by calling workflow.start().
    */
-  workflow = {
+  workflow: ClientWorkflow = {
 
     /**
-     * Start a workflow. This is the primary method for
-     * starting a workflow. The workflow will be enqueued
-     * and the worker will execute the workflow when it
-     * becomes available.
+     * Starts a workflow, verifies the idempotent id, and
+     * adds searchable data to the record.
      */
     start: async (options: WorkflowOptions): Promise<WorkflowHandleService> => {
       const taskQueueName = options.entity ?? options.taskQueue;
@@ -206,11 +231,11 @@ export class ClientService {
     },
 
     /**
-     * send a message to a running workflow that is paused and awaiting the signal
+     * Sends a message payload to a running workflow that is paused and awaiting the signal
      */
     signal: async (
       signalId: string,
-      data: Record<any, any>,
+      data: StringAnyType,
       namespace?: string,
     ): Promise<string> => {
       const topic = `${namespace ?? APP_ID}.wfs.signal`;
@@ -220,10 +245,23 @@ export class ClientService {
     },
 
     /**
-     * send a message to spawn an parallel in-process thread of execution
-     * with the same job state as the main thread but bound to a different
-     * handler function. All job state will be journaled to the same hash
-     * as is used by the main thread.
+     * Spawns an a new, isolated execution cycle within the same job.
+     * Similar to `worker` functions, `hook` functions have a linked
+     * function. But hooks do not start a new job and instead read/write
+     * their isolated activity data to an existing Job record (HASH).
+     * 
+     * This example spawns a hook that will update workflow `guid123`.
+     * 
+     * @example
+     * ```typescript
+     * await client.workflow.hook({
+     *   namespace: 'demo',
+     *   taskQueue: 'default',
+     *   workflowName: 'myDemoFunction',
+     *   workflowId: 'guid123',
+     *   args: ['Hello'],
+     * });
+     * ```
      */
     hook: async (options: HookOptions): Promise<string> => {
       const workflowTopic = `${options.taskQueue}-${options.workflowName}`;
@@ -264,7 +302,20 @@ export class ClientService {
     },
 
     /**
-     * get a handle to a running workflow
+     * Returns a reference to a running workflow,
+     * allowing callers to check the status of the workflow,
+     * interrupt it, and even await its eventual response
+     * if still in a pending state.
+     * 
+     * @example
+     * ```typescript
+     * const handle = await client.workflow.getHandle(
+     *  'default',
+     *  'myFunction',
+     *  'someGuid123',
+     *  'demo',
+     * );
+     * ```
      */
     getHandle: async (
       taskQueue: string,
@@ -285,8 +336,23 @@ export class ClientService {
     },
 
     /**
-     * provides access to the search class and extended support
-     * for the FT.SEARCH module
+     * Provides direct access to the Redis backend when making
+     * FT.SEARCH queries. Taskqueues and workflow names are
+     * used to identify the point of presence to use. `...args` is
+     * the tokenized FT.SEARCH query as it would be entered in
+     * the terminal.
+     * 
+     * @example
+     * ```typescript
+     * await client.workflow.search(
+     *   'someTaskQueue'
+     *   'someWorkflowName',
+     *   'durable',
+     *   'user',
+     *   ...args,
+     * );
+     * //returns [count, [id, fields[]], [id, fields[]], [id, fields[]], ...]]
+     * ```
      */
     search: async (
       taskQueue: string,
@@ -373,6 +439,9 @@ export class ClientService {
     }
   }
 
+  /**
+   * @private
+   */
   static async shutdown(): Promise<void> {
     for (const [_, hotMeshInstance] of ClientService.instances) {
       (await hotMeshInstance).stop();

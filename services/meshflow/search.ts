@@ -5,14 +5,56 @@ import { KeyService, KeyType } from '../../modules/key';
 import { WorkflowSearchOptions } from '../../types/meshflow';
 import { asyncLocalStorage } from '../../modules/storage';
 
+/**
+ * The Search module provides methods for reading and
+ * writing data to a workflow record. The instance
+ * methods exposed by this class are available
+ * for use from within a running workflow. The following example
+ * uses search to set a `name` field and increment a
+ * `counter` field. The workflow returns the incremented value.
+ * 
+ * @example
+ * ```typescript
+ * //searchWorkflow.ts
+ * import { MeshFlow } from '@hotmeshio/hotmesh';
+
+ * export async function searchExample(name: string): Promise<{counter: number}> {
+ *   const search = await MeshFlow.workflow.search();
+ *   await search.set('name', name);
+ *   const newCounterValue = await search.incr('counter', 1);
+ *   return { counter: newCounterValue };
+ * }
+ * ```
+ */
 export class Search {
+  /**
+   * @private
+   */
   jobId: string;
+  /**
+   * @private
+   */
   searchSessionId: string;
+  /**
+   * @private
+   */
   searchSessionIndex = 0;
+  /**
+   * @private
+   */
   hotMeshClient: HotMesh;
+  /**
+   * @private
+   */
   store: StoreService<RedisClient, RedisMulti> | null;
+  /**
+   * @private
+   */
   cachedFields: Record<string, string> = {};
 
+  /**
+   * @private
+   */
   constructor(
     workflowId: string,
     hotMeshClient: HotMesh,
@@ -57,6 +99,7 @@ export class Search {
    * @param {HotMesh} hotMeshClient - the hotmesh client
    * @param {WorkflowSearchOptions} search - the search options
    * @returns {Promise<void>}
+   * @private
    * @example
    * const search = {
    *  index: 'my_search_index',
@@ -216,8 +259,6 @@ export class Search {
 
   /**
    * Returns the values of all specified fields in the HASH stored at key.
-   * @param args
-   * @returns
    */
   async mget(...args: string[]): Promise<string[]> {
     let isCached = true;

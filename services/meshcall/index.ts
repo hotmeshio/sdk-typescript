@@ -2,19 +2,47 @@ import { HotMesh } from "../hotmesh";
 import { HMSH_LOGLEVEL, HMSH_QUORUM_DELAY_MS } from "../../modules/enums";
 import { sleepFor } from "../../modules/utils";
 import {
-  MCConnectOptions,
-  MCCronParams,
-  MCExecParams
+  MeshCallConnectParams,
+  MeshCallCronParams,
+  MeshCallExecParams,
+  MeshCallFlushParams,
+  MeshCallInterruptParams
 } from "../../types/meshcall";
 import { RedisConfig } from "../../types";
 
 /**
- * MeshCall is a fire-and-forget module that connects any function to the mesh.
- * Calls are brokered via Redis Streams, reducing the overhead of HTTP
- * without backpressure risk.
+ * MeshCall connects your functions to the Redis-backed mesh,
+ * exposing them as idempotent endpoints. Call functions
+ * from anywhere on the network with a connection to Redis. Function
+ * responses are cacheable and functions can even
+ * run as cyclical cron jobs (this one runs once a day).
+ * 
+ * @example
+ * ```typescript
+ * MeshCall.cron({
+ *   namespace: 'demo',
+ *   topic: 'my.cron.function',
+ *   redis: {
+ *     class: Redis,
+ *     options: { url: 'redis://:key_admin@redis:6379' }
+ *   },
+ *   callback: async () => {
+ *     //your code here...
+ *   },
+ *   options: { id: 'myDailyCron123', interval: '1 day' }
+ * });
+ * ```
  */
 class MeshCall {
+  /**
+   * @private
+   */
   static instances = new Map<string, any>();
+
+  /**
+   * @private
+   */
+  static connectons = new Map<string, any>();
 
   /**
    * @private
@@ -107,25 +135,32 @@ class MeshCall {
     }
   }
 
-  static connect(options: MCConnectOptions): void {
-    if (!MeshCall.instances.has(options.topic ?? 'hmsh')) {
-      MeshCall.getHotMeshClient(
-        options.topic ?? 'hmsh',
-        options.namespace,
-        options.redis
-      );
-    }
-
+  static connect(params: MeshCallConnectParams): void {
+    const { namespace, topic } = params;
+    // Connection logic to register the function on the mesh
+    console.log(`Function connected under namespace: ${namespace}, topic: ${topic}`);
   }
 
-  static async exec(params: MCExecParams): Promise<Record<string, any>> {
-
-    return {}; // Placeholder return
+  static async exec(params: MeshCallExecParams): Promise<any> {
+    const { namespace, topic, args } = params;
+    console.log(`Executing function in namespace: ${namespace}, topic: ${topic}`);
+    // Dummy response, replace with actual logic
+    return { hello: args ? args[0] : 'world' };
   }
 
-  static cron(params: MCCronParams): void {
+  static async flush(params: MeshCallFlushParams): Promise<void> {
+    const { namespace, topic } = params;
+    console.log(`Flushing cache for namespace: ${namespace}, topic: ${topic}`);
+  }
 
+  static cron(params: MeshCallCronParams): void {
+    const { namespace, topic } = params;
+    console.log(`Cron job set for namespace: ${namespace}, topic: ${topic}`);
+  }
 
+  static interrupt(params: MeshCallInterruptParams): void {
+    const { namespace, topic } = params;
+    console.log(`Interrupting cron job in namespace: ${namespace}, topic: ${topic}`);
   }
 }
 

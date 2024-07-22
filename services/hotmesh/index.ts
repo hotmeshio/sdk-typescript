@@ -43,8 +43,9 @@ import { MAX_DELAY } from '../../modules/enums';
 
 /**
  * HotMesh transforms Redis into a durable service mesh.
- * Call the static `init` method to initialize a point of presence
- * and attach to the mesh. Connect an `engine` or link a `worker`.
+ * Call `HotMesh.init` to initialize a point of presence
+ * and attach to the mesh.
+ * 
  * This example shows the full lifecycle of a HotMesh engine instance,
  * including: initialization, deployment, activation and execution.
  * 
@@ -89,8 +90,17 @@ class HotMesh {
   namespace: string;
   appId: string;
   guid: string;
+  /**
+   * @private
+   */
   engine: EngineService | null = null;
+  /**
+   * @private
+   */
   quorum: QuorumService | null = null;
+  /**
+   * @private
+   */
   workers: WorkerService[] = [];
   logger: ILogger;
 
@@ -223,6 +233,13 @@ class HotMesh {
   }
 
   // ************* PUB/SUB METHODS *************
+  /**
+   * Starts a workflow
+   * @example
+   * ```typescript
+   * await hotMesh.pub('a.b.c', { key: 'value' });
+   * ```
+   */
   async pub(
     topic: string,
     data: JobData = {},
@@ -231,20 +248,50 @@ class HotMesh {
   ): Promise<string> {
     return await this.engine?.pub(topic, data, context, extended);
   }
+  /**
+   * Subscribe (listen) to all output and interim emissions of a single
+   * workflow topic
+   * @example
+   * ```typescript
+   * await hotMesh.psub('a.b.c', (topic, message) => {
+   *  console.log(message);
+   * });
+   * ```
+ */
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
     return await this.engine?.sub(topic, callback);
   }
+  /**
+   * Stop listening in on a single workflow topic
+   */
   async unsub(topic: string): Promise<void> {
     return await this.engine?.unsub(topic);
   }
+  /**
+   * Listen to all output and interim emissions of a workflow topic
+   * matching a wildcard pattern.
+   * @example
+   * ```typescript
+   * await hotMesh.psub('a.b.c*', (topic, message) => {
+   *  console.log(message);
+   * });
+   * ```
+   */
   async psub(wild: string, callback: JobMessageCallback): Promise<void> {
     return await this.engine?.psub(wild, callback);
   }
+  /**
+   * Patterned unsubscribe
+   */
   async punsub(wild: string): Promise<void> {
     return await this.engine?.punsub(wild);
   }
   /**
-   * One-time subscription in support of request/response exchanges
+   * Starts a workflow and awaits the response
+   * @example
+   * ```typescript
+   * await hotMesh.pubsub('a.b.c', { key: 'value' });
+   * ```
    */
   async pubsub(
     topic: string,
@@ -254,6 +301,10 @@ class HotMesh {
   ): Promise<JobOutput> {
     return await this.engine?.pubsub(topic, data, context, timeout);
   }
+  /**
+   * Add a transition message to the workstream, resuming leg 2 of a paused
+   * reentrant activity (e.g., await, worker, hook)
+   */
   async add(streamData: StreamData | StreamDataResponse): Promise<string> {
     return (await this.engine.add(streamData)) as string;
   }

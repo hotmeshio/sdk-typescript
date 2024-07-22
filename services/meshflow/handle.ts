@@ -18,10 +18,17 @@ import { ExporterService } from './exporter';
  * const client = new MeshFlow.Client({ connection: { class: Redis, options } });
  * const handle = await client.workflow.start({
  *  args: ['HotMesh'],
- * taskQueue: 'hello-world',
+ *  taskQueue: 'hello-world',
  * });
+ *
+ * //perform actions like send a signal
+ * await handle.signal('my-signal', { data: 'Hello' });
+ * ```
  */
 export class WorkflowHandleService {
+  /**
+   * @private
+   */
   exporter: ExporterService;
   hotMesh: HotMesh;
   workflowTopic: string;

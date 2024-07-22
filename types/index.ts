@@ -26,6 +26,7 @@ export {
   ActivityWorkflowDataType,
   ChildResponseType,
   ClientConfig,
+  ClientWorkflow,
   ContextType,
   ConnectionConfig,
   Connection,
@@ -116,6 +117,16 @@ export {
   KeyStoreParams,
   KeyType,
 } from './hotmesh';
+export {
+  MeshCallConnectParams,
+  MeshCallExecParams,
+  MeshCallCronParams,
+  MeshCallExecOptions,
+  MeshCallCronOptions,
+  MeshCallInterruptOptions,
+  MeshCallInterruptParams,
+  MeshCallFlushParams,
+} from './meshcall';
 export {
   CallOptions,
   MeshDataWorkflowOptions,

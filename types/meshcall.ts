@@ -1,42 +1,64 @@
 import { RedisConfig } from "./hotmesh";
 import { StreamData } from "./stream";
 
-// Define the interface for the execution options, including caching
-interface MCExecOptions {
-  ttl?: string;  // time to live for caching the response
+interface MeshCallExecOptions {
+  ttl?: string; 
 }
 
-// Define the interface for the connection options
-interface MCConnectOptions {
+interface MeshCallConnectParams {
   namespace: string;
   topic: string;
   redis: RedisConfig;
   callback: (data: StreamData) => Promise<{ metadata: Record<string, any>; data: Record<string, any> }>;
 }
 
-// Define the interface for the execution parameters
-interface MCExecParams {
+interface MeshCallExecParams {
   namespace: string;
   topic: string;
-  payload: Record<string, any>;
+  args: any[];
   redis: RedisConfig;
-  options?: MCExecOptions;
+  options?: MeshCallExecOptions;
 }
 
-// Define the interface for cron job options
-interface MCCronOptions {
+interface MeshCallFlushParams {
+  namespace: string;
+  topic: string;
+  redis: RedisConfig;
+}
+
+interface MeshCallCronOptions {
+  id: string;
   interval: string;
   maxCycles?: number;
   maxDuration?: string;
 }
 
-// Define the interface for the cron job parameters
-interface MCCronParams {
+interface MeshCallInterruptOptions {
+  id: string;
+}
+
+interface MeshCallCronParams {
   namespace: string;
   topic: string;
   redis: RedisConfig;
   callback: () => Promise<void>;
-  options: MCCronOptions;
+  options: MeshCallCronOptions;
 }
 
-export { MCConnectOptions, MCExecParams, MCCronParams, MCExecOptions, MCCronOptions };
+interface MeshCallInterruptParams {
+  namespace: string;
+  topic: string;
+  redis: RedisConfig;
+  options: MeshCallInterruptOptions;
+}
+
+export {
+  MeshCallConnectParams,
+  MeshCallExecParams,
+  MeshCallCronParams,
+  MeshCallExecOptions,
+  MeshCallCronOptions,
+  MeshCallInterruptOptions,
+  MeshCallInterruptParams,
+  MeshCallFlushParams,
+};

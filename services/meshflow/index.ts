@@ -79,8 +79,7 @@ class MeshFlowClass {
   static Connection = ConnectionService;
 
   /**
-   * The MeshFlow `Search` service is functionally
-   * equivalent to the Temporal `Search` service.
+   * @private
    */
   static Search = Search;
 
