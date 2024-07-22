@@ -10,7 +10,7 @@ npm install @hotmeshio/hotmesh
 You have a Redis instance? Good. You're ready to go.
 
 ## MeshCall
-The **MeshCall** module connects and exposes your functions as idempotent endpoints, callable from any service with a connection to Redis.
+The **MeshCall** module connects and exposes your functions as idempotent endpoints.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Run an idempotent cron job</summary>
