@@ -9,6 +9,9 @@ npm install @hotmeshio/hotmesh
 ```
 You have a Redis instance? Good. You're ready to go.
 
+## SDK Docs
+[Read the Docs](https://hotmeshio.github.io/sdk-typescript/)
+
 ## MeshCall
 The **MeshCall** module connects and exposes your functions as idempotent endpoints.
 

@@ -72,7 +72,7 @@ type HotMeshWorker = {
   redis?: RedisConfig;
   reclaimDelay?: number; //milliseconds
   reclaimCount?: number; //max number of times to reclaim a stream
-  callback: (payload: StreamData) => Promise<StreamDataResponse | void>;
+  callback: (payload: StreamData) => Promise<StreamDataResponse>;
 };
 
 type HotMeshConfig = {

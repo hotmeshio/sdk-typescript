@@ -90,7 +90,7 @@ The following illustrates the app version *deployment* process.
 <img src="./img/lifecycle/deploy_version.png" alt="App Version Deployment" style="max-width:600px;width:600px;">
 
 ## Activate Version
-Once the app YAML file is deployed to Redis, the `activate` function can be called to enable it for the entire quorum at the same moment. The approach is to establish the coordinated health of the system through series of call/response exchanges. Once it is established that the quorum is healthy, the quorum is instructed to run their engine in 'no-cache' mode, ensuring that the Redis backend is consulted for the active app version each time a call is processes. This ensures that all engines are running the same version of the app, switching over at the same moment and then enabling 'cache' mode to improve performance.
+Once the app YAML file is deployed to Redis, the `activate` function can be called to enable it for the entire quorum at the same moment. The approach is to establish the coordinated health of the system through series of call/response exchanges. Once it is established that the quorum is healthy, the quorum is instructed to run their engine in 'no-cache' mode, ensuring that the Redis backend is consulted for the active app version each time a call is processed. This ensures that all engines are running the same version of the app, switching over at the same moment and then enabling 'cache' mode to improve performance.
 
 ```javascript
 const activationStatus = await hotMesh.activate('1');
