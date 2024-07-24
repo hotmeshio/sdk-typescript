@@ -12,7 +12,7 @@ import {
   ActivityType,
   TriggerActivity,
 } from '../../types/activity';
-import { JobState, ExtensionType } from '../../types/job';
+import { JobState, ExtensionType, JobStatus } from '../../types/job';
 import { RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 import { WorkListTaskType } from '../../types/task';
@@ -51,9 +51,10 @@ class Trigger extends Activity {
       telemetry.startJobSpan();
       telemetry.startActivitySpan(this.leg);
       this.mapJobData();
-      await this.setStateNX(options?.pending ? -1 : undefined);
       this.adjacencyList = await this.filterAdjacent();
-      await this.setStatus(options?.pending ? -1 : this.adjacencyList.length);
+      const initialStatus = this.initStatus(options, this.adjacencyList.length);
+      await this.setStateNX(initialStatus);
+      await this.setStatus(initialStatus);
 
       this.bindSearchData(options);
       this.bindMarkerData(options);
@@ -68,23 +69,14 @@ class Trigger extends Activity {
       }
       await multi.exec();
 
-      //if the parent (spawner) chose not to await,
-      // emit the job_id as the data payload { job_id }
       this.execAdjacentParent();
-
       telemetry.mapActivityAttributes();
       const jobStatus = Number(this.context.metadata.js);
       telemetry.setJobAttributes({ 'app.job.jss': jobStatus });
       const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-      //todo: enable resume from pending state
-      if (jobStatus !== -1) {
-        const messageIds = await this.transition(this.adjacencyList, jobStatus);
-        if (messageIds.length) {
-          attrs['app.activity.mids'] = messageIds.join(',');
-        }
-      }
-
+      await this.transitionAndLogAdjacent(options, jobStatus, attrs);
       telemetry.setActivityAttributes(attrs);
+
       return this.context.metadata.jid;
     } catch (error) {
       if (error instanceof DuplicateJobError) {
@@ -103,6 +95,33 @@ class Trigger extends Activity {
         gid: this.context.metadata.gid,
       });
     }
+  }
+
+  async transitionAndLogAdjacent(options: ExtensionType = {}, jobStatus: JobStatus, attrs: StringScalarType): Promise<void> {
+    //todo: enable resume from pending state
+    if (isNaN(options.pending)) {
+      const messageIds = await this.transition(this.adjacencyList, jobStatus);
+      if (messageIds.length) {
+        attrs['app.activity.mids'] = messageIds.join(',');
+      }
+    }
+  }
+
+  /**
+   * `pending` flows will not transition from the trigger to adjacent children until resumed
+   * 
+   * `expiring` flows initialize with a job status of `1m + adjacentChildCount` (not 0, the default);
+   * they emit the 'job done' event when 1_000_000 is reached (as if 0 had been reached);
+   * the record is still 'active' once 1m is reached, but the positive integer value is sufficient
+   * to allow the system to accept outside events and keep the record 'alive'.
+   */
+  initStatus(options: ExtensionType = {}, count: number): number {
+    if (options.pending) {
+      return -1;
+    } else if (options.statusThreshold) {
+      return 1_000_000 - options.statusThreshold + count;
+    }
+    return count;
   }
 
   async setExpired(seconds: number, multi: RedisMulti) {
@@ -135,6 +154,10 @@ class Trigger extends Activity {
     this.context.metadata.js = amount;
   }
 
+  /**
+   * if the parent (spawner) chose not to await, emit the job_id
+   * as the data payload { job_id }
+   */
   async execAdjacentParent() {
     if (this.context.metadata.px) {
       const timestamp = formatISODate(new Date());
@@ -250,6 +273,10 @@ class Trigger extends Activity {
   }
 
   async setStateNX(status?: number): Promise<void> {
+    // const expire = Pipe.resolve(
+    //   this.config.expire ?? HMSH_EXPIRE_DURATION,
+    //   this.context,
+    // );
     const jobId = this.context.metadata.jid;
     if (!await this.store.setStateNX(jobId, this.engine.appId, status)) {
       throw new DuplicateJobError(jobId);

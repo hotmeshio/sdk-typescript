@@ -12,6 +12,9 @@ import { SystemHealth } from '../types/quorum';
 
 import { HMSH_GUID_SIZE } from './enums';
 
+/**
+ * @private
+ */
 async function safeExecute<T>(
   operation: Promise<T>,
   defaultValue: T,
@@ -24,6 +27,9 @@ async function safeExecute<T>(
   }
 }
 
+/**
+ * @private
+ */
 export const hashOptions = (options: any): string =>{
   const str = JSON.stringify(options);
   return createHash('sha256').update(str).digest('hex');
@@ -61,20 +67,8 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   return systemHealth as SystemHealth;
 }
 
-export async function sleepFor(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export function sleepImmediate(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
-}
-
 export function deepCopy<T>(obj: T): T {
   return JSON.parse(JSON.stringify(obj));
-}
-
-export function guid(size: number = HMSH_GUID_SIZE): string {
-  return `H` + nanoid(size);
 }
 
 export function deterministicRandom(seed: number): number {
@@ -82,6 +76,33 @@ export function deterministicRandom(seed: number): number {
   return x - Math.floor(x);
 }
 
+export function guid(size: number = HMSH_GUID_SIZE): string {
+  return `H` + nanoid(size);
+}
+
+export async function sleepFor(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function sleepImmediate(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+export function XSleepFor(ms: number): {
+  promise: Promise<unknown>;
+  timerId: NodeJS.Timeout;
+} {
+  //can be interrupted with `clearTimeout`
+  let timerId: NodeJS.Timeout;
+  const promise = new Promise((resolve) => {
+    timerId = setTimeout(resolve, ms);
+  });
+  return { promise, timerId };
+}
+
+/**
+ * @private
+ */
 export function identifyRedisType(
   redisInstance: any,
 ): 'redis' | 'ioredis' | null {
@@ -114,7 +135,9 @@ export function identifyRedisType(
   return null;
 }
 
-//todo: the polyfill methods will all be deleted in the `beta` release.
+/**
+ * @private
+ */
 export const polyfill = {
   resolveActivityType(activityType: string): string {
     if (activityType === 'activity') {
@@ -124,6 +147,9 @@ export const polyfill = {
   },
 };
 
+/**
+ * @private
+ */
 export function identifyRedisTypeFromClass(
   redisClass: any,
 ): 'redis' | 'ioredis' | null {
@@ -138,6 +164,9 @@ export function identifyRedisTypeFromClass(
   return null;
 }
 
+/**
+ * @private
+ */
 export function matchesStatusCode(
   code: StreamCode,
   pattern: string | RegExp,
@@ -150,6 +179,9 @@ export function matchesStatusCode(
   return pattern.test(code.toString());
 }
 
+/**
+ * @private
+ */
 export function matchesStatus(
   status: StreamStatus,
   targetStatus: StreamStatus,
@@ -157,18 +189,9 @@ export function matchesStatus(
   return status === targetStatus;
 }
 
-export function XSleepFor(ms: number): {
-  promise: Promise<unknown>;
-  timerId: NodeJS.Timeout;
-} {
-  //can be interrupted with `clearTimeout`
-  let timerId: NodeJS.Timeout;
-  const promise = new Promise((resolve) => {
-    timerId = setTimeout(resolve, ms);
-  });
-  return { promise, timerId };
-}
-
+/**
+ * @private
+ */
 export function findTopKey(obj: AppTransitions, input: string): string | null {
   for (const [key, value] of Object.entries(obj)) {
     if (value.hasOwnProperty(input)) {
@@ -179,6 +202,9 @@ export function findTopKey(obj: AppTransitions, input: string): string | null {
   return null;
 }
 
+/**
+ * @private
+ */
 export function findSubscriptionForTrigger(
   obj: AppSubscriptions,
   value: string,
@@ -192,8 +218,8 @@ export function findSubscriptionForTrigger(
 }
 
 /**
- * Get the subscription topic for the flow to which @activityId belongs.
- * TODO: resolve this value in the compiler...do not call this at runtime
+ * Get the subscription topic for the flow to which activityId belongs.
+ * @private
  */
 export async function getSubscriptionTopic(
   activityId: string,
@@ -210,6 +236,7 @@ export async function getSubscriptionTopic(
 /**
  * returns the 12-digit format of the iso timestamp (e.g, 202101010000); returns
  * an empty string if overridden by the user to not segment by time (infinity).
+ * @private
  */
 export function getTimeSeries(granularity: string): string {
   if (granularity.toString() === 'infinity') {
@@ -231,11 +258,17 @@ export function getTimeSeries(granularity: string): string {
     .replace(':', '');
 }
 
+/**
+ * @private
+ */
 export function formatISODate(input: Date | string): string {
   const date = input instanceof Date ? input : new Date(input);
   return date.toISOString().replace(/[:TZ-]/g, '');
 }
 
+/**
+ * @private
+ */
 export function getSymKey(number: number): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const base = alphabet.length;
@@ -247,6 +280,9 @@ export function getSymKey(number: number): string {
   return alphabet[q2] + alphabet[r1] + alphabet[r2];
 }
 
+/**
+ * @private
+ */
 export function getSymVal(number: number): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const base = alphabet.length;
@@ -257,10 +293,16 @@ export function getSymVal(number: number): string {
   return alphabet[q] + alphabet[r];
 }
 
+/**
+ * @private
+ */
 function divmod(m: number, n: number): number[] {
   return [Math.floor(m / n), m % n];
 }
 
+/**
+ * @private
+ */
 export function getIndexedHash<T>(hash: T, target: string): [number, T] {
   const index = (hash[target] as number) || 0;
   const newHash = { ...hash };
@@ -268,6 +310,9 @@ export function getIndexedHash<T>(hash: T, target: string): [number, T] {
   return [index, newHash as T];
 }
 
+/**
+ * @private
+ */
 export function getValueByPath(obj: { [key: string]: any }, path: string): any {
   const pathParts = path.split('/');
   let currentValue = obj;
@@ -281,6 +326,9 @@ export function getValueByPath(obj: { [key: string]: any }, path: string): any {
   return currentValue;
 }
 
+/**
+ * @private
+ */
 export function restoreHierarchy(obj: StringAnyType): StringAnyType {
   const result: StringAnyType = {};
   for (const key in obj) {

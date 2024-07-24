@@ -50,6 +50,14 @@ class WorkerService {
   inited: string;
   rollCallInterval: NodeJS.Timeout;
 
+  /**
+   * @private
+   */
+  constructor() {}
+
+  /**
+   * @private
+   */
   static async init(
     namespace: string,
     appId: string,
@@ -115,6 +123,9 @@ class WorkerService {
     return services;
   }
 
+  /**
+   * @private
+   */
   verifyWorkerFields(worker: HotMeshWorker) {
     if (
       !identifyRedisType(worker.store) ||
@@ -128,6 +139,9 @@ class WorkerService {
     }
   }
 
+  /**
+   * @private
+   */
   async initStoreChannel(service: WorkerService, store: RedisClient) {
     if (identifyRedisType(store) === 'redis') {
       service.store = new RedisStore(store as RedisClientType);
@@ -137,6 +151,9 @@ class WorkerService {
     await service.store.init(service.namespace, service.appId, service.logger);
   }
 
+  /**
+   * @private
+   */
   async initSubChannel(service: WorkerService, sub: RedisClient) {
     if (identifyRedisType(sub) === 'redis') {
       service.subscribe = new RedisSub(sub as RedisClientType);
@@ -151,6 +168,9 @@ class WorkerService {
     );
   }
 
+  /**
+   * @private
+   */
   async initStreamChannel(service: WorkerService, stream: RedisClient) {
     if (identifyRedisType(stream) === 'redis') {
       service.stream = new RedisStream(stream as RedisClientType);
@@ -160,6 +180,9 @@ class WorkerService {
     await service.stream.init(service.namespace, service.appId, service.logger);
   }
 
+  /**
+   * @private
+   */
   async initRouter(worker: HotMeshWorker, logger: ILogger): Promise<Router> {
     const throttle = await this.store.getThrottleRate(worker.topic);
 
@@ -180,6 +203,9 @@ class WorkerService {
     );
   }
 
+  /**
+   * @private
+   */
   subscriptionHandler(): SubscriptionCallback {
     const self = this;
     return async (topic: string, message: QuorumMessage) => {
@@ -232,10 +258,16 @@ class WorkerService {
     }
   }
 
+  /**
+   * @private
+   */
   stop() {
     this.cancelRollCall();
   }
 
+  /**
+   * @private
+   */
   async sayPong(
     appId: string,
     guid: string,
@@ -278,6 +310,9 @@ class WorkerService {
     );
   }
 
+  /**
+   * @private
+   */
   async throttle(delayInMillis: number) {
     this.router.setThrottle(delayInMillis);
   }

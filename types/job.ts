@@ -108,16 +108,34 @@ type ExtensionType = {
   marker?: StringStringType;
 
   /**
+   * Workflows that are 'pending' init with a status of `-1`.
+   *
    * If provided, the job will initialize in a pending state, reserving
    * only the job ID (HSETNX) and persisting search and marker (if provided).
    * If a `resume` signal is sent before the specified number of seconds,
    * the job will resume as normal, transitioning to the adjacent children
-   * of the trigger. If the job is not resumed within the number
+   * of the trigger.
+   * 
+   * If the job is not resumed within the number
    * of seconds specified, the job will be scrubbed. No dependencies
    * are added for a job in a pending state; however, dependencies
    * will be added after the job is resumed if relevant.
    */
   pending?: number;
+
+  /**
+   * Workflows that apply a status threshold will be initialized
+   * with a status value of 1m - statusThreshold.
+   * 
+   * The value provided should be the count of descendant activities
+   * (those that descend from the trigger) that should be allowed to
+   * remain open once 'done' event is emitted.
+   *
+   * If the job should not be removed from the cache, the `expire` field
+   * should be set to `0`.
+   *
+   */
+  statusThreshold?: number;
 };
 
 /**

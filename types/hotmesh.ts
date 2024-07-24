@@ -1,5 +1,5 @@
 import { ILogger } from '../services/logger';
-import { HotMeshService } from '../services/hotmesh';
+import { HotMesh as HotMeshService } from '../services/hotmesh';
 
 import { HookRules } from './hook';
 import { RedisClass, RedisClient, RedisOptions } from './redis';
@@ -72,13 +72,14 @@ type HotMeshWorker = {
   redis?: RedisConfig;
   reclaimDelay?: number; //milliseconds
   reclaimCount?: number; //max number of times to reclaim a stream
-  callback: (payload: StreamData) => Promise<StreamDataResponse | void>;
+  callback: (payload: StreamData) => Promise<StreamDataResponse>;
 };
 
 type HotMeshConfig = {
   appId: string;
   namespace?: string;
   name?: string;
+  guid?: string;
   logger?: ILogger;
   logLevel?: LogLevel;
   engine?: HotMeshEngine;

@@ -1,24 +1,24 @@
 import { ActivityDuplex } from '../types/activity';
 import { CollationFaultType, CollationStage } from '../types/collator';
 import {
-  DurableChildErrorType,
-  DurableProxyErrorType,
-  DurableSleepErrorType,
-  DurableWaitForAllErrorType,
-  DurableWaitForErrorType,
+  MeshFlowChildErrorType,
+  MeshFlowProxyErrorType,
+  MeshFlowSleepErrorType,
+  MeshFlowWaitForAllErrorType,
+  MeshFlowWaitForErrorType,
 } from '../types/error';
 
 import {
-  HMSH_CODE_DURABLE_MAXED,
-  HMSH_CODE_DURABLE_TIMEOUT,
-  HMSH_CODE_DURABLE_FATAL,
+  HMSH_CODE_MESHFLOW_MAXED,
+  HMSH_CODE_MESHFLOW_TIMEOUT,
+  HMSH_CODE_MESHFLOW_FATAL,
   HMSH_CODE_NOTFOUND,
-  HMSH_CODE_DURABLE_RETRYABLE,
-  HMSH_CODE_DURABLE_WAIT,
-  HMSH_CODE_DURABLE_PROXY,
-  HMSH_CODE_DURABLE_CHILD,
-  HMSH_CODE_DURABLE_ALL,
-  HMSH_CODE_DURABLE_SLEEP,
+  HMSH_CODE_MESHFLOW_RETRYABLE,
+  HMSH_CODE_MESHFLOW_WAIT,
+  HMSH_CODE_MESHFLOW_PROXY,
+  HMSH_CODE_MESHFLOW_CHILD,
+  HMSH_CODE_MESHFLOW_ALL,
+  HMSH_CODE_MESHFLOW_SLEEP,
 } from './enums';
 
 class GetStateError extends Error {
@@ -35,22 +35,22 @@ class SetStateError extends Error {
   }
 }
 
-class DurableWaitForError extends Error {
+class MeshFlowWaitForError extends Error {
   code: number;
   signalId: string;
   workflowId: string;
   index: number;
   workflowDimension: string; //hook workflowDimension (e.g., ',0,1,0') (use empty string for `null`)
-  constructor(params: DurableWaitForErrorType) {
+  constructor(params: MeshFlowWaitForErrorType) {
     super(`WaitFor Interruption`);
     this.signalId = params.signalId;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
-    this.code = HMSH_CODE_DURABLE_WAIT;
+    this.code = HMSH_CODE_MESHFLOW_WAIT;
   }
 }
 
-class DurableProxyError extends Error {
+class MeshFlowProxyError extends Error {
   activityName: string;
   arguments: string[];
   backoffCoefficient: number;
@@ -64,7 +64,7 @@ class DurableProxyError extends Error {
   workflowDimension: string;
   workflowId: string;
   workflowTopic: string;
-  constructor(params: DurableProxyErrorType) {
+  constructor(params: MeshFlowProxyErrorType) {
     super(`ProxyActivity Interruption`);
     this.arguments = params.arguments;
     this.workflowId = params.workflowId;
@@ -78,11 +78,11 @@ class DurableProxyError extends Error {
     this.backoffCoefficient = params.backoffCoefficient;
     this.maximumAttempts = params.maximumAttempts;
     this.maximumInterval = params.maximumInterval;
-    this.code = HMSH_CODE_DURABLE_PROXY;
+    this.code = HMSH_CODE_MESHFLOW_PROXY;
   }
 }
 
-class DurableChildError extends Error {
+class MeshFlowChildError extends Error {
   await: boolean;
   arguments: string[];
   backoffCoefficient: number;
@@ -97,7 +97,7 @@ class DurableChildError extends Error {
   parentWorkflowId: string;
   workflowId: string;
   workflowTopic: string;
-  constructor(params: DurableChildErrorType) {
+  constructor(params: MeshFlowChildErrorType) {
     super(`ExecChild Interruption`);
     this.arguments = params.arguments;
     this.workflowId = params.workflowId;
@@ -108,7 +108,7 @@ class DurableChildError extends Error {
     this.originJobId = params.originJobId;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
-    this.code = HMSH_CODE_DURABLE_CHILD;
+    this.code = HMSH_CODE_MESHFLOW_CHILD;
     this.await = params.await;
     this.backoffCoefficient = params.backoffCoefficient;
     this.maximumAttempts = params.maximumAttempts;
@@ -116,7 +116,7 @@ class DurableChildError extends Error {
   }
 }
 
-class DurableWaitForAllError extends Error {
+class MeshFlowWaitForAllError extends Error {
   items: any[];
   code: number;
   workflowDimension: string;
@@ -126,7 +126,7 @@ class DurableWaitForAllError extends Error {
   parentWorkflowId: string;
   workflowId: string;
   workflowTopic: string;
-  constructor(params: DurableWaitForAllErrorType) {
+  constructor(params: MeshFlowWaitForAllErrorType) {
     super(`Collation Interruption`);
     this.items = params.items;
     this.size = params.size;
@@ -136,64 +136,64 @@ class DurableWaitForAllError extends Error {
     this.originJobId = params.originJobId;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
-    this.code = HMSH_CODE_DURABLE_ALL;
+    this.code = HMSH_CODE_MESHFLOW_ALL;
   }
 }
 
-class DurableSleepError extends Error {
+class MeshFlowSleepError extends Error {
   workflowId: string;
   code: number;
   duration: number; //seconds
   index: number;
   workflowDimension: string; //empty string for null
-  constructor(params: DurableSleepErrorType) {
+  constructor(params: MeshFlowSleepErrorType) {
     super(`SleepFor Interruption`);
     this.duration = params.duration;
     this.workflowId = params.workflowId;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
-    this.code = HMSH_CODE_DURABLE_SLEEP;
+    this.code = HMSH_CODE_MESHFLOW_SLEEP;
   }
 }
 
-class DurableTimeoutError extends Error {
+class MeshFlowTimeoutError extends Error {
   code: number;
   constructor(message: string, stack?: string) {
     super(message);
     if (this.stack) {
       this.stack = stack;
     }
-    this.code = HMSH_CODE_DURABLE_TIMEOUT;
+    this.code = HMSH_CODE_MESHFLOW_TIMEOUT;
   }
 }
-class DurableMaxedError extends Error {
+class MeshFlowMaxedError extends Error {
   code: number;
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {
       this.stack = stackTrace;
     }
-    this.code = HMSH_CODE_DURABLE_MAXED;
+    this.code = HMSH_CODE_MESHFLOW_MAXED;
   }
 }
-class DurableFatalError extends Error {
+class MeshFlowFatalError extends Error {
   code: number;
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {
       this.stack = stackTrace;
     }
-    this.code = HMSH_CODE_DURABLE_FATAL;
+    this.code = HMSH_CODE_MESHFLOW_FATAL;
   }
 }
-class DurableRetryError extends Error {
+class MeshFlowRetryError extends Error {
   code: number;
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {
       this.stack = stackTrace;
     }
-    this.code = HMSH_CODE_DURABLE_RETRYABLE;
+    this.code = HMSH_CODE_MESHFLOW_RETRYABLE;
   }
 }
 
@@ -280,15 +280,15 @@ class CollationError extends Error {
 
 export {
   CollationError,
-  DurableChildError,
-  DurableFatalError,
-  DurableMaxedError,
-  DurableProxyError,
-  DurableRetryError,
-  DurableSleepError,
-  DurableTimeoutError,
-  DurableWaitForAllError,
-  DurableWaitForError,
+  MeshFlowChildError,
+  MeshFlowFatalError,
+  MeshFlowMaxedError,
+  MeshFlowProxyError,
+  MeshFlowRetryError,
+  MeshFlowSleepError,
+  MeshFlowTimeoutError,
+  MeshFlowWaitForAllError,
+  MeshFlowWaitForError,
   DuplicateJobError,
   ExecActivityError,
   GenerationalError,

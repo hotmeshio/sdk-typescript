@@ -109,6 +109,14 @@ class EngineService {
   jobId = 1;
   inited: string;
 
+  /**
+   * @private
+   */
+  constructor() {}
+
+  /**
+   * @private
+   */
   static async init(
     namespace: string,
     appId: string,
@@ -148,6 +156,9 @@ class EngineService {
     }
   }
 
+  /**
+   * @private
+   */
   verifyEngineFields(config: HotMeshConfig) {
     if (
       !identifyRedisType(config.engine.store) ||
@@ -158,6 +169,9 @@ class EngineService {
     }
   }
 
+  /**
+   * @private
+   */
   async initStoreChannel(store: RedisClient) {
     if (identifyRedisType(store) === 'redis') {
       this.store = new RedisStore(store as RedisClientType);
@@ -167,6 +181,9 @@ class EngineService {
     await this.store.init(this.namespace, this.appId, this.logger);
   }
 
+  /**
+   * @private
+   */
   async initSubChannel(sub: RedisClient) {
     if (identifyRedisType(sub) === 'redis') {
       this.subscribe = new RedisSub(sub as RedisClientType);
@@ -181,6 +198,9 @@ class EngineService {
     );
   }
 
+  /**
+   * @private
+   */
   async initStreamChannel(stream: RedisClient) {
     if (identifyRedisType(stream) === 'redis') {
       this.stream = new RedisStream(stream as RedisClientType);
@@ -190,6 +210,9 @@ class EngineService {
     await this.stream.init(this.namespace, this.appId, this.logger);
   }
 
+  /**
+   * @private
+   */
   async initRouter(config: HotMeshConfig): Promise<Router> {
     const throttle = await this.store.getThrottleRate(':');
 
@@ -253,6 +276,9 @@ class EngineService {
     }
   }
 
+  /**
+   * @private
+   */
   setCacheMode(cacheMode: CacheMode, untilVersion: string) {
     this.logger.info(`engine-executable-cache`, {
       mode: cacheMode,
@@ -262,6 +288,9 @@ class EngineService {
     this.untilVersion = untilVersion;
   }
 
+  /**
+   * @private
+   */
   async routeToSubscribers(topic: string, message: JobOutput) {
     const jobCallback = this.jobCallbacks[message.metadata.jid];
     if (jobCallback) {
@@ -270,14 +299,23 @@ class EngineService {
     }
   }
 
+  /**
+   * @private
+   */
   async processWebHooks() {
     this.taskService.processWebHooks(this.hook.bind(this));
   }
 
+  /**
+   * @private
+   */
   async processTimeHooks() {
     this.taskService.processTimeHooks(this.hookTime.bind(this));
   }
 
+  /**
+   * @private
+   */
   async throttle(delayInMillis: number) {
     try {
       this.router.setThrottle(delayInMillis);
@@ -287,6 +325,9 @@ class EngineService {
   }
 
   // ************* METADATA/MODEL METHODS *************
+  /**
+   * @private
+   */
   async initActivity(
     topic: string,
     data: JobData = {},
@@ -343,24 +384,39 @@ class EngineService {
       `no subscription found for topic ${topic} in app ${this.appId} for app version ${app.version}`,
     );
   }
+  /**
+   * @private
+   */
   async getSettings(): Promise<HotMeshSettings> {
     return await this.store.getSettings();
   }
+  /**
+   * @private
+   */
   isPrivate(topic: string) {
     return topic.startsWith('.');
   }
 
   // ************* COMPILER METHODS *************
+  /**
+   * @private
+   */
   async plan(pathOrYAML: string): Promise<HotMeshManifest> {
     const compiler = new CompilerService(this.store, this.logger);
     return await compiler.plan(pathOrYAML);
   }
+  /**
+   * @private
+   */
   async deploy(pathOrYAML: string): Promise<HotMeshManifest> {
     const compiler = new CompilerService(this.store, this.logger);
     return await compiler.deploy(pathOrYAML);
   }
 
   // ************* REPORTER METHODS *************
+  /**
+   * @private
+   */
   async getStats(topic: string, query: JobStatsInput): Promise<StatsResponse> {
     const { id, version } = await this.getVID();
     const reporter = new ReporterService(
@@ -371,6 +427,9 @@ class EngineService {
     const resolvedQuery = await this.resolveQuery(topic, query);
     return await reporter.getStats(resolvedQuery);
   }
+  /**
+   * @private
+   */
   async getIds(
     topic: string,
     query: JobStatsInput,
@@ -385,6 +444,9 @@ class EngineService {
     const resolvedQuery = await this.resolveQuery(topic, query);
     return await reporter.getIds(resolvedQuery, queryFacets);
   }
+  /**
+   * @private
+   */
   async resolveQuery(
     topic: string,
     query: JobStatsInput,
@@ -402,6 +464,9 @@ class EngineService {
   }
 
   // ****************** STREAM RE-ENTRY POINT *****************
+  /**
+   * @private
+   */
   async processStreamMessage(streamData: StreamDataResponse): Promise<void> {
     this.logger.debug('engine-process', {
       jid: streamData.metadata.jid,
@@ -496,6 +561,9 @@ class EngineService {
   }
 
   // ***************** `AWAIT` ACTIVITY RETURN RESPONSE ****************
+  /**
+   * @private
+   */
   async execAdjacentParent(
     context: JobState,
     jobOutput: JobOutput,
@@ -535,6 +603,9 @@ class EngineService {
       return (await this.router?.publishMessage(null, streamData)) as string;
     }
   }
+  /**
+   * @private
+   */
   hasParentJob(context: JobState, checkSevered = false): boolean {
     if (checkSevered) {
       return Boolean(
@@ -543,6 +614,9 @@ class EngineService {
     }
     return Boolean(context.metadata.pj && context.metadata.pa);
   }
+  /**
+   * @private
+   */
   resolveError(metadata: JobMetadata): StreamError | undefined {
     if (metadata && metadata.err) {
       return JSON.parse(metadata.err) as StreamError;
@@ -550,6 +624,9 @@ class EngineService {
   }
 
   // ****************** `INTERRUPT` ACTIVE JOBS *****************
+  /**
+   * @private
+   */
   async interrupt(
     topic: string,
     jobId: string,
@@ -571,12 +648,18 @@ class EngineService {
   }
 
   // ****************** `SCRUB` CLEAN COMPLETED JOBS *****************
+  /**
+   * @private
+   */
   async scrub(jobId: string) {
     //todo: do not allow scrubbing of non-existent or actively running job
     await this.store.scrub(jobId);
   }
 
   // ****************** `HOOK` ACTIVITY RE-ENTRY POINT *****************
+  /**
+   * @private
+   */
   async hook(
     topic: string,
     data: JobData,
@@ -598,6 +681,9 @@ class EngineService {
     };
     return (await this.router.publishMessage(null, streamData)) as string;
   }
+  /**
+   * @private
+   */
   async hookTime(
     jobId: string,
     gId: string,
@@ -625,6 +711,9 @@ class EngineService {
     };
     await this.router.publishMessage(null, streamData);
   }
+  /**
+   * @private
+   */
   async hookAll(
     hookTopic: string,
     data: JobData,
@@ -670,7 +759,9 @@ class EngineService {
   }
 
   // ********************** PUB/SUB ENTRY POINT **********************
-  //publish (returns just the job id)
+  /**
+   * @private
+   */
   async pub(
     topic: string,
     data: JobData,
@@ -684,7 +775,9 @@ class EngineService {
       throw new Error(`unable to process activity for topic ${topic}`);
     }
   }
-  //subscribe to all jobs for a topic
+  /**
+   * @private
+   */
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
     const subscriptionCallback: SubscriptionCallback = async (
       topic: string,
@@ -699,11 +792,15 @@ class EngineService {
       topic,
     );
   }
-  //unsubscribe to all jobs for a topic
+  /**
+   * @private
+   */
   async unsub(topic: string): Promise<void> {
     return await this.subscribe.unsubscribe(KeyType.QUORUM, this.appId, topic);
   }
-  //subscribe to all jobs for a wildcard topic
+  /**
+   * @private
+   */
   async psub(wild: string, callback: JobMessageCallback): Promise<void> {
     const subscriptionCallback: SubscriptionCallback = async (
       topic: string,
@@ -718,11 +815,15 @@ class EngineService {
       wild,
     );
   }
-  //unsubscribe to all jobs for a wildcard topic
+  /**
+   * @private
+   */
   async punsub(wild: string): Promise<void> {
     return await this.subscribe.punsubscribe(KeyType.QUORUM, this.appId, wild);
   }
-  //publish and await (returns the job and data (if ready)); throws error with jobid if not
+  /**
+   * @private
+   */
   async pubsub(
     topic: string,
     data: JobData,
@@ -760,6 +861,9 @@ class EngineService {
       }, timeout);
     });
   }
+  /**
+   * @private
+   */
   async pubOneTimeSubs(context: JobState, jobOutput: JobOutput, emit = false) {
     //todo: subscriber should query for the job...only publish minimum context needed
     if (this.hasOneTimeSubscription(context)) {
@@ -776,6 +880,9 @@ class EngineService {
       );
     }
   }
+  /**
+   * @private
+   */
   async getPublishesTopic(context: JobState): Promise<string> {
     const config = await this.getVID();
     const activityId =
@@ -783,6 +890,9 @@ class EngineService {
     const schema = await this.store.getSchema(activityId, config);
     return schema.publishes;
   }
+  /**
+   * @private
+   */
   async pubPermSubs(context: JobState, jobOutput: JobOutput, emit = false) {
     const topic = await this.getPublishesTopic(context);
     if (topic) {
@@ -799,21 +909,36 @@ class EngineService {
       );
     }
   }
+  /**
+   * @private
+   */
   async add(streamData: StreamData | StreamDataResponse): Promise<string> {
     return (await this.router.publishMessage(null, streamData)) as string;
   }
 
+  /**
+   * @private
+   */
   registerJobCallback(jobId: string, jobCallback: JobMessageCallback) {
     this.jobCallbacks[jobId] = jobCallback;
   }
+  /**
+   * @private
+   */
   delistJobCallback(jobId: string) {
     delete this.jobCallbacks[jobId];
   }
+  /**
+   * @private
+   */
   hasOneTimeSubscription(context: JobState): boolean {
     return Boolean(context.metadata.ngn);
   }
 
   // ********** JOB COMPLETION/CLEANUP (AND JOB EMIT) ***********
+  /**
+   * @private
+   */
   async runJobCompletionTasks(
     context: JobState,
     options: JobCompletionOptions = {},
@@ -846,25 +971,35 @@ class EngineService {
    * Job hash expiration is typically reliant on the metadata field
    * if the activity concludes normally. However, if the job is `interrupted`,
    * it will be expired immediately.
+   * @private
    */
   resolveExpires(context: JobState, options: JobCompletionOptions): number {
     return options.expire ?? context.metadata.expire ?? HMSH_EXPIRE_JOB_SECONDS;
   }
 
   // ****** GET JOB STATE/COLLATION STATUS BY ID *********
+  /**
+   * @private
+   */
   async export(jobId: string): Promise<JobExport> {
     return await this.exporter.export(jobId);
   }
+  /**
+   * @private
+   */
   async getRaw(jobId: string): Promise<StringStringType> {
     return await this.store.getRaw(jobId);
   }
+  /**
+   * @private
+   */
   async getStatus(jobId: string): Promise<JobStatus> {
     const { id: appId } = await this.getVID();
     return await this.store.getStatus(jobId, appId);
   }
-  //todo: add 'options' parameter;
-  //      (e.g, if {dimensions:true}, use hscan to deliver
-  //      the full set of dimensional job data)
+  /**
+   * @private
+   */
   async getState(topic: string, jobId: string): Promise<JobOutput> {
     const jobSymbols = await this.store.getSymbols(`$${topic}`);
     const consumes: Consumes = {
@@ -883,10 +1018,17 @@ class EngineService {
     }
     return stateTree;
   }
+  /**
+   * @private
+   */
   async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
     return await this.store.getQueryState(jobId, fields);
   }
 
+  /**
+   * @private
+   * @deprecated
+   */
   async compress(terms: string[]): Promise<boolean> {
     const existingSymbols = await this.store.getSymbolValues();
     const startIndex = Object.keys(existingSymbols).length;

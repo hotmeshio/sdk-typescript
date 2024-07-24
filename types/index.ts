@@ -26,6 +26,7 @@ export {
   ActivityWorkflowDataType,
   ChildResponseType,
   ClientConfig,
+  ClientWorkflow,
   ContextType,
   ConnectionConfig,
   Connection,
@@ -47,18 +48,18 @@ export {
   WorkflowSearchSchema,
   WorkflowDataType,
   WorkflowOptions,
-} from './durable';
+} from './meshflow';
 export {
-  DurableChildErrorType,
-  DurableProxyErrorType,
-  DurableSleepErrorType,
-  DurableWaitForAllErrorType,
-  DurableWaitForErrorType,
+  MeshFlowChildErrorType,
+  MeshFlowProxyErrorType,
+  MeshFlowSleepErrorType,
+  MeshFlowWaitForAllErrorType,
+  MeshFlowWaitForErrorType,
 } from './error';
 export {
   ActivityAction,
   DependencyExport,
-  DurableJobExport,
+  MeshFlowJobExport,
   ExportCycles,
   ExportItem,
   ExportOptions,
@@ -116,6 +117,23 @@ export {
   KeyStoreParams,
   KeyType,
 } from './hotmesh';
+export {
+  MeshCallConnectParams,
+  MeshCallExecParams,
+  MeshCallCronParams,
+  MeshCallExecOptions,
+  MeshCallCronOptions,
+  MeshCallInterruptOptions,
+  MeshCallInterruptParams,
+  MeshCallFlushParams,
+} from './meshcall';
+export {
+  CallOptions,
+  MeshDataWorkflowOptions,
+  ConnectOptions,
+  ConnectionInput,
+  ExecInput,
+} from './meshdata';
 export {
   ActivateMessage,
   CronMessage,

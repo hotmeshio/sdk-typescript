@@ -1,23 +1,21 @@
 # Data Mapping | (@Pipes)
 
-This tutorial covers various data mapping functions available in HotMesh. The functions are organized based on their data type categories, such as array, object, number, string, etc., which should be familiar to JavaScript developers. However, it's essential to understand that the approach in HotMesh is functional. Each transformation is a function that expects one or more input parameters from the prior row in the mapping rules.
+This document describes the data mapping functions available in HotMesh. The functions are organized based on their data type categories, such as array, object, number, string, etc.
 
- - [Array Functions](./functions/array.md)
- - [Bitwise Functions](./functions/bitwise.md)
- - [Conditional Functions](./functions/conditional.md)
- - [Date/Time Functions](./functions/date.md)
- - [JSON Functions](./functions/json.md)
- - [Math Functions](./functions/math.md)
- - [Number Functions](./functions/number.md)
- - [Object Functions](./functions/object.md)
- - [String Functions](./functions/string.md)
- - [Symbol Functions](./functions/symbol.md)
- - [Unary Functions](./functions/unary.md)
-
-Feel free to explore these function categories and learn more about how to use them effectively in your HotMesh mapping rules.
+ - [Array Functions](./fns/array.md)
+ - [Bitwise Functions](./fns/bitwise.md)
+ - [Conditional Functions](./fns/conditional.md)
+ - [Date/Time Functions](./fns/date.md)
+ - [JSON Functions](./fns/json.md)
+ - [Math Functions](./fns/math.md)
+ - [Number Functions](./fns/number.md)
+ - [Object Functions](./fns/object.md)
+ - [String Functions](./fns/string.md)
+ - [Symbol Functions](./fns/symbol.md)
+ - [Unary Functions](./fns/unary.md)
 
 ## Quick Start
-This section will help you quickly get started with data mapping principles, demonstrating how to map data from multiple source objects to a single destination object.
+This section demonstrates how to map data from multiple source objects to a single destination object.
 
 ### Overview
 In  HotMesh, the receiver (object C in our example), drives the transformation. It combines and maps the data from objects A and B (the sources). Let's consider the following example:
