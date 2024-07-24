@@ -104,10 +104,6 @@ export const getWorkflowYAML = (appId = HMNS, version = VERSION): string => {
             maxCycles:
               type: number
               description: maximum number of cycles to run before stopping
-            maxDuration:
-              type: integer
-              description: timevalue (GMT) ceiling. If the current time exceeds this value, the cron will stop.
-              example: 1630000000000
 
       output:
         schema:
