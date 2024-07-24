@@ -47,8 +47,9 @@ export const getWorkflowYAML = (appId = HMNS, version = VERSION): string => {
       activities:
         trigger:
           type: trigger
-        stats:
-          id: '{$self.input.data.id}'
+
+          stats:
+            id: '{$self.input.data.id}'
 
         worker:
           type: worker
@@ -74,5 +75,110 @@ export const getWorkflowYAML = (appId = HMNS, version = VERSION): string => {
       transitions:
         trigger:
           - to: worker
+
+    - subscribes: ${appId}.cron
+
+      expire: 120
+
+      input:
+        schema:
+          type: object
+          properties:
+            id:
+              type: string
+              description: unique id for this workflow
+            delay:
+              type: number
+              description: time in seconds to sleep before invoking the first cycle
+            interval:
+              type: number
+              description: time in seconds to sleep before the next cycle
+            topic:
+              type: string
+              description: topic assigned to locate the worker
+            args:
+              type: array
+              description: arguments to pass to the worker function
+              items:
+                type: any
+            maxCycles:
+              type: number
+              description: maximum number of cycles to run before stopping
+            maxDuration:
+              type: integer
+              description: timevalue (GMT) ceiling. If the current time exceeds this value, the cron will stop.
+              example: 1630000000000
+
+      output:
+        schema:
+          type: object
+          properties:
+            response:
+              type: any
+
+      activities:
+        trigger_cron:
+          type: trigger
+          stats:
+            id: '{$self.input.data.id}'
+        
+        cycle_hook_cron:
+          type: hook
+          output:
+            schema:
+              type: object
+              properties:
+                sleepSeconds:
+                  type: number
+            maps:
+              sleepSeconds:
+                '@pipe':
+                  - ['{trigger_cron.output.data.delay}', '{@symbol.undefined}']
+                  - ['{@conditional.nullish}']
+              iterationCount: 1
+
+        sleep_cron:
+          type: hook
+          sleep: '{cycle_hook_cron.output.data.sleepSeconds}'
+        
+        worker_cron:
+          type: worker
+          topic: '{trigger_cron.output.data.topic}'
+          input:
+            schema:
+              type: object
+              properties:
+                args:
+                  type: any
+            maps:
+              args: '{trigger_cron.output.data.args}'
+
+        cycle_cron:
+          type: cycle
+          ancestor: cycle_hook_cron
+          input:
+            maps:
+              sleepSeconds: '{trigger_cron.output.data.interval}'
+              iterationCount:
+                '@pipe':
+                  - ['{cycle_hook_cron.output.data.iterationCount}', 1]
+                  - ['{@math.add}']
+
+      transitions:
+        trigger_cron:
+          - to: cycle_hook_cron
+        cycle_hook_cron:
+          - to: sleep_cron
+        sleep_cron:
+          - to: worker_cron
+        worker_cron:
+          - to: cycle_cron
+            conditions:
+              match:
+                - expected: true
+                  actual: 
+                    '@pipe':
+                      - ['{cycle_hook_cron.output.data.iterationCount}', '{trigger_cron.output.data.maxCycles}']
+                      - ['{@conditional.less_than_or_equal}']
 `; 
 };

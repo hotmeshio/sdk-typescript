@@ -131,9 +131,9 @@ The **MeshCall** module connects and exposes your functions as idempotent endpoi
   <summary style="font-size:1.25em;">Call and <b>cache</b> a function</summary>
 
   ### Cache a Function
-  Redis is great for unburdening stressed services. This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies a `ttl`.
+  Redis is great for unburdening stressed services. This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies an `id` and `ttl`.
 
-1. Make the call from another service (or even the same service). Include a `ttl` to cache the result for the specified duration.
+1. Make the call from another service (or even the same service). Include an `id` and `ttl` to cache the result for the specified duration.
 
     ```typescript
     import { MeshCall } from '@hotmeshio/hotmesh';
@@ -146,11 +146,11 @@ The **MeshCall** module connects and exposes your functions as idempotent endpoi
         class: Redis,
         options: { url: 'redis://:key_admin@redis:6379' }
       },
-      options: { ttl: '15 minutes' },
+      options: { id: 'myid123', ttl: '15 minutes' },
     }); //returns `{ hello: 'anything'}`
     ```
 
-2. Flush the cache at any time, using the same `topic`.
+2. Flush the cache at any time, using the same `topic` and cache `id`.
 
     ```typescript
     import { MeshCall } from '@hotmeshio/hotmesh';
@@ -162,6 +162,7 @@ The **MeshCall** module connects and exposes your functions as idempotent endpoi
         class: Redis,
         options: { url: 'redis://:key_admin@redis:6379' }
       },
+      options: { id: 'myid123' },
     });
     ```
 </details>
@@ -407,7 +408,9 @@ Use a standard `Promise` to collate and cache multiple signals. HotMesh will onl
   <summary style="font-size:1.25em;">Create a recurring, cyclical workflow</summary>
 
 ### Cyclical Workflow
-This example calls an activity and then sleeps for a week. It runs indefinitely until it's manually stopped. It takes advantage of durable execution and can safely sleep for months or years. Container restarts have no impact on actively executing workflows as all state is retained in Redis.
+This example calls an activity and then sleeps for a week. It runs indefinitely until it's manually stopped. It takes advantage of durable execution and can safely sleep for months or years.
+
+>Container restarts have no impact on actively executing workflows as all state is retained in Redis.
 
 1. Define the **workflow** logic. This one calls a legacy `statusDiagnostic` function once a week.
 

@@ -152,40 +152,6 @@ class MeshCall {
       }
     }
   }
-  
-  /**
-   * Initializes and caches a worker when a connection is requested
-   * @private
-   */
-  static async initWorkflowWorker(
-    config: MeshCallConnectParams,
-  ): Promise<HotMesh> {
-    const targetNamespace = config.namespace ?? HMNS;
-    const optionsHash = hashOptions(config.redis?.options);
-    const targetTopic = `${optionsHash}.${targetNamespace}.${config.topic}`;
-    const hotMeshWorker = await HotMesh.init({
-      guid: config.guid,
-      logLevel: config.logLevel ?? HMSH_LOGLEVEL,
-      appId: config.namespace ?? HMNS,
-      engine: { redis: config.redis },
-      workers: [
-        {
-          topic: config.topic,
-          redis: config.redis,
-          callback: async function(input: StreamData) {
-            const response = config.callback.apply(this, input.data.args);
-            return {
-              metadata: { ...input.metadata },
-              data: { response },
-            }
-          },
-        }
-      ],
-    });
-    MeshCall.workers.set(targetTopic, hotMeshWorker);
-    await MeshCall.activateWorkflow(hotMeshWorker, targetNamespace);
-    return hotMeshWorker;
-  }
 
   /**
    * Returns a cached worker instance or creates a new one
@@ -226,8 +192,32 @@ class MeshCall {
    * });
    * ```
    */
-  static async connect(params: MeshCallConnectParams, ): Promise<void>  {
-    await MeshCall.initWorkflowWorker(params);
+  static async connect(params: MeshCallConnectParams, ): Promise<HotMesh>  {
+    const targetNamespace = params.namespace ?? HMNS;
+    const optionsHash = hashOptions(params.redis?.options);
+    const targetTopic = `${optionsHash}.${targetNamespace}.${params.topic}`;
+    const hotMeshWorker = await HotMesh.init({
+      guid: params.guid,
+      logLevel: params.logLevel ?? HMSH_LOGLEVEL,
+      appId: params.namespace ?? HMNS,
+      engine: { redis: params.redis },
+      workers: [
+        {
+          topic: params.topic,
+          redis: params.redis,
+          callback: async function(input: StreamData) {
+            const response = await params.callback.apply(this, input.data.args);
+            return {
+              metadata: { ...input.metadata },
+              data: { response },
+            }
+          },
+        }
+      ],
+    });
+    MeshCall.workers.set(targetTopic, hotMeshWorker);
+    await MeshCall.activateWorkflow(hotMeshWorker, targetNamespace);
+    return hotMeshWorker;
   }
 
   /**
@@ -268,7 +258,6 @@ class MeshCall {
           }
         } catch (error) {
           //just swallow error; it means the cache is empty (no doc by that id)
-          console.error(error);
         }
       }
     } else {
@@ -279,12 +268,13 @@ class MeshCall {
     if (params.options?.ttl) {
       expire = ms(params.options.ttl) / 1000;
     }
-    return await hotMeshInstance.pubsub(
+    const jobOutput = await hotMeshInstance.pubsub(
       TOPIC,
       { id, expire, topic: params.topic, args: params.args },
       null,
       30_000 //local timeout
-    ) as U;
+    );
+    return jobOutput?.data?.response as U;
   }
 
   /**
@@ -357,7 +347,7 @@ class MeshCall {
         topic: params.topic,
         args: params.args,
         interval: params.options.interval,
-        maxCycles: params.options.maxCycles,
+        maxCycles: params.options.maxCycles ?? 1_000_000_000,
         maxDuration: params.options.maxDuration,
       },
     );
@@ -384,9 +374,9 @@ class MeshCall {
       params.redis,
     );
     await hotMeshInstance.interrupt(
-      params.topic,
-      hashOptions(params.topic),
-      { 'throw': false },
+      `${params.namespace ?? HMNS}.cron`,
+      params.options.id,
+      { 'throw': false, expire: 60 },
     );
   }
 
@@ -401,6 +391,7 @@ class MeshCall {
     for (const [_, hotMeshInstance] of MeshCall.engines) {
       (await hotMeshInstance).stop();
     }
+    await HotMesh.stop();
   }
 }
 

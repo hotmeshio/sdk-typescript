@@ -704,7 +704,7 @@ class MeshData {
       const hotMesh = handle.hotMesh;
       await hotMesh.interrupt(`${hotMesh.appId}.execute`, workflowId, options);
     } catch(e) {
-      console.log(e);
+      //no-op; interrup throws an error
     }
   }
 
