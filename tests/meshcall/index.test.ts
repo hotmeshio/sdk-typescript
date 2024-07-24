@@ -136,7 +136,7 @@ describe('MESHCALL', () => {
     describe('infinite cron', () => {
       it('should start an infinite cron', async () => {
         let counter = 0;
-        await MeshCall.cron({
+        const inited = await MeshCall.cron({
           guid: 'franky',
           args: [{ payload: 'HotMesh' }],
           topic: 'my.cron.function',
@@ -153,9 +153,30 @@ describe('MESHCALL', () => {
             return counter as U;
           }
         });
+        expect(inited).toBe(true);
         await sleepFor(2_500);
         expect(counter).toBeGreaterThan(1);
       }, 5_000);
+
+      it('should silently fail when the same cron is inited', async () => {
+        const didSucceed = await MeshCall.cron({
+          guid: 'freddy',
+          args: [{ payload: 'HotMesh' }],
+          topic: 'my.cron.function',
+          redis: {
+            class: Redis,
+            options,
+          },
+          options: {
+            id: 'mycron123',
+            interval: '1 second',
+          },
+          callback: async <T extends any[], U>(...args: T): Promise<U> => {
+            return undefined as U;
+          }
+        });
+        expect(didSucceed).toBe(false);
+      });
 
       it('should interrupt an infinite cron', async () => {
         await MeshCall.interrupt({
@@ -167,6 +188,35 @@ describe('MESHCALL', () => {
           options: { id: 'mycron123' },
         });
       });
+
+      it('should create a cron with maxCycles', async () => {
+        let counter = 0;
+        const inited = await MeshCall.cron({
+          guid: 'buddy',
+          args: [{ payload: 'HotMesh' }],
+          //NOTE: must use different topic for this cron,
+          //      so the other cron callback isn't called
+          //      (which references the other `counter`)
+          topic: 'my.cron.function.max',
+          redis: {
+            class: Redis,
+            options,
+          },
+          options: {
+            id: 'mycron456',
+            interval: '1 second',
+            maxCycles: 2,
+          },
+          callback: async <U>(): Promise<U> => {
+            counter++;
+            return counter as U;
+          }
+        });
+        expect(inited).toBe(true);
+        await sleepFor(3_500);
+        expect(counter).toBe(2);
+      }, 5_000);
+
     });
   });
 });

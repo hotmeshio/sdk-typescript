@@ -503,7 +503,11 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 </details>
 
 ## MeshData
-The **MeshData** service extends the **MeshFlow** service, combining data record concepts and transactional workflow principles into a single *Operational Data Layer*. Deployments with the Redis `FT.SEARCH` module enabled can use the **MeshData** module to merge [OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing) and [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) operations into a hybrid transactional/analytics ([HTAP](https://en.wikipedia.org/wiki/Hybrid_transactional/analytical_processing)) system.
+The **MeshData** service extends the **MeshFlow** service, combining data record concepts and transactional workflow principles into a single *Operational Data Layer*. 
+
+Deployments with the Redis `FT.SEARCH` module enabled can use the **MeshData** module to merge [OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing) and [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) operations into a hybrid transactional/analytics ([HTAP](https://en.wikipedia.org/wiki/Hybrid_transactional/analytical_processing)) system.
+
+>For those Redis deployments without the `FT.SEARCH` module, it's still useful to define a workflow schema. The MeshData class provides convenience methods for reading and writing hash field data to a workflow record (e.g., `get`, `del`, and `incr`).*
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Create a search index</summary>
@@ -512,7 +516,7 @@ The **MeshData** service extends the **MeshFlow** service, combining data record
 
 This example demonstrates how to define a schema and deploy an index for a 'user' entity type.
 
-1. Define the **schema** for the `user` entity. This one includes the 3 formats supported by the FT.SEARCH module: `TEXT`, `TAG` and `NUMERIC`. *For those implementations without the FT.SEARCH module, it's still useful to define a schema. The MeshData class provides convenience methods for reading and writing hash field data to a workflow record (e.g., `get`, `del`, and `incr`).*
+1. Define the **schema** for the `user` entity. This one includes the 3 formats supported by the FT.SEARCH module: `TEXT`, `TAG` and `NUMERIC`.
 
     ```typescript
     //schema.ts

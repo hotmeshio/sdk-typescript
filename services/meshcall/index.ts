@@ -323,34 +323,42 @@ class MeshCall {
    * });
    * ```
    */
-  static async cron(params: MeshCallCronParams): Promise<void> {
-    //connect the cron worker
-    await MeshCall.connect({
-      logLevel: params.logLevel,
-      guid: params.guid,
-      topic: params.topic,
-      redis: params.redis,
-      callback: params.callback,
-      namespace: params.namespace,
-    });
-
-    //start the cron job
-    const TOPIC = `${params.namespace ?? HMNS}.cron`
-    const hotMeshInstance = await MeshCall.getInstance(
-      params.namespace,
-      params.redis
-    );
-    await hotMeshInstance.pub(
-      TOPIC,
-      {
-        id: params.options.id,
+  static async cron(params: MeshCallCronParams): Promise<boolean> {
+    try {
+      //connect the cron worker
+      await MeshCall.connect({
+        logLevel: params.logLevel,
+        guid: params.guid,
         topic: params.topic,
-        args: params.args,
-        interval: params.options.interval,
-        maxCycles: params.options.maxCycles ?? 1_000_000_000,
-        maxDuration: params.options.maxDuration,
-      },
-    );
+        redis: params.redis,
+        callback: params.callback,
+        namespace: params.namespace,
+      });
+
+      //start the cron job
+      const TOPIC = `${params.namespace ?? HMNS}.cron`
+      const hotMeshInstance = await MeshCall.getInstance(
+        params.namespace,
+        params.redis
+      );
+      await hotMeshInstance.pub(
+        TOPIC,
+        {
+          id: params.options.id,
+          topic: params.topic,
+          args: params.args,
+          interval: params.options.interval,
+          maxCycles: params.options.maxCycles ?? 1_000_000_000,
+          maxDuration: params.options.maxDuration,
+        },
+      );
+      return true;
+    } catch (error) {
+      if (error.message.includes(`Duplicate job: ${params.options.id}`)) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   /**

@@ -25,7 +25,7 @@ import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
 /**
  * The `MeshData` service wraps the `MeshFlow` service.
  * It serves to unify both data record concepts and
- * transactional workflows principles into a single
+ * transactional workflow principles into a single
  * "Operational Data Layer" (ODL). Deployments with
  * the Redis FT.SEARCH module enabled can deliver
  * both OLTP (transactions) and OLAP (analytics)
