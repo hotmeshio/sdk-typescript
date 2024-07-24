@@ -41,9 +41,8 @@ describe('MESHCALL', () => {
             class: Redis,
             options,
           },
-          callback: async <T extends any[], U>(...args: T): Promise<U> => {
-            const payload = args[0];
-            return { hello: payload } as U;
+          callback: async (payload: Record<string, any>): Promise<Record<string, any>> => {
+            return { hello: payload };
           }
         });
         expect(worker).toBeDefined();
@@ -106,15 +105,28 @@ describe('MESHCALL', () => {
         expect(response.hello.payload).toBe('HotMesh');
       });
 
-      it('should flush the cache', async () => {
-        //manually flush first
-        await MeshCall.flush({
-          id: 'mytest123',
+      it('should use the cached response (Redis HMGET)', async () => {
+        let response = await MeshCall.exec<{hello: { payload: string }}>({
+          args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
           redis: {
             class: Redis,
             options,
           },
+          options: { id: 'mytest123', ttl: '1 minute' },
+        });
+        expect(response.hello.payload).toBe('HotMesh');
+      });
+
+      it('should flush the cache', async () => {
+        //manually flush first
+        await MeshCall.flush({
+          topic: 'my.function',
+          redis: {
+            class: Redis,
+            options,
+          },
+          options: { id: 'mytest123' },
         });
 
         //expect nothing in the cache and input to be echoed
@@ -134,7 +146,7 @@ describe('MESHCALL', () => {
 
   describe('Cron', () => {
     describe('infinite cron', () => {
-      it('should start an infinite cron', async () => {
+      it('should run an infinite cron', async () => {
         let counter = 0;
         const inited = await MeshCall.cron({
           guid: 'franky',
@@ -148,13 +160,13 @@ describe('MESHCALL', () => {
             id: 'mycron123',
             interval: '1 second',
           },
-          callback: async <T extends any[], U>(...args: T): Promise<U> => {
+          callback: async (): Promise<number> => {
             counter++;
-            return counter as U;
+            return counter;
           }
         });
         expect(inited).toBe(true);
-        await sleepFor(2_500);
+        await sleepFor(3_500);
         expect(counter).toBeGreaterThan(1);
       }, 5_000);
 
@@ -171,8 +183,8 @@ describe('MESHCALL', () => {
             id: 'mycron123',
             interval: '1 second',
           },
-          callback: async <T extends any[], U>(...args: T): Promise<U> => {
-            return undefined as U;
+          callback: async (): Promise<void> => {
+            //do nothing
           }
         });
         expect(didSucceed).toBe(false);
@@ -189,7 +201,7 @@ describe('MESHCALL', () => {
         });
       });
 
-      it('should create a cron with maxCycles', async () => {
+      it('should run a cron with maxCycles and a delay', async () => {
         let counter = 0;
         const inited = await MeshCall.cron({
           guid: 'buddy',
@@ -206,16 +218,17 @@ describe('MESHCALL', () => {
             id: 'mycron456',
             interval: '1 second',
             maxCycles: 2,
+            delay: '1 second',
           },
-          callback: async <U>(): Promise<U> => {
+          callback: async (): Promise<number> => {
             counter++;
-            return counter as U;
+            return counter;
           }
         });
         expect(inited).toBe(true);
-        await sleepFor(3_500);
+        await sleepFor(4_500);
         expect(counter).toBe(2);
-      }, 5_000);
+      }, 6_500);
 
     });
   });

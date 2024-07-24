@@ -45,7 +45,7 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
  *     }
  *   });
 
- *   const handle = await client.workflow.start<[string,string]>({
+ *   const handle = await client.workflow.start({
  *     args: ['HotMesh'],
  *     taskQueue: 'default',
  *     workflowName: 'example',

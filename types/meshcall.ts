@@ -16,29 +16,84 @@ interface MeshCallExecOptions {
   flush?: boolean;
 }
 interface MeshCallConnectParams {
+  /**
+   * Log level for the worker
+   */
   logLevel?: LogLevel;
-  guid?: string; // Assign a custom engine id
+  /**
+   * Idempotent GUID for the worker and engine
+   */
+  guid?: string;
+  /**
+   * Namespace for grouping common functions
+   */
   namespace?: string;
+  /**
+   * Unique topic for the worker function
+   */
   topic: string;
+  /**
+   * Redis configuration for the worker
+   */
   redis: RedisConfig;
-  callback: <T extends any[], U>(...args: T) => Promise<U>;
+  /**
+   * The linked worker function that will be called
+   */
+  callback: (...args: any[]) => any;
 }
 
 interface MeshCallExecParams {
+  /**
+   * namespace for grouping common functions
+   */
   namespace?: string;
+  /**
+   * topic assigned to the worker when it was connected
+   */
   topic: string;
+  /**
+   * Arguments to pass to the worker function
+   */
   args: any[];
+  /**
+   * Redis configuration
+   */
   redis: RedisConfig;
+  /**
+   * Execution options like caching ttl
+   */
   options?: MeshCallExecOptions;
 }
 
-interface MeshCallFlushParams {
-  namespace?: string;
+interface MeshCallFlushOptions {
+  /**
+   * Cache id when caching/flushing/retrieving function results.
+   */
   id: string;
-  topic: string;
-  redis: RedisConfig;
 }
 
+interface MeshCallFlushParams {
+  /**
+   * namespace for grouping common functions
+   */
+  namespace?: string;
+  /**
+   * id for cached response to flush
+   */
+  id?: string;
+  /**
+   * topic assigned to the worker when it was connected
+   */
+  topic: string;
+  /**
+   * Redis configuration
+   */
+  redis: RedisConfig;
+  /**
+   * Options for the flush
+   */
+  options?: MeshCallFlushOptions;
+}
 interface MeshCallCronOptions {
   /**
    * Idempotent GUID for the function
@@ -50,14 +105,15 @@ interface MeshCallCronOptions {
    */
   interval: string;
   /**
-   * Maximum number of cycles to run before stopping.
+   * Maximum number of cycles to run before exiting the cron.
    */
   maxCycles?: number;
   /**
-   * Maximum duration to run before stopping the cron.
-   * Refer to the syntax for the `ms` NPM package.
+   * Time in seconds to sleep before invoking the first cycle.
+   * For example, `1 day`, `1 hour`. Fidelity is generally
+   * within 5 seconds. Refer to the syntax for the `ms` NPM package.
    */
-  maxDuration?: string;
+  delay?: string;
 }
 
 interface MeshCallInterruptOptions {
@@ -95,9 +151,9 @@ interface MeshCallCronParams {
    */
   args: any[];
   /**
-   * Callback function to invoke each time the cron job runs; `args` will be passed
+   * linked worker function to run
    */
-  callback: <T extends any[], U>(...args: T) => Promise<U>;
+  callback: (...args: any[]) => any;
   /**
    * Options for the cron job
    */
@@ -105,9 +161,21 @@ interface MeshCallCronParams {
 }
 
 interface MeshCallInterruptParams {
+  /**
+   * namespace for grouping common functions
+   */
   namespace?: string;
+  /**
+   * topic assigned to the cron worker when it was connected
+   */
   topic: string;
+  /**
+   * Redis configuration
+   */
   redis: RedisConfig;
+  /**
+   * Options for interrupting the cron
+   */
   options: MeshCallInterruptOptions;
 }
 
@@ -119,5 +187,6 @@ export {
   MeshCallCronOptions,
   MeshCallInterruptOptions,
   MeshCallInterruptParams,
+  MeshCallFlushOptions,
   MeshCallFlushParams,
 };

@@ -12,8 +12,8 @@ You have a Redis instance? Good. You're ready to go.
 ## SDK Docs
 [Read the Docs](https://hotmeshio.github.io/sdk-typescript/)
 
-## MeshCall
-The **MeshCall** module connects and exposes your functions as idempotent endpoints.
+## MeshCall | Connect Everything
+The **MeshCall** module connects any function with a connection to Redis. Function responses are cacheable and functions can even run as cyclical cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Run an idempotent cron job</summary>
@@ -21,7 +21,7 @@ The **MeshCall** module connects and exposes your functions as idempotent endpoi
   ### Run a Cron
   This example demonstrates an *idempotent* cron that runs every day. The `id` makes each cron job unique and ensures that only one instance runs, despite repeated invocations. *The `cron` method fails silently if a workflow is already running with the same `id`.*
   
-  Optionally set `maxCycles` or `maxDuration` to limit the number of cycles.
+  Optionally set a `delay` and/or set `maxCycles` to limit the number of cycles.
 
 1. Define the cron function.
     ```typescript
@@ -39,7 +39,7 @@ The **MeshCall** module connects and exposes your functions as idempotent endpoi
         callback: async () => {
           //your code here...
         },
-        options: { id, interval }
+        options: { id, interval, maxCycles: 24 }
       });
     };
     ```
@@ -78,7 +78,7 @@ The **MeshCall** module connects and exposes your functions as idempotent endpoi
   <summary style="font-size:1.25em;">Call any function in any service</summary>
 
   ### Call a Function
-  Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
+  Make blazing fast interservice calls that behave like HTTP but without the setup and performance overhead. This example demonstrates how to connect a function to the mesh and call it from anywhere on the network.
 
 1. Call `MeshCall.connect` and provide a `topic` to uniquely identify the function.
 
@@ -167,7 +167,7 @@ The **MeshCall** module connects and exposes your functions as idempotent endpoi
     ```
 </details>
 
-## MeshFlow
+## MeshFlow | Transactional Workflow
 The **MeshFlow** module is a drop-in replacement for [Temporal.io](https://temporal.io). If you need to orchestrate your functions as durable workflows, MeshFlow combines the popular Temporal SDK with Redis' *in-memory execution speed*.
 
 <details style="padding: .5em">
@@ -502,17 +502,17 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
     ```
 </details>
 
-## MeshData
+## MeshData | Transactional Analytics
 The **MeshData** service extends the **MeshFlow** service, combining data record concepts and transactional workflow principles into a single *Operational Data Layer*. 
 
 Deployments with the Redis `FT.SEARCH` module enabled can use the **MeshData** module to merge [OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing) and [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) operations into a hybrid transactional/analytics ([HTAP](https://en.wikipedia.org/wiki/Hybrid_transactional/analytical_processing)) system.
 
->For those Redis deployments without the `FT.SEARCH` module, it's still useful to define a workflow schema. The MeshData class provides convenience methods for reading and writing hash field data to a workflow record (e.g., `get`, `del`, and `incr`).*
+*For those Redis deployments without the `FT.SEARCH` module, it's still useful to define a workflow schema. The MeshData class provides convenience methods for reading and writing hash field data to a workflow record (e.g., `get`, `del`, and `incr`).*
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Create a search index</summary>
 
-### Schemas and Indexes
+### Workflow Data Indexes
 
 This example demonstrates how to define a schema and deploy an index for a 'user' entity type.
 
@@ -552,7 +552,7 @@ This example demonstrates how to define a schema and deploy an index for a 'user
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Create an indexed, searchable record</summary>
 
-### Searchable Workflow
+### Workflow Record Data
 This example demonstrates how to create a 'user' workflow backed by the searchable schema from the prior example.
 
 1. Call MeshData `connect` to initialize a 'user' entity *worker*. It references a target worker function which will run the workflow. Data fields that are documented in the schema (like `active`) will be automatically indexed when set on the workflow record.
@@ -632,7 +632,7 @@ This example demonstrates how to create a 'user' workflow backed by the searchab
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Fetch record data</summary>
 
-### Workflow Record Fields
+### Read Record Data
 This example demonstrates how to read data fields directly from a workflow.
 
 1. Read data fields directly from the *jimbo123* 'user' record.
@@ -663,7 +663,7 @@ This example demonstrates how to read data fields directly from a workflow.
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Search record data</summary>
 
-### Searchable Workflow
+### Query Record Data
 This example demonstrates how to search for those workflows where a given condition exists in the data. This one searches for active users. *NOTE: The native Redis FT.SEARCH syntax is supported. The JSON abstraction shown here is a convenience method for straight-forward, one-dimensional queries.*
 
 1. Search for active users (where the value of the `active` field is `yes`).

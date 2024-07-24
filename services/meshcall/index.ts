@@ -192,7 +192,7 @@ class MeshCall {
    * });
    * ```
    */
-  static async connect(params: MeshCallConnectParams, ): Promise<HotMesh>  {
+  static async connect(params: MeshCallConnectParams): Promise<HotMesh>  {
     const targetNamespace = params.namespace ?? HMNS;
     const optionsHash = hashOptions(params.redis?.options);
     const targetTopic = `${optionsHash}.${targetNamespace}.${params.topic}`;
@@ -297,7 +297,7 @@ class MeshCall {
       params.namespace,
       params.redis
     );
-    await hotMeshInstance.scrub(params.id);
+    await hotMeshInstance.scrub(params.id ?? params?.options?.id);
   }
 
   /**
@@ -336,7 +336,10 @@ class MeshCall {
       });
 
       //start the cron job
-      const TOPIC = `${params.namespace ?? HMNS}.cron`
+      const TOPIC = `${params.namespace ?? HMNS}.cron`;
+      const interval = ms(params.options.interval) / 1000;
+      const delay = params.options.delay ? ms(params.options.delay) / 1000 : undefined;
+      const maxCycles = params.options.maxCycles ?? 1_000_000;
       const hotMeshInstance = await MeshCall.getInstance(
         params.namespace,
         params.redis
@@ -347,9 +350,9 @@ class MeshCall {
           id: params.options.id,
           topic: params.topic,
           args: params.args,
-          interval: params.options.interval,
-          maxCycles: params.options.maxCycles ?? 1_000_000_000,
-          maxDuration: params.options.maxDuration,
+          interval,
+          maxCycles,
+          delay,
         },
       );
       return true;
