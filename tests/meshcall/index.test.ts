@@ -41,9 +41,11 @@ describe('MESHCALL', () => {
             class: Redis,
             options,
           },
-          callback: async (payload: Record<string, any>): Promise<Record<string, any>> => {
+          callback: async (
+            payload: Record<string, any>,
+          ): Promise<Record<string, any>> => {
             return { hello: payload };
-          }
+          },
         });
         expect(worker).toBeDefined();
       });
@@ -53,7 +55,7 @@ describe('MESHCALL', () => {
   describe('Client', () => {
     describe('exec', () => {
       it('should call a function', async () => {
-        const response = await MeshCall.exec<{hello: { payload: string }}>({
+        const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
           redis: {
@@ -67,7 +69,7 @@ describe('MESHCALL', () => {
 
     describe('cache', () => {
       it('should call a function and cache the result', async () => {
-        let response = await MeshCall.exec<{hello: { payload: string }}>({
+        let response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'CoolMesh' }],
           topic: 'my.function',
           redis: {
@@ -77,9 +79,9 @@ describe('MESHCALL', () => {
           options: { id: 'mytest123', ttl: '1 minute' },
         });
         expect(response.hello.payload).toBe('CoolMesh');
-  
+
         //send a new request with different arg, but same id and ttl
-        response = await MeshCall.exec<{hello: { payload: string }}>({
+        response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
           redis: {
@@ -93,7 +95,7 @@ describe('MESHCALL', () => {
       });
 
       it('should ignore the cache and call the function', async () => {
-        let response = await MeshCall.exec<{hello: { payload: string }}>({
+        const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
           redis: {
@@ -106,7 +108,7 @@ describe('MESHCALL', () => {
       });
 
       it('should use the cached response (Redis HMGET)', async () => {
-        let response = await MeshCall.exec<{hello: { payload: string }}>({
+        const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
           redis: {
@@ -130,7 +132,7 @@ describe('MESHCALL', () => {
         });
 
         //expect nothing in the cache and input to be echoed
-        let response = await MeshCall.exec<{hello: { payload: string }}>({
+        const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'ColdMesh' }],
           topic: 'my.function',
           redis: {
@@ -163,7 +165,7 @@ describe('MESHCALL', () => {
           callback: async (): Promise<number> => {
             counter++;
             return counter;
-          }
+          },
         });
         expect(inited).toBe(true);
         await sleepFor(3_500);
@@ -185,7 +187,7 @@ describe('MESHCALL', () => {
           },
           callback: async (): Promise<void> => {
             //do nothing
-          }
+          },
         });
         expect(didSucceed).toBe(false);
       });
@@ -223,13 +225,12 @@ describe('MESHCALL', () => {
           callback: async (): Promise<number> => {
             counter++;
             return counter;
-          }
+          },
         });
         expect(inited).toBe(true);
         await sleepFor(4_500);
         expect(counter).toBe(2);
       }, 6_500);
-
     });
   });
 });

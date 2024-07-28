@@ -112,7 +112,7 @@ class QuorumService {
   /**
    * @private
    */
-   async initStoreChannel(store: RedisClient) {
+  async initStoreChannel(store: RedisClient) {
     if (identifyRedisType(store) === 'redis') {
       this.store = new RedisStore(store as RedisClientType);
     } else {

@@ -10,11 +10,11 @@ import { ExporterService } from './exporter';
  * workflow. This includes exporting the workflow, sending signals, and
  * querying the state of the workflow. It is instanced/accessed via the
  * MeshFlow.Client class.
- * 
+ *
  * @example
  * ```typescript
  * import { MeshFlow } from '@hotmeshio/hotmesh';
- * 
+ *
  * const client = new MeshFlow.Client({ connection: { class: Redis, options } });
  * const handle = await client.workflow.start({
  *  args: ['HotMesh'],

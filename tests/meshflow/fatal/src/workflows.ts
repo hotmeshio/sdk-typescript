@@ -2,9 +2,9 @@ import { MeshFlow } from '../../../../services/meshflow';
 
 import * as activities from './activities';
 
-const { myFatalActivity } = MeshFlow.workflow.proxyActivities<typeof activities>(
-  { activities },
-);
+const { myFatalActivity } = MeshFlow.workflow.proxyActivities<
+  typeof activities
+>({ activities });
 
 async function example({ name }: Record<'name', string>): Promise<void> {
   try {

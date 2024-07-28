@@ -40,13 +40,13 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 
 /**
  * The *Worker* service Registers worker functions and connects them to the mesh.
- * 
+ *
  * @example
  * ```typescript
  * import { MeshFlow } from '@hotmeshio/hotmesh';
  * import Redis from 'ioredis';
  * import * as workflows from './workflows';
- * 
+ *
  * async function run() {
  *   const worker = await MeshFlow.Worker.create({
  *     connection: {
@@ -56,7 +56,7 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
  *     taskQueue: 'default',
  *     workflow: workflows.example,
  *   });
- * 
+ *
  *   await worker.run();
  * }
  * ```
@@ -168,13 +168,13 @@ export class WorkerService {
 
   /**
    * Connects a worker to the mesh.
-   * 
+   *
    * @example
    * ```typescript
    * import { MeshFlow } from '@hotmeshio/hotmesh';
    * import Redis from 'ioredis';
    * import * as workflows from './workflows';
-   * 
+   *
    * async function run() {
    *   const worker = await MeshFlow.Worker.create({
    *     connection: {
@@ -184,7 +184,7 @@ export class WorkerService {
    *     taskQueue: 'default',
    *     workflow: workflows.example,
    *   });
-   * 
+   *
    *   await worker.run();
    * }
    * ```
@@ -258,7 +258,7 @@ export class WorkerService {
     const optionsHash = hashOptions(config?.connection?.options);
     const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
     const hotMeshWorker = await HotMesh.init({
-      guid: config.guid ? `${config.guid}XA`: undefined,
+      guid: config.guid ? `${config.guid}XA` : undefined,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
       engine: { redis: redisConfig },
@@ -554,7 +554,8 @@ export class WorkerService {
               code: err.code,
               index: err.index,
               message: JSON.stringify(msg),
-              maximumAttempts: err.maximumAttempts || HMSH_MESHFLOW_MAX_ATTEMPTS,
+              maximumAttempts:
+                err.maximumAttempts || HMSH_MESHFLOW_MAX_ATTEMPTS,
               maximumInterval:
                 err.maximumInterval || ms(HMSH_MESHFLOW_MAX_INTERVAL) / 1000,
               originJobId: err.originJobId,

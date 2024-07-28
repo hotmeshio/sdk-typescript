@@ -721,7 +721,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    */
   async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
     const key = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
-    const _fields = fields.map((field) =>  {
+    const _fields = fields.map((field) => {
       if (field.startsWith('"')) {
         return field.slice(1, -1);
       }

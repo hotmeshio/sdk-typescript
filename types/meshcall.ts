@@ -1,5 +1,5 @@
-import { RedisConfig } from "./hotmesh";
-import { LogLevel } from "./logger";
+import { RedisConfig } from './hotmesh';
+import { LogLevel } from './logger';
 
 interface MeshCallExecOptions {
   /**
@@ -9,7 +9,7 @@ interface MeshCallExecOptions {
   /**
    * Time to live for the cache key. For example, `1 day`, `1 hour`. Refer to the syntax for the `ms` NPM package.
    */
-  ttl?: string; 
+  ttl?: string;
   /**
    * If true, the cache will first be flushed and the function will be executed.
    */
@@ -99,7 +99,7 @@ interface MeshCallCronOptions {
    * Idempotent GUID for the function
    * */
   id: string;
-  /** 
+  /**
    * For example, `1 day`, `1 hour`. Fidelity is generally
    * within 5 seconds. Refer to the syntax for the `ms` NPM package.
    */

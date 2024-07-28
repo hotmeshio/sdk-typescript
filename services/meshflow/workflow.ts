@@ -74,7 +74,6 @@ import { Search } from './search';
  * ```
  */
 export class WorkflowService {
-
   /**
    * @private
    */
@@ -185,10 +184,10 @@ export class WorkflowService {
     const workflowTopic = store.get('workflowTopic');
     const connection = store.get('connection');
     const namespace = store.get('namespace');
-    return await WorkerService.getHotMesh(
-      workflowTopic,
-      { connection, namespace },
-    );
+    return await WorkerService.getHotMesh(workflowTopic, {
+      connection,
+      namespace,
+    });
   }
 
   /**
@@ -594,11 +593,8 @@ export class WorkflowService {
     jobId: string,
     options: JobInterruptOptions = {},
   ): Promise<string | void> {
-    const {
-      workflowTopic,
-      connection,
-      namespace,
-    } = WorkflowService.getContext();
+    const { workflowTopic, connection, namespace } =
+      WorkflowService.getContext();
     const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
       connection,
       namespace,

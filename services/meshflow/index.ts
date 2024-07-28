@@ -19,7 +19,7 @@ import { WorkflowService } from './workflow';
  * import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
  * import * as Redis from 'redis';
  * import * as workflows from './workflows';
- * 
+ *
  * //1) Initialize the worker
  * await MeshFlow.Worker.create({
  *   connection: {
@@ -35,7 +35,7 @@ import { WorkflowService } from './workflow';
  *     maximumInterval: '5 seconds'
  *   }
  * });
- * 
+ *
  * //2) initialize the client
  * const client = new MeshFlow.Client({
  *   connection: {
@@ -43,7 +43,7 @@ import { WorkflowService } from './workflow';
  *     options: { url: 'redis://:key_admin@redis:6379' }
  *   }
  * });
- * 
+ *
  * //3) start a new workflow
  * const handle = await client.workflow.start({
  *   args: ['HotMesh', 'es'],
@@ -52,11 +52,11 @@ import { WorkflowService } from './workflow';
  *   workflowId: HotMesh.guid(),
  *   namespace: 'durable', //the app name in Redis
  * });
- * 
+ *
  * //4) subscribe to the eventual result
  * console.log('\nRESPONSE', await handle.result(), '\n');
  * //logs '¡Hola, HotMesh!'
- * 
+ *
  * //5) Shutdown (typically on sigint)
  * await MeshFlow.shutdown();
  * ```
@@ -92,7 +92,7 @@ class MeshFlowClass {
   /**
    * The MeshFlow `workflow` service is functionally
    * equivalent to the Temporal `Workflow` service
-   * with additional methods for managing workflows, 
+   * with additional methods for managing workflows,
    * including: `execChild`, `waitFor`, `sleep`, etc
    */
   static workflow = WorkflowService;

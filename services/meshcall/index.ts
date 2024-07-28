@@ -1,26 +1,27 @@
-import ms from "ms";
+import ms from 'ms';
 
-import { HotMesh } from "../hotmesh";
-import { HMSH_LOGLEVEL, HMSH_QUORUM_DELAY_MS } from "../../modules/enums";
-import { hashOptions, sleepFor } from "../../modules/utils";
+import { HotMesh } from '../hotmesh';
+import { HMSH_LOGLEVEL, HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
+import { hashOptions, sleepFor } from '../../modules/utils';
 import {
   MeshCallConnectParams,
   MeshCallCronParams,
   MeshCallExecParams,
   MeshCallFlushParams,
-  MeshCallInterruptParams
-} from "../../types/meshcall";
-import { RedisConfig, StreamData } from "../../types";
-import { HMNS } from "../../modules/key";
-import { getWorkflowYAML } from "./schemas/factory";
+  MeshCallInterruptParams,
+} from '../../types/meshcall';
+import { RedisConfig, StreamData } from '../../types';
+import { HMNS } from '../../modules/key';
+
+import { getWorkflowYAML } from './schemas/factory';
 
 /**
  * MeshCall connects your functions to the Redis-backed mesh,
  * exposing them as idempotent endpoints. Call functions
  * from anywhere on the network with a connection to Redis. Function
  * responses are cacheable and functions can even
- * run as cyclical cron jobs (this one runs once a day).
- * 
+ * run as idempotent cron jobs (this one runs once a day).
+ *
  * @example
  * ```typescript
  * MeshCall.cron({
@@ -40,12 +41,12 @@ class MeshCall {
   /**
    * @private
    */
-  static workers = new Map<string, (HotMesh | Promise<HotMesh>)>();
+  static workers = new Map<string, HotMesh | Promise<HotMesh>>();
 
   /**
    * @private
    */
-  static engines = new Map<string, (HotMesh | Promise<HotMesh>)>();
+  static engines = new Map<string, HotMesh | Promise<HotMesh>>();
 
   /**
    * @private
@@ -62,7 +63,11 @@ class MeshCall {
    * with the provided namespace and connection options
    * @private
    */
-  static async findFirstMatching(workers: Map<string, (HotMesh | Promise<HotMesh>)>, namespace = HMNS, config: RedisConfig): Promise<HotMesh | void> {
+  static async findFirstMatching(
+    workers: Map<string, HotMesh | Promise<HotMesh>>,
+    namespace = HMNS,
+    config: RedisConfig,
+  ): Promise<HotMesh | void> {
     for (const [id, hotMeshInstance] of workers) {
       if ((await hotMeshInstance).namespace === namespace) {
         if (id.startsWith(hashOptions(config.options))) {
@@ -75,7 +80,10 @@ class MeshCall {
   /**
    * @private
    */
-  static getHotMeshClient = async (namespace: string, connection: RedisConfig): Promise<HotMesh> => {
+  static getHotMeshClient = async (
+    namespace: string,
+    connection: RedisConfig,
+  ): Promise<HotMesh> => {
     //namespace isolation requires the connection options to be hashed
     //as multiple intersecting databases can be used by the same service
     const optionsHash = hashOptions(connection.options);
@@ -157,7 +165,10 @@ class MeshCall {
    * Returns a cached worker instance or creates a new one
    * @private
    */
-  static async getInstance(namespace: string, redis: RedisConfig): Promise<HotMesh> {
+  static async getInstance(
+    namespace: string,
+    redis: RedisConfig,
+  ): Promise<HotMesh> {
     let hotMeshInstance = await MeshCall.findFirstMatching(
       MeshCall.workers,
       namespace,
@@ -170,7 +181,10 @@ class MeshCall {
         redis,
       );
       if (!hotMeshInstance) {
-        hotMeshInstance = await MeshCall.getHotMeshClient(namespace, redis) as unknown as HotMesh
+        hotMeshInstance = (await MeshCall.getHotMeshClient(
+          namespace,
+          redis,
+        )) as unknown as HotMesh;
       }
     }
     return hotMeshInstance as HotMesh;
@@ -192,7 +206,7 @@ class MeshCall {
    * });
    * ```
    */
-  static async connect(params: MeshCallConnectParams): Promise<HotMesh>  {
+  static async connect(params: MeshCallConnectParams): Promise<HotMesh> {
     const targetNamespace = params.namespace ?? HMNS;
     const optionsHash = hashOptions(params.redis?.options);
     const targetTopic = `${optionsHash}.${targetNamespace}.${params.topic}`;
@@ -205,14 +219,14 @@ class MeshCall {
         {
           topic: params.topic,
           redis: params.redis,
-          callback: async function(input: StreamData) {
+          callback: async function (input: StreamData) {
             const response = await params.callback.apply(this, input.data.args);
             return {
               metadata: { ...input.metadata },
               data: { response },
-            }
+            };
           },
-        }
+        },
       ],
     });
     MeshCall.workers.set(targetTopic, hotMeshWorker);
@@ -222,9 +236,9 @@ class MeshCall {
 
   /**
    * Calls a function and returns the response.
-   * 
+   *
    * @template U - the return type of the linked worker function
-   * 
+   *
    * @example
    * ```typescript
    * const response = await MeshCall.exec({
@@ -238,10 +252,10 @@ class MeshCall {
    * ```
    */
   static async exec<U>(params: MeshCallExecParams): Promise<U> {
-    const TOPIC = `${params.namespace ?? HMNS}.call`
+    const TOPIC = `${params.namespace ?? HMNS}.call`;
     const hotMeshInstance = await MeshCall.getInstance(
       params.namespace,
-      params.redis
+      params.redis,
     );
 
     let id = params.options?.id;
@@ -272,14 +286,14 @@ class MeshCall {
       TOPIC,
       { id, expire, topic: params.topic, args: params.args },
       null,
-      30_000 //local timeout
+      30_000, //local timeout
     );
     return jobOutput?.data?.response as U;
   }
 
   /**
    * Clears a cached function response.
-   * 
+   *
    * @example
    * ```typescript
    * MeshCall.flush({
@@ -295,7 +309,7 @@ class MeshCall {
   static async flush(params: MeshCallFlushParams): Promise<void> {
     const hotMeshInstance = await MeshCall.getInstance(
       params.namespace,
-      params.redis
+      params.redis,
     );
     await hotMeshInstance.scrub(params.id ?? params?.options?.id);
   }
@@ -306,7 +320,7 @@ class MeshCall {
    * callback function each time the cron job runs. The `id`
    * option is used to uniquely identify the cron job, allowing
    * it to be interrupted at any time.
-   * 
+   *
    * @example
    * ```typescript
    * MeshCall.cron({
@@ -338,23 +352,22 @@ class MeshCall {
       //start the cron job
       const TOPIC = `${params.namespace ?? HMNS}.cron`;
       const interval = ms(params.options.interval) / 1000;
-      const delay = params.options.delay ? ms(params.options.delay) / 1000 : undefined;
+      const delay = params.options.delay
+        ? ms(params.options.delay) / 1000
+        : undefined;
       const maxCycles = params.options.maxCycles ?? 1_000_000;
       const hotMeshInstance = await MeshCall.getInstance(
         params.namespace,
-        params.redis
+        params.redis,
       );
-      await hotMeshInstance.pub(
-        TOPIC,
-        {
-          id: params.options.id,
-          topic: params.topic,
-          args: params.args,
-          interval,
-          maxCycles,
-          delay,
-        },
-      );
+      await hotMeshInstance.pub(TOPIC, {
+        id: params.options.id,
+        topic: params.topic,
+        args: params.args,
+        interval,
+        maxCycles,
+        delay,
+      });
       return true;
     } catch (error) {
       if (error.message.includes(`Duplicate job: ${params.options.id}`)) {
@@ -366,7 +379,7 @@ class MeshCall {
 
   /**
    * Interrupts a running cron job.
-   * 
+   *
    * @example
    * ```typescript
    * MeshCall.interrupt({
@@ -379,7 +392,7 @@ class MeshCall {
    * });
    * ```
    */
-  static async interrupt(params: MeshCallInterruptParams): Promise<void>  {
+  static async interrupt(params: MeshCallInterruptParams): Promise<void> {
     const hotMeshInstance = await MeshCall.getInstance(
       params.namespace,
       params.redis,
@@ -387,7 +400,7 @@ class MeshCall {
     await hotMeshInstance.interrupt(
       `${params.namespace ?? HMNS}.cron`,
       params.options.id,
-      { 'throw': false, expire: 60 },
+      { throw: false, expire: 60 },
     );
   }
 

@@ -1,4 +1,5 @@
 import { WorkflowHandleService } from '../services/meshflow/handle';
+
 import { LogLevel } from './logger';
 import { RedisClass, RedisOptions } from './redis';
 import { StringAnyType, StringStringType } from './serializer';
@@ -582,10 +583,25 @@ type ChildResponseType<T> = {
 
 interface ClientWorkflow {
   start(options: WorkflowOptions): Promise<WorkflowHandleService>;
-  signal(signalId: string, data: StringAnyType, namespace?: string): Promise<string>;
+  signal(
+    signalId: string,
+    data: StringAnyType,
+    namespace?: string,
+  ): Promise<string>;
   hook(options: HookOptions): Promise<string>;
-  getHandle(taskQueue: string, workflowName: string, workflowId: string, namespace?: string): Promise<WorkflowHandleService>;
-  search(taskQueue: string, workflowName: string, namespace: string | null, index: string, ...query: string[]): Promise<string[]>;
+  getHandle(
+    taskQueue: string,
+    workflowName: string,
+    workflowId: string,
+    namespace?: string,
+  ): Promise<WorkflowHandleService>;
+  search(
+    taskQueue: string,
+    workflowName: string,
+    namespace: string | null,
+    index: string,
+    ...query: string[]
+  ): Promise<string[]>;
 }
 
 export {

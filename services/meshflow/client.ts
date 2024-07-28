@@ -85,7 +85,10 @@ export class ClientService {
   /**
    * @private
    */
-  getHotMeshClient = async (workflowTopic: string | null, namespace?: string) => {
+  getHotMeshClient = async (
+    workflowTopic: string | null,
+    namespace?: string,
+  ) => {
     //namespace isolation requires the connection options to be hashed
     //as multiple intersecting databases can be used by the same service
     const optionsHash = hashOptions(this.connection.options);
@@ -141,17 +144,17 @@ export class ClientService {
    * exists and if not, create it.
    * @private
    */
-  verifyStream = async (hotMeshClient: HotMesh, workflowTopic: string, namespace?: string) => {
+  verifyStream = async (
+    hotMeshClient: HotMesh,
+    workflowTopic: string,
+    namespace?: string,
+  ) => {
     const optionsHash = hashOptions(this.connection.options);
     const targetNS = namespace ?? APP_ID;
     const targetTopic = `${optionsHash}.${targetNS}.${workflowTopic}`;
     if (!ClientService.topics.includes(targetTopic)) {
       ClientService.topics.push(targetTopic);
-      await ClientService.createStream(
-        hotMeshClient,
-        workflowTopic,
-        namespace,
-      );
+      await ClientService.createStream(hotMeshClient, workflowTopic, namespace);
     }
   };
 
@@ -177,7 +180,6 @@ export class ClientService {
    * is accessed by calling workflow.start().
    */
   workflow: ClientWorkflow = {
-
     /**
      * Starts a workflow, verifies the idempotent id, and
      * adds searchable data to the record.
@@ -194,11 +196,7 @@ export class ClientService {
         options.namespace,
       );
       //verify that the stream channel exists before enqueueing
-      await this.verifyStream(
-        hotMeshClient,
-        workflowTopic,
-        options.namespace
-      );
+      await this.verifyStream(hotMeshClient, workflowTopic, options.namespace);
       const payload = {
         arguments: [...options.args],
         originJobId: options.originJobId,
@@ -249,9 +247,9 @@ export class ClientService {
      * Similar to `worker` functions, `hook` functions have a linked
      * function. But hooks do not start a new job and instead read/write
      * their isolated activity data to an existing Job record (HASH).
-     * 
+     *
      * This example spawns a hook that will update workflow `guid123`.
-     * 
+     *
      * @example
      * ```typescript
      * await client.workflow.hook({
@@ -306,7 +304,7 @@ export class ClientService {
      * allowing callers to check the status of the workflow,
      * interrupt it, and even await its eventual response
      * if still in a pending state.
-     * 
+     *
      * @example
      * ```typescript
      * const handle = await client.workflow.getHandle(
@@ -341,7 +339,7 @@ export class ClientService {
      * used to identify the point of presence to use. `...args` is
      * the tokenized FT.SEARCH query as it would be entered in
      * the terminal.
-     * 
+     *
      * @example
      * ```typescript
      * await client.workflow.search(
@@ -381,7 +379,10 @@ export class ClientService {
    * Any point of presence can be used to deploy and activate the HotMesh
    * distributed executable to the active quorum.
    */
-  async deployAndActivate(namespace = APP_ID, version = APP_VERSION): Promise<void> {
+  async deployAndActivate(
+    namespace = APP_ID,
+    version = APP_VERSION,
+  ): Promise<void> {
     if (isNaN(Number(version))) {
       throw new Error('Invalid version number');
     }

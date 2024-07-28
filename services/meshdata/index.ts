@@ -3,34 +3,43 @@ import { HotMesh } from '../hotmesh';
 import {
   WorkflowOptions,
   WorkflowSearchOptions,
-  WorkerOptions, 
+  WorkerOptions,
   FindJobsOptions,
   FindOptions,
   FindWhereOptions,
   SearchResults,
-  FindWhereQuery} from '../../types/meshflow';
+  FindWhereQuery,
+} from '../../types/meshflow';
 import {
   CallOptions,
   ConnectionInput,
   ConnectOptions,
   ExecInput,
-  HookInput } from '../../types/meshdata';
+  HookInput,
+} from '../../types/meshdata';
 import { RedisClass, RedisOptions } from '../../types/redis';
 import { StringAnyType, StringStringType } from '../../types/serializer';
 import { JobInterruptOptions, JobOutput } from '../../types/job';
 import { KeyType } from '../../types/hotmesh';
-import { QuorumMessage, QuorumMessageCallback, QuorumProfile, RollCallOptions, SubscriptionOptions, ThrottleOptions } from '../../types/quorum';
+import {
+  QuorumMessage,
+  QuorumMessageCallback,
+  QuorumProfile,
+  RollCallOptions,
+  SubscriptionOptions,
+  ThrottleOptions,
+} from '../../types/quorum';
 import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
 
 /**
  * The `MeshData` service wraps the `MeshFlow` service.
  * It serves to unify both data record concepts and
  * transactional workflow principles into a single
- * "Operational Data Layer" (ODL). Deployments with
+ * *Operational Data Layer*. Deployments with
  * the Redis FT.SEARCH module enabled can deliver
  * both OLTP (transactions) and OLAP (analytics)
  * with no additional infrastructure.
- * 
+ *
  * The following example depicts the full end-to-end
  * lifecycle of a `MeshData` app, including the
  * connection of a worker function, the execution of
@@ -41,7 +50,7 @@ import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
  * ```typescript
  * import { MeshData, Types } from '@hotmeshio/hotmesh';
  * import * as Redis from 'redis';
- * 
+ *
  * //1) Define a search schema
  * const schema = {
  *   schema: {
@@ -52,14 +61,14 @@ import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
  *   index: 'user',
  *   prefix: ['user'], //index items with keys starting with 'user'
  * } as unknown as Types.WorkflowSearchOptions;
- * 
+ *
  * //2) Initialize MeshData and Redis
  * const meshData = new MeshData(
  *   Redis,
  *   { url: 'redis://:key_admin@redis:6379' },
  *   schema,
  * );
- * 
+ *
  * //3) Connect a 'user' worker function
  * await meshData.connect({
  *   entity: 'user',
@@ -71,9 +80,9 @@ import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
  *   },
  *   options: { namespace: 'meshdata' },
  * });
- * 
+ *
  * const userID = 'someTestUser123';
- * 
+ *
  * //4) Call the 'user' worker function; include search data
  * const response = await meshData.exec({
  *   entity: 'user',
@@ -87,34 +96,33 @@ import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
  *     namespace: 'meshdata',
  *   },
  * });
- * 
+ *
  * //5) Read data (by field name) directly from Redis
  * const data = await meshData.get(
  *   'user',
  *   userID,
- *   { 
+ *   {
  *     fields: ['plan', 'id', 'active'],
  *     namespace: 'meshdata'
  *   },
  * );
- * 
+ *
  * //6) Create a search index
  * await meshData.createSearchIndex('user', { namespace: 'meshdata' }, schema);
- * 
+ *
  * //7) Perform Full Text Search on the indexed dataset
  * const results = await meshData.findWhere('user', {
  *   query: [{ field: 'id', is: '=', value: userID }],
  *   limit: { start: 0, size: 100 },
  *   return: ['plan', 'id', 'active']
  * });
- * 
+ *
  * //8) Shutdown MeshData
  * await MeshData.shutdown();
  * ```
- * 
+ *
  */
 class MeshData {
-
   /**
    * @private
    */
@@ -155,7 +163,7 @@ class MeshData {
    * Cached local instances (map) of HotMesh organized by namespace
    * @private
    */
-  instances: Map<string, (Promise<HotMesh> | HotMesh)> = new Map();
+  instances: Map<string, Promise<HotMesh> | HotMesh> = new Map();
 
   /**
    * Redis FT search configuration (indexed/searchable fields and types)
@@ -166,7 +174,7 @@ class MeshData {
    * Provides a set of static extensions that can be invoked by
    * your linked workflow functions during their execution.
    * @example
-   * 
+   *
    * function greet (email: string, user: { first: string}) {
    *   //persist the user's email and newsletter preferences
    *   const search = await MeshData.workflow.search();
@@ -197,7 +205,11 @@ class MeshData {
     /**
      * Interrupts a job by its entity and id.
      */
-    interrupt: async (entity: string, id: string, options: JobInterruptOptions = {}) => {
+    interrupt: async (
+      entity: string,
+      id: string,
+      options: JobInterruptOptions = {},
+    ) => {
       const jobId = MeshData.mintGuid(entity, id);
       await MeshFlow.workflow.interrupt(jobId, options);
     },
@@ -206,11 +218,16 @@ class MeshData {
      * Starts a new, subordinated workflow/job execution. NOTE: The child workflow's
      * lifecycle is bound to the parent workflow, and it will be terminated/scrubbed
      * when the parent workflow is terminated/scrubbed.
-     * 
+     *
      * @template T The expected return type of the target function.
      */
-    execChild: async<T>(options: Partial<WorkflowOptions> = {}): Promise<T> => {
-      const pluckOptions = { ...options, args: [...options.args, { $type: 'exec' }] };
+    execChild: async <T>(
+      options: Partial<WorkflowOptions> = {},
+    ): Promise<T> => {
+      const pluckOptions = {
+        ...options,
+        args: [...options.args, { $type: 'exec' }],
+      };
       return MeshFlow.workflow.execChild(pluckOptions as WorkflowOptions);
     },
 
@@ -218,11 +235,16 @@ class MeshData {
      * Starts a new, subordinated workflow/job execution. NOTE: The child workflow's
      * lifecycle is bound to the parent workflow, and it will be terminated/scrubbed
      * when the parent workflow is terminated/scrubbed.
-     * 
+     *
      * @template T The expected return type of the target function.
      */
-    executeChild: async<T>(options: Partial<WorkflowOptions> = {}): Promise<T> => {
-      const pluckOptions = { ...options, args: [...options.args, { $type: 'exec' }] };
+    executeChild: async <T>(
+      options: Partial<WorkflowOptions> = {},
+    ): Promise<T> => {
+      const pluckOptions = {
+        ...options,
+        args: [...options.args, { $type: 'exec' }],
+      };
       return MeshFlow.workflow.execChild(pluckOptions as WorkflowOptions);
     },
 
@@ -232,34 +254,43 @@ class MeshData {
      * lifecycle is bound to the parent workflow, and it will be terminated/scrubbed
      * when the parent workflow is terminated/scrubbed.
      */
-    startChild: async (options: Partial<WorkflowOptions> = {}): Promise<string> => {
-      const pluckOptions = { ...options, args: [...options.args, { $type: 'exec' }] };
+    startChild: async (
+      options: Partial<WorkflowOptions> = {},
+    ): Promise<string> => {
+      const pluckOptions = {
+        ...options,
+        args: [...options.args, { $type: 'exec' }],
+      };
       return MeshFlow.workflow.startChild(pluckOptions as WorkflowOptions);
     },
   };
 
   /**
-   * 
+   *
    * @param {RedisClass} redisClass - the Redis class/import (e.g, `ioredis`, `redis`)
-   * @param {StringAnyType} redisOptions - the Redis connection options. These are specific to the package (refer to their docs!). Each uses different property names and structures. 
+   * @param {StringAnyType} redisOptions - the Redis connection options. These are specific to the package (refer to their docs!). Each uses different property names and structures.
    * @param {WorkflowSearchOptions} search - the Redis search options for JSON-based configuration of the Redis FT.Search module index
    * @example
    * // Instantiate MeshData with `ioredis`
    * import Redis from 'ioredis';
-   * 
+   *
    * const meshData = new MeshData(Redis, {
    *   host: 'localhost',
    *   port: 6379,
    *   password: 'shhh123',
    *   db: 0,
    * });
-   * 
+   *
    * // Instantiate MeshData with `redis`
    * import * as Redis from 'redis';
-   * 
+   *
    * const meshData = new MeshData(Redis, { url: 'redis://:shhh123@localhost:6379' });
    */
-  constructor(redisClass: Partial<RedisClass>, redisOptions: Partial<RedisOptions>, search?: WorkflowSearchOptions) {
+  constructor(
+    redisClass: Partial<RedisClass>,
+    redisOptions: Partial<RedisOptions>,
+    search?: WorkflowSearchOptions,
+  ) {
     this.redisClass = redisClass as RedisClass;
     this.redisOptions = redisOptions as RedisOptions;
     if (search) {
@@ -271,10 +302,8 @@ class MeshData {
    * @private
    */
   validate(entity: string) {
-    if (entity.includes(':') ||
-        entity.includes('$') ||
-        entity.includes(' ')) {
-      throw "Invalid string [':','$',' ' not allowed]"
+    if (entity.includes(':') || entity.includes('$') || entity.includes(' ')) {
+      throw "Invalid string [':','$',' ' not allowed]";
     }
   }
 
@@ -297,7 +326,8 @@ class MeshData {
       connection: {
         class: this.redisClass,
         options: this.redisOptions,
-    }});
+      },
+    });
   }
 
   /**
@@ -310,20 +340,28 @@ class MeshData {
   /**
    * @private
    */
-  arrayToHash(input: [number, ...Array<string | string[]>]): StringStringType[] {
-    const [_count, ...rest] = input;
-    const max = rest.length / 2
+  arrayToHash(
+    input: [number, ...Array<string | string[]>],
+  ): StringStringType[] {
+    const max = input.length;
     const hashes: StringStringType[] = [];
-    // Process each item to convert into a hash object
-    for (let i = 0; i < max * 2; i += 2) {
-      const fields = rest[i + 1] as string[];
-      const hash: StringStringType = { '$': rest[i] as string };
-      for (let j = 0; j < fields.length; j += 2) {
-        const fieldKey = fields[j].replace(/^_/, '');
-        const fieldValue = fields[j + 1];
-        hash[fieldKey] = fieldValue;
+
+    for (let i = 1; i < max; i++) {
+      const fields = input[i] as string[];
+      if (Array.isArray(fields)) {
+        const hash: StringStringType = {};
+        const hashId = input[i - 1];
+        for (let j = 0; j < fields.length; j += 2) {
+          const fieldKey = fields[j].replace(/^_/, '');
+          const fieldValue = fields[j + 1];
+          hash[fieldKey] = fieldValue;
+        }
+        //redis uses '$' as a special field for the key
+        if (typeof hashId === 'string') {
+          hash['$'] = hashId;
+        }
+        hashes.push(hash);
       }
-      hashes.push(hash);
     }
     return hashes;
   }
@@ -332,7 +370,7 @@ class MeshData {
    * serialize using the HotMesh `toString` format
    * @private
    */
-  toString(value: any): string|undefined {
+  toString(value: any): string | undefined {
     switch (typeof value) {
       case 'string':
         break;
@@ -364,7 +402,7 @@ class MeshData {
    */
   static mintGuid(entity: string, id?: string): string {
     if (!id && !entity) {
-      throw "Invalid arguments [entity and id are both null]";
+      throw 'Invalid arguments [entity and id are both null]';
     } else if (!id) {
       id = HotMesh.guid();
     } else if (entity) {
@@ -379,9 +417,9 @@ class MeshData {
    * Returns a HotMesh client
    * @param {string} [namespace='durable'] - the namespace for the client
    */
-  async getHotMesh(namespace: string = 'durable'): Promise<HotMesh> {
+  async getHotMesh(namespace = 'durable'): Promise<HotMesh> {
     //try to reuse an existing client
-    let hotMesh: HotMesh | Promise<HotMesh> | undefined = 
+    let hotMesh: HotMesh | Promise<HotMesh> | undefined =
       await this.instances.get(namespace);
     if (!hotMesh) {
       hotMesh = HotMesh.init({
@@ -390,8 +428,8 @@ class MeshData {
           redis: {
             class: this.redisClass,
             options: this.redisOptions,
-          }
-        }
+          },
+        },
       });
       this.instances.set(namespace, hotMesh);
       hotMesh = await hotMesh;
@@ -411,13 +449,25 @@ class MeshData {
    * @example
    * // mint a key
    * const key = await meshData.mintKey('greeting', 'jsmith123');
-   * 
+   *
    * // returns 'hmsh:durable:j:greeting-jsmith123'
    */
-  async mintKey(entity: string, workflowId: string, namespace?: string): Promise<string> {
-    const handle = await this.getClient().workflow.getHandle(entity, entity, workflowId, namespace);
+  async mintKey(
+    entity: string,
+    workflowId: string,
+    namespace?: string,
+  ): Promise<string> {
+    const handle = await this.getClient().workflow.getHandle(
+      entity,
+      entity,
+      workflowId,
+      namespace,
+    );
     const store = handle.hotMesh.engine?.store;
-    return store?.mintKey(KeyType.JOB_STATE, { jobId: workflowId, appId: handle.hotMesh.engine?.appId }) as string;
+    return store?.mintKey(KeyType.JOB_STATE, {
+      jobId: workflowId,
+      appId: handle.hotMesh.engine?.appId,
+    }) as string;
   }
 
   /**
@@ -432,7 +482,10 @@ class MeshData {
      * @param {SubscriptionOptions} options - connection options
      * @returns {Promise<void>}
      */
-    sub: async (callback: QuorumMessageCallback, options: SubscriptionOptions = {}): Promise<void> => {
+    sub: async (
+      callback: QuorumMessageCallback,
+      options: SubscriptionOptions = {},
+    ): Promise<void> => {
       const hotMesh = await this.getHotMesh(options.namespace || 'durable');
       const callbackWrapper: QuorumMessageCallback = (topic, message) => {
         if (message.type === 'pong' && !message.originator) {
@@ -452,7 +505,7 @@ class MeshData {
           }
         }
         callback(topic, message);
-      }
+      };
       await hotMesh.quorum?.sub(callbackWrapper);
     },
 
@@ -462,7 +515,10 @@ class MeshData {
      * @param {SubscriptionOptions} options - connection options
      * @returns {Promise<void>}
      */
-    pub: async (message: QuorumMessage, options: SubscriptionOptions = {}): Promise<void> => {
+    pub: async (
+      message: QuorumMessage,
+      options: SubscriptionOptions = {},
+    ): Promise<void> => {
       const hotMesh = await this.getHotMesh(options.namespace || 'durable');
       await hotMesh.quorum?.pub(message);
     },
@@ -473,29 +529,32 @@ class MeshData {
      * @param {SubscriptionOptions} options - connection options
      * @returns {Promise<void>}
      */
-    unsub: async (callback: QuorumMessageCallback, options: SubscriptionOptions = {}): Promise<void> => {
+    unsub: async (
+      callback: QuorumMessageCallback,
+      options: SubscriptionOptions = {},
+    ): Promise<void> => {
       const hotMesh = await this.getHotMesh(options.namespace || 'durable');
       await hotMesh.quorum?.unsub(callback);
-    }
-  }
+    },
+  };
 
   /**
    * Connects a function to the operational data layer.
-   * 
+   *
    * @template T The expected return type of the target function.
-   * 
+   *
    * @param {object} connection - The options for connecting a function.
    * @param {string} connection.entity - The global entity identifier for the function (e.g, 'user', 'order', 'product').
    * @param {(...args: any[]) => T} connection.target - Function to connect, returns type T.
    * @param {ConnectOptions} connection.options={} - Extended connection options (e.g., ttl, taskQueue). A
    *                                                 ttl of 'infinity' will cache the function indefinitely.
-   * 
+   *
    * @returns {Promise<boolean>} True if connection is successfully established.
-   * 
+   *
    * @example
    * // Instantiate MeshData with Redis configuration.
    * const meshData = new MeshData(Redis, { host: 'localhost', port: 6379 });
-   * 
+   *
    * // Define and connect a function with the 'greeting' entity.
    * // The function will be cached indefinitely (infinite TTL).
    * meshData.connect({
@@ -504,16 +563,22 @@ class MeshData {
    *   options: { ttl: 'infinity' }
    * });
    */
-  async connect<T>({ entity, target, options = {} }: ConnectionInput<T>): Promise<boolean> {
+  async connect<T>({
+    entity,
+    target,
+    options = {},
+  }: ConnectionInput<T>): Promise<boolean> {
     this.validate(entity);
 
     this.connectionSignatures[entity] = target.toString();
-    const targetFunction = { [entity]: async (...args: any[]): Promise<T> => {
-      const { callOptions } = this.bindCallOptions(args, options);
-      const result = await target.apply(target, args) as T;
-      await this.pauseForTTL(result, callOptions);
-      return result as T;
-    }};
+    const targetFunction = {
+      [entity]: async (...args: any[]): Promise<T> => {
+        const { callOptions } = this.bindCallOptions(args, options);
+        const result = (await target.apply(target, args)) as T;
+        await this.pauseForTTL(result, callOptions);
+        return result as T;
+      },
+    };
 
     await MeshFlow.Worker.create({
       namespace: options.namespace,
@@ -533,13 +598,17 @@ class MeshData {
    * is a hook or a exec call. If it is an exec, the connected function has
    * precedence and can say that all calls are cached indefinitely.
    *
-   * @param {any[]} args 
-   * @param {StringAnyType} options 
-   * @param {StringAnyType} callOptions 
+   * @param {any[]} args
+   * @param {StringAnyType} options
+   * @param {StringAnyType} callOptions
    * @returns {StringAnyType}
    * @private
    */
-  bindCallOptions(args: any[], options: ConnectOptions, callOptions: CallOptions = {}): StringAnyType{
+  bindCallOptions(
+    args: any[],
+    options: ConnectOptions,
+    callOptions: CallOptions = {},
+  ): StringAnyType {
     if (args.length) {
       const lastArg = args[args.length - 1];
       if (lastArg instanceof Object && lastArg?.$type === 'exec') {
@@ -564,9 +633,9 @@ class MeshData {
   /**
    * Sleeps/WaitsForSignal to keep the function open
    * and remain part of the operational data layer
-   * 
+   *
    * @template T The expected return type of the remote function
-   * 
+   *
    * @param {string} result - the result to emit before going to sleep
    * @param {CallOptions} options - call options
    * @private
@@ -574,7 +643,8 @@ class MeshData {
   async pauseForTTL<T>(result: T, options: CallOptions) {
     if (options?.ttl && options.$type === 'exec') {
       //exit early if the outer function wrapper has already run
-      const { counter, replay, workflowDimension, workflowId } = MeshData.workflow.getContext();
+      const { counter, replay, workflowDimension, workflowId } =
+        MeshData.workflow.getContext();
       const prefix = options.ttl === 'infinity' ? 'wait' : 'sleep';
       if (`-${prefix}${workflowDimension}-${counter + 1}-` in replay) {
         return;
@@ -582,18 +652,21 @@ class MeshData {
 
       //break the event loop between the inner function (the user's code)
       // and the outer function (the MeshData state/durability/ttl-extension wrapper)
-      await new Promise(resolve => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
       options.$guid = options.$guid ?? workflowId;
       const hotMesh = await MeshData.workflow.getHotMesh();
       const store = hotMesh.engine?.store;
-      const jobKey = store?.mintKey(KeyType.JOB_STATE, { jobId: options.$guid, appId: hotMesh.engine?.appId });
+      const jobKey = store?.mintKey(KeyType.JOB_STATE, {
+        jobId: options.$guid,
+        appId: hotMesh.engine?.appId,
+      });
       //publish the 'done' payload
       const jobResponse = ['aAa', '/t', 'aBa', this.toString(result)];
       await store?.exec('HSET', jobKey, ...jobResponse);
       await this.publishDone<T>(result, hotMesh, options);
       if (options.ttl === 'infinity') {
         //job will only exit upon receiving a flush signal
-        await MeshData.workflow.waitFor(`flush-${options.$guid}`)
+        await MeshData.workflow.waitFor(`flush-${options.$guid}`);
       } else {
         //will exit after sleeping for 'ttl'
         await MeshData.workflow.sleepFor(options.ttl);
@@ -604,17 +677,21 @@ class MeshData {
   /**
    * Publishes the job result, because pausing the job (in support of
    * the 'ttl' option) interrupts the response.
-   * 
+   *
    * @template T The expected return type of the remote function
-   * 
+   *
    * @param {string} result - the result to emit before going to sleep
    * @param {HotMesh} hotMesh - call options
    * @param {CallOptions} options - call options
-   * 
+   *
    * @returns {Promise<void>}
    * @private
    */
-  async publishDone<T>(result: T, hotMesh: HotMesh, options: CallOptions): Promise<void> {
+  async publishDone<T>(
+    result: T,
+    hotMesh: HotMesh,
+    options: CallOptions,
+  ): Promise<void> {
     await hotMesh.engine?.store?.publish(
       KeyType.QUORUM,
       {
@@ -628,17 +705,17 @@ class MeshData {
             jid: options.$guid,
             aid: 't1',
             ts: '0',
-            js: 0
+            js: 0,
           },
           data: {
             done: true, //aAa
             response: result, //aBa
-            workflowId: options.$guid //aCa
-          }
-        }
+            workflowId: options.$guid, //aCa
+          },
+        },
       },
       hotMesh.engine.appId,
-      `${hotMesh.engine.appId}.executed.${options.$guid}`
+      `${hotMesh.engine.appId}.executed.${options.$guid}`,
     );
   }
 
@@ -648,34 +725,38 @@ class MeshData {
    * `ttl` of 'infinity'. It can take several seconds for the function
    * to be removed from the cache as it might be actively orchestrating
    * sub-workflows.
-   * 
+   *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - The workflow/job id
    * @param {string} [namespace='durable'] - the namespace for the client
-   * 
+   *
    * @example
    * // Flush a function
    * await meshData.flush('greeting', 'jsmith123');
    */
-  async flush(entity: string, id: string, namespace?: string): Promise<string | void> {
+  async flush(
+    entity: string,
+    id: string,
+    namespace?: string,
+  ): Promise<string | void> {
     const workflowId = MeshData.mintGuid(entity, id);
     //resolve the system signal (this forces the main wrapper function to end)
     await this.getClient().workflow.signal(
       `flush-${workflowId}`,
       {},
-      namespace
+      namespace,
     );
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     //other activities may still be running; call `interrupt` to stop all threads
     await this.interrupt(
       entity,
-      id, 
+      id,
       {
-        descend: true, 
+        descend: true,
         suppress: true,
-        expire: 1
+        expire: 1,
       },
-      namespace
+      namespace,
     );
   }
 
@@ -687,32 +768,42 @@ class MeshData {
    * As jobs are asynchronous, there is no way to stop descendant flows immediately.
    * Use an `expire` option to keep the interrupted job in the cache for a specified
    * duration before it is fully removed.
-   * 
+   *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - The workflow/job id
    * @param {JobInterruptOptions} [options={}] - call options
    * @param {string} [namespace='durable'] - the namespace for the client
-   * 
+   *
    * @example
    * // Interrupt a function
    * await meshData.interrupt('greeting', 'jsmith123');
    */
-  async interrupt(entity: string, id: string, options: JobInterruptOptions = {}, namespace?: string): Promise<void> {
+  async interrupt(
+    entity: string,
+    id: string,
+    options: JobInterruptOptions = {},
+    namespace?: string,
+  ): Promise<void> {
     const workflowId = MeshData.mintGuid(entity, id);
     try {
-      const handle = await this.getClient().workflow.getHandle(entity, entity, workflowId, namespace);
+      const handle = await this.getClient().workflow.getHandle(
+        entity,
+        entity,
+        workflowId,
+        namespace,
+      );
       const hotMesh = handle.hotMesh;
       await hotMesh.interrupt(`${hotMesh.appId}.execute`, workflowId, options);
-    } catch(e) {
+    } catch (e) {
       //no-op; interrup throws an error
     }
   }
 
   /**
-   * Signals a Hook Function or Main Function to awaken that 
+   * Signals a Hook Function or Main Function to awaken that
    * is paused and registered to awaken upon receiving the signal
    * matching @guid.
-   * 
+   *
    * @param {string} guid - The global identifier for the signal
    * @param {StringAnyType} payload - The payload to send with the signal
    * @param {string} [namespace='durable'] - the namespace for the client
@@ -720,10 +811,14 @@ class MeshData {
    * @example
    * // Signal a function with a payload
    * await meshData.signal('signal123', { message: 'hi!' });
-   * 
+   *
    * // returns '123456732345-0' (redis stream message receipt)
    */
-  async signal(guid: string, payload: StringAnyType, namespace?: string): Promise<string> {
+  async signal(
+    guid: string,
+    payload: StringAnyType,
+    namespace?: string,
+  ): Promise<string> {
     return await this.getClient().workflow.signal(guid, payload, namespace);
   }
 
@@ -733,11 +828,13 @@ class MeshData {
    * functions, topics, etc. This is useful for establishing
    * the network profile and overall message throughput
    * of the operational data layer as a unified quorum.
-   * @param {RollCallOptions} options 
+   * @param {RollCallOptions} options
    * @returns {Promise<QuorumProfile[]>}
    */
   async rollCall(options: RollCallOptions = {}): Promise<QuorumProfile[]> {
-    return (await this.getHotMesh(options.namespace || 'durable')).rollCall(options.delay || 1000);
+    return (await this.getHotMesh(options.namespace || 'durable')).rollCall(
+      options.delay || 1000,
+    );
   }
 
   /**
@@ -748,18 +845,20 @@ class MeshData {
    * the next message by this amount. By default, the value is set to `0`.
    * @param {ThrottleOptions} options
    * @returns {Promise<boolean>}
-   * 
+   *
    * @example
    * // Throttle a worker or engine
    * await meshData.throttle({ guid: '1234567890', throttle: 10_000 });
    */
   async throttle(options: ThrottleOptions): Promise<boolean> {
-    return (await this.getHotMesh(options.namespace || 'durable')).throttle(options as ThrottleOptions);
+    return (await this.getHotMesh(options.namespace || 'durable')).throttle(
+      options as ThrottleOptions,
+    );
   }
 
   /**
    * Similar to `exec`, except it augments the workflow state without creating a new job.
-   * 
+   *
    * @param {object} input - The input parameters for hooking a function.
    * @param {string} input.entity - The target entity name (e.g., 'user', 'order', 'product').
    * @param {string} input.id - The target execution/workflow/job id.
@@ -767,7 +866,7 @@ class MeshData {
    * @param {any[]} input.hookArgs - The arguments for the hook function; must be JSON serializable.
    * @param {HookOptions} input.options={} - Extended hook options (taskQueue, namespace, etc).
    * @returns {Promise<string>} The signal id.
-   * 
+   *
    * @example
    * // Hook a function
    * const signalId = await meshData.hook({
@@ -778,12 +877,18 @@ class MeshData {
    *   options: {}
    * });
    */
-  async hook({ entity, id, hookEntity, hookArgs, options = {} }: HookInput): Promise<string> {
+  async hook({
+    entity,
+    id,
+    hookEntity,
+    hookArgs,
+    options = {},
+  }: HookInput): Promise<string> {
     const workflowId = MeshData.mintGuid(entity, id);
     this.validate(workflowId);
     return await this.getClient().workflow.hook({
       namespace: options.namespace,
-      args: [...hookArgs, {...options, $guid: workflowId, $type: 'hook' }],
+      args: [...hookArgs, { ...options, $guid: workflowId, $type: 'hook' }],
       taskQueue: options.taskQueue ?? hookEntity,
       workflowName: hookEntity,
       workflowId: options.workflowId ?? workflowId,
@@ -797,19 +902,19 @@ class MeshData {
    * removed by calling `flush`. During this time, the function will remain active and
    * its state can be augmented by calling `set`, `incr`, `del`, etc OR by calling a
    * transactional 'hook' function.
-   * 
+   *
    * @template T The expected return type of the remote function.
-   * 
+   *
    * @param {object} input - The execution parameters.
    * @param {string} input.entity - The function entity name (e.g., 'user', 'order', 'user.bill').
    * @param {any[]} input.args - The arguments for the remote function.
    * @param {CallOptions} input.options={} - Extended configuration options for execution (e.g, taskQueue).
-   * 
+   *
    * @returns {Promise<T>} A promise that resolves with the result of the remote function execution. If
    *                     the input options include `await: false`, the promise will resolve with the
    *                     workflow ID (string) instead of the result. Make sure to pass string as the
    *                     return type if you are using `await: false`.
-   * 
+   *
    * @example
    * // Invoke a remote function with arguments and options
    * const response = await meshData.exec({
@@ -825,20 +930,28 @@ class MeshData {
     const client = this.getClient();
     try {
       //check the cache
-      const handle = await client.workflow.getHandle(entity, entity, workflowId, options.namespace);
-      const state = await handle.hotMesh.getState(`${handle.hotMesh.appId}.execute`, handle.workflowId);
+      const handle = await client.workflow.getHandle(
+        entity,
+        entity,
+        workflowId,
+        options.namespace,
+      );
+      const state = await handle.hotMesh.getState(
+        `${handle.hotMesh.appId}.execute`,
+        handle.workflowId,
+      );
       if (state?.data?.done) {
         return state.data.response as unknown as T;
       }
       //202 `pending`; await the result
-      return await handle.result() as unknown as T;
+      return (await handle.result()) as unknown as T;
     } catch (e) {
       //create, since not found; then await the result
       const optionsClone = { ...options };
       delete optionsClone.search;
       delete optionsClone.config;
       const handle = await client.workflow.start({
-        args: [...args, {...optionsClone, $guid: workflowId, $type: 'exec' }],
+        args: [...args, { ...optionsClone, $guid: workflowId, $type: 'exec' }],
         taskQueue: options.taskQueue ?? entity,
         workflowName: entity,
         workflowId: options.workflowId ?? workflowId,
@@ -856,30 +969,30 @@ class MeshData {
       if (options.await === false) {
         return handle.workflowId as unknown as T;
       }
-      return await handle.result() as unknown as T;
+      return (await handle.result()) as unknown as T;
     }
   }
 
   /**
-   * Retrieves the job profile for the function execution, including metadata such as 
+   * Retrieves the job profile for the function execution, including metadata such as
    * execution status and result.
-   * 
+   *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - identifier for the job
    * @param {CallOptions} [options={}] - Configuration options for the execution,
    *                                     including custom IDs, time-to-live (TTL) settings, etc.
    *                                     Defaults to an empty object if not provided.
-   * 
+   *
    * @returns {Promise<JobOutput>} A promise that resolves with the job's output, which
    *                               includes metadata about the job's execution status. The
    *                               structure of `JobOutput` should contain all relevant
    *                               information such as execution result, status, and any
    *                               error messages if the job failed.
-   * 
+   *
    * @example
    * // Retrieve information about a remote function's execution by job ID
    * const jobInfoById = await meshData.info('greeting', 'job-12345');
-   * 
+   *
    * // Response: JobOutput
    * {
    *   metadata: {
@@ -900,12 +1013,24 @@ class MeshData {
    *   }
    * }
    */
-  async info(entity: string, id: string, options: CallOptions = {}): Promise<JobOutput> {
+  async info(
+    entity: string,
+    id: string,
+    options: CallOptions = {},
+  ): Promise<JobOutput> {
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
     this.validate(workflowId);
 
-    const handle = await this.getClient().workflow.getHandle(options.taskQueue ?? entity, entity, workflowId, options.namespace);
-    return await handle.hotMesh.getState(`${handle.hotMesh.appId}.execute`, handle.workflowId);
+    const handle = await this.getClient().workflow.getHandle(
+      options.taskQueue ?? entity,
+      entity,
+      workflowId,
+      options.namespace,
+    );
+    return await handle.hotMesh.getState(
+      `${handle.hotMesh.appId}.execute`,
+      handle.workflowId,
+    );
   }
 
   /**
@@ -913,19 +1038,29 @@ class MeshData {
    * all state, process, and timeline data. The information in the export
    * is sufficient to capture the full state of the function in the moment
    * and over time.
-   * 
+   *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - The workflow/job id
    * @param {ExportOptions} [options={}] - Configuration options for the export
    * @param {string} [namespace='durable'] - the namespace for the client
-   * 
+   *
    * @example
    * // Export a function
    * await meshData.export('greeting', 'jsmith123');
    */
-  async export(entity: string, id: string, options?: ExportOptions, namespace?: string): Promise<MeshFlowJobExport> {
+  async export(
+    entity: string,
+    id: string,
+    options?: ExportOptions,
+    namespace?: string,
+  ): Promise<MeshFlowJobExport> {
     const workflowId = MeshData.mintGuid(entity, id);
-    const handle = await this.getClient().workflow.getHandle(entity, entity, workflowId, namespace);
+    const handle = await this.getClient().workflow.getHandle(
+      entity,
+      entity,
+      workflowId,
+      namespace,
+    );
     return await handle.export(options);
   }
 
@@ -938,42 +1073,56 @@ class MeshData {
    * 2) during function execution ((await MeshData.workflow.search()).set(...))
    * 3) during hook execution ((await MeshData.workflow.search()).set(...))
    * 4) via the meshData SDK (`meshData.set(...)`)
-   * 
+   *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - the job id
    * @param {CallOptions} [options={}] - call options
-   * 
+   *
    * @returns {Promise<StringAnyType>} - the function state
-   * 
+   *
    * @example
    * // get the state of a function
    * const state = await meshData.get('greeting', 'jsmith123', { fields: ['fred', 'barney'] });
-   * 
+   *
    * // returns { fred: 'flintstone', barney: 'rubble' }
    */
-  async get(entity: string, id: string, options: CallOptions = {}): Promise<StringAnyType>{
+  async get(
+    entity: string,
+    id: string,
+    options: CallOptions = {},
+  ): Promise<StringAnyType> {
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
     this.validate(workflowId);
 
     let prefixedFields: string[] = [];
     if (Array.isArray(options.fields)) {
-      prefixedFields = options.fields.map(field => `_${field}`);
+      prefixedFields = options.fields.map((field) => `_${field}`);
     } else if (this.search?.schema) {
-      prefixedFields = Object.entries(this.search.schema).map(([key, value]: [string, StringAnyType]) => {
-        return 'fieldName' in value ? value.fieldName.toString() : `_${key}`;
-      });
+      prefixedFields = Object.entries(this.search.schema).map(
+        ([key, value]: [string, StringAnyType]) => {
+          return 'fieldName' in value ? value.fieldName.toString() : `_${key}`;
+        },
+      );
     } else {
       return await this.all(entity, id, options);
     }
 
-    const handle = await this.getClient().workflow.getHandle(entity, entity, workflowId, options.namespace);
+    const handle = await this.getClient().workflow.getHandle(
+      entity,
+      entity,
+      workflowId,
+      options.namespace,
+    );
     const store = handle.hotMesh.engine?.store;
     const jobKey = await this.mintKey(entity, workflowId, options.namespace);
     const vals = await store?.exec('HMGET', jobKey, ...prefixedFields);
-    const result = prefixedFields.reduce((obj, field: string, index) => {
-      obj[field.substring(1)] = vals?.[index];
-      return obj;
-    }, {} as { [key: string]: any });
+    const result = prefixedFields.reduce(
+      (obj, field: string, index) => {
+        obj[field.substring(1)] = vals?.[index];
+        return obj;
+      },
+      {} as { [key: string]: any },
+    );
 
     return result;
   }
@@ -984,23 +1133,27 @@ class MeshData {
    * fields (HGETALL), not just the ones requested (HMGET). Depending
    * upon the duration of the workflow, this could represent a large
    * amount of process/history data.
-   * 
+   *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - the workflow/job id
    * @param {CallOptions} [options={}] - call options
-   * 
+   *
    * @returns {Promise<StringAnyType>} - the function state
-   * 
+   *
    * @example
    * // get the state of the job (this is not the response...this is job state)
    * const state = await meshData.all('greeting', 'jsmith123');
-   * 
+   *
    * // returns { fred: 'flintstone', barney: 'rubble', ...  }
    */
-  async all(entity: string, id: string, options: CallOptions = {}): Promise<StringAnyType> {
+  async all(
+    entity: string,
+    id: string,
+    options: CallOptions = {},
+  ): Promise<StringAnyType> {
     const rawResponse = await this.raw(entity, id, options);
     const responseObj = {};
-    for (let key in rawResponse) {
+    for (const key in rawResponse) {
       if (key.startsWith('_')) {
         responseObj[key.substring(1)] = rawResponse[key];
       }
@@ -1011,32 +1164,41 @@ class MeshData {
   /**
    * Returns all fields in the HASH record from Redis (HGETALL). Record
    * fields include the following:
-   * 
+   *
    * 1) `:`:                 workflow status (a semaphore where `0` is complete)
    * 2) `_*`:                function state (name/value pairs are prefixed with `_`)
    * 3) `-*`:                workflow cycle state (cycles are prefixed with `-`)
    * 4) `[a-zA-Z]{3}`:       mutable workflow job state
    * 5) `[a-zA-Z]{3}[,\d]+`: immutable workflow activity state
-   * 
+   *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - the workflow/job id
    * @param {CallOptions} [options={}] - call options
-   * 
+   *
    * @returns {Promise<StringAnyType>} - the function state
-   * 
+   *
    * @example
    * // get the state of a function
    * const state = await meshData.raw('greeting', 'jsmith123');
-   * 
+   *
    * // returns { : '0', _barney: 'rubble', aBa: 'Hello, John Doe. Your email is [jsmith@hotmesh].', ... }
    */
-  async raw(entity: string, id: string, options: CallOptions = {}): Promise<StringAnyType> {
+  async raw(
+    entity: string,
+    id: string,
+    options: CallOptions = {},
+  ): Promise<StringAnyType> {
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
     this.validate(workflowId);
-    const handle = await this.getClient().workflow.getHandle(entity, entity, workflowId, options.namespace);
+    const handle = await this.getClient().workflow.getHandle(
+      entity,
+      entity,
+      workflowId,
+      options.namespace,
+    );
     const store = handle.hotMesh.engine?.store;
     const jobKey = await this.mintKey(entity, workflowId, options.namespace);
-    const rawResponse = await store?.exec('HGETALL', jobKey) as string[];
+    const rawResponse = (await store?.exec('HGETALL', jobKey)) as string[];
     const responseObj = {};
     for (let i = 0; i < rawResponse.length; i += 2) {
       responseObj[rawResponse[i] as string] = rawResponse[i + 1];
@@ -1049,27 +1211,36 @@ class MeshData {
    * returned by the exec method which represents the return value from the
    * function at the moment it completed. Instead, function state represents
    * mutable shared state that can be set
-   * 
+   *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - the job id
    * @param {CallOptions} [options={}] - call options
-   * 
+   *
    * @returns {Promise<number>} - count
    * @example
    * // set the state of a function
    * const count = await meshData.set('greeting', 'jsmith123', { search: { data: { fred: 'flintstone', barney: 'rubble' } } });
    */
-  async set(entity: string, id: string, options: CallOptions = {}): Promise<number> {
+  async set(
+    entity: string,
+    id: string,
+    options: CallOptions = {},
+  ): Promise<number> {
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
     this.validate(workflowId);
-    const handle = await this.getClient().workflow.getHandle(entity, entity, workflowId, options.namespace);
+    const handle = await this.getClient().workflow.getHandle(
+      entity,
+      entity,
+      workflowId,
+      options.namespace,
+    );
     const store = handle.hotMesh.engine?.store;
     const jobId = await this.mintKey(entity, workflowId, options.namespace);
     const safeArgs: string[] = [];
-    for (let key in options.search?.data) {
+    for (const key in options.search?.data) {
       safeArgs.push(this.safeKey(key), options.search?.data[key].toString());
     }
-    return await store?.exec('HSET', jobId, ...safeArgs) as unknown as number;
+    return (await store?.exec('HSET', jobId, ...safeArgs)) as unknown as number;
   }
 
   /**
@@ -1079,19 +1250,35 @@ class MeshData {
    * @param {string} field - the field name
    * @param {number} amount - the amount to increment
    * @param {CallOptions} [options={}] - call options
-   * 
+   *
    * @returns {Promise<number>} - the new value
    * @example
    * // increment a field in the function state
    * const count = await meshData.incr('greeting', 'jsmith123', 'counter', 1);
    */
-  async incr(entity: string, id: string, field: string, amount: number, options: CallOptions = {}): Promise<number> {
+  async incr(
+    entity: string,
+    id: string,
+    field: string,
+    amount: number,
+    options: CallOptions = {},
+  ): Promise<number> {
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
     this.validate(workflowId);
-    const handle = await this.getClient().workflow.getHandle(entity, entity, workflowId, options.namespace);
+    const handle = await this.getClient().workflow.getHandle(
+      entity,
+      entity,
+      workflowId,
+      options.namespace,
+    );
     const store = handle.hotMesh.engine?.store;
     const jobId = await this.mintKey(entity, workflowId, options.namespace);
-    const result = await store?.exec('HINCRBYFLOAT', jobId, this.safeKey(field), amount.toString());
+    const result = await store?.exec(
+      'HINCRBYFLOAT',
+      jobId,
+      this.safeKey(field),
+      amount.toString(),
+    );
     return Number(result as string);
   }
 
@@ -1100,20 +1287,25 @@ class MeshData {
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - the job id
    * @param {CallOptions} [options={}] - call options
-   * 
+   *
    * @returns {Promise<number>} - the count of fields deleted
    * @example
    * // remove two hash fields from the function state
    * const count = await meshData.del('greeting', 'jsmith123', { fields: ['fred', 'barney'] });
    */
-  async del(entity: string, id: string, options: CallOptions): Promise<number>{
+  async del(entity: string, id: string, options: CallOptions): Promise<number> {
     const workflowId = MeshData.mintGuid(options.prefix ?? entity, id);
     this.validate(workflowId);
     if (!Array.isArray(options.fields)) {
-      throw "Invalid arguments [options.fields is not an array]";
+      throw 'Invalid arguments [options.fields is not an array]';
     }
-    const prefixedFields = options.fields.map(field => `_${field}`);
-    const handle = await this.getClient().workflow.getHandle(entity, entity, workflowId, options.namespace);
+    const prefixedFields = options.fields.map((field) => `_${field}`);
+    const handle = await this.getClient().workflow.getHandle(
+      entity,
+      entity,
+      workflowId,
+      options.namespace,
+    );
     const store = handle.hotMesh.engine?.store;
     const jobKey = await this.mintKey(entity, workflowId, options.namespace);
     const count = await store?.exec('HDEL', jobKey, ...prefixedFields);
@@ -1130,7 +1322,7 @@ class MeshData {
    * @example
    * // find jobs
    * const [cursor, jobs] = await meshData.findJobs({ match: 'greeting*' });
-   * 
+   *
    * // returns [ '0', [ 'hmsh:durable:j:greeting-jsmith123', 'hmsh:durable:j:greeting-jdoe456' ] ]
    */
   async findJobs(options: FindJobsOptions = {}): Promise<[string, string[]]> {
@@ -1140,7 +1332,7 @@ class MeshData {
       options.limit,
       options.batch,
       options.cursor,
-    ) as [string, string[]]);
+    )) as [string, string[]];
   }
 
   /**
@@ -1152,7 +1344,11 @@ class MeshData {
    * @param {any[]} args
    * @returns {Promise<string[] | [number] | Array<number, string | number | string[]>>}
    */
-  async find(entity: string, options: FindOptions, ...args: string[]): Promise<string[] | [number] | Array<string | number | string[]>> {    
+  async find(
+    entity: string,
+    options: FindOptions,
+    ...args: string[]
+  ): Promise<string[] | [number] | Array<string | number | string[]>> {
     return await this.getClient().workflow.search(
       options.taskQueue ?? entity,
       options.workflowName ?? entity,
@@ -1166,7 +1362,7 @@ class MeshData {
    * Provides a JSON abstraction for the Redis FT.search command
    * (e.g, `count`, `query`, `return`, `limit`)
    * NOTE: If the type is TAG for an entity, `.`, `@`, and `-` must be escaped.
-   * 
+   *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {FindWhereOptions} options - find options (the query). A custom search schema may be provided to target any index on the Redis backend.
    * @returns {Promise<SearchResults | number>} Returns a number if `count` is true, otherwise a SearchResults object.
@@ -1181,12 +1377,17 @@ class MeshData {
    *  limit: { start: 0, size: 10 },
    *  return: ['name', 'quantity']
    * });
-   * 
+   *
    * // returns { count: 1, query: 'FT.SEARCH my-index @_name:"John" @_age:[2 +inf] @_quantity:[89 89] LIMIT 0 10', data: [ { name: 'John', quantity: '89' } ] }
    */
-  async findWhere(entity: string, options: FindWhereOptions): Promise<SearchResults | number> {
+  async findWhere(
+    entity: string,
+    options: FindWhereOptions,
+  ): Promise<SearchResults | number> {
     const targetSearch = options.options?.search ?? this.search;
-    const args: string[] = [this.generateSearchQuery(options.query, targetSearch)];
+    const args: string[] = [
+      this.generateSearchQuery(options.query, targetSearch),
+    ];
     if (options.count) {
       args.push('LIMIT', '0', '0');
     } else {
@@ -1194,7 +1395,7 @@ class MeshData {
       args.push('RETURN');
       args.push(((options.return?.length ?? 0) + 1).toString());
       args.push('$');
-      options.return?.forEach(returnField => {
+      options.return?.forEach((returnField) => {
         if (returnField.startsWith('"')) {
           //request a literal hash value
           args.push(returnField.slice(1, -1));
@@ -1205,7 +1406,11 @@ class MeshData {
       });
       //paginate
       if (options.limit) {
-        args.push('LIMIT', options.limit.start.toString(), options.limit.size.toString());
+        args.push(
+          'LIMIT',
+          options.limit.start.toString(),
+          options.limit.size.toString(),
+        );
       }
     }
     const FTResults = await this.find(entity, options.options ?? {}, ...args);
@@ -1217,8 +1422,10 @@ class MeshData {
     } else if (count === 0) {
       return { count, query: sargs, data: [] };
     }
-    const hashes = this.arrayToHash(FTResults as [number, ...Array<string | string[]>]);
-    return { count, query: sargs, data: hashes} 
+    const hashes = this.arrayToHash(
+      FTResults as [number, ...Array<string | string[]>],
+    );
+    return { count, query: sargs, data: hashes };
   }
 
   /**
@@ -1228,46 +1435,55 @@ class MeshData {
    * @returns {string}
    * @private
    */
-  generateSearchQuery(query: FindWhereQuery[] | string, search?: WorkflowSearchOptions): string {
+  generateSearchQuery(
+    query: FindWhereQuery[] | string,
+    search?: WorkflowSearchOptions,
+  ): string {
     if (!Array.isArray(query) || query.length === 0) {
-      return typeof(query) === 'string' ? query as string : '*';
+      return typeof query === 'string' ? (query as string) : '*';
     }
-    let queryString = query.map(q => {
-      const { field, is, value, type } = q;
-      let prefixedFieldName: string;
-      //insert the underscore prefix if requested field in query is not a literal
-      if (search?.schema && field in search.schema) {
-        if ('fieldName' in search.schema[field]) {
-          prefixedFieldName = `@${search.schema[field].fieldName}`;
-        } else {
-          prefixedFieldName = `@_${field}`;
-        }
-      } else {
-        prefixedFieldName = `@${field}`;
-      }
-      const fieldType = search?.schema?.[field]?.type ?? type ?? 'TEXT';
-
-      switch (fieldType) {
-        case 'TAG':
-          return `${prefixedFieldName}:{${value}}`;
-        case 'TEXT':
-          return `${prefixedFieldName}:"${value}"`;
-        case 'NUMERIC':
-          let range = '';
-          if (is.startsWith('=')) {        //equal
-            range = `[${value} ${value}]`;
-          } else if (is.startsWith('<')) { //less than or equal
-            range = `[-inf ${value}]`;
-          } else if (is.startsWith('>')) { //greater than or equal
-            range = `[${value} +inf]`;
-          } else if (is === '[]') {        //between
-            range = `[${value[0]} ${value[1]}]`
+    const queryString = query
+      .map((q) => {
+        const { field, is, value, type } = q;
+        let prefixedFieldName: string;
+        //insert the underscore prefix if requested field in query is not a literal
+        if (search?.schema && field in search.schema) {
+          if ('fieldName' in search.schema[field]) {
+            prefixedFieldName = `@${search.schema[field].fieldName}`;
+          } else {
+            prefixedFieldName = `@_${field}`;
           }
-          return `${prefixedFieldName}:${range}`;
-        default:
-          return '';
-      }
-    }).join(' ');
+        } else {
+          prefixedFieldName = `@${field}`;
+        }
+        const fieldType = search?.schema?.[field]?.type ?? type ?? 'TEXT';
+
+        switch (fieldType) {
+          case 'TAG':
+            return `${prefixedFieldName}:{${value}}`;
+          case 'TEXT':
+            return `${prefixedFieldName}:"${value}"`;
+          case 'NUMERIC':
+            let range = '';
+            if (is.startsWith('=')) {
+              //equal
+              range = `[${value} ${value}]`;
+            } else if (is.startsWith('<')) {
+              //less than or equal
+              range = `[-inf ${value}]`;
+            } else if (is.startsWith('>')) {
+              //greater than or equal
+              range = `[${value} +inf]`;
+            } else if (is === '[]') {
+              //between
+              range = `[${value[0]} ${value[1]}]`;
+            }
+            return `${prefixedFieldName}:${range}`;
+          default:
+            return '';
+        }
+      })
+      .join(' ');
     return queryString;
   }
 
@@ -1281,14 +1497,24 @@ class MeshData {
    * @example
    * // create a search index for the 'greeting' entity. pass in search options.
    * const index = await meshData.createSearchIndex('greeting', {}, { prefix: 'greeting', ... });
-   * 
+   *
    * // creates a search index for the 'greeting' entity, using the default search options.
    * const index = await meshData.createSearchIndex('greeting');
    */
-  async createSearchIndex(entity: string, options: CallOptions = {}, searchOptions?: WorkflowSearchOptions): Promise<void> {
+  async createSearchIndex(
+    entity: string,
+    options: CallOptions = {},
+    searchOptions?: WorkflowSearchOptions,
+  ): Promise<void> {
     const workflowTopic = `${options.taskQueue ?? entity}-${entity}`;
-    const hotMeshClient = await this.getClient().getHotMeshClient(workflowTopic, options.namespace);
-    return await MeshFlow.Search.configureSearchIndex(hotMeshClient, searchOptions ?? this.search);
+    const hotMeshClient = await this.getClient().getHotMeshClient(
+      workflowTopic,
+      options.namespace,
+    );
+    return await MeshFlow.Search.configureSearchIndex(
+      hotMeshClient,
+      searchOptions ?? this.search,
+    );
   }
 
   /**
@@ -1298,7 +1524,7 @@ class MeshData {
    * @example
    * // list all search indexes
    * const indexes = await meshData.listSearchIndexes();
-   * 
+   *
    * // returns ['greeting', 'user', 'order', 'product']
    */
   async listSearchIndexes(): Promise<string[]> {
@@ -1328,6 +1554,6 @@ class MeshData {
   static async shutdown() {
     await MeshFlow.shutdown();
   }
-};
+}
 
 export { MeshData };

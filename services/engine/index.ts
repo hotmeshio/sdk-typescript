@@ -235,7 +235,7 @@ class EngineService {
   /**
    * resolves the distributed executable version using a delay
    * to allow deployment race conditions to resolve
-   * @private 
+   * @private
    */
   async fetchAndVerifyVID(vid: AppVID, count = 0): Promise<AppVID> {
     if (isNaN(Number(vid.version))) {
@@ -248,7 +248,10 @@ class EngineService {
         await sleepFor(HMSH_QUORUM_DELAY_MS * 2);
         return await this.fetchAndVerifyVID(vid, count + 1);
       } else {
-        this.logger.error('engine-vid-resolution-error', { id: vid.id, guid: this.guid });
+        this.logger.error('engine-vid-resolution-error', {
+          id: vid.id,
+          guid: this.guid,
+        });
       }
     }
     return vid;
@@ -271,7 +274,7 @@ class EngineService {
     } else {
       return await this.fetchAndVerifyVID({
         id: this.appId,
-        version: this.apps?.[this.appId].version
+        version: this.apps?.[this.appId].version,
       });
     }
   }

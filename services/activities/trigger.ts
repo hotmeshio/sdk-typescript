@@ -97,7 +97,11 @@ class Trigger extends Activity {
     }
   }
 
-  async transitionAndLogAdjacent(options: ExtensionType = {}, jobStatus: JobStatus, attrs: StringScalarType): Promise<void> {
+  async transitionAndLogAdjacent(
+    options: ExtensionType = {},
+    jobStatus: JobStatus,
+    attrs: StringScalarType,
+  ): Promise<void> {
     //todo: enable resume from pending state
     if (isNaN(options.pending)) {
       const messageIds = await this.transition(this.adjacencyList, jobStatus);
@@ -109,7 +113,7 @@ class Trigger extends Activity {
 
   /**
    * `pending` flows will not transition from the trigger to adjacent children until resumed
-   * 
+   *
    * `expiring` flows initialize with a job status of `1m + adjacentChildCount` (not 0, the default);
    * they emit the 'job done' event when 1_000_000 is reached (as if 0 had been reached);
    * the record is still 'active' once 1m is reached, but the positive integer value is sufficient
