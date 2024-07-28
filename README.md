@@ -13,13 +13,13 @@ You have a Redis instance? Good. You're ready to go.
 [Read the Docs](https://hotmeshio.github.io/sdk-typescript/)
 
 ## MeshCall | Connect Everything
-The **MeshCall** module connects any function with a connection to Redis. Function responses are cacheable and functions can even run as cyclical cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
+[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your functions to the Redis-backed mesh, exposing them as idempotent endpoints. Function responses are cacheable and functions can even run as idempotent cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Run an idempotent cron job</summary>
 
   ### Run a Cron
-  This example demonstrates an *idempotent* cron that runs every day. The `id` makes each cron job unique and ensures that only one instance runs, despite repeated invocations. *The `cron` method fails silently if a workflow is already running with the same `id`.*
+  This example demonstrates an *idempotent* cron that runs every day. The `id` makes each cron job unique and ensures that only one instance runs, despite repeated invocations. *The `cron` method returns `false` if a workflow is already running with the same `id`.*
   
   Optionally set a `delay` and/or set `maxCycles` to limit the number of cycles.
 
@@ -29,8 +29,8 @@ The **MeshCall** module connects any function with a connection to Redis. Functi
     import { MeshCall } from '@hotmeshio/hotmesh';
     import * as Redis from 'redis';
 
-    export const runMyCron = (id: string, interval = '1 day') => {
-      MeshCall.cron({
+    export const runMyCron = async (id: string, interval = '1 day'): Promise<boolean> => {
+      return await MeshCall.cron({
         topic: 'my.cron.function',
         redis: {
           class: Redis,
@@ -87,8 +87,8 @@ The **MeshCall** module connects any function with a connection to Redis. Functi
     import { MeshCall, Types } from '@hotmeshio/hotmesh';
     import * as Redis from 'redis';
 
-    export const connectMyFunction = () => {
-      MeshCall.connect({
+    export const connectMyFunction = async () => {
+      return await MeshCall.connect({
         topic: 'my.demo.function',
         redis: {
           class: Redis,
@@ -168,7 +168,7 @@ The **MeshCall** module connects any function with a connection to Redis. Functi
 </details>
 
 ## MeshFlow | Transactional Workflow
-The **MeshFlow** module is a drop-in replacement for [Temporal.io](https://temporal.io). If you need to orchestrate your functions as durable workflows, MeshFlow combines the popular Temporal SDK with Redis' *in-memory execution speed*.
+[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a drop-in replacement for [Temporal.io](https://temporal.io). If you need to orchestrate your functions as durable workflows, MeshFlow combines the popular Temporal SDK with Redis' *in-memory execution speed*.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Orchestrate unpredictable activities</summary>
@@ -503,7 +503,7 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 </details>
 
 ## MeshData | Transactional Analytics
-The **MeshData** service extends the **MeshFlow** service, combining data record concepts and transactional workflow principles into a single *Operational Data Layer*. 
+[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) extends the **MeshFlow** service, combining data record concepts and transactional workflow principles into a single *Operational Data Layer*. 
 
 Deployments with the Redis `FT.SEARCH` module enabled can use the **MeshData** module to merge [OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing) and [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) operations into a hybrid transactional/analytics ([HTAP](https://en.wikipedia.org/wiki/Hybrid_transactional/analytical_processing)) system.
 

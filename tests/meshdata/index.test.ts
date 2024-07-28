@@ -1,42 +1,45 @@
 import * as Redis from 'redis';
-import { createClient } from 'redis';
 
 import config from '../$setup/config';
-import * as activities from './activities';
 import { HotMesh } from '../../services/hotmesh';
-import {MeshData } from '../../services/meshdata'
+import { MeshData } from '../../services/meshdata';
+import { RedisConnection } from '../../services/connector/clients/redis';
 import * as HotMeshTypes from '../../types';
 
+import * as activities from './activities';
+
 describe('MeshData`', () => {
+  const options = {
+    socket: {
+      host: config.REDIS_HOST,
+      port: config.REDIS_PORT,
+      tls: false,
+    },
+    password: config.REDIS_PASSWORD,
+    database: config.REDIS_DATABASE,
+  };
   //redis connection options
-  const url = `redis://:${config.REDIS_PASSWORD}@${config.REDIS_HOST}:${config.REDIS_PORT}`;
-  const options = { url };
 
   //configure pluck instance will full set of options
   //include redis instance and model/schema for use in search
-  const pluck = new MeshData(
-    Redis,
-    options,
-    { 
-      schema: {
-        email: { type: 'TEXT', sortable: true },
-        newsletter: { type: 'TAG', sortable: true }
-      },
-      index: 'greeting',
-      prefix: ['greeting'],
-    } as HotMeshTypes.WorkflowSearchOptions
-  );
+  const pluck = new MeshData(Redis, options, {
+    schema: {
+      email: { type: 'TEXT', sortable: true },
+      newsletter: { type: 'TAG', sortable: true },
+    },
+    index: 'greeting',
+    prefix: ['greeting'],
+  } as HotMeshTypes.WorkflowSearchOptions);
 
   //wrap expensive/idempotent functions with a proxy
-  const { sendNewsLetter } = MeshData
-    .proxyActivities<typeof activities>({
-      activities,
-      retryPolicy: {
-        backoffCoefficient: 1,
-        maximumInterval: '1 second',
-        maximumAttempts: 3,
-      }
-    });
+  const { sendNewsLetter } = MeshData.proxyActivities<typeof activities>({
+    activities,
+    retryPolicy: {
+      backoffCoefficient: 1,
+      maximumInterval: '1 second',
+      maximumAttempts: 3,
+    },
+  });
 
   const entityName = 'greeting';
   const idemKey = HotMesh.guid();
@@ -64,7 +67,7 @@ describe('MeshData`', () => {
         //exec a child (self)
         MeshData.workflow.execChild<HotMeshTypes.WorkflowContext>({
           workflowName: 'howdy', //must specify workflowName if 'entity' not provided
-          taskQueue: 'howdy',    //must specify taskQueue if 'entity' not provided
+          taskQueue: 'howdy', //must specify taskQueue if 'entity' not provided
           args: [depth - 1],
         }),
         //start a child (self)
@@ -73,13 +76,16 @@ describe('MeshData`', () => {
           taskQueue: 'howdy',
           workflowId: `SC${HotMesh.guid()}`, //optional: unique id
           args: [depth - 1],
-        })
+        }),
       ]);
     }
     return MeshData.workflow.getContext();
-  }
+  };
 
-  const greet = async (email: string, user: { first: string, last: string}): Promise<string> => {
+  const greet = async (
+    email: string,
+    user: { first: string; last: string },
+  ): Promise<string> => {
     callCount++;
     //simulate errors in the user's function (handle gracefully)
     if (shouldThrowError) {
@@ -87,7 +93,7 @@ describe('MeshData`', () => {
       if (errorCount == 1) {
         shouldThrowError = false;
       }
-      throw new Error('Error!')
+      throw new Error('Error!');
     }
 
     //set some shared state using 'search'
@@ -109,18 +115,21 @@ describe('MeshData`', () => {
       });
     }
     return `Hello, ${user.first} ${user.last}. Your email is [${email}].`;
-  }
+  };
 
-  const localGreet = async (email: string, user: { first: string, last: string}): Promise<string> => {
+  const localGreet = async (
+    email: string,
+    user: { first: string; last: string },
+  ): Promise<string> => {
     return `Hello, ${user.first} ${user.last}. Your email is [${email}].`;
-  }
+  };
 
   const sleeper = async (email: string) => {
     for (let i = 1; i < 4; i++) {
       const cachedI = await sendNewsLetter(email, i);
       await MeshData.workflow.sleepFor('1 second');
     }
-  }
+  };
 
   //once connected by pluck, this function will become a 'hook'
   //hook functions are reentrant processes and use the job
@@ -139,23 +148,24 @@ describe('MeshData`', () => {
       //set `newsletter` pref to 'no', to stop cycling while testing
       await search.set('newsletter', 'no');
       shouldProceed = await search.get('newsletter') === 'yes';
-    } while(shouldProceed);
-  }
+    } while (shouldProceed);
+  };
 
   //another hook function to unsubscribe from the newsletter
   const unsubscribeFromNewsLetter = async (reason: string) => {
     const search = await MeshData.workflow.search();
     const email = await search.get('email');
     await search.set('newsletter', 'no', 'reason', reason, 'email', email);
-  }
+  };
 
   beforeAll(async () => {
-    // init Redis and flush db
-    const client = await createClient({ url })
-    .on('error', err => console.log('Redis Client Error', err))
-    .connect();
-    await client.flushAll();
-    await client.quit();
+    //init Redis and flush db
+    const redisConnection = await RedisConnection.connect(
+      HotMesh.guid(),
+      Redis as unknown as HotMeshTypes.RedisRedisClassType,
+      options,
+    );
+    redisConnection.getClient().flushDb();
   }, 5_000);
 
   afterAll(async () => {
@@ -165,7 +175,6 @@ describe('MeshData`', () => {
     //shutdown all connections
     await MeshData.shutdown();
   }, 30_000);
-    
 
   describe('connect', () => {
     it('should connect a function and auto-deploy HotMesh to Redis', async () => {
@@ -193,11 +202,13 @@ describe('MeshData`', () => {
     }, 10_000);
 
     it('should connect a function and isolate the namespace', async () => {
-      const worker = await pluck.connect<Promise<HotMeshTypes.WorkflowContext>>({
-        entity: 'howdy',
-        target: howdy,
-        options: { namespace: 'staging' }
-      });
+      const worker = await pluck.connect<Promise<HotMeshTypes.WorkflowContext>>(
+        {
+          entity: 'howdy',
+          target: howdy,
+          options: { namespace: 'staging' },
+        },
+      );
       expect(worker).toBeDefined();
     });
 
@@ -235,7 +246,7 @@ describe('MeshData`', () => {
         options: {
           namespace: 'staging',
           id: 'jimbo123',
-          ttl: 'infinity'
+          ttl: 'infinity',
         },
       });
       //4 child workflows (20 total workflows as 16 will be nested)
@@ -244,8 +255,13 @@ describe('MeshData`', () => {
       expect(context.workflowId).toBeDefined();
       expect(context.workflowDimension).toEqual(''); //main context, no dimension
       expect(context.workflowTopic).toEqual('howdy-howdy');
-       
-      const exported = await pluck.export('howdy', 'jimbo123', { block: ['transitions'], values: false }, 'staging');
+
+      const exported = await pluck.export(
+        'howdy',
+        'jimbo123',
+        { block: ['transitions'], values: false },
+        'staging',
+      );
       expect(exported.transitions).toBeUndefined();
       expect(exported.timeline).toBeDefined();
 
@@ -264,7 +280,7 @@ describe('MeshData`', () => {
 
     it('should start a function (and not await)', async () => {
       const email = 'jan@pluck.com';
-      const name = {first: 'Jan', last: 'Doe'};
+      const name = { first: 'Jan', last: 'Doe' };
       const entity = 'greeting';
       const id = 'jan';
 
@@ -276,14 +292,15 @@ describe('MeshData`', () => {
           id,
           await: false,
           signalIn: false,
-      }});
+        },
+      });
 
       expect(jobId).toEqual(`${entity}-${id}`);
     });
 
     it('should exec a function and await the result', async () => {
       const email = 'jdoe@pluck.com';
-      const name = {first: 'John', last: 'Doe'};
+      const name = { first: 'John', last: 'Doe' };
 
       //broker using MeshData (Redis will govern the exchange)
       const brokered = await pluck.exec<Promise<string>>({
@@ -294,12 +311,13 @@ describe('MeshData`', () => {
             data: {
               fred: 'flintstone',
               barney: 'rubble',
-            }
+            },
           },
           id: 'jdoe',
           ttl: '60 seconds',
           signalIn: false,
-        }});
+        },
+      });
 
       //call directly (NodeJS will govern the exchange)
       const direct = await localGreet(email, name);
@@ -308,7 +326,7 @@ describe('MeshData`', () => {
 
     it('should return RAW fields (HGETALL)', async () => {
       const email = 'jdoe@pluck.com';
-      const name = {first: 'John', last: 'Doe'};
+      const name = { first: 'John', last: 'Doe' };
       const direct = await localGreet(email, name);
       const raw = await pluck.raw('greeting', 'jdoe');
       expect(raw._fred).toEqual('flintstone');
@@ -321,10 +339,9 @@ describe('MeshData`', () => {
         args: ['sleeper@pluck.com'],
         options: {
           signalIn: false,
-        }
+        },
       });
     }, 20_000);
-
 
     it('should return ALL `state` fields', async () => {
       const all = await pluck.all('greeting', 'jdoe');
@@ -334,7 +351,7 @@ describe('MeshData`', () => {
 
     it('should GET named `state` fields', async () => {
       const some = await pluck.get('greeting', 'jdoe', {
-        fields: ['fred', 'newsletter']
+        fields: ['fred', 'newsletter'],
       });
       expect(some.fred).toEqual('flintstone');
       expect(some.newsletter).toEqual('yes');
@@ -344,7 +361,13 @@ describe('MeshData`', () => {
     it('should SET named `state` fields', async () => {
       const numAdded = await pluck.set('greeting', 'jdoe', {
         //set 2 new fields and overwrite 1 existing field
-        search: { data: { wilma: 'flintstone', bce: '-1000000', email: 'wstone@pluck.com' } }
+        search: {
+          data: {
+            wilma: 'flintstone',
+            bce: '-1000000',
+            email: 'wstone@pluck.com',
+          },
+        },
       });
       expect(numAdded).toEqual(2);
     });
@@ -357,20 +380,20 @@ describe('MeshData`', () => {
     it('should DEL named `state` fields', async () => {
       const numDeleted = await pluck.del('greeting', 'jdoe', {
         //delete 2 fields (and ignore 1 non-existent field: emails)
-        fields: ['wilma', 'bce', 'emails']
+        fields: ['wilma', 'bce', 'emails'],
       });
       expect(numDeleted).toEqual(2);
     });
 
     it('should exec a long-running function that calls a proxy', async () => {
       const email = 'fdoe@pluck.com';
-      const name = {first: 'Fred', last: 'Doe'};
+      const name = { first: 'Fred', last: 'Doe' };
 
       //call with MeshData (Redis will govern the exchange)
       const brokered = await pluck.exec<Promise<string>>({
         entity: 'greeting',
         args: [email, name],
-        options: { ttl: '1 second', id: 'abc123'}
+        options: { ttl: '1 second', id: 'abc123' },
       });
 
       //call directly (NodeJS will govern the exchange)
@@ -380,13 +403,13 @@ describe('MeshData`', () => {
 
     it('should exec a durable function (ttl:infinity) that calls a proxy and hook', async () => {
       const email = 'floe.doe@pluck.com';
-      const name = {first: 'Floe', last: 'Doe'};
+      const name = { first: 'Floe', last: 'Doe' };
 
       //call with MeshData (Redis will govern the exchange)
       const brokered = await pluck.exec<Promise<string>>({
         entity: 'greeting',
         args: [email, name],
-        options: { ttl: 'infinity', id: 'abc456' }
+        options: { ttl: 'infinity', id: 'abc456' },
       });
 
       //call directly (NodeJS will govern the exchange)
@@ -411,7 +434,7 @@ describe('MeshData`', () => {
 
     it('should retry if it fails', async () => {
       const email = 'jim.doe@pluck.com';
-      const name = {first: 'Jim', last: 'Doe'};
+      const name = { first: 'Jim', last: 'Doe' };
 
       //call with MeshData (Redis will govern the exchange)
       //a) pass an id to make sure this test starts fresh
@@ -429,8 +452,8 @@ describe('MeshData`', () => {
             backoffCoefficient: 1, //value of throttle is: `backoffCoefficient^retryCount` (first retry is 1 secod)
             maximumInterval: '1 second',
             maximumAttempts: 3,
-          }
-        }
+          },
+        },
       });
       expect(errorCount).toEqual(1);
       expect(shouldThrowError).toBeFalsy();
@@ -453,7 +476,7 @@ describe('MeshData`', () => {
     it('should rollCall multiple namespaces', async () => {
       const pluckNamespaceResponse = await pluck.rollCall({
         namespace: 'staging',
-        delay: 2500
+        delay: 2500,
       });
       expect(pluckNamespaceResponse.length).toBeGreaterThan(0);
     }, 10_000);
@@ -489,8 +512,13 @@ describe('MeshData`', () => {
   describe('export', () => {
     it('should export the job timelines, actions, and dependencies', async () => {
       let exported = await pluck.export('greeting', idemKey);
-      expect(exported.state?.data.response).toEqual('Hello, Jim Doe. Your email is [jim.doe@pluck.com].');
-      exported = await pluck.export('greeting', idemKey, { block: ['transitions'], values: false});
+      expect(exported.state?.data.response).toEqual(
+        'Hello, Jim Doe. Your email is [jim.doe@pluck.com].',
+      );
+      exported = await pluck.export('greeting', idemKey, {
+        block: ['transitions'],
+        values: false,
+      });
       expect(exported.transitions).toBeUndefined();
       expect(exported.timeline).toBeDefined();
     });
@@ -499,7 +527,7 @@ describe('MeshData`', () => {
   describe('findJobs', () => {
     it('should find matching jobs using a wildcard (SCAN)', async () => {
       const [cursor, jobs] = await pluck.findJobs({
-        match: 'greeting*'
+        match: 'greeting*',
       });
       expect(cursor).toBe('0');
       //2 jobs with 'greeting' prefix (these are greeting entities)
@@ -515,22 +543,18 @@ describe('MeshData`', () => {
       const [_cursor, jobs] = await pluck.findJobs();
       expect(jobs.length).toBeGreaterThan(5);
     });
-
   });
 
   describe('search', () => {
     it('should create a search index', async () => {
-      await pluck.createSearchIndex(
-        'greeting',
-        undefined,
-        {
-          schema: {
-            email: { type: 'TEXT', sortable: true },
-            newsletter: { type: 'TAG', sortable: true }
-          },
-          index: 'greeting',
-          prefix: ['greeting'],
-        });
+      await pluck.createSearchIndex('greeting', undefined, {
+        schema: {
+          email: { type: 'TEXT', sortable: true },
+          newsletter: { type: 'TAG', sortable: true },
+        },
+        index: 'greeting',
+        prefix: ['greeting'],
+      });
     });
 
     it('should list search indexes', async () => {
@@ -539,42 +563,39 @@ describe('MeshData`', () => {
     });
 
     it('should conditionally search and limit response fields', async () => {
-      const indexedResults = await pluck.findWhere(
-        'greeting',
-        { query: [
-            { field: 'newsletter', is: '=', value: 'no' }
-          ],
-          return: ['email', 'newsletter', 'reason']
-      }) as {count: number, data: HotMeshTypes.StringStringType[]};
+      const indexedResults = (await pluck.findWhere('greeting', {
+        query: [{ field: 'newsletter', is: '=', value: 'no' }],
+        return: ['email', 'newsletter', 'reason'],
+      })) as { count: number; data: HotMeshTypes.StringStringType[] };
       //most recent result includes a reason
       //console.log('Indexed Search Results >', indexedResults);
       expect(indexedResults.data.length).toBeGreaterThan(0);
-      expect(indexedResults.data[indexedResults.data.length - 1].newsletter).toEqual('no');
-      expect(indexedResults.data[indexedResults.data.length - 1].reason).toEqual(reason);
+      expect(
+        indexedResults.data[indexedResults.data.length - 1].newsletter,
+      ).toEqual('no');
+      expect(
+        indexedResults.data[indexedResults.data.length - 1].reason,
+      ).toEqual(reason);
     });
 
     it('should conditionally search and paginate responses', async () => {
-      const indexedResults = await pluck.findWhere(
-        'greeting',
-        { query: [
-            { field: 'newsletter', is: '=', value: 'no' }
-          ],
-          return: ['email', 'newsletter', 'reason'],
-          limit: { start: 0, size: 1} // 0-based index (get first result)
-      }) as {count: number, data: HotMeshTypes.StringStringType[]};
+      const indexedResults = (await pluck.findWhere('greeting', {
+        query: [{ field: 'newsletter', is: '=', value: 'no' }],
+        return: ['email', 'newsletter', 'reason'],
+        limit: { start: 0, size: 1 }, // 0-based index (get first result)
+      })) as { count: number; data: HotMeshTypes.StringStringType[] };
       //most recent result includes a reason
       expect(indexedResults.data.length).toBeGreaterThanOrEqual(1); //`max count` is 1 less than `return count`
-      expect(indexedResults.data[indexedResults.data.length - 1].newsletter).toEqual('no');
+      expect(
+        indexedResults.data[indexedResults.data.length - 1].newsletter,
+      ).toEqual('no');
     });
 
     it('should conditionally count records', async () => {
-      const count = await pluck.findWhere(
-        'greeting',
-        { query: [
-            { field: 'newsletter', is: '=', value: 'no' }
-          ],
-          count: true
-      }) as number;
+      const count = (await pluck.findWhere('greeting', {
+        query: [{ field: 'newsletter', is: '=', value: 'no' }],
+        count: true,
+      })) as number;
       expect(count).toBeGreaterThan(0);
     });
   });

@@ -30,10 +30,10 @@ async function safeExecute<T>(
 /**
  * @private
  */
-export const hashOptions = (options: any): string =>{
+export const hashOptions = (options: any): string => {
   const str = JSON.stringify(options);
   return createHash('sha256').update(str).digest('hex');
-}
+};
 
 export async function getSystemHealth(): Promise<SystemHealth> {
   const totalMemory = os.totalmem();

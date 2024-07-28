@@ -45,19 +45,19 @@ import { MAX_DELAY } from '../../modules/enums';
  * HotMesh transforms Redis into a durable middleware solution.
  * Call `HotMesh.init` to initialize a point of presence
  * and attach to the mesh.
- * 
+ *
  * This example shows the full lifecycle of a HotMesh engine instance,
  * including: initialization, deployment, activation and execution.
- * 
+ *
  * The system is self-cleaning and self-healing, with a built-in
  * quorum for consensus and a worker pool for distributed processing.
  * Workflows are automatically removed from the system once completed.
- * 
+ *
  * @example
  * ```typescript
  * import Redis from 'ioredis';
  * import { HotMesh } from '@hotmeshio/hotmesh';
- * 
+ *
  * const hotMesh = await HotMesh.init({
  *   appId: 'abc',
  *   engine: {
@@ -67,7 +67,7 @@ import { MAX_DELAY } from '../../modules/enums';
  *     }
  *   }
  * });
- * 
+ *
  * await hotMesh.deploy(`
  * app:
  *   id: abc
@@ -82,7 +82,7 @@ import { MAX_DELAY } from '../../modules/enums';
  * await hotMesh.activate('1');
  *
  * await hotMesh.pubsub('abc.test');
- * 
+ *
  * await HotMesh.stop();
  * ```
  */
@@ -217,7 +217,7 @@ class HotMesh {
   /**
    * @private
    */
-  constructor() { }
+  constructor() {}
 
   /**
    * @private
@@ -257,7 +257,7 @@ class HotMesh {
    *  console.log(message);
    * });
    * ```
- */
+   */
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
     return await this.engine?.sub(topic, callback);
   }
@@ -320,19 +320,19 @@ class HotMesh {
    * Sends a throttle message to the quorum (engine and/or workers)
    * to limit the rate of processing. Pass `-1` to throttle indefinitely.
    * The value must be a non-negative integer and not exceed `MAX_DELAY` ms.
-   * 
+   *
    * When throttling is set, the quorum will pause for the specified time
    * before processing the next message. Target specific engines and
    * workers by passing a `guid` and/or `topic`. Pass no arguments to
    * throttle the entire quorum.
-   * 
+   *
    * In this example, all processing has been paused indefinitely for
    * the entire quorum. This is equivalent to an emergency stop.
-   * 
+   *
    * HotMesh is a stateless sequence engine, so the throttle can be adjusted up
    * and down with no loss of data.
-   * 
-   * 
+   *
+   *
    * @example
    * ```typescript
    * await hotMesh.throttle({ throttle: -1 });
@@ -396,7 +396,7 @@ class HotMesh {
    * This function is responsible for merging all referenced YAML source
    * files and writing the JSON output to the file system and to Redis. It
    * is also possible to embed the YAML in-line as a string.
-   * 
+   *
    * *The version will not be active until activation is explicitly called.*
    */
   async deploy(pathOrYAML: string): Promise<HotMeshManifest> {
@@ -405,7 +405,7 @@ class HotMesh {
   /**
    * Once the app YAML file is deployed to Redis, the `activate` function can be
    * called to enable it for the entire quorum at the same moment.
-   * 
+   *
    * The approach is to establish the coordinated health of the system through series
    * of call/response exchanges. Once it is established that the quorum is healthy,
    * the quorum is instructed to run their engine in `no-cache` mode, ensuring
@@ -413,7 +413,7 @@ class HotMesh {
    * call is processed. This ensures that all engines are running the same version
    * of the app, switching over at the same moment and then enabling `cache` mode
    * to improve performance.
-   * 
+   *
    * *Add a delay for the quorum to reach consensus if traffic is busy, but
    * also consider throttling traffic flow to an acceptable level.*
    */
@@ -466,7 +466,7 @@ class HotMesh {
    * example a literal field is also searched (the colon
    * is used to track job status and is a reserved field;
    * it can be read but not written).
-   * 
+   *
    * @example
    * ```typescript
    * const fields = ['fred', 'barney', '":"'];
@@ -510,7 +510,7 @@ class HotMesh {
 
   /**
    * Immediately deletes (DEL) a completed job from the system.
-   * 
+   *
    * *Scrubbed jobs must be complete with a non-positive `status` value*
    */
   async scrub(jobId: string) {
@@ -522,7 +522,7 @@ class HotMesh {
    * and close the reentry point or leave it open for subsequent reentry.
    * Because `hooks` are public entry points, they include a `topic`
    * which is established in the app YAML file.
-   * 
+   *
    * When this method is called, a hook rule will be located to establish
    * the exact activity and activity dimension for reentry.
    */

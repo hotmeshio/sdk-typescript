@@ -5,10 +5,10 @@ import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
+import { APP_VERSION } from '../../../services/meshflow/schemas/factory';
 
 import * as childWorkflows from './child/workflows';
 import * as parentWorkflows from './parent/workflows';
-import { APP_VERSION } from '../../../services/meshflow/schemas/factory';
 
 const { Connection, Client, Worker } = MeshFlow;
 
@@ -123,9 +123,11 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
       it('should deploy the distributed executable', async () => {
         const client = new Client({ connection: { class: Redis, options } });
         //deploy next version
-        await client.deployAndActivate('durable', (Number(APP_VERSION) + 1).toString());
+        await client.deployAndActivate(
+          'durable',
+          (Number(APP_VERSION) + 1).toString(),
+        );
       }, 25_000);
     });
   });
-
 });

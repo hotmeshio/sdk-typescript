@@ -109,7 +109,7 @@ class Activity {
       );
     } catch (error) {
       if (threshold > 0) {
-        if(this.context.metadata.js === threshold) {
+        if (this.context.metadata.js === threshold) {
           //conclude job EXACTLY ONCE
           const status = await this.setStatus(-threshold);
           if (Number(status) === 0) {
@@ -369,9 +369,14 @@ class Activity {
     return null;
   }
 
-  async setStatus(amount: number, multi?: RedisMulti): Promise<void|any> {
+  async setStatus(amount: number, multi?: RedisMulti): Promise<void | any> {
     const { id: appId } = await this.engine.getVID();
-    return await this.store.setStatus(amount, this.context.metadata.jid, appId, multi);
+    return await this.store.setStatus(
+      amount,
+      this.context.metadata.jid,
+      appId,
+      multi,
+    );
   }
 
   authorizeEntry(state: StringAnyType): string[] {

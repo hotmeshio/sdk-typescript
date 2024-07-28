@@ -1,5 +1,5 @@
-import { HookOptions, WorkflowConfig, WorkflowSearchOptions } from "./meshflow";
-import { StringStringType } from "./serializer";
+import { HookOptions, WorkflowConfig, WorkflowSearchOptions } from './meshflow';
+import { StringStringType } from './serializer';
 
 export type CallOptions = {
   /**
@@ -74,7 +74,7 @@ export type ConnectOptions = {
   /**
    * prefix for the workflowId (defaults to entity value if not provided)
    */
-  prefix?: string; 
+  prefix?: string;
   /**
    * optional namespace for the the worker; how it appears in Redis (defaults to 'durable')
    */
@@ -96,14 +96,14 @@ export type ConnectOptions = {
 export type ConnectionInput<T> = {
   /**
    * The connected function's entity identifier
-   * 
+   *
    * @example
    * user
    */
   entity: string;
   /**
    * The target function reference
-   * 
+   *
    * @example
    * function() { return "hello world" }
    */
@@ -122,7 +122,7 @@ export type ConnectionInput<T> = {
  * removed by calling `flush`. During this time, the function will remain active and can
  * its state can be augmented by calling `set`, `incr`, `del`, etc OR by calling a
  * transactional 'hook' function.
- * 
+ *
  * @template T The expected return type of the remote function.
  */
 export type ExecInput = {
@@ -176,7 +176,6 @@ export type HookInput = {
    */
   options?: Partial<HookOptions>;
 };
-
 
 export type MeshDataWorkflowOptions = {
   /**

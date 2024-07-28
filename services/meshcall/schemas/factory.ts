@@ -1,10 +1,10 @@
-import { HMNS } from "../../../modules/key";
+import { HMNS } from '../../../modules/key';
 export const VERSION = '1';
 
 /**
  * Provides the YAML necessary to create a workflow for the `MeshCall` service.
  * The `appId` parameter is optional and defaults to the HMNS constant ('hmsh').
- * 
+ *
  * All running workflows will be located in Redis, prefixed with this namespace.
  * The version is a string as it supports semantic versioning. It is also optional
  * and defaults to '1'.
@@ -176,5 +176,5 @@ export const getWorkflowYAML = (appId = HMNS, version = VERSION): string => {
                     '@pipe':
                       - ['{cycle_hook_cron.output.data.iterationCount}', '{trigger_cron.output.data.maxCycles}']
                       - ['{@conditional.less_than}']
-`; 
+`;
 };

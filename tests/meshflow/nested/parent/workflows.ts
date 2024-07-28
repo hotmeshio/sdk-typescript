@@ -27,7 +27,7 @@ export async function parentExample(
       taskQueue: 'child-world',
       workflowName: 'childExample',
       signalIn,
-    })
+    }),
   ]);
   return { activityOutput, childWorkflowOutput };
 }
