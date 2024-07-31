@@ -9,8 +9,8 @@ npm install @hotmeshio/hotmesh
 ```
 You have a Redis instance? Good. You're ready to go.
 
-## SDK Docs
-[Read the Docs](https://hotmeshio.github.io/sdk-typescript/)
+## Learn
+[SDK Docs](https://hotmeshio.github.io/sdk-typescript/) | [Samples](https://github.com/hotmeshio/samples-typescript) | [Intro Video](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9)
 
 ## MeshCall | Connect Everything
 [MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your functions to the Redis-backed mesh, exposing them as idempotent endpoints. Function responses are cacheable and functions can even run as idempotent cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
@@ -694,9 +694,7 @@ HotMesh's telemetry output provides unmatched insight into long-running, multi-s
 <img src="./docs/img/visualize/opentelemetry.png" alt="Open Telemetry" style="width:600px;max-width:600px;">
 
 ## Visualize | HotMesh Dashboard
-The HotMesh dashboard provides a detailed overview of all running workflows. As HotMesh is a service mesh, it's also possible to throttle and pause workers and engines attached to the mesh. Redis will simply inflate like a balloon until the throttle is removed and ingestion is resumed.
-
-An LLM is included to simplify querying and analyzing workflow data for those deployments that include the Redis `FT.SEARCH` module.
+The HotMesh dashboard provides a detailed overview of all running workflows. An LLM is included to simplify querying and analyzing workflow data for those deployments that include the Redis `FT.SEARCH` module.
 
 <img src="./docs/img/visualize/hotmesh_dashboard.png" alt="HotMesh Dashboard" style="width:600px;max-width:600px;">
 
@@ -705,35 +703,8 @@ View commands, streams, data, CPU, load, etc using the RedisInsight data browser
 
 <img src="./docs/img/visualize/redisinsight.png" alt="Redis Insight" style="width:600px;max-width:600px;">
 
-## HotMesh
-The *MeshData*, *MeshCall*, and *MeshFlow* modules are all created using the HotMesh modeling system. Refer to the following documents to better understand the platform and how it delivers workflow orchestration without a central application server. 
+## Samples
+Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo for *tutorials* and instructions on deploying the *HotMesh Dashboard*.
 
-### FAQ
-Refer to the [FAQ](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/faq.md) for terminology, definitions, and an exploration of how HotMesh facilitates orchestration use cases.
-
-### Quick Start
-Refer to the [Quick Start](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/quickstart.md) for sample YAML workflows you can copy, paste, and modify to get started with HotMesh.
-
-### Developer Guide
-For more details on the complete development process, including information about schemas, APIs, and deployment, consult the [Developer Guide](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/developer_guide.md).
-
-### Model Driven Development
-[Model Driven Development](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/model_driven_development.md) is an established strategy for managing process-oriented tasks. Check out this guide to understand its foundational principles.
-
-### Data Mapping
-Exchanging data between activities is central to HotMesh. For detailed information on supported functions and the functional mapping syntax (@pipes), see the [Data Mapping Overview](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/data_mapping.md).
-
-### Composition
-While the simplest graphs are linear, detailing a consistent sequence of non-cyclical activities, graphs can be layered to represent intricate business scenarios. Some can even be designed to accommodate long-lasting workflows that span months. For more details, check out the [Composable Workflow Guide](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/composable_workflow.md).
-
-### System Lifecycle
-Gain insight into HotMesh's monitoring, exception handling, and alarm configurations via the [System Lifecycle Guide](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/system_lifecycle.md).
-
-### Distributed Orchestration | System Overview
-HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/distributed_orchestration.md) for a high-level overview of the approach.
-
-### Distributed Orchestration | System Design
-HotMesh is more than Redis and TypeScript. The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).
-
-### Samples
-Refer to the [hotmeshio/samples-javascript](https://github.com/hotmeshio/samples-javascript) repo for usage examples.
+## Advanced
+For more advanced topics, including details on the underlying modeling and design system (HotMesh) refer to the [Advanced README](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/advanced.md).
