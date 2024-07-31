@@ -531,6 +531,8 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     pd = '',
     multi?: U,
   ): Promise<any> {
+    console.log('delete registerJobDependency from store!!!', depType, originJobId, topic, jobId, gId, pd);
+    return;
     const privateMulti = multi || this.getMulti();
     const dependencyParams = {
       appId: this.appId,

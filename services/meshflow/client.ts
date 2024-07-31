@@ -201,6 +201,7 @@ export class ClientService {
         arguments: [...options.args],
         originJobId: options.originJobId,
         expire: options.expire ?? HMSH_EXPIRE_JOB_SECONDS,
+        threshold: options.threshold,
         signalIn: options.signalIn,
         parentWorkflowId: options.parentWorkflowId,
         workflowId: options.workflowId || HotMesh.guid(),

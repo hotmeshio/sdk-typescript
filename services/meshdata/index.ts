@@ -1,3 +1,4 @@
+import { supportsDecay } from '../../modules/utils';
 import { MeshFlow } from '../meshflow';
 import { HotMesh } from '../hotmesh';
 import {
@@ -650,8 +651,7 @@ class MeshData {
         return;
       }
 
-      //break the event loop between the inner function (the user's code)
-      // and the outer function (the MeshData state/durability/ttl-extension wrapper)
+      //manually set job state since leaving open/running
       await new Promise((resolve) => setImmediate(resolve));
       options.$guid = options.$guid ?? workflowId;
       const hotMesh = await MeshData.workflow.getHotMesh();
@@ -660,16 +660,20 @@ class MeshData {
         jobId: options.$guid,
         appId: hotMesh.engine?.appId,
       });
-      //publish the 'done' payload
       const jobResponse = ['aAa', '/t', 'aBa', this.toString(result)];
       await store?.exec('HSET', jobKey, ...jobResponse);
-      await this.publishDone<T>(result, hotMesh, options);
-      if (options.ttl === 'infinity') {
-        //job will only exit upon receiving a flush signal
-        await MeshData.workflow.waitFor(`flush-${options.$guid}`);
-      } else {
-        //will exit after sleeping for 'ttl'
-        await MeshData.workflow.sleepFor(options.ttl);
+
+      //todo: the following is in support of 0.2.1 and prior
+      //      (it emits the `job done` signal manually)
+      if (!supportsDecay) {
+        await this.publishDone<T>(result, hotMesh, options);
+        if (options.ttl === 'infinity') {
+          //job will only exit upon receiving a flush signal
+          await MeshData.workflow.waitFor(`flush-${options.$guid}`);
+        } else {
+          //will exit after sleeping for 'ttl'
+          await MeshData.workflow.sleepFor(options.ttl);
+        }
       }
     }
   }
@@ -964,6 +968,7 @@ class MeshData {
         marker: options.marker,
         pending: options.pending,
         expire: options.expire,
+        threshold: options.signalIn == false ? undefined : options.threshold,
         signalIn: options.signalIn,
       });
       if (options.await === false) {

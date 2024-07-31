@@ -88,17 +88,53 @@ type HotMeshConfig = {
 };
 
 type HotMeshGraph = {
+  /**
+   * the unique topic that the graph subscribes to, creating one
+   * job for each idempotent message that is received
+   */
   subscribes: string;
+  /**
+   * the unique topic that the graph publishes/emits to when the job completes
+   */
   publishes?: string;
+  /**
+   * the number of seconds that the completed job should be
+   * left in the store before it is deleted
+   */
   expire?: number;
+  /**
+   * if the graph is reentrant and has open activities,
+   * the threshold is the minimum activity count that
+   * should trigger/emit the job completed event when.
+   * This allows the 'main' thread/trigger that started the job to
+   * signal to subscribers (or the parent) that the job
+   * is 'done', while still leaving the job in a
+   * state that allows for reentry
+   */
+  threshold?: number;
+  /**
+   * the schema for the output of the graph
+   */
   output?: {
     schema: Record<string, any>;
   };
+  /**
+   * the schema for the input of the graph
+   */
   input?: {
     schema: Record<string, any>;
   };
+  /**
+   * the activities that define the graph
+   */
   activities: Record<string, any>;
+  /**
+   * the transitions that define how activities are connected
+   */
   transitions?: Record<string, any>;
+  /**
+   * the reentrant hook rules that define how to reenter a running graph
+   */
   hooks?: HookRules;
 };
 

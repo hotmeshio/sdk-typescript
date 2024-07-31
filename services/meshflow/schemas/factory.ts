@@ -22,7 +22,7 @@
  * * Master Data Management systems
  */
 
-const APP_VERSION = '3';
+const APP_VERSION = '4';
 const APP_ID = 'durable';
 
 /**
@@ -38,14 +38,17 @@ const getWorkflowYAML = (app: string, version: string): string => {
   graphs:
 
     ###################################################
-    #         THE MESHFLOW-REENTRANT-WORKFLOW          #
+    #         THE MESHFLOW-REENTRANT-WORKFLOW         #
     #                                                 #
     - subscribes: ${app}.execute
       publishes: ${app}.executed
 
+      threshold: '{trigger.output.data.threshold}'
       expire:
         '@pipe':
-          - ['{trigger.output.data.originJobId}', 0, '{trigger.output.data.expire}']
+          - ['{trigger.output.data.threshold}']
+          - ['{@number.isNaN}', '{trigger.output.data.originJobId}']
+          - ['{@logical.and}', 0,'{trigger.output.data.expire}']
           - ['{@conditional.ternary}']
 
       input:
@@ -77,6 +80,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
               type: number
             expire:
               description: the time in seconds to expire the workflow in Redis once it completes
+              type: number
+            threshold:
+              description: the number of items to process in a single batch
               type: number
             signalIn:
               description: if false, the job will not support subordinated hooks
@@ -234,6 +240,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     type: number
                   expire:
                     type: number
+                  threshold:
+                    type: number
                   signalIn:
                     type: boolean
                   await:
@@ -339,6 +347,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
                 expire:
                   type: number
+                threshold:
+                  type: number
                 signalIn:
                   type: boolean
                 parentWorkflowId:
@@ -362,6 +372,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               originJobId: '{worker.output.data.originJobId}'
               parentWorkflowId: '{worker.output.data.parentWorkflowId}'
               expire: '{worker.output.data.expire}'
+              threshold: '{worker.output.data.threshold}'
               signalIn: '{worker.output.data.signalIn}'
               workflowId: '{worker.output.data.workflowId}'
               workflowName: '{worker.output.data.workflowName}'
@@ -964,6 +975,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     description: the maximum time in seconds to wait between retries; provides a fixed limit to exponential backoff growth
                   expire:
                     type: number
+                  threshold:
+                    type: number
                   signalIn:
                     type: boolean
                     description: if false, the spawned child will not support subordinated hooks
@@ -1069,6 +1082,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
                 expire:
                   type: number
+                threshold:
+                  type: number
                 signalIn:
                   type: boolean
                 parentWorkflowId:
@@ -1092,6 +1107,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               originJobId: '{signaler_worker.output.data.originJobId}'
               parentWorkflowId: '{signaler_worker.output.data.parentWorkflowId}'
               expire: '{signaler_worker.output.data.expire}'
+              threshold: '{signaler_worker.output.data.threshold}'
               signalIn: '{signaler_worker.output.data.signalIn}'
               workflowId: '{signaler_worker.output.data.workflowId}'
               workflowName: '{signaler_worker.output.data.workflowName}'
@@ -1825,6 +1841,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
                 expire:
                   type: number
+                threshold:
+                  type: number
                 signalIn:
                   type: boolean
                 parentWorkflowId:
@@ -1865,6 +1883,11 @@ const getWorkflowYAML = (app: string, version: string): string => {
                 '@pipe':
                   - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                   - ['{@array.get}', expire]
+                  - ['{@object.get}']
+              threshold:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', threshold]
                   - ['{@object.get}']
               signalIn:
                 '@pipe':

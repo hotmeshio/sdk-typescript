@@ -317,6 +317,11 @@ type WorkflowOptions = {
   expire?: number;
 
   /**
+   * job status threshold for emitting the 'job complete' event
+   */
+  threshold?: number;
+
+  /**
    * default is true; set to false to optimize workflows that do not require a `signal in`
    */
   signalIn?: boolean;

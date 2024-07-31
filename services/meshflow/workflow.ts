@@ -285,6 +285,7 @@ export class WorkflowService {
         1000,
       originJobId: originJobId ?? workflowId,
       expire: options.expire,
+      threshold: options.threshold,
       signalIn: options.signalIn,
       parentWorkflowId,
       workflowDimension: workflowDimension,

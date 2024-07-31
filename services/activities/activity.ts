@@ -599,6 +599,13 @@ class Activity {
       context,
     );
     context.metadata.expire = expire;
+    if (this.config.threshold != undefined) {
+      const threshold = Pipe.resolve(
+        this.config.threshold ?? 0,
+        context,
+      );
+      context.metadata.threshold = threshold;
+    }
   }
 
   bindActivityData(type: 'output' | 'hook'): void {
@@ -651,6 +658,19 @@ class Activity {
     return adjacencyList;
   }
 
+  isJobActive(jobStatus: JobStatus): boolean {
+    //every non-zero job is considered active
+    return jobStatus > 0;
+  }
+  isJobDone(jobStatus: JobStatus): boolean {
+    //only emit if the job is active and it is not reentrant
+    return jobStatus <= 0 && isNaN(this.context.metadata.threshold);
+  }
+  isThresholdJobDone(jobStatus: JobStatus): boolean {
+    //emit early; the job is reentrant; the main thread is done
+    return this.context.metadata.threshold === jobStatus;
+  }
+
   async transition(
     adjacencyList: StreamData[],
     jobStatus: JobStatus,
@@ -663,9 +683,9 @@ class Activity {
     if (this.config.emit) {
       emit = Pipe.resolve(this.config.emit, this.context);
     }
-    if (jobStatus <= 0 || emit) {
+    if (emit || this.isJobDone(jobStatus) || this.isThresholdJobDone(jobStatus)) {
       await this.engine.runJobCompletionTasks(this.context, {
-        emit: jobStatus > 0,
+        emit: this.isJobActive(jobStatus) && !this.isThresholdJobDone(jobStatus),
       });
     }
     if (adjacencyList.length && jobStatus > 0) {

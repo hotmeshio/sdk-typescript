@@ -561,6 +561,7 @@ export class WorkerService {
               originJobId: err.originJobId,
               parentWorkflowId: err.parentWorkflowId,
               expire: err.expire,
+              threshold: err.threshold,
               signalIn: err.signalIn,
               workflowDimension: err.workflowDimension,
               workflowId: err.workflowId,

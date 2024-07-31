@@ -4,6 +4,7 @@ export type MeshFlowChildErrorType = {
   backoffCoefficient?: number;
   index: number;
   expire?: number;
+  threshold?: number;
   signalIn?: boolean;
   maximumAttempts?: number;
   maximumInterval?: number;

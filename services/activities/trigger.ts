@@ -122,8 +122,6 @@ class Trigger extends Activity {
   initStatus(options: ExtensionType = {}, count: number): number {
     if (options.pending) {
       return -1;
-    } else if (options.statusThreshold) {
-      return 1_000_000 - options.statusThreshold + count;
     }
     return count;
   }

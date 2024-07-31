@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 
 import { nanoid } from 'nanoid';
 
+import packageJson from '../package.json';
 import { StoreService } from '../services/store';
 import { AppSubscriptions, AppTransitions, AppVID } from '../types/app';
 import { RedisClient, RedisMulti } from '../types/redis';
@@ -355,3 +356,21 @@ export function isValidCron(cronExpression: string): boolean {
     /^(\*|([0-5]?\d)) (\*|([01]?\d|2[0-3])) (\*|([12]?\d|3[01])) (\*|([1-9]|1[0-2])) (\*|([0-6](?:-[0-6])?(?:,[0-6])?))$/;
   return cronRegex.test(cronExpression);
 }
+
+/**
+ * Version 0.2.5+ introduces the ability to decay a
+ * workflow/job in the keyvalue store. The record
+ * is active but will expire at a future date
+ * (an expiration was set while the record status 
+ * sempaphore was a non-zero positive integer).
+ * 
+ * This pattern enables reentrant processing
+ * within a 'decaying' workflow, solving
+ * the dependency problem by decaying subordinate
+ * workflows at the same rate as the parent.
+ * @private
+ */
+export const supportsDecay = (): boolean => {
+  const [major, minor, patch] = packageJson.version.split('.');
+  return parseInt(major) > 0 || (parseInt(minor) >= 2 && parseInt(patch) >= 5)
+};

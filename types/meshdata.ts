@@ -269,4 +269,9 @@ export type MeshDataWorkflowOptions = {
    * @default true
    */
   signalIn?: boolean;
+
+  /**
+   * the semaphore status value at which the main function is considered complete
+   */
+  threshold?: number;
 };

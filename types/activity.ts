@@ -29,6 +29,7 @@ interface BaseActivity {
   emit?: boolean; //if true, the activity will emit a message to the `publishes` topic immediately before transitioning to adjacent activities
   sleep?: number; //@pipe /in seconds
   expire?: number; //-1 forever; 0 persists the flow until the parent flow that expired it is dismissed; 15 seconds is the default
+  threshold?: number; //minimum activity count that should trigger/emit the job completed event when reached; default is 0
   retry?: StreamRetryPolicy;
   cycle?: boolean; //if true, the `notary` will leave leg 2 open, so it can be re/cycled
   collationInt?: number; //compiler
