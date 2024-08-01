@@ -147,7 +147,10 @@ class Router {
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ): Promise<void> {
     //exit early if readonly
-    if (this.readonly) return;
+    if (this.readonly) {
+      this.logger.info(`router-stream-readonly`, { group, consumer, stream });
+      return;
+    }
     this.logger.info(`router-stream-starting`, { group, consumer, stream });
     Router.instances.add(this);
     this.shouldConsume = true;

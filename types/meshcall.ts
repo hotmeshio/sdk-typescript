@@ -153,13 +153,29 @@ interface MeshCallCronParams {
    */
   args: any[];
   /**
-   * linked worker function to run
+   * linked worker function to run; if not provided, the system will
+   * attempt to start the cron job using the topic, but a new
+   * worker will not be created. This is useful for spawning a cron job
+   * from an ephemeral node process.
    */
-  callback: (...args: any[]) => any;
+  callback?: (...args: any[]) => any;
   /**
    * Options for the cron job
    */
   options: MeshCallCronOptions;
+}
+
+interface MeshCallInstanceOptions {
+  /**
+   * if true, the connection to HotMesh will be in readonly mode
+   * and the instantiated client will not route messages
+   * @default false
+   */
+  readonly?: boolean;
+  /**
+   * Idempotent GUID for the worker and engine
+   */
+  guid?: string;
 }
 
 interface MeshCallInterruptParams {
@@ -191,4 +207,5 @@ export {
   MeshCallInterruptParams,
   MeshCallFlushOptions,
   MeshCallFlushParams,
+  MeshCallInstanceOptions,
 };
