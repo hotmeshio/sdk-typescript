@@ -1,6 +1,7 @@
 import { ArrayHandler } from './array';
 import { BitwiseHandler } from './bitwise';
 import { ConditionalHandler } from './conditional';
+import { CronHandler } from './cron';
 import { DateHandler } from './date';
 import { JsonHandler } from './json';
 import { LogicalHandler } from './logical';
@@ -15,6 +16,7 @@ export default {
   array: new ArrayHandler(),
   bitwise: new BitwiseHandler(),
   conditional: new ConditionalHandler(),
+  cron: new CronHandler(),
   date: new DateHandler(),
   json: new JsonHandler(),
   logical: new LogicalHandler(),

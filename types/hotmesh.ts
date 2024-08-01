@@ -62,6 +62,7 @@ type HotMeshEngine = {
   redis?: RedisConfig;
   reclaimDelay?: number; //milliseconds
   reclaimCount?: number;
+  readonly?: boolean; //if true, the engine will not route stream messages
 };
 
 type HotMeshWorker = {

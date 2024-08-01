@@ -1,8 +1,12 @@
 import ms from 'ms';
 
 import { HotMesh } from '../hotmesh';
-import { HMSH_LOGLEVEL, HMSH_QUORUM_DELAY_MS } from '../../modules/enums';
-import { hashOptions, sleepFor } from '../../modules/utils';
+import {
+  HMSH_FIDELITY_SECONDS,
+  HMSH_LOGLEVEL,
+  HMSH_QUORUM_DELAY_MS,
+} from '../../modules/enums';
+import { hashOptions, isValidCron, sleepFor } from '../../modules/utils';
 import {
   MeshCallConnectParams,
   MeshCallCronParams,
@@ -12,8 +16,9 @@ import {
 } from '../../types/meshcall';
 import { RedisConfig, StreamData } from '../../types';
 import { HMNS } from '../../modules/key';
+import { CronHandler } from '../pipe/functions/cron';
 
-import { getWorkflowYAML } from './schemas/factory';
+import { getWorkflowYAML, VERSION } from './schemas/factory';
 
 /**
  * MeshCall connects your functions to the Redis-backed mesh,
@@ -33,7 +38,7 @@ import { getWorkflowYAML } from './schemas/factory';
  *   callback: async () => {
  *     //your code here...
  *   },
- *   options: { id: 'myDailyCron123', interval: '1 day' }
+ *   options: { id: 'myDailyCron123', interval: '0 0 * * *' }
  * });
  * ```
  */
@@ -137,7 +142,7 @@ class MeshCall {
   static async activateWorkflow(
     hotMesh: HotMesh,
     appId = HMNS,
-    version = '1',
+    version = VERSION,
   ): Promise<void> {
     const app = await hotMesh.engine.store.getApp(appId);
     const appVersion = app?.version as unknown as string;
@@ -333,7 +338,7 @@ class MeshCall {
    *   callback: async (arg1: any, arg2: any) => {
    *     //your code here...
    *   },
-   *   options: { id: 'myDailyCron123', interval: '1 day' }
+   *   options: { id: 'myDailyCron123', interval: '0 0 * * *' }
    * });
    * ```
    */
@@ -351,10 +356,21 @@ class MeshCall {
 
       //start the cron job
       const TOPIC = `${params.namespace ?? HMNS}.cron`;
-      const interval = ms(params.options.interval) / 1000;
-      const delay = params.options.delay
+      let delay = params.options.delay
         ? ms(params.options.delay) / 1000
         : undefined;
+
+      let cron: string;
+      let interval = HMSH_FIDELITY_SECONDS;
+      if (isValidCron(params.options.interval)) {
+        //if using cron syntax, delay is expression-driven
+        cron = params.options.interval;
+        delay = Math.max(new CronHandler().nextDelay(cron), 0);
+      } else {
+        const seconds = ms(params.options.interval) / 1000;
+        interval = Math.max(seconds, HMSH_FIDELITY_SECONDS);
+      }
+
       const maxCycles = params.options.maxCycles ?? 1_000_000;
       const hotMeshInstance = await MeshCall.getInstance(
         params.namespace,
@@ -365,6 +381,7 @@ class MeshCall {
         topic: params.topic,
         args: params.args,
         interval,
+        cron,
         maxCycles,
         delay,
       });

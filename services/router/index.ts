@@ -49,6 +49,7 @@ class Router {
   innerPromiseResolve: (() => void) | null = null;
   isSleeping = false;
   sleepTimout: NodeJS.Timeout | null = null;
+  readonly: boolean;
 
   constructor(
     config: StreamConfig,
@@ -66,6 +67,7 @@ class Router {
     this.reclaimDelay = config.reclaimDelay || HMSH_XCLAIM_DELAY_MS;
     this.reclaimCount = config.reclaimCount || HMSH_XCLAIM_COUNT;
     this.logger = logger;
+    this.readonly = config.readonly || false;
     this.resetThrottleState();
   }
 
@@ -144,6 +146,8 @@ class Router {
     consumer: string,
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ): Promise<void> {
+    //exit early if readonly
+    if (this.readonly) return;
     this.logger.info(`router-stream-starting`, { group, consumer, stream });
     Router.instances.add(this);
     this.shouldConsume = true;
