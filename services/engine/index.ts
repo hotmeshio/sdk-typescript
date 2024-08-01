@@ -225,6 +225,7 @@ class EngineService {
         reclaimDelay: config.engine.reclaimDelay,
         reclaimCount: config.engine.reclaimCount,
         throttle,
+        readonly: config.engine.readonly,
       },
       this.stream,
       this.store,

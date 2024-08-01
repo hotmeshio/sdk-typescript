@@ -148,6 +148,26 @@ describe('MESHCALL', () => {
 
   describe('Cron', () => {
     describe('infinite cron', () => {
+      it('should start an infinite cron (readonly mode)', async () => {
+        //kick off the cron, but don't do work
+        //(the next test will register the callback)
+        const inited = await MeshCall.cron({
+          //NOTE: this ID will show up in the logs as being inited in readonly mode
+          guid: 'RO-ENGINE-123',
+          args: [{ payload: 'HotMesh' }],
+          topic: 'my.cron.function',
+          redis: {
+            class: Redis,
+            options,
+          },
+          options: {
+            id: 'mycron123',
+            interval: '1 second',
+          },
+        });
+        expect(inited).toBe(true);
+      });
+
       it('should run an infinite cron', async () => {
         let counter = 0;
         const inited = await MeshCall.cron({
@@ -167,10 +187,13 @@ describe('MESHCALL', () => {
             return counter;
           },
         });
-        expect(inited).toBe(true);
-        await sleepFor(3_500);
+        //the cron was already started (this test provides the callback)
+        expect(inited).toBe(false);
+        //sleepFor is to ensure sufficient cycles run;
+        //todo: subscribe to channel and listen instead
+        await sleepFor(7_500);
         expect(counter).toBeGreaterThan(1);
-      }, 5_000);
+      }, 10_000);
 
       it('should silently fail when the same cron is inited', async () => {
         const didSucceed = await MeshCall.cron({
@@ -193,7 +216,7 @@ describe('MESHCALL', () => {
       });
 
       it('should interrupt an infinite cron', async () => {
-        await MeshCall.interrupt({
+        let interrupted = await MeshCall.interrupt({
           topic: 'my.cron.function',
           redis: {
             class: Redis,
@@ -201,6 +224,18 @@ describe('MESHCALL', () => {
           },
           options: { id: 'mycron123' },
         });
+        expect(interrupted).toBe(true);
+
+        //method returns false if the cron is not running
+        interrupted = await MeshCall.interrupt({
+          topic: 'my.cron.function',
+          redis: {
+            class: Redis,
+            options,
+          },
+          options: { id: 'mycron123' },
+        });
+        expect(interrupted).toBe(false);
       });
 
       it('should run a cron with maxCycles and a delay', async () => {

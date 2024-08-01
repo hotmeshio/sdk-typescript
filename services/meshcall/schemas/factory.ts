@@ -78,8 +78,6 @@ export const getWorkflowYAML = (appId = HMNS, version = VERSION): string => {
 
     - subscribes: ${appId}.cron
 
-      expire: 120
-
       input:
         schema:
           type: object
@@ -128,6 +126,8 @@ export const getWorkflowYAML = (appId = HMNS, version = VERSION): string => {
               type: object
               properties:
                 sleepSeconds:
+                  type: number
+                iterationCount:
                   type: number
             maps:
               sleepSeconds:

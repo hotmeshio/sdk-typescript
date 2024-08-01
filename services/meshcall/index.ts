@@ -12,6 +12,7 @@ import {
   MeshCallCronParams,
   MeshCallExecParams,
   MeshCallFlushParams,
+  MeshCallInstanceOptions,
   MeshCallInterruptParams,
 } from '../../types/meshcall';
 import { RedisConfig, StreamData } from '../../types';
@@ -69,14 +70,21 @@ class MeshCall {
    * @private
    */
   static async findFirstMatching(
-    workers: Map<string, HotMesh | Promise<HotMesh>>,
+    targets: Map<string, HotMesh | Promise<HotMesh>>,
     namespace = HMNS,
     config: RedisConfig,
+    options: MeshCallInstanceOptions = {},
   ): Promise<HotMesh | void> {
-    for (const [id, hotMeshInstance] of workers) {
-      if ((await hotMeshInstance).namespace === namespace) {
+    for (const [id, hotMeshInstance] of targets) {
+      const hotMesh = await hotMeshInstance;
+      const appId = hotMesh.engine.appId;
+      if (appId === namespace) {
         if (id.startsWith(hashOptions(config.options))) {
-          return hotMeshInstance;
+          if (
+            Boolean(options.readonly) == Boolean(hotMesh.engine.router.readonly)
+          ) {
+            return hotMeshInstance;
+          }
         }
       }
     }
@@ -88,6 +96,7 @@ class MeshCall {
   static getHotMeshClient = async (
     namespace: string,
     connection: RedisConfig,
+    options: MeshCallInstanceOptions = {},
   ): Promise<HotMesh> => {
     //namespace isolation requires the connection options to be hashed
     //as multiple intersecting databases can be used by the same service
@@ -102,6 +111,7 @@ class MeshCall {
 
     //create and cache an instance
     const hotMeshClient = HotMesh.init({
+      guid: options.guid,
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
@@ -109,6 +119,7 @@ class MeshCall {
           class: connection.class,
           options: connection.options,
         },
+        readonly: options.readonly,
       },
     });
     MeshCall.engines.set(connectionNS, hotMeshClient);
@@ -173,22 +184,30 @@ class MeshCall {
   static async getInstance(
     namespace: string,
     redis: RedisConfig,
+    options: MeshCallInstanceOptions = {},
   ): Promise<HotMesh> {
-    let hotMeshInstance = await MeshCall.findFirstMatching(
-      MeshCall.workers,
-      namespace,
-      redis,
-    );
+    let hotMeshInstance: HotMesh | void;
+
+    if (!options.readonly) {
+      hotMeshInstance = await MeshCall.findFirstMatching(
+        MeshCall.workers,
+        namespace,
+        redis,
+        options,
+      );
+    }
     if (!hotMeshInstance) {
       hotMeshInstance = await MeshCall.findFirstMatching(
         MeshCall.engines,
         namespace,
         redis,
+        options,
       );
       if (!hotMeshInstance) {
         hotMeshInstance = (await MeshCall.getHotMeshClient(
           namespace,
           redis,
+          options,
         )) as unknown as HotMesh;
       }
     }
@@ -343,8 +362,8 @@ class MeshCall {
    * ```
    */
   static async cron(params: MeshCallCronParams): Promise<boolean> {
-    try {
-      //connect the cron worker
+    if (params.callback) {
+      //always connect cron worker if provided
       await MeshCall.connect({
         logLevel: params.logLevel,
         guid: params.guid,
@@ -353,28 +372,34 @@ class MeshCall {
         callback: params.callback,
         namespace: params.namespace,
       });
+    }
 
-      //start the cron job
-      const TOPIC = `${params.namespace ?? HMNS}.cron`;
-      let delay = params.options.delay
+    //configure job inputs
+    const TOPIC = `${params.namespace ?? HMNS}.cron`;
+    const maxCycles = params.options.maxCycles ?? 100_000;
+    let interval = HMSH_FIDELITY_SECONDS;
+    let delay: number | undefined;
+    let cron: string;
+    if (isValidCron(params.options.interval)) {
+      //cron syntax
+      cron = params.options.interval;
+      const nextDelay = new CronHandler().nextDelay(cron);
+      delay = nextDelay > 0 ? nextDelay : undefined;
+    } else {
+      //ms syntax
+      const seconds = ms(params.options.interval) / 1000;
+      interval = Math.max(seconds, HMSH_FIDELITY_SECONDS);
+      delay = params.options.delay
         ? ms(params.options.delay) / 1000
         : undefined;
+    }
 
-      let cron: string;
-      let interval = HMSH_FIDELITY_SECONDS;
-      if (isValidCron(params.options.interval)) {
-        //if using cron syntax, delay is expression-driven
-        cron = params.options.interval;
-        delay = Math.max(new CronHandler().nextDelay(cron), 0);
-      } else {
-        const seconds = ms(params.options.interval) / 1000;
-        interval = Math.max(seconds, HMSH_FIDELITY_SECONDS);
-      }
-
-      const maxCycles = params.options.maxCycles ?? 1_000_000;
+    //spawn the job (ok if it's a duplicate)
+    try {
       const hotMeshInstance = await MeshCall.getInstance(
         params.namespace,
         params.redis,
+        { readonly: params.callback ? false : true, guid: params.guid },
       );
       await hotMeshInstance.pub(TOPIC, {
         id: params.options.id,
@@ -395,7 +420,9 @@ class MeshCall {
   }
 
   /**
-   * Interrupts a running cron job.
+   * Interrupts a running cron job. Returns `true` if the job
+   * was successfully interrupted, or `false` if the job was not
+   * found.
    *
    * @example
    * ```typescript
@@ -409,16 +436,22 @@ class MeshCall {
    * });
    * ```
    */
-  static async interrupt(params: MeshCallInterruptParams): Promise<void> {
+  static async interrupt(params: MeshCallInterruptParams): Promise<boolean> {
     const hotMeshInstance = await MeshCall.getInstance(
       params.namespace,
       params.redis,
     );
-    await hotMeshInstance.interrupt(
-      `${params.namespace ?? HMNS}.cron`,
-      params.options.id,
-      { throw: false, expire: 60 },
-    );
+    try {
+      await hotMeshInstance.interrupt(
+        `${params.namespace ?? HMNS}.cron`,
+        params.options.id,
+        { throw: false, expire: 1 },
+      );
+    } catch (error) {
+      //job doesn't exist; is already stopped
+      return false;
+    }
+    return true;
   }
 
   /**
