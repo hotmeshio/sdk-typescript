@@ -1,5 +1,5 @@
 import { HMNS } from '../../../modules/key';
-export const VERSION = '1';
+export const VERSION = '2';
 
 /**
  * Provides the YAML necessary to create a workflow for the `MeshCall` service.
@@ -92,7 +92,10 @@ export const getWorkflowYAML = (appId = HMNS, version = VERSION): string => {
               description: time in seconds to sleep before invoking the first cycle
             interval:
               type: number
-              description: time in seconds to sleep before the next cycle
+              description: time in seconds to sleep before the next cycle (also min interval in seconds if cron is provided)
+            cron:
+              type: string
+              description: cron expression to determine the next cycle (takes precedence over interval)
             topic:
               type: string
               description: topic assigned to locate the worker
@@ -154,7 +157,11 @@ export const getWorkflowYAML = (appId = HMNS, version = VERSION): string => {
           ancestor: cycle_hook_cron
           input:
             maps:
-              sleepSeconds: '{trigger_cron.output.data.interval}'
+              sleepSeconds:
+                '@pipe':
+                  - ['{trigger_cron.output.data.cron}']
+                  - ['{@cron.nextDelay}', '{trigger_cron.output.data.interval}']
+                  - ['{@math.max}']
               iterationCount:
                 '@pipe':
                   - ['{cycle_hook_cron.output.data.iterationCount}', 1]

@@ -102,6 +102,7 @@ interface MeshCallCronOptions {
   /**
    * For example, `1 day`, `1 hour`. Fidelity is generally
    * within 5 seconds. Refer to the syntax for the `ms` NPM package.
+   * Standard cron syntax is also supported. (e.g. `0 0 * * *`)
    */
   interval: string;
   /**
@@ -112,6 +113,7 @@ interface MeshCallCronOptions {
    * Time in seconds to sleep before invoking the first cycle.
    * For example, `1 day`, `1 hour`. Fidelity is generally
    * within 5 seconds. Refer to the syntax for the `ms` NPM package.
+   * If the interval field uses standard cron syntax, this field is ignored.
    */
   delay?: string;
 }

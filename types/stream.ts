@@ -138,4 +138,6 @@ export type StreamConfig = {
   reclaimDelay?: number;
   /** Maximum number of reclaims allowed, defaults to 3. Values greater throw an error */
   reclaimCount?: number;
+  /** if true, will not process stream messages; default true */
+  readonly?: boolean;
 };

@@ -54,6 +54,31 @@ describe('Pipe', () => {
     });
   });
 
+  describe('cron', () => {
+    it('should calculate the next delay for a cron job', () => {
+      jobData = {
+        cronExpression: '0 0 * * *',
+      };
+
+      rules = [['{cronExpression}'], ['{@cron.nextDelay}']];
+
+      pipe = new Pipe(rules, jobData);
+      let result = pipe.process();
+
+      expect(result).toBeGreaterThan(0); //integer (in seconds)
+      jobData = {
+        cronExpression: '1 day',
+      };
+
+      rules = [['{cronExpression}'], ['{@cron.nextDelay}']];
+
+      pipe = new Pipe(rules, jobData);
+      result = pipe.process();
+
+      expect(result).toBe(-1); //invalid cron expression
+    });
+  });
+
   describe('number', () => {
     it('isEven, isOdd', () => {
       jobData = {

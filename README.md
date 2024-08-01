@@ -19,9 +19,9 @@ You have a Redis instance? Good. You're ready to go.
   <summary style="font-size:1.25em;">Run an idempotent cron job</summary>
 
   ### Run a Cron
-  This example demonstrates an *idempotent* cron that runs every day. The `id` makes each cron job unique and ensures that only one instance runs, despite repeated invocations. *The `cron` method returns `false` if a workflow is already running with the same `id`.*
+  This example demonstrates an *idempotent* cron that runs daily at midnight. The `id` makes each cron job unique and ensures that only one instance runs, despite repeated invocations. *The `cron` method returns `false` if a workflow is already running with the same `id`.*
   
-  Optionally set a `delay` and/or set `maxCycles` to limit the number of cycles.
+  Optionally set a `delay` and/or set `maxCycles` to limit the number of cycles. The `interval` can be any human-readable time format (e.g., `1 day`, `2 hours`, `30 minutes`, etc) or a standard cron expression.
 
 1. Define the cron function.
     ```typescript
@@ -29,7 +29,7 @@ You have a Redis instance? Good. You're ready to go.
     import { MeshCall } from '@hotmeshio/hotmesh';
     import * as Redis from 'redis';
 
-    export const runMyCron = async (id: string, interval = '1 day'): Promise<boolean> => {
+    export const runMyCron = async (id: string, interval = '0 0 * * *'): Promise<boolean> => {
       return await MeshCall.cron({
         topic: 'my.cron.function',
         redis: {
@@ -48,7 +48,8 @@ You have a Redis instance? Good. You're ready to go.
     ```typescript
     //server.ts
     import { runMyCron } from './cron';
-    runMyCron('myDailyCron123');
+
+    runMyCron('myNightlyCron123');
     ```
 </details>
 
@@ -69,7 +70,7 @@ You have a Redis instance? Good. You're ready to go.
         class: Redis,
         options: { url: 'redis://:key_admin@redis:6379' }
       },
-      options: { id: 'myDailyCron123' }
+      options: { id: 'myNightlyCron123' }
     });
     ```
 </details>
