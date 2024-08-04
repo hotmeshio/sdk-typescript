@@ -4,10 +4,10 @@
 </code><button type="button">Copy</button></pre>
 
 <p>You have a Redis instance? Good. You're ready to go.</p>
-<a id="md:learn" class="tsd-anchor"></a><h2 class="tsd-anchor-link">Learn<a href="#md:learn" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p><a href="https://hotmeshio.github.io/sdk-typescript/">SDK Docs</a> | <a href="https://github.com/hotmeshio/samples-typescript">Samples</a> | <a href="https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9">Intro Video</a></p>
+<a id="md:learn" class="tsd-anchor"></a><h2 class="tsd-anchor-link">Learn<a href="#md:learn" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p><a href="https://hotmeshio.github.io/sdk-typescript/">SDK Docs</a> | <a href="https://github.com/hotmeshio/samples-typescript">Samples</a> | <a href="https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9">Intro Video</a> | <a href="https://www.loom.com/share/54ffd5266baf4ac6b287578abfd1d821?sid=0db2cef8-ef0d-4e02-a0b7-a1ee14f476ce">Transactional Workflow</a></p>
 <a id="md:meshcall--connect-everything" class="tsd-anchor"></a><h2 class="tsd-anchor-link">MeshCall | Connect Everything<a href="#md:meshcall--connect-everything" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p><a href="https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html">MeshCall</a> connects your functions to the Redis-backed mesh, exposing them as idempotent endpoints. Function responses are cacheable and functions can even run as idempotent cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.</p>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Run an idempotent cron job</summary>
+  <summary style="font-size:1.25em;">Run an idempotent cron job <small>[more]</small></summary>
 <a id="md:run-a-cron" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Run a Cron<a href="#md:run-a-cron" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>This example demonstrates an <em>idempotent</em> cron that runs daily at midnight. The <code>id</code> makes each cron job unique and ensures that only one instance runs, despite repeated invocations. <em>The <code>cron</code> method returns <code>false</code> if a workflow is already running with the same <code>id</code>.</em></p>
 <p>Optionally set a <code>delay</code> and/or set <code>maxCycles</code> to limit the number of cycles. The <code>interval</code> can be any human-readable time format (e.g., <code>1 day</code>, <code>2 hours</code>, <code>30 minutes</code>, etc) or a standard cron expression.</p>
 <ol>
@@ -26,7 +26,7 @@
 </ol>
 </details>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Interrupt a cron job</summary>
+  <summary style="font-size:1.25em;">Interrupt a cron job <small>[more]</small></summary>
 <a id="md:interrupt-a-cron" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Interrupt a Cron<a href="#md:interrupt-a-cron" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>This example demonstrates how to cancel a running cron job.</p>
 <ol>
 <li>Use the same <code>id</code> and <code>topic</code> that were used to create the cron to cancel it.<pre><code class="typescript"><span class="hl-4">import</span><span class="hl-1"> { </span><span class="hl-5">MeshCall</span><span class="hl-1"> } </span><span class="hl-4">from</span><span class="hl-1"> </span><span class="hl-2">&#39;@hotmeshio/hotmesh&#39;</span><span class="hl-1">;</span><br/><span class="hl-4">import</span><span class="hl-1"> </span><span class="hl-6">*</span><span class="hl-1"> </span><span class="hl-4">as</span><span class="hl-1"> </span><span class="hl-5">Redis</span><span class="hl-1"> </span><span class="hl-4">from</span><span class="hl-1"> </span><span class="hl-2">&#39;redis&#39;</span><span class="hl-1">;</span><br/><br/><span class="hl-5">MeshCall</span><span class="hl-1">.</span><span class="hl-0">interrupt</span><span class="hl-1">({</span><br/><span class="hl-1">  </span><span class="hl-5">topic:</span><span class="hl-1"> </span><span class="hl-2">&#39;my.cron.function&#39;</span><span class="hl-1">,</span><br/><span class="hl-1">  </span><span class="hl-5">redis:</span><span class="hl-1"> {</span><br/><span class="hl-1">    </span><span class="hl-5">class:</span><span class="hl-1"> </span><span class="hl-5">Redis</span><span class="hl-1">,</span><br/><span class="hl-1">    </span><span class="hl-5">options:</span><span class="hl-1"> { </span><span class="hl-5">url:</span><span class="hl-1"> </span><span class="hl-2">&#39;redis://:key_admin@redis:6379&#39;</span><span class="hl-1"> }</span><br/><span class="hl-1">  },</span><br/><span class="hl-1">  </span><span class="hl-5">options:</span><span class="hl-1"> { </span><span class="hl-5">id:</span><span class="hl-1"> </span><span class="hl-2">&#39;myNightlyCron123&#39;</span><span class="hl-1"> }</span><br/><span class="hl-1">});</span>
@@ -36,7 +36,7 @@
 </ol>
 </details>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Call any function in any service</summary>
+  <summary style="font-size:1.25em;">Call any function in any service <small>[more]</small></summary>
 <a id="md:call-a-function" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Call a Function<a href="#md:call-a-function" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>Make blazing fast interservice calls that behave like HTTP but without the setup and performance overhead. This example demonstrates how to connect a function to the mesh and call it from anywhere on the network.</p>
 <ol>
 <li>
@@ -60,7 +60,7 @@
 </ol>
 </details>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Call and <b>cache</b> a function</summary>
+  <summary style="font-size:1.25em;">Call and <b>cache</b> a function <small>[more]</small></summary>
 <a id="md:cache-a-function" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Cache a Function<a href="#md:cache-a-function" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>Redis is great for unburdening stressed services. This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies an <code>id</code> and <code>ttl</code>.</p>
 <ol>
 <li>
@@ -79,7 +79,7 @@
 </details>
 <a id="md:meshflow--transactional-workflow" class="tsd-anchor"></a><h2 class="tsd-anchor-link">MeshFlow | Transactional Workflow<a href="#md:meshflow--transactional-workflow" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2><p><a href="https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html">MeshFlow</a> is a drop-in replacement for <a href="https://temporal.io">Temporal.io</a>. If you need to orchestrate your functions as durable workflows, MeshFlow combines the popular Temporal SDK with Redis' <em>in-memory execution speed</em>.</p>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Orchestrate unpredictable activities</summary>
+  <summary style="font-size:1.25em;">Orchestrate unpredictable activities <small>[more]</small></summary>
 <a id="md:proxy-activities" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Proxy Activities<a href="#md:proxy-activities" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>When an endpoint is unpredictable, use <code>proxyActivities</code>. HotMesh will retry as necessary until the call succeeds. This example demonstrates a workflow that greets a user in both English and Spanish. Even though both activities throw random errors, the workflow always returns a successful result.</p>
 <ol>
 <li>
@@ -109,7 +109,7 @@
 </ol>
 </details>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Pause and wait for a signal</summary>
+  <summary style="font-size:1.25em;">Pause and wait for a signal <small>[more]</small></summary>
 <a id="md:wait-for-signal" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Wait for Signal<a href="#md:wait-for-signal" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>Pause a function and only awaken when a matching signal is received from the outide.</p>
 <ol>
 <li>
@@ -139,7 +139,7 @@
 </ol>
 </details>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Wait for multiple signals (collation)</summary>
+  <summary style="font-size:1.25em;">Wait for multiple signals (collation) <small>[more]</small></summary>
 <a id="md:collate-multiple-signals" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Collate Multiple Signals<a href="#md:collate-multiple-signals" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>Use a standard <code>Promise</code> to collate and cache multiple signals. HotMesh will only awaken once <strong>all</strong> signals have arrived. HotMesh will track up to 25 concurrent signals.</p>
 <ol>
 <li>
@@ -157,7 +157,7 @@
 </ol>
 </details>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Create a recurring, cyclical workflow</summary>
+  <summary style="font-size:1.25em;">Create a recurring, cyclical workflow <small>[more]</small></summary>
 <a id="md:cyclical-workflow" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Cyclical Workflow<a href="#md:cyclical-workflow" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>This example calls an activity and then sleeps for a week. It runs indefinitely until it's manually stopped. It takes advantage of durable execution and can safely sleep for months or years.</p>
 <blockquote>
 <p>Container restarts have no impact on actively executing workflows as all state is retained in Redis.</p>
@@ -193,7 +193,7 @@
 <p>Deployments with the Redis <code>FT.SEARCH</code> module enabled can use the <strong>MeshData</strong> module to merge <a href="https://en.wikipedia.org/wiki/Online_transaction_processing">OLTP</a> and <a href="https://en.wikipedia.org/wiki/Online_analytical_processing">OLAP</a> operations into a hybrid transactional/analytics (<a href="https://en.wikipedia.org/wiki/Hybrid_transactional/analytical_processing">HTAP</a>) system.</p>
 <p><em>For those Redis deployments without the <code>FT.SEARCH</code> module, it's still useful to define a workflow schema. The MeshData class provides convenience methods for reading and writing hash field data to a workflow record (e.g., <code>get</code>, <code>del</code>, and <code>incr</code>).</em></p>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Create a search index</summary>
+  <summary style="font-size:1.25em;">Create a search index <small>[more]</small></summary>
 <a id="md:workflow-data-indexes" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Workflow Data Indexes<a href="#md:workflow-data-indexes" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>This example demonstrates how to define a schema and deploy an index for a 'user' entity type.</p>
 <ol>
 <li>
@@ -211,7 +211,7 @@
 </ol>
 </details>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Create an indexed, searchable record</summary>
+  <summary style="font-size:1.25em;">Create an indexed, searchable record <small>[more]</small></summary>
 <a id="md:workflow-record-data" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Workflow Record Data<a href="#md:workflow-record-data" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>This example demonstrates how to create a 'user' workflow backed by the searchable schema from the prior example.</p>
 <ol>
 <li>
@@ -241,7 +241,7 @@
 </ol>
 </details>
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Fetch record data</summary>
+  <summary style="font-size:1.25em;">Fetch record data <small>[more]</small></summary>
 <a id="md:read-record-data" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Read Record Data<a href="#md:read-record-data" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>This example demonstrates how to read data fields directly from a workflow.</p>
 <ol>
 <li>
@@ -253,7 +253,7 @@
 </ol>
 </details> 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Search record data</summary>
+  <summary style="font-size:1.25em;">Search record data <small>[more]</small></summary>
 <a id="md:query-record-data" class="tsd-anchor"></a><h3 class="tsd-anchor-link">Query Record Data<a href="#md:query-record-data" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h3><p>This example demonstrates how to search for those workflows where a given condition exists in the data. This one searches for active users. <em>NOTE: The native Redis FT.SEARCH syntax is supported. The JSON abstraction shown here is a convenience method for straight-forward, one-dimensional queries.</em></p>
 <ol>
 <li>

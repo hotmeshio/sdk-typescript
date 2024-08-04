@@ -10,13 +10,13 @@ npm install @hotmeshio/hotmesh
 You have a Redis instance? Good. You're ready to go.
 
 ## Learn
-[SDK Docs](https://hotmeshio.github.io/sdk-typescript/) | [Samples](https://github.com/hotmeshio/samples-typescript) | [Intro Video](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9)
+[SDK Docs](https://hotmeshio.github.io/sdk-typescript/) | [Samples](https://github.com/hotmeshio/samples-typescript) | [Intro Video](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9) | [Transactional Workflow](https://www.loom.com/share/54ffd5266baf4ac6b287578abfd1d821?sid=0db2cef8-ef0d-4e02-a0b7-a1ee14f476ce)
 
 ## MeshCall | Connect Everything
 [MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your functions to the Redis-backed mesh, exposing them as idempotent endpoints. Function responses are cacheable and functions can even run as idempotent cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Run an idempotent cron job</summary>
+  <summary style="font-size:1.25em;">Run an idempotent cron job <small>[more]</small></summary>
 
   ### Run a Cron
   This example demonstrates an *idempotent* cron that runs daily at midnight. The `id` makes each cron job unique and ensures that only one instance runs, despite repeated invocations. *The `cron` method returns `false` if a workflow is already running with the same `id`.*
@@ -54,7 +54,7 @@ You have a Redis instance? Good. You're ready to go.
 </details>
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Interrupt a cron job</summary>
+  <summary style="font-size:1.25em;">Interrupt a cron job <small>[more]</small></summary>
 
   ### Interrupt a Cron
   This example demonstrates how to cancel a running cron job.
@@ -76,7 +76,7 @@ You have a Redis instance? Good. You're ready to go.
 </details>
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Call any function in any service</summary>
+  <summary style="font-size:1.25em;">Call any function in any service <small>[more]</small></summary>
 
   ### Call a Function
   Make blazing fast interservice calls that behave like HTTP but without the setup and performance overhead. This example demonstrates how to connect a function to the mesh and call it from anywhere on the network.
@@ -129,7 +129,7 @@ You have a Redis instance? Good. You're ready to go.
 </details>
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Call and <b>cache</b> a function</summary>
+  <summary style="font-size:1.25em;">Call and <b>cache</b> a function <small>[more]</small></summary>
 
   ### Cache a Function
   Redis is great for unburdening stressed services. This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies an `id` and `ttl`.
@@ -172,7 +172,7 @@ You have a Redis instance? Good. You're ready to go.
 [MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a drop-in replacement for [Temporal.io](https://temporal.io). If you need to orchestrate your functions as durable workflows, MeshFlow combines the popular Temporal SDK with Redis' *in-memory execution speed*.
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Orchestrate unpredictable activities</summary>
+  <summary style="font-size:1.25em;">Orchestrate unpredictable activities <small>[more]</small></summary>
 
 ### Proxy Activities
 When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as necessary until the call succeeds. This example demonstrates a workflow that greets a user in both English and Spanish. Even though both activities throw random errors, the workflow always returns a successful result.
@@ -263,7 +263,7 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
 </details>
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Pause and wait for a signal</summary>
+  <summary style="font-size:1.25em;">Pause and wait for a signal <small>[more]</small></summary>
 
 ### Wait for Signal
 Pause a function and only awaken when a matching signal is received from the outide.
@@ -356,7 +356,7 @@ Pause a function and only awaken when a matching signal is received from the out
 </details>
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Wait for multiple signals (collation)</summary>
+  <summary style="font-size:1.25em;">Wait for multiple signals (collation) <small>[more]</small></summary>
 
 ### Collate Multiple Signals
 Use a standard `Promise` to collate and cache multiple signals. HotMesh will only awaken once **all** signals have arrived. HotMesh will track up to 25 concurrent signals.
@@ -406,7 +406,7 @@ Use a standard `Promise` to collate and cache multiple signals. HotMesh will onl
 </details>
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Create a recurring, cyclical workflow</summary>
+  <summary style="font-size:1.25em;">Create a recurring, cyclical workflow <small>[more]</small></summary>
 
 ### Cyclical Workflow
 This example calls an activity and then sleeps for a week. It runs indefinitely until it's manually stopped. It takes advantage of durable execution and can safely sleep for months or years.
@@ -511,7 +511,7 @@ Deployments with the Redis `FT.SEARCH` module enabled can use the **MeshData** m
 *For those Redis deployments without the `FT.SEARCH` module, it's still useful to define a workflow schema. The MeshData class provides convenience methods for reading and writing hash field data to a workflow record (e.g., `get`, `del`, and `incr`).*
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Create a search index</summary>
+  <summary style="font-size:1.25em;">Create a search index <small>[more]</small></summary>
 
 ### Workflow Data Indexes
 
@@ -551,7 +551,7 @@ This example demonstrates how to define a schema and deploy an index for a 'user
 </details>
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Create an indexed, searchable record</summary>
+  <summary style="font-size:1.25em;">Create an indexed, searchable record <small>[more]</small></summary>
 
 ### Workflow Record Data
 This example demonstrates how to create a 'user' workflow backed by the searchable schema from the prior example.
@@ -631,7 +631,7 @@ This example demonstrates how to create a 'user' workflow backed by the searchab
 </details>
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Fetch record data</summary>
+  <summary style="font-size:1.25em;">Fetch record data <small>[more]</small></summary>
 
 ### Read Record Data
 This example demonstrates how to read data fields directly from a workflow.
@@ -662,7 +662,7 @@ This example demonstrates how to read data fields directly from a workflow.
 </details> 
 
 <details style="padding: .5em">
-  <summary style="font-size:1.25em;">Search record data</summary>
+  <summary style="font-size:1.25em;">Search record data <small>[more]</small></summary>
 
 ### Query Record Data
 This example demonstrates how to search for those workflows where a given condition exists in the data. This one searches for active users. *NOTE: The native Redis FT.SEARCH syntax is supported. The JSON abstraction shown here is a convenience method for straight-forward, one-dimensional queries.*
