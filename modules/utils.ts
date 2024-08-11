@@ -2,6 +2,7 @@ import os from 'os';
 import { createHash } from 'crypto';
 
 import { nanoid } from 'nanoid';
+import ms from 'ms';
 
 import packageJson from '../package.json';
 import { StoreService } from '../services/store';
@@ -16,17 +17,17 @@ import { HMSH_GUID_SIZE } from './enums';
 /**
  * @private
  */
-async function safeExecute<T>(
-  operation: Promise<T>,
-  defaultValue: T,
-): Promise<T> {
-  try {
-    return await operation;
-  } catch (error) {
-    console.error(`Operation Error: ${error}`);
-    return defaultValue;
-  }
-}
+// async function safeExecute<T>(
+//   operation: Promise<T>,
+//   defaultValue: T,
+// ): Promise<T> {
+//   try {
+//     return await operation;
+//   } catch (error) {
+//     console.error(`Operation Error: ${error}`);
+//     return defaultValue;
+//   }
+// }
 
 /**
  * @private
@@ -358,12 +359,12 @@ export function isValidCron(cronExpression: string): boolean {
 }
 
 /**
- * Version 0.2.5+ introduces the ability to decay a
+ * Version 0.3.0+ introduces the ability to 'persist' a
  * workflow/job in the keyvalue store. The record
  * is active but will expire at a future date
- * (an expiration was set while the record status 
+ * (an expiration was set while the record status
  * sempaphore was a non-zero positive integer).
- * 
+ *
  * This pattern enables reentrant processing
  * within a 'decaying' workflow, solving
  * the dependency problem by decaying subordinate
@@ -371,6 +372,14 @@ export function isValidCron(cronExpression: string): boolean {
  * @private
  */
 export const supportsDecay = (): boolean => {
-  const [major, minor, patch] = packageJson.version.split('.');
-  return parseInt(major) > 0 || (parseInt(minor) >= 2 && parseInt(patch) >= 5)
+  const [major, minor] = packageJson.version.split('.');
+  return parseInt(major, 10) > 0 || parseInt(minor, 10) > 2;
+};
+
+/**
+ * Returns the number of seconds for a string using the milliseconds format
+ * used by the `ms` npm package as the input.
+ */
+export const s = (input: string): number => {
+  return ms(input) / 1000;
 };

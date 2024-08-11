@@ -599,12 +599,9 @@ class Activity {
       context,
     );
     context.metadata.expire = expire;
-    if (this.config.threshold != undefined) {
-      const threshold = Pipe.resolve(
-        this.config.threshold ?? 0,
-        context,
-      );
-      context.metadata.threshold = threshold;
+    if (this.config.persistent != undefined) {
+      const persistent = Pipe.resolve(this.config.persistent ?? false, context);
+      context.metadata.persistent = persistent;
     }
   }
 
@@ -658,17 +655,27 @@ class Activity {
     return adjacencyList;
   }
 
-  isJobActive(jobStatus: JobStatus): boolean {
-    //every non-zero job is considered active
-    return jobStatus > 0;
+  isJobComplete(jobStatus: JobStatus): boolean {
+    return jobStatus <= 0;
   }
-  isJobDone(jobStatus: JobStatus): boolean {
-    //only emit if the job is active and it is not reentrant
-    return jobStatus <= 0 && isNaN(this.context.metadata.threshold);
+
+  shouldEmit(): boolean {
+    if (this.config.emit) {
+      return Pipe.resolve(this.config.emit, this.context) === true;
+    }
+    return false;
   }
-  isThresholdJobDone(jobStatus: JobStatus): boolean {
-    //emit early; the job is reentrant; the main thread is done
-    return this.context.metadata.threshold === jobStatus;
+
+  /**
+   * emits the job completed event while leaving the job active, allowing
+   * a `main` thread to exit while other threads continue to run.
+   * @private
+   */
+  shouldJobDecay(): boolean {
+    if (this.config.persist !== undefined) {
+      return Pipe.resolve(this.config.persist, this.context) === true;
+    }
+    return false;
   }
 
   async transition(
@@ -679,16 +686,17 @@ class Activity {
       return;
     }
     let mIds: string[] = [];
-    let emit = false;
-    if (this.config.emit) {
-      emit = Pipe.resolve(this.config.emit, this.context);
-    }
-    if (emit || this.isJobDone(jobStatus) || this.isThresholdJobDone(jobStatus)) {
+
+    if (
+      this.shouldEmit() ||
+      this.isJobComplete(jobStatus) ||
+      this.shouldJobDecay()
+    ) {
       await this.engine.runJobCompletionTasks(this.context, {
-        emit: this.isJobActive(jobStatus) && !this.isThresholdJobDone(jobStatus),
+        emit: !this.isJobComplete(jobStatus) && !this.shouldJobDecay(),
       });
     }
-    if (adjacencyList.length && jobStatus > 0) {
+    if (adjacencyList.length && !this.isJobComplete(jobStatus)) {
       const multi = this.store.getMulti();
       for (const execSignal of adjacencyList) {
         await this.engine.router?.publishMessage(null, execSignal, multi);

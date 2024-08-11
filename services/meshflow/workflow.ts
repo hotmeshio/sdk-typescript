@@ -1,5 +1,3 @@
-import ms from 'ms';
-
 import {
   MeshFlowChildError,
   MeshFlowFatalError,
@@ -16,6 +14,7 @@ import {
   deterministicRandom,
   formatISODate,
   guid,
+  s,
   sleepImmediate,
 } from '../../modules/utils';
 import { HotMesh } from '../hotmesh';
@@ -155,6 +154,7 @@ export class WorkflowService {
     const workflowTrace = store.get('workflowTrace');
     const canRetry = store.get('canRetry');
     const workflowSpan = store.get('workflowSpan');
+    const expire = store.get('expire');
     const COUNTER = store.get('counter');
     const raw = store.get('raw');
     return {
@@ -164,6 +164,7 @@ export class WorkflowService {
       cursor,
       interruptionRegistry,
       connection,
+      expire,
       namespace,
       originJobId,
       raw,
@@ -259,7 +260,7 @@ export class WorkflowService {
     options: WorkflowOptions,
     execIndex: number,
   ): MeshFlowChildErrorType {
-    const { workflowId, originJobId, workflowDimension } = context;
+    const { workflowId, originJobId, workflowDimension, expire } = context;
     let childJobId: string;
     if (options.workflowId) {
       childJobId = options.workflowId;
@@ -280,12 +281,12 @@ export class WorkflowService {
       index: execIndex,
       maximumAttempts:
         options?.config?.maximumAttempts ?? HMSH_MESHFLOW_MAX_ATTEMPTS,
-      maximumInterval:
-        ms(options?.config?.maximumInterval ?? HMSH_MESHFLOW_MAX_INTERVAL) /
-        1000,
+      maximumInterval: s(
+        options?.config?.maximumInterval ?? HMSH_MESHFLOW_MAX_INTERVAL,
+      ),
       originJobId: originJobId ?? workflowId,
-      expire: options.expire,
-      threshold: options.threshold,
+      expire: options.expire ?? expire,
+      persistent: options.persistent,
       signalIn: options.signalIn,
       parentWorkflowId,
       workflowDimension: workflowDimension,
@@ -408,13 +409,18 @@ export class WorkflowService {
     args: any[],
     options?: ActivityConfig,
   ): MeshFlowProxyErrorType {
-    const { workflowDimension, workflowId, originJobId, workflowTopic } =
-      context;
+    const {
+      workflowDimension,
+      workflowId,
+      originJobId,
+      workflowTopic,
+      expire,
+    } = context;
     const activityTopic = `${workflowTopic}-activity`;
     const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
     let maximumInterval: number;
     if (options.retryPolicy?.maximumInterval) {
-      maximumInterval = ms(options.retryPolicy.maximumInterval) / 1000;
+      maximumInterval = s(options.retryPolicy.maximumInterval);
     }
     return {
       arguments: args,
@@ -425,7 +431,7 @@ export class WorkflowService {
       workflowId: activityJobId,
       workflowTopic: activityTopic,
       activityName,
-      expire: options.expire,
+      expire: options.expire ?? expire,
       backoffCoefficient: options?.retryPolicy?.backoffCoefficient ?? undefined,
       maximumAttempts: options?.retryPolicy?.maximumAttempts ?? undefined,
       maximumInterval: maximumInterval ?? undefined,
@@ -639,7 +645,7 @@ export class WorkflowService {
     const workflowDimension = store.get('workflowDimension') ?? '';
     const interruptionMessage = {
       workflowId,
-      duration: ms(duration) / 1000,
+      duration: s(duration),
       index: execIndex,
       workflowDimension,
     };

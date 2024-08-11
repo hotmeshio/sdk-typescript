@@ -103,15 +103,14 @@ type HotMeshGraph = {
    */
   expire?: number;
   /**
-   * if the graph is reentrant and has open activities,
-   * the threshold is the minimum activity count that
-   * should trigger/emit the job completed event when.
+   * if the graph is reentrant and has open activities, the
+   * `persistent` flag will emit the job completed  event.
    * This allows the 'main' thread/trigger that started the job to
    * signal to subscribers (or the parent) that the job
    * is 'done', while still leaving the job in a
-   * state that allows for reentry
+   * state that allows for reentry (such as cyclical hooks).
    */
-  threshold?: number;
+  persistent?: boolean;
   /**
    * the schema for the output of the graph
    */

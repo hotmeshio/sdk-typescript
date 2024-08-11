@@ -62,10 +62,10 @@ class TaskService {
   ): Promise<void> {
     if (inSeconds > 0) {
       await this.store.expireJob(jobId, inSeconds);
-      const fromNow = Date.now() + inSeconds * 1000;
-      const fidelityMS = HMSH_FIDELITY_SECONDS * 1000;
-      const timeSlot = Math.floor(fromNow / fidelityMS) * fidelityMS;
-      await this.store.registerDependenciesForCleanup(jobId, timeSlot, options);
+      // const fromNow = Date.now() + inSeconds * 1000;
+      // const fidelityMS = HMSH_FIDELITY_SECONDS * 1000;
+      // const timeSlot = Math.floor(fromNow / fidelityMS) * fidelityMS;
+      // await this.store.registerDependenciesForCleanup(jobId, timeSlot, options);
     }
   }
 
@@ -139,7 +139,9 @@ class TaskService {
             const key = this.store.mintKey(KeyType.SIGNALS, {
               appId: this.store.appId,
             });
-            await this.store.redisClient[this.store.commands.hdel](key, target);
+            await this.store.redisClient[this.store.commands.del](
+              `${key}:${target}`,
+            );
           } else {
             //awaken/expire/interrupt
             await timeEventCallback(target, gId, activityId, type);
@@ -196,6 +198,7 @@ class TaskService {
     topic: string,
     context: JobState,
     dad: string,
+    expire: number,
     multi?: RedisMulti,
   ): Promise<string> {
     const hookRule = await this.getHookRule(topic);
@@ -212,6 +215,7 @@ class TaskService {
         topic,
         resolved,
         jobId: compositeJobKey,
+        expire,
       };
       await this.store.setHookSignal(hook, multi);
       return jobId;

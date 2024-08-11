@@ -1,5 +1,3 @@
-import ms from 'ms';
-
 import {
   HMSH_LOGLEVEL,
   HMSH_EXPIRE_JOB_SECONDS,
@@ -8,7 +6,7 @@ import {
   HMSH_MESHFLOW_MAX_ATTEMPTS,
   HMSH_MESHFLOW_MAX_INTERVAL,
 } from '../../modules/enums';
-import { hashOptions, sleepFor } from '../../modules/utils';
+import { hashOptions, s, sleepFor } from '../../modules/utils';
 import { HotMesh } from '../hotmesh';
 import {
   ClientConfig,
@@ -201,7 +199,7 @@ export class ClientService {
         arguments: [...options.args],
         originJobId: options.originJobId,
         expire: options.expire ?? HMSH_EXPIRE_JOB_SECONDS,
-        threshold: options.threshold,
+        persistent: options.persistent,
         signalIn: options.signalIn,
         parentWorkflowId: options.parentWorkflowId,
         workflowId: options.workflowId || HotMesh.guid(),
@@ -210,9 +208,9 @@ export class ClientService {
           options.config?.backoffCoefficient || HMSH_MESHFLOW_EXP_BACKOFF,
         maximumAttempts:
           options.config?.maximumAttempts || HMSH_MESHFLOW_MAX_ATTEMPTS,
-        maximumInterval:
-          ms(options.config?.maximumInterval || HMSH_MESHFLOW_MAX_INTERVAL) /
-          1000,
+        maximumInterval: s(
+          options.config?.maximumInterval || HMSH_MESHFLOW_MAX_INTERVAL,
+        ),
       };
 
       const context = { metadata: { trc, spn }, data: {} };
@@ -272,11 +270,11 @@ export class ClientService {
           options.config?.backoffCoefficient || HMSH_MESHFLOW_EXP_BACKOFF,
         maximumAttempts:
           options.config?.maximumAttempts || HMSH_MESHFLOW_MAX_ATTEMPTS,
-        maximumInterval:
-          ms(options.config?.maximumInterval || HMSH_MESHFLOW_MAX_INTERVAL) /
-          1000,
+        maximumInterval: s(
+          options.config?.maximumInterval || HMSH_MESHFLOW_MAX_INTERVAL,
+        ),
       };
-      //seed search data if presentthe hook before entering
+      //seed search data before entering
       const hotMeshClient = await this.getHotMeshClient(
         workflowTopic,
         options.namespace,
@@ -287,6 +285,7 @@ export class ClientService {
         StreamStatus.PENDING,
         202,
       );
+      //todo: commit search data BEFORE enqueuing hook
       if (options.search?.data) {
         const searchSessionId = `-search-${HotMesh.guid()}-0`;
         const search = new Search(

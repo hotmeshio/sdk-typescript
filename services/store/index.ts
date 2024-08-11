@@ -29,6 +29,7 @@ import {
   HMSH_CODE_INTERRUPT,
   HMSH_MAX_TIMEOUT_MS,
   MAX_DELAY,
+  HMSH_SIGNAL_EXPIRE,
 } from '../../modules/enums';
 import { WorkListTaskType } from '../../types/task';
 import { ThrottleOptions } from '../../types/quorum';
@@ -47,6 +48,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   appId: string;
   logger: ILogger;
   commands: Record<string, string> = {
+    get: 'get',
     set: 'set',
     setnx: 'setnx',
     del: 'del',
@@ -78,6 +80,11 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
 
   abstract getMulti(): U;
   abstract exec(...args: any[]): Promise<string | string[] | string[][]>;
+  abstract setnxex(
+    key: string,
+    value: string,
+    expireSeconds: number,
+  ): Promise<boolean>;
   abstract publish(
     keyType: KeyType.QUORUM,
     message: Record<string, any>,
@@ -531,44 +538,43 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     pd = '',
     multi?: U,
   ): Promise<any> {
-    console.log('delete registerJobDependency from store!!!', depType, originJobId, topic, jobId, gId, pd);
-    return;
-    const privateMulti = multi || this.getMulti();
-    const dependencyParams = {
-      appId: this.appId,
-      jobId: originJobId,
-    };
-    const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, dependencyParams);
-    const expireTask = [depType, topic, gId, pd, jobId].join(VALSEP);
-    privateMulti[this.commands.rpush](depKey, expireTask);
-    if (!multi) {
-      return await privateMulti.exec();
-    }
+    //todo: determine if this is necessary (`persist` seems sufficient)
+    // const privateMulti = multi || this.getMulti();
+    // const dependencyParams = {
+    //   appId: this.appId,
+    //   jobId: originJobId,
+    // };
+    // const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, dependencyParams);
+    // const expireTask = [depType, topic, gId, pd, jobId].join(VALSEP);
+    // privateMulti[this.commands.rpush](depKey, expireTask);
+    // if (!multi) {
+    //   return await privateMulti.exec();
+    // }
   }
 
   /**
    * Ensures a `hook signal` is delisted when its parent activity/job
    * is interrupted/expired.
    */
-  async registerSignalDependency(
-    jobId: string,
-    signalKey: string,
-    dad: string,
-    multi?: U,
-  ): Promise<any> {
-    const privateMulti = multi || this.getMulti();
-    const dependencyParams = { appId: this.appId, jobId };
-    const dependencyKey = this.mintKey(
-      KeyType.JOB_DEPENDENTS,
-      dependencyParams,
-    );
-    //persiste dependency tasks as multi-segment composite keys
-    const delistTask = ['delist', 'signal', jobId, dad, signalKey].join(VALSEP);
-    privateMulti[this.commands.rpush](dependencyKey, delistTask);
-    if (!multi) {
-      return await privateMulti.exec();
-    }
-  }
+  // async registerSignalDependency(
+  //   jobId: string,
+  //   signalKey: string,
+  //   dad: string,
+  //   multi?: U,
+  // ): Promise<any> {
+  //   const privateMulti = multi || this.getMulti();
+  //   const dependencyParams = { appId: this.appId, jobId };
+  //   const dependencyKey = this.mintKey(
+  //     KeyType.JOB_DEPENDENTS,
+  //     dependencyParams,
+  //   );
+  //   //persist dependency tasks as multi-segment composite keys
+  //   const delistTask = ['delist', 'signal', jobId, dad, signalKey].join(VALSEP);
+  //   privateMulti[this.commands.rpush](dependencyKey, delistTask);
+  //   if (!multi) {
+  //     return await privateMulti.exec();
+  //   }
+  // }
 
   async setStats(
     jobKey: string,
@@ -1055,14 +1061,13 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
 
   async setHookSignal(hook: HookSignal, multi?: U): Promise<any> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-    //destructure the hook key
     const { topic, resolved, jobId } = hook;
     const signalKey = `${topic}:${resolved}`;
-    const payload = { [signalKey]: jobId };
-    await (multi || this.redisClient)[this.commands.hset](key, payload);
-    //jobId needs even more destructuring
-    const [_aid, dad, _gid, jid] = jobId.split(VALSEP);
-    return await this.registerSignalDependency(jid, signalKey, dad, multi);
+    await this.setnxex(
+      `${key}:${signalKey}`,
+      jobId,
+      Math.max(hook.expire, HMSH_SIGNAL_EXPIRE),
+    );
   }
 
   async getHookSignal(
@@ -1070,9 +1075,8 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     resolved: string,
   ): Promise<string | undefined> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-    const response = await this.redisClient[this.commands.hget](
-      key,
-      `${topic}:${resolved}`,
+    const response = await this.redisClient[this.commands.get](
+      `${key}:${topic}:${resolved}`,
     );
     return response ? response.toString() : undefined;
   }
@@ -1082,9 +1086,8 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     resolved: string,
   ): Promise<number | undefined> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-    const response = await this.redisClient[this.commands.hdel](
-      key,
-      `${topic}:${resolved}`,
+    const response = await this.redisClient[this.commands.del](
+      `${key}:${topic}:${resolved}`,
     );
     return response ? Number(response) : undefined;
   }
@@ -1179,18 +1182,18 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
    * expired at a future date; options indicate whether this
    * is a standard `expire` or an `interrupt`
    */
-  async registerDependenciesForCleanup(
-    jobId: string,
-    deletionTime: number,
-    options: JobCompletionOptions,
-  ): Promise<void> {
-    const depParams = { appId: this.appId, jobId };
-    const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, depParams);
-    const context = options.interrupt ? 'INTERRUPT' : 'EXPIRE';
-    const depKeyContext = `${TYPSEP}${context}${TYPSEP}${depKey}`;
-    const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
-    await this.zAdd(zsetKey, deletionTime.toString(), depKeyContext);
-  }
+  // async registerDependenciesForCleanup(
+  //   jobId: string,
+  //   deletionTime: number,
+  //   options: JobCompletionOptions,
+  // ): Promise<void> {
+  //   const depParams = { appId: this.appId, jobId };
+  //   const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, depParams);
+  //   const context = options.interrupt ? 'INTERRUPT' : 'EXPIRE';
+  //   const depKeyContext = `${TYPSEP}${context}${TYPSEP}${depKey}`;
+  //   const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
+  //   await this.zAdd(zsetKey, deletionTime.toString(), depKeyContext);
+  // }
 
   async getDependencies(jobId: string): Promise<string[]> {
     const depParams = { appId: this.appId, jobId };

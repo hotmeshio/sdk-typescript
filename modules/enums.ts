@@ -3,6 +3,8 @@ import { LogLevel } from '../types/logger';
 // HOTMESH SYSTEM
 export const HMSH_LOGLEVEL = (process.env.HMSH_LOGLEVEL as LogLevel) || 'info';
 export const HMSH_IS_CLUSTER = process.env.HMSH_IS_CLUSTER === 'true';
+// default cleanup policy for signals (if left open)
+export const HMSH_SIGNAL_EXPIRE = 3_600; //seconds
 
 // HOTMESH STATUS CODES
 export const HMSH_CODE_SUCCESS = 200;

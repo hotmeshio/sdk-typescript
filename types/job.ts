@@ -84,8 +84,8 @@ type JobMetadata = {
   /** process data expire policy */
   expire?: number;
 
-  /** job status threshold (if non-0) */
-  threshold?: number;
+  /** job persistence (beyond main thread completion) */
+  persistent?: boolean;
 };
 
 /**

@@ -28,8 +28,9 @@ interface BaseActivity {
   telemetry?: Record<string, any>;
   emit?: boolean; //if true, the activity will emit a message to the `publishes` topic immediately before transitioning to adjacent activities
   sleep?: number; //@pipe /in seconds
-  expire?: number; //-1 forever; 0 persists the flow until the parent flow that expired it is dismissed; 15 seconds is the default
-  threshold?: number; //minimum activity count that should trigger/emit the job completed event when reached; default is 0
+  expire?: number; //-1 forever; 0 persists the flow until the parent flow that expired it is dismissed; 15 seconds is the default (copied from the YAML at compile time)
+  persistent?: boolean; //if true, the job will persist beyond completion (copied from the YAML at compile time)
+  persist?: boolean; //when true, the activity will emit the job completed event and start the `persistence countdown`, using the 'expire' value
   retry?: StreamRetryPolicy;
   cycle?: boolean; //if true, the `notary` will leave leg 2 open, so it can be re/cycled
   collationInt?: number; //compiler

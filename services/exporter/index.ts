@@ -37,7 +37,7 @@ class ExporterService {
   }
 
   /**
-   * Convert the job hash and dependency list into a JobExport object.
+   * Convert the job hash into a JobExport object.
    * This object contains various facets that describe the interaction
    * in terms relevant to narrative storytelling.
    */
@@ -46,7 +46,7 @@ class ExporterService {
       this.symbols = this.store.getAllSymbols();
       this.symbols = await this.symbols;
     }
-    const depData = await this.store.getDependencies(jobId);
+    const depData = []; // await this.store.getDependencies(jobId);
     const jobData = await this.store.getRaw(jobId);
     const jobExport = this.inflate(jobData, depData);
     return jobExport;

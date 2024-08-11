@@ -178,7 +178,7 @@ class Deployer {
           activities[activityKey].publishes = graph.publishes;
         }
         activities[activityKey].expire = graph.expire ?? undefined;
-        activities[activityKey].threshold = graph.threshold ?? undefined;
+        activities[activityKey].persistent = graph.persistent ?? undefined;
       }
     }
   }

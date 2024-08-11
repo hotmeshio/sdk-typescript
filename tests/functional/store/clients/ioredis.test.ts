@@ -717,14 +717,14 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         topic: 'test-topic',
         resolved: 'test-resolved',
         jobId: 'test-job-id',
+        expire: 100,
       };
       await redisStoreService.setHookSignal(hook);
       const key = redisStoreService.mintKey(KeyType.SIGNALS, {
         appId: appConfig.id,
       });
-      const value = await redisClient.hget(
-        key,
-        `${hook.topic}:${hook.resolved}`,
+      const value = await redisClient.get(
+        `${key}:${hook.topic}:${hook.resolved}`,
       );
       expect(value).toEqual(hook.jobId);
     });
@@ -736,6 +736,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         topic: 'test-topic',
         resolved: 'test-resolved',
         jobId: 'test-job-id',
+        expire: 60,
       };
       await redisStoreService.setHookSignal(hook);
       const retrievedSignal = await redisStoreService.getHookSignal(
@@ -746,9 +747,8 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       const key = redisStoreService.mintKey(KeyType.SIGNALS, {
         appId: appConfig.id,
       });
-      const remainingValue = await redisClient.hget(
-        key,
-        `${hook.topic}:${hook.resolved}`,
+      const remainingValue = await redisClient.get(
+        `${key}:${hook.topic}:${hook.resolved}`,
       );
       expect(remainingValue).toEqual(hook.jobId);
     });
@@ -760,6 +760,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         topic: 'test-topic',
         resolved: 'test-resolved',
         jobId: 'test-job-id',
+        expire: 90,
       };
       await redisStoreService.setHookSignal(hook);
       let retrievedSignal = await redisStoreService.getHookSignal(

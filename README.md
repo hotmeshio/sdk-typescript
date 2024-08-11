@@ -10,10 +10,10 @@ npm install @hotmeshio/hotmesh
 You have a Redis instance? Good. You're ready to go.
 
 ## Learn
-[SDK Docs](https://hotmeshio.github.io/sdk-typescript/) | [Samples](https://github.com/hotmeshio/samples-typescript) | [Intro Video](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9) | [Transactional Workflow](https://www.loom.com/share/54ffd5266baf4ac6b287578abfd1d821?sid=0db2cef8-ef0d-4e02-a0b7-a1ee14f476ce)
+[📄 Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 Projects](https://github.com/hotmeshio/samples-typescript) | [🎥 Overview (3m)](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9) | [🎥 Transactional Workflow (9m)](https://www.loom.com/share/54ffd5266baf4ac6b287578abfd1d821?sid=0db2cef8-ef0d-4e02-a0b7-a1ee14f476ce)
 
 ## MeshCall | Connect Everything
-[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your functions to the Redis-backed mesh, exposing them as idempotent endpoints. Function responses are cacheable and functions can even run as idempotent cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
+[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your services as a singular mesh, exposing functions as idempotent endpoints. Function responses are cacheable and functions can even run as idempotent cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Run an idempotent cron job <small>[more]</small></summary>

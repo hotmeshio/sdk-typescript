@@ -1,12 +1,10 @@
-import ms from 'ms';
-
 import { HotMesh } from '../hotmesh';
 import {
   HMSH_FIDELITY_SECONDS,
   HMSH_LOGLEVEL,
   HMSH_QUORUM_DELAY_MS,
 } from '../../modules/enums';
-import { hashOptions, isValidCron, sleepFor } from '../../modules/utils';
+import { hashOptions, isValidCron, s, sleepFor } from '../../modules/utils';
 import {
   MeshCallConnectParams,
   MeshCallCronParams,
@@ -304,7 +302,7 @@ class MeshCall {
 
     let expire = 1;
     if (params.options?.ttl) {
-      expire = ms(params.options.ttl) / 1000;
+      expire = s(params.options.ttl);
     }
     const jobOutput = await hotMeshInstance.pubsub(
       TOPIC,
@@ -386,12 +384,9 @@ class MeshCall {
       const nextDelay = new CronHandler().nextDelay(cron);
       delay = nextDelay > 0 ? nextDelay : undefined;
     } else {
-      //ms syntax
-      const seconds = ms(params.options.interval) / 1000;
+      const seconds = s(params.options.interval);
       interval = Math.max(seconds, HMSH_FIDELITY_SECONDS);
-      delay = params.options.delay
-        ? ms(params.options.delay) / 1000
-        : undefined;
+      delay = params.options.delay ? s(params.options.delay) : undefined;
     }
 
     //spawn the job (ok if it's a duplicate)

@@ -64,10 +64,6 @@ export type CallOptions = {
 
 export type ConnectOptions = {
   /**
-   * if set to infinity, callers may not override (the function will be durable)
-   */
-  ttl?: string;
-  /**
    * the task queue for the connected function for greater specificity
    */
   taskQueue?: string;
@@ -265,13 +261,16 @@ export type MeshDataWorkflowOptions = {
   expire?: number;
 
   /**
-   * set to false to optimize workflows that do not require a `signal in`
+   * set to false to optimize workflows that do not require a `signal in`.
+   * explicitly set to true to force the workflow to remain open and persistent.
    * @default true
    */
   signalIn?: boolean;
 
   /**
-   * the semaphore status value at which the main function is considered complete
+   * set to `true` by the system when a workflow is started with a ttl, ensuring
+   * that the workflow will remain active until the ttl expires and the workflow
+   * is scrubbed. This is a system flag and should not be set by the user.
    */
-  threshold?: number;
+  persistent?: boolean;
 };

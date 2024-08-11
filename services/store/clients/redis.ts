@@ -22,6 +22,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
   constructor(redisClient: RedisClientType) {
     super(redisClient);
     this.commands = {
+      get: 'GET',
       set: 'SET',
       setnx: 'SETNX',
       del: 'DEL',
@@ -237,6 +238,19 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
 
   async exec(...args: any[]): Promise<string | string[] | string[][]> {
     return await this.redisClient.sendCommand(args);
+  }
+
+  async setnxex(
+    key: string,
+    value: string,
+    expireSeconds: number,
+  ): Promise<boolean> {
+    const status: number = await this.redisClient[this.commands.set](
+      key,
+      value,
+      { NX: true, EX: expireSeconds },
+    );
+    return this.isSuccessful(status);
   }
 
   async publish(

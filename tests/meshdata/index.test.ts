@@ -449,7 +449,7 @@ describe('MeshData`', () => {
           ttl: '60 seconds',
           //configure the retry policy to run quickly during testing
           config: {
-            backoffCoefficient: 1, //value of throttle is: `backoffCoefficient^retryCount` (first retry is 1 secod)
+            backoffCoefficient: 1, //value of throttle is: `backoffCoefficient^retryCount` (first retry is 1 second)
             maximumInterval: '1 second',
             maximumAttempts: 3,
           },

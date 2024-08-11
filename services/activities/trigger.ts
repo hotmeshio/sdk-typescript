@@ -288,6 +288,8 @@ class Trigger extends Activity {
   /**
    * Registers this job as a dependent of the parent job; when the
    * parent job is interrupted, this job will be interrupted
+   * NOTE: this method is suppressed for now and not in use
+   * @deprecated
    */
   async registerJobDependency(multi?: RedisMulti): Promise<void> {
     const depKey = this.config.stats?.parent ?? this.context.metadata.pj;

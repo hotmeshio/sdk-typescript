@@ -1,5 +1,3 @@
-import ms from 'ms';
-
 import {
   HMSH_CODE_MESHFLOW_ALL,
   HMSH_CODE_MESHFLOW_RETRYABLE,
@@ -19,7 +17,7 @@ import {
   MeshFlowWaitForError,
 } from '../../modules/errors';
 import { asyncLocalStorage } from '../../modules/storage';
-import { formatISODate, guid, hashOptions } from '../../modules/utils';
+import { formatISODate, guid, hashOptions, s } from '../../modules/utils';
 import { HotMesh } from '../hotmesh';
 import {
   ActivityWorkflowDataType,
@@ -406,6 +404,7 @@ export class WorkerService {
         const workflowInput = data.data as unknown as WorkflowDataType;
         const context = new Map();
         context.set('canRetry', workflowInput.canRetry);
+        context.set('expire', workflowInput.expire);
         context.set('counter', counter);
         context.set('interruptionRegistry', interruptionRegistry);
         context.set('connection', config.connection);
@@ -557,11 +556,11 @@ export class WorkerService {
               maximumAttempts:
                 err.maximumAttempts || HMSH_MESHFLOW_MAX_ATTEMPTS,
               maximumInterval:
-                err.maximumInterval || ms(HMSH_MESHFLOW_MAX_INTERVAL) / 1000,
+                err.maximumInterval || s(HMSH_MESHFLOW_MAX_INTERVAL),
               originJobId: err.originJobId,
               parentWorkflowId: err.parentWorkflowId,
               expire: err.expire,
-              threshold: err.threshold,
+              persistent: err.persistent,
               signalIn: err.signalIn,
               workflowDimension: err.workflowDimension,
               workflowId: err.workflowId,

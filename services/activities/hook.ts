@@ -19,6 +19,7 @@ import { JobState, JobStatus } from '../../types/job';
 import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 import { StreamCode, StreamStatus } from '../../types/stream';
+import { HMSH_IS_CLUSTER } from '../../modules/enums';
 
 import { Activity } from './activity';
 
@@ -106,7 +107,10 @@ class Hook extends Activity {
 
   async doHook(telemetry: TelemetryService) {
     const multi = this.store.getMulti();
-    await this.registerHook(multi);
+    //call registerHook separately if in cluster mode
+    //(ok to run this command multiple times if it fails),
+    //but the commands that follow must exec as a transaction
+    await this.registerHook(HMSH_IS_CLUSTER ? undefined : multi);
     this.mapOutputData();
     this.mapJobData();
     await this.setState(multi);
@@ -150,6 +154,7 @@ class Hook extends Activity {
         this.config.hook.topic,
         this.context,
         this.resolveDad(),
+        this.context.metadata.expire,
         multi,
       );
     } else if (this.config.sleep) {
