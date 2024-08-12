@@ -1,5 +1,5 @@
 import { DuplicateJobError } from '../../modules/errors';
-import { formatISODate, getTimeSeries, guid } from '../../modules/utils';
+import { formatISODate, getTimeSeries, guid, sleepFor } from '../../modules/utils';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
@@ -86,7 +86,8 @@ class Trigger extends Activity {
     } catch (error) {
       telemetry?.setActivityError(error.message);
       if (error instanceof DuplicateJobError) {
-        //only throw error if exception was real (not due to overage)
+        //todo: verify baseline in multi-AZ rollover
+        await sleepFor(1000);
         const isOverage = await CollatorService.isInceptionOverage(
           this,
           this.context.metadata.guid,
