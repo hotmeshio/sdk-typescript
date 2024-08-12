@@ -1,4 +1,4 @@
-import { s, supportsDecay } from '../../modules/utils';
+import { s } from '../../modules/utils';
 import { MeshFlow } from '../meshflow';
 import { HotMesh } from '../hotmesh';
 import {
@@ -1537,17 +1537,6 @@ class MeshData {
    * Wrap activities in a proxy that will durably run them, once.
    */
   static proxyActivities = MeshFlow.workflow.proxyActivities;
-
-  // /**
-  //  * MeshData wraps the MeshFlow class and provides a simplified SDK;
-  //  * however, there are situations where you may want to access functions
-  //  * directly from the MeshFlow class. This is especially true for complex
-  //  * compositional use cases like recursion. For example, use
-  //  * `MeshData.MeshFlow.workflow.execChild` to invoke a workflow registered
-  //  * `via MeshData.MeshFlow.workflow.connect`. But use `MeshData.workflow.execChild`
-  //  * to invoke a workflow registered via `MeshData.connect`.
-  //  */
-  // static MeshFlow = MeshFlow;
 
   /**
    * shut down MeshData (typically on sigint or sigterm)

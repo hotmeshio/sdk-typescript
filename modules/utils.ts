@@ -359,24 +359,6 @@ export function isValidCron(cronExpression: string): boolean {
 }
 
 /**
- * Version 0.3.0+ introduces the ability to 'persist' a
- * workflow/job in the keyvalue store. The record
- * is active but will expire at a future date
- * (an expiration was set while the record status
- * sempaphore was a non-zero positive integer).
- *
- * This pattern enables reentrant processing
- * within a 'decaying' workflow, solving
- * the dependency problem by decaying subordinate
- * workflows at the same rate as the parent.
- * @private
- */
-export const supportsDecay = (): boolean => {
-  const [major, minor] = packageJson.version.split('.');
-  return parseInt(major, 10) > 0 || parseInt(minor, 10) > 2;
-};
-
-/**
  * Returns the number of seconds for a string using the milliseconds format
  * used by the `ms` npm package as the input.
  */
