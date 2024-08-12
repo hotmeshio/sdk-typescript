@@ -1,4 +1,5 @@
 import {
+  CollationError,
   GenerationalError,
   GetStateError,
   InactiveJobError,
@@ -66,6 +67,16 @@ class Interrupt extends Activity {
       } else if (error instanceof GetStateError) {
         this.logger.error('interrupt-get-state-error', { ...error });
         return;
+      } else if (error instanceof CollationError) {
+        if (error.fault === 'duplicate') {
+          this.logger.info('interrupt-collation-overage', {
+            job_id: this.context.metadata.jid,
+            guid: this.context.metadata.guid,
+          });
+          return;
+        }
+        //unknown collation error
+        this.logger.error('interrupt-collation-error', { ...error });
       } else {
         this.logger.error('interrupt-process-error', { ...error });
       }

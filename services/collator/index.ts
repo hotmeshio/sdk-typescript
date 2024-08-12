@@ -284,7 +284,7 @@ class CollatorService {
       //already done error (ack/delete clearly failed; this is a duplicate)
       throw new CollationError(amount, 2, 'enter', CollationFaultType.INACTIVE);
     } else if (amount >= 2_000_000) {
-      //duplicate synthetic key (this is a duplicat job ID)
+      //duplicate synthetic key (this is a duplicate job ID)
       throw new CollationError(
         amount,
         2,

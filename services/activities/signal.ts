@@ -1,4 +1,5 @@
 import {
+  CollationError,
   GenerationalError,
   GetStateError,
   InactiveJobError,
@@ -92,6 +93,16 @@ class Signal extends Activity {
       } else if (error instanceof GetStateError) {
         this.logger.error('signal-get-state-error', { ...error });
         return;
+      } else if (error instanceof CollationError) {
+        if (error.fault === 'duplicate') {
+          this.logger.info('signal-collation-overage', {
+            job_id: this.context.metadata.jid,
+            guid: this.context.metadata.guid,
+          });
+          return;
+        }
+        //unknown collation error
+        this.logger.error('signal-collation-error', { ...error });
       } else {
         this.logger.error('signal-process-error', { ...error });
       }

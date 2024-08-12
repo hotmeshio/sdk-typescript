@@ -108,6 +108,7 @@ class Activity {
         threshold,
       );
     } catch (error) {
+      await CollatorService.notarizeEntry(this);
       if (threshold > 0) {
         if (this.context.metadata.js === threshold) {
           //conclude job EXACTLY ONCE
@@ -119,6 +120,7 @@ class Activity {
       } else {
         throw error;
       }
+      return;
     }
     await CollatorService.notarizeEntry(this);
   }
@@ -187,7 +189,7 @@ class Activity {
       this.transitionAdjacent(multiResponse, telemetry);
     } catch (error) {
       if (error instanceof CollationError) {
-        this.logger.info('process-event-inactive-error', { ...error });
+        this.logger.info(`process-event-${error.fault}-error`, { ...error });
         return;
       } else if (error instanceof InactiveJobError) {
         this.logger.info('process-event-inactive-job-error', { ...error });

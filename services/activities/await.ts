@@ -1,4 +1,5 @@
 import {
+  CollationError,
   GenerationalError,
   GetStateError,
   InactiveJobError,
@@ -81,6 +82,16 @@ class Await extends Activity {
       } else if (error instanceof GetStateError) {
         this.logger.error('await-get-state-error', { ...error });
         return;
+      } else if (error instanceof CollationError) {
+        if (error.fault === 'duplicate') {
+          this.logger.info('await-collation-overage', {
+            job_id: this.context.metadata.jid,
+            guid: this.context.metadata.guid,
+          });
+          return;
+        }
+        //unknown collation error
+        this.logger.error('await-collation-error', { ...error });
       } else {
         this.logger.error('await-process-error', { ...error });
       }
