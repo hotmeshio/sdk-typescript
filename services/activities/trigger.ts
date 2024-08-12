@@ -67,6 +67,11 @@ class Trigger extends Activity {
       } else {
         await this.registerJobDependency(multi);
       }
+      await CollatorService.notarizeInception(
+        this,
+        this.context.metadata.guid,
+        multi,
+      );
       await multi.exec();
 
       this.execAdjacentParent();
@@ -79,12 +84,27 @@ class Trigger extends Activity {
 
       return this.context.metadata.jid;
     } catch (error) {
+      telemetry?.setActivityError(error.message);
       if (error instanceof DuplicateJobError) {
-        this.logger.error('duplicate-job-error', { job_id: error.jobId });
+        //only throw error if exception was real (not due to overage)
+        const isOverage = await CollatorService.isInceptionOverage(
+          this,
+          this.context.metadata.guid,
+        );
+        if (isOverage) {
+          this.logger.info('duplicate-job-overage', {
+            job_id: error.jobId,
+            guid: this.context.metadata.guid,
+          });
+          return; //will `telemetry?.endJobSpan();` be called if I return here?
+        }
+        this.logger.error('duplicate-job-error', {
+          job_id: error.jobId,
+          guid: this.context.metadata.guid,
+        });
       } else {
         this.logger.error('trigger-process-error', { ...error });
       }
-      telemetry?.setActivityError(error.message);
       throw error;
     } finally {
       telemetry?.endJobSpan();
@@ -122,8 +142,6 @@ class Trigger extends Activity {
   initStatus(options: ExtensionType = {}, count: number): number {
     if (options.pending) {
       return -1;
-    } else if (options.statusThreshold) {
-      return 1_000_000 - options.statusThreshold + count;
     }
     return count;
   }
@@ -222,6 +240,7 @@ class Trigger extends Activity {
         tpc: this.config.subscribes,
         trc: this.context.metadata.trc,
         spn: this.context.metadata.spn,
+        guid: this.context.metadata.guid,
         jid: jobId,
         dad: CollatorService.getDimensionalSeed(), //top-level job implicitly uses `,0`
         key: jobKey,
@@ -277,10 +296,6 @@ class Trigger extends Activity {
   }
 
   async setStateNX(status?: number): Promise<void> {
-    // const expire = Pipe.resolve(
-    //   this.config.expire ?? HMSH_EXPIRE_DURATION,
-    //   this.context,
-    // );
     const jobId = this.context.metadata.jid;
     if (!await this.store.setStateNX(jobId, this.engine.appId, status)) {
       throw new DuplicateJobError(jobId);
@@ -290,8 +305,11 @@ class Trigger extends Activity {
   /**
    * Registers this job as a dependent of the parent job; when the
    * parent job is interrupted, this job will be interrupted
+   * NOTE: this method is suppressed for now and not in use
+   * @deprecated
    */
   async registerJobDependency(multi?: RedisMulti): Promise<void> {
+    //NOTE: this method is suppressed for now and not in use
     const depKey = this.config.stats?.parent ?? this.context.metadata.pj;
     let resolvedDepKey = depKey ? Pipe.resolve(depKey, this.context) : '';
     const adjKey = this.config.stats?.adjacent;

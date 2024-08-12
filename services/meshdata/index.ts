@@ -1,3 +1,4 @@
+import { s } from '../../modules/utils';
 import { MeshFlow } from '../meshflow';
 import { HotMesh } from '../hotmesh';
 import {
@@ -13,7 +14,6 @@ import {
 import {
   CallOptions,
   ConnectionInput,
-  ConnectOptions,
   ExecInput,
   HookInput,
 } from '../../types/meshdata';
@@ -30,6 +30,7 @@ import {
   ThrottleOptions,
 } from '../../types/quorum';
 import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
+import { MAX_DELAY } from '../../modules/enums';
 
 /**
  * The `MeshData` service wraps the `MeshFlow` service.
@@ -573,8 +574,9 @@ class MeshData {
     this.connectionSignatures[entity] = target.toString();
     const targetFunction = {
       [entity]: async (...args: any[]): Promise<T> => {
-        const { callOptions } = this.bindCallOptions(args, options);
+        const { callOptions } = this.bindCallOptions(args);
         const result = (await target.apply(target, args)) as T;
+        //increase status by 1, set 'done' flag and emit the 'job done' signal
         await this.pauseForTTL(result, callOptions);
         return result as T;
       },
@@ -604,23 +606,12 @@ class MeshData {
    * @returns {StringAnyType}
    * @private
    */
-  bindCallOptions(
-    args: any[],
-    options: ConnectOptions,
-    callOptions: CallOptions = {},
-  ): StringAnyType {
+  bindCallOptions(args: any[], callOptions: CallOptions = {}): StringAnyType {
     if (args.length) {
       const lastArg = args[args.length - 1];
       if (lastArg instanceof Object && lastArg?.$type === 'exec') {
         //override the caller and force indefinite caching
         callOptions = args.pop() as CallOptions;
-        if (options.ttl === 'infinity') {
-          if (!callOptions) {
-            callOptions = { ttl: 'infinity' };
-          } else {
-            callOptions.ttl = 'infinity';
-          }
-        }
       } else if (lastArg instanceof Object && lastArg.$type === 'hook') {
         callOptions = args.pop() as CallOptions;
         //hooks may not affect `ttl` (it is set at invocation)
@@ -650,8 +641,7 @@ class MeshData {
         return;
       }
 
-      //break the event loop between the inner function (the user's code)
-      // and the outer function (the MeshData state/durability/ttl-extension wrapper)
+      //manually set job state since leaving open/running
       await new Promise((resolve) => setImmediate(resolve));
       options.$guid = options.$guid ?? workflowId;
       const hotMesh = await MeshData.workflow.getHotMesh();
@@ -660,17 +650,8 @@ class MeshData {
         jobId: options.$guid,
         appId: hotMesh.engine?.appId,
       });
-      //publish the 'done' payload
       const jobResponse = ['aAa', '/t', 'aBa', this.toString(result)];
       await store?.exec('HSET', jobKey, ...jobResponse);
-      await this.publishDone<T>(result, hotMesh, options);
-      if (options.ttl === 'infinity') {
-        //job will only exit upon receiving a flush signal
-        await MeshData.workflow.waitFor(`flush-${options.$guid}`);
-      } else {
-        //will exit after sleeping for 'ttl'
-        await MeshData.workflow.sleepFor(options.ttl);
-      }
     }
   }
 
@@ -886,9 +867,13 @@ class MeshData {
   }: HookInput): Promise<string> {
     const workflowId = MeshData.mintGuid(entity, id);
     this.validate(workflowId);
+    const args = [
+      ...hookArgs,
+      { ...options, $guid: workflowId, $type: 'hook' },
+    ];
     return await this.getClient().workflow.hook({
       namespace: options.namespace,
-      args: [...hookArgs, { ...options, $guid: workflowId, $type: 'hook' }],
+      args,
       taskQueue: options.taskQueue ?? hookEntity,
       workflowName: hookEntity,
       workflowId: options.workflowId ?? workflowId,
@@ -948,6 +933,20 @@ class MeshData {
     } catch (e) {
       //create, since not found; then await the result
       const optionsClone = { ...options };
+      let seconds: number;
+      if (optionsClone.ttl) {
+        //setting ttl requires the workflow to remain open
+        if (optionsClone.signalIn !== false) {
+          optionsClone.signalIn = true; //explicit 'true' forces open
+        }
+        if (optionsClone.ttl === 'infinity') {
+          delete optionsClone.ttl;
+          //max expire seconds in Redis (68 years)
+          seconds = MAX_DELAY;
+        } else {
+          seconds = s(optionsClone.ttl);
+        }
+      }
       delete optionsClone.search;
       delete optionsClone.config;
       const handle = await client.workflow.start({
@@ -963,8 +962,10 @@ class MeshData {
         await: options.await,
         marker: options.marker,
         pending: options.pending,
-        expire: options.expire,
-        signalIn: options.signalIn,
+        expire: seconds ?? options.expire,
+        //`persistent` flag keeps the job alive and accepting signals
+        persistent: options.signalIn == false ? undefined : seconds && true,
+        signalIn: optionsClone.signalIn,
       });
       if (options.await === false) {
         return handle.workflowId as unknown as T;
@@ -1536,17 +1537,6 @@ class MeshData {
    * Wrap activities in a proxy that will durably run them, once.
    */
   static proxyActivities = MeshFlow.workflow.proxyActivities;
-
-  // /**
-  //  * MeshData wraps the MeshFlow class and provides a simplified SDK;
-  //  * however, there are situations where you may want to access functions
-  //  * directly from the MeshFlow class. This is especially true for complex
-  //  * compositional use cases like recursion. For example, use
-  //  * `MeshData.MeshFlow.workflow.execChild` to invoke a workflow registered
-  //  * `via MeshData.MeshFlow.workflow.connect`. But use `MeshData.workflow.execChild`
-  //  * to invoke a workflow registered via `MeshData.connect`.
-  //  */
-  // static MeshFlow = MeshFlow;
 
   /**
    * shut down MeshData (typically on sigint or sigterm)

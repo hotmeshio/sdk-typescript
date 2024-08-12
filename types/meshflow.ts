@@ -113,6 +113,11 @@ type WorkflowContext = {
    * the HotMesh connection configuration (io/redis NPM package reference and login credentials)
    */
   connection: Connection;
+
+  /**
+   * if present, the workflow will delay expiration for the specified number of seconds
+   */
+  expire?: number;
 };
 
 /**
@@ -317,6 +322,11 @@ type WorkflowOptions = {
   expire?: number;
 
   /**
+   * system flag to indicate that the flow should remain open beyond main method completion while still emitting the 'job done' event
+   */
+  persistent?: boolean;
+
+  /**
    * default is true; set to false to optimize workflows that do not require a `signal in`
    */
   signalIn?: boolean;
@@ -417,8 +427,9 @@ type WorkflowDataType = {
   workflowId: string;
   workflowTopic: string;
   workflowDimension?: string; //is present if hook (not main workflow)
-  originJobId?: string; //is present if there is an originating ancestor job (should rename to originJobId)
+  originJobId?: string; //is present if there is an originating ancestor job
   canRetry?: boolean;
+  expire?: number;
 };
 
 type ConnectionConfig = {

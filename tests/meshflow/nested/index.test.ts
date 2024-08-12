@@ -4,7 +4,7 @@ import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/clients/ioredis';
-import { guid, sleepFor } from '../../../modules/utils';
+import { guid, s, sleepFor } from '../../../modules/utils';
 import { APP_VERSION } from '../../../services/meshflow/schemas/factory';
 
 import * as childWorkflows from './child/workflows';
@@ -60,7 +60,7 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
             workflowName: 'parentExample',
             workflowId: guid(),
             signalIn: false, //setting to false optimizes workflow by suppressing the reentrant branch
-            expire: 500,
+            expire: s('1m'),
           });
           //start another workflow to simulate startup collisions
           let handle2: WorkflowHandleService;
@@ -70,7 +70,7 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
             workflowName: 'parentExample',
             workflowId: guid(),
             signalIn: false,
-            expire: 500,
+            expire: s('90s'),
           });
           [handle, handle2] = await Promise.all([h, localH]);
           expect(handle.workflowId).toBeDefined();

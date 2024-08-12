@@ -22,7 +22,7 @@
  * * Master Data Management systems
  */
 
-const APP_VERSION = '3';
+const APP_VERSION = '4';
 const APP_ID = 'durable';
 
 /**
@@ -38,14 +38,17 @@ const getWorkflowYAML = (app: string, version: string): string => {
   graphs:
 
     ###################################################
-    #         THE MESHFLOW-REENTRANT-WORKFLOW          #
+    #         THE MESHFLOW-REENTRANT-WORKFLOW         #
     #                                                 #
     - subscribes: ${app}.execute
       publishes: ${app}.executed
 
+      persistent: '{trigger.output.data.persistent}'
       expire:
         '@pipe':
-          - ['{trigger.output.data.originJobId}', 0, '{trigger.output.data.expire}']
+          - ['{trigger.output.data.persistent}']
+          - ['{@number.isNaN}', '{trigger.output.data.originJobId}']
+          - ['{@logical.and}', 1,'{trigger.output.data.expire}']
           - ['{@conditional.ternary}']
 
       input:
@@ -78,6 +81,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
             expire:
               description: the time in seconds to expire the workflow in Redis once it completes
               type: number
+            persistent:
+              description: if true, the workflow emit the 'job completed' event while remaining open to outside signals
+              type: boolean
             signalIn:
               description: if false, the job will not support subordinated hooks
               type: boolean
@@ -162,11 +168,14 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: string
                 canRetry:
                   type: boolean
+                expire:
+                  type: number
             maps:
               originJobId: '{trigger.output.data.originJobId}'
               workflowId: '{trigger.output.data.workflowId}'
               arguments: '{trigger.output.data.arguments}'
               workflowTopic: '{trigger.output.data.workflowTopic}'
+              expire: '{trigger.output.data.expire}'
               canRetry:
                 '@pipe':
                   - '@pipe':
@@ -234,6 +243,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     type: number
                   expire:
                     type: number
+                  persistent:
+                    type: boolean
                   signalIn:
                     type: boolean
                   await:
@@ -339,6 +350,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
                 expire:
                   type: number
+                persistent:
+                  type: boolean
                 signalIn:
                   type: boolean
                 parentWorkflowId:
@@ -362,6 +375,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               originJobId: '{worker.output.data.originJobId}'
               parentWorkflowId: '{worker.output.data.parentWorkflowId}'
               expire: '{worker.output.data.expire}'
+              persistent: '{worker.output.data.persistent}'
               signalIn: '{worker.output.data.signalIn}'
               workflowId: '{worker.output.data.workflowId}'
               workflowName: '{worker.output.data.workflowName}'
@@ -669,6 +683,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                         type: number
                       data:
                         type: object
+                expire:
+                  type: number
             maps:
               items: '{worker.output.data.items}'
               size: '{worker.output.data.size}'
@@ -678,6 +694,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               parentWorkflowId: '{worker.output.data.workflowId}'
               workflowId: '{worker.output.data.workflowId}'
               workflowTopic: '{worker.output.data.workflowTopic}'
+              expire: '{worker.output.data.expire}'
           output:
             schema:
               type: object
@@ -766,8 +783,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     - ['{@logical.or}']
                   - ['{@math.min}']
         ender:
-          title: Sets job data; ignores the \`Signal In\` Hook Channel which was suppressed
+          title: Sets job data; ignores the \`Signal In\` Hook Channel which was suppressed; sends the final response
           type: hook
+          persist: '{trigger.output.data.signalIn}'
           job:
             maps:
               done: true
@@ -880,11 +898,14 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: array
                 canRetry:
                   type: boolean
+                expire:
+                  type: number
             maps:
               workflowId: '{trigger.output.data.workflowId}'
               originJobId: '{trigger.output.data.originJobId}'
               workflowDimension: '{signaler.output.metadata.dad}'
               arguments: '{signaler.hook.data.arguments}'
+              expire: '{trigger.output.data.expire}'
               canRetry:
                 '@pipe':
                   - '@pipe':
@@ -964,6 +985,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     description: the maximum time in seconds to wait between retries; provides a fixed limit to exponential backoff growth
                   expire:
                     type: number
+                  persistent:
+                    type: boolean
                   signalIn:
                     type: boolean
                     description: if false, the spawned child will not support subordinated hooks
@@ -1069,6 +1092,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
                 expire:
                   type: number
+                persistent:
+                  type: boolean
                 signalIn:
                   type: boolean
                 parentWorkflowId:
@@ -1092,6 +1117,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               originJobId: '{signaler_worker.output.data.originJobId}'
               parentWorkflowId: '{signaler_worker.output.data.parentWorkflowId}'
               expire: '{signaler_worker.output.data.expire}'
+              persistent: '{signaler_worker.output.data.persistent}'
               signalIn: '{signaler_worker.output.data.signalIn}'
               workflowId: '{signaler_worker.output.data.workflowId}'
               workflowName: '{signaler_worker.output.data.workflowName}'
@@ -1399,6 +1425,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                         type: number
                       data:
                         type: object
+                expire:
+                  type: number
             maps:
               items: '{signaler_worker.output.data.items}'
               size: '{signaler_worker.output.data.size}'
@@ -1408,6 +1436,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               parentWorkflowId: '{signaler_worker.output.data.workflowId}'
               workflowId: '{signaler_worker.output.data.workflowId}'
               workflowTopic: '{signaler_worker.output.data.workflowTopic}'
+              expire: '{signaler_worker.output.data.expire}'
           output:
             schema:
               type: object
@@ -1520,8 +1549,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                 - expected: false
                   actual: 
                     '@pipe':
-                      - ['{trigger.output.data.signalIn}', true]
-                      - ['{@conditional.nullish}']
+                      - ['{trigger.output.data.signalIn}', '{@symbol.undefined}']
+                      - ['{@conditional.strict_equality}']
           - to: closer
             conditions:
               code: [200, 596, 597, 598]
@@ -1529,8 +1558,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                 - expected: true
                   actual: 
                     '@pipe':
-                      - ['{trigger.output.data.signalIn}', true]
-                      - ['{@conditional.nullish}']
+                      - ['{trigger.output.data.signalIn}', '{@symbol.undefined}']
+                      - ['{@conditional.strict_equality}']
           - to: sleeper
             conditions:
               code: 588
@@ -1657,7 +1686,10 @@ const getWorkflowYAML = (app: string, version: string): string => {
     - subscribes: ${app}.collator.execute
       publishes: ${app}.collator.executed
 
-      expire: 0
+      expire:
+        '@pipe':
+          - ['{collator_trigger.output.data.expire}', 1]
+          - ['{@conditional.nullish}']
 
       input:
         schema:
@@ -1684,6 +1716,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     type: index
                   data:
                     type: object
+            expire:
+              type: number
       output:
         schema:
           type: object
@@ -1825,6 +1859,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
                 expire:
                   type: number
+                persistent:
+                  type: boolean
                 signalIn:
                   type: boolean
                 parentWorkflowId:
@@ -1865,6 +1901,11 @@ const getWorkflowYAML = (app: string, version: string): string => {
                 '@pipe':
                   - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                   - ['{@array.get}', expire]
+                  - ['{@object.get}']
+              persistent:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', persistent]
                   - ['{@object.get}']
               signalIn:
                 '@pipe':
@@ -2256,7 +2297,10 @@ const getWorkflowYAML = (app: string, version: string): string => {
     - subscribes: ${app}.activity.execute
       publishes: ${app}.activity.executed
 
-      expire: 0
+      expire:
+        '@pipe':
+          - ['{activity_trigger.output.data.expire}', 1]
+          - ['{@conditional.nullish}']
 
       input:
         schema:
@@ -2279,6 +2323,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
             maximumAttempts:
               type: number
             maximumInterval:
+              type: number
+            expire:
               type: number
       output:
         schema:

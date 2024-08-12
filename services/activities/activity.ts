@@ -599,6 +599,10 @@ class Activity {
       context,
     );
     context.metadata.expire = expire;
+    if (this.config.persistent != undefined) {
+      const persistent = Pipe.resolve(this.config.persistent ?? false, context);
+      context.metadata.persistent = persistent;
+    }
   }
 
   bindActivityData(type: 'output' | 'hook'): void {
@@ -651,6 +655,29 @@ class Activity {
     return adjacencyList;
   }
 
+  isJobComplete(jobStatus: JobStatus): boolean {
+    return jobStatus <= 0;
+  }
+
+  shouldEmit(): boolean {
+    if (this.config.emit) {
+      return Pipe.resolve(this.config.emit, this.context) === true;
+    }
+    return false;
+  }
+
+  /**
+   * emits the job completed event while leaving the job active, allowing
+   * a `main` thread to exit while other threads continue to run.
+   * @private
+   */
+  shouldPersistJob(): boolean {
+    if (this.config.persist !== undefined) {
+      return Pipe.resolve(this.config.persist, this.context) === true;
+    }
+    return false;
+  }
+
   async transition(
     adjacencyList: StreamData[],
     jobStatus: JobStatus,
@@ -659,16 +686,17 @@ class Activity {
       return;
     }
     let mIds: string[] = [];
-    let emit = false;
-    if (this.config.emit) {
-      emit = Pipe.resolve(this.config.emit, this.context);
-    }
-    if (jobStatus <= 0 || emit) {
+
+    if (
+      this.shouldEmit() ||
+      this.isJobComplete(jobStatus) ||
+      this.shouldPersistJob()
+    ) {
       await this.engine.runJobCompletionTasks(this.context, {
-        emit: jobStatus > 0,
+        emit: !this.isJobComplete(jobStatus) && !this.shouldPersistJob(),
       });
     }
-    if (adjacencyList.length && jobStatus > 0) {
+    if (adjacencyList.length && !this.isJobComplete(jobStatus)) {
       const multi = this.store.getMulti();
       for (const execSignal of adjacencyList) {
         await this.engine.router?.publishMessage(null, execSignal, multi);

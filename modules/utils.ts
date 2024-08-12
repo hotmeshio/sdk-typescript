@@ -2,7 +2,9 @@ import os from 'os';
 import { createHash } from 'crypto';
 
 import { nanoid } from 'nanoid';
+import ms from 'ms';
 
+import packageJson from '../package.json';
 import { StoreService } from '../services/store';
 import { AppSubscriptions, AppTransitions, AppVID } from '../types/app';
 import { RedisClient, RedisMulti } from '../types/redis';
@@ -15,17 +17,17 @@ import { HMSH_GUID_SIZE } from './enums';
 /**
  * @private
  */
-async function safeExecute<T>(
-  operation: Promise<T>,
-  defaultValue: T,
-): Promise<T> {
-  try {
-    return await operation;
-  } catch (error) {
-    console.error(`Operation Error: ${error}`);
-    return defaultValue;
-  }
-}
+// async function safeExecute<T>(
+//   operation: Promise<T>,
+//   defaultValue: T,
+// ): Promise<T> {
+//   try {
+//     return await operation;
+//   } catch (error) {
+//     console.error(`Operation Error: ${error}`);
+//     return defaultValue;
+//   }
+// }
 
 /**
  * @private
@@ -355,3 +357,11 @@ export function isValidCron(cronExpression: string): boolean {
     /^(\*|([0-5]?\d)) (\*|([01]?\d|2[0-3])) (\*|([12]?\d|3[01])) (\*|([1-9]|1[0-2])) (\*|([0-6](?:-[0-6])?(?:,[0-6])?))$/;
   return cronRegex.test(cronExpression);
 }
+
+/**
+ * Returns the number of seconds for a string using the milliseconds format
+ * used by the `ms` npm package as the input.
+ */
+export const s = (input: string): number => {
+  return ms(input) / 1000;
+};

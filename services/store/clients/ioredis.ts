@@ -175,6 +175,21 @@ class IORedisStoreService extends StoreService<
     return response;
   }
 
+  async setnxex(
+    key: string,
+    value: string,
+    expireSeconds: number,
+  ): Promise<boolean> {
+    const status: number = await this.redisClient[this.commands.set](
+      key,
+      value,
+      'NX',
+      'EX',
+      expireSeconds.toString(),
+    );
+    return this.isSuccessful(status);
+  }
+
   hGetAllResult(result: any) {
     //ioredis response signature is [null, {}] or [null, null]
     return result[1];

@@ -449,7 +449,7 @@ describe('MeshData`', () => {
           ttl: '60 seconds',
           //configure the retry policy to run quickly during testing
           config: {
-            backoffCoefficient: 1, //value of throttle is: `backoffCoefficient^retryCount` (first retry is 1 secod)
+            backoffCoefficient: 1, //value of throttle is: `backoffCoefficient^retryCount` (first retry is 1 second)
             maximumInterval: '1 second',
             maximumAttempts: 3,
           },
@@ -568,7 +568,6 @@ describe('MeshData`', () => {
         return: ['email', 'newsletter', 'reason'],
       })) as { count: number; data: HotMeshTypes.StringStringType[] };
       //most recent result includes a reason
-      //console.log('Indexed Search Results >', indexedResults);
       expect(indexedResults.data.length).toBeGreaterThan(0);
       expect(
         indexedResults.data[indexedResults.data.length - 1].newsletter,

@@ -1,6 +1,6 @@
 # Logical Operators
 
-The following logical operators are available. Although inspired by JavaScript, they have been adapted to follow a functional approach. Each transformation is a function that expects one or more input parameters from the prior row in the @pipe structure.
+Logical operators are used to combine multiple boolean expressions and return a single boolean value. The following logical operators are supported:
 
 **Table of Contents**
 - [logical.and](#logicaland)

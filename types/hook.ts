@@ -22,7 +22,12 @@ interface HookRules {
   [eventName: string]: HookRule[];
 }
 
-type HookSignal = { topic: string; resolved: string; jobId: string };
+type HookSignal = {
+  topic: string;
+  resolved: string;
+  jobId: string;
+  expire: number;
+};
 
 interface HookInterface {
   (topic: string, data: { [key: string]: any; id: string }): Promise<void>;

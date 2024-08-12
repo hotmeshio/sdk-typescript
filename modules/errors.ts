@@ -88,6 +88,7 @@ class MeshFlowChildError extends Error {
   backoffCoefficient: number;
   code: number;
   expire: number;
+  persistent: boolean;
   signalIn: boolean;
   workflowDimension: string;
   index: number;
@@ -104,6 +105,7 @@ class MeshFlowChildError extends Error {
     this.workflowTopic = params.workflowTopic;
     this.parentWorkflowId = params.parentWorkflowId;
     this.expire = params.expire;
+    this.persistent = params.persistent;
     this.signalIn = params.signalIn;
     this.originJobId = params.originJobId;
     this.index = params.index;
