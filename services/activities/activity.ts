@@ -671,7 +671,7 @@ class Activity {
    * a `main` thread to exit while other threads continue to run.
    * @private
    */
-  shouldJobDecay(): boolean {
+  shouldPersistJob(): boolean {
     if (this.config.persist !== undefined) {
       return Pipe.resolve(this.config.persist, this.context) === true;
     }
@@ -690,10 +690,10 @@ class Activity {
     if (
       this.shouldEmit() ||
       this.isJobComplete(jobStatus) ||
-      this.shouldJobDecay()
+      this.shouldPersistJob()
     ) {
       await this.engine.runJobCompletionTasks(this.context, {
-        emit: !this.isJobComplete(jobStatus) && !this.shouldJobDecay(),
+        emit: !this.isJobComplete(jobStatus) && !this.shouldPersistJob(),
       });
     }
     if (adjacencyList.length && !this.isJobComplete(jobStatus)) {

@@ -127,6 +127,42 @@ class CollatorService {
   }
 
   /**
+   * sets the synthetic inception key (in case of an overage occurs).
+   */
+  static async notarizeInception(
+    activity: Activity,
+    guid: string,
+    multi: RedisMulti,
+  ): Promise<void> {
+    if (guid) {
+      await activity.store.collateSynthetic(
+        activity.context.metadata.jid,
+        guid,
+        1_000_000,
+        multi,
+      );
+    }
+  }
+
+  /**
+   * ignore those ID collisions that are due to re-entry overages
+   */
+  static async isInceptionOverage(
+    activity: Activity,
+    guid: string,
+  ): Promise<boolean> {
+    if (guid) {
+      const amount = await activity.store.collateSynthetic(
+        activity.context.metadata.jid,
+        guid,
+        1_000_000,
+      );
+      return amount > 1_000_000;
+    }
+    return false;
+  }
+
+  /**
    * verifies both the concrete and synthetic keys for the activity; concrete keys
    * exist in the original model and are effectively the 'real' keys. In reality,
    * hook activities are atomized during compilation to create a synthetic DAG that
@@ -248,7 +284,7 @@ class CollatorService {
       //already done error (ack/delete clearly failed; this is a duplicate)
       throw new CollationError(amount, 2, 'enter', CollationFaultType.INACTIVE);
     } else if (amount >= 2_000_000) {
-      //duplicate synthetic key (todo: need to resolve/fix this!!)
+      //duplicate synthetic key (this is a duplicat job ID)
       throw new CollationError(
         amount,
         2,

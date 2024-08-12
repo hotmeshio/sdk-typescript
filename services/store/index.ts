@@ -833,10 +833,10 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   }
 
   /**
-   * synthentic collation affects those activities in the graph
+   * Synthentic collation affects those activities in the graph
    * that represent the synthetic DAG that was materialized during compilation;
-   * Synthetic targeting ensures that re-entry due to failure can be distinguished from
-   * purposeful re-entry.
+   * Synthetic collation distinguishes `re-entry due to failure` from 
+   * `purposeful re-entry`.
    */
   async collateSynthetic(
     jobId: string,
@@ -851,7 +851,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     return await (multi || this.redisClient)[this.commands.hincrbyfloat](
       jobKey,
       guid,
-      amount,
+      amount.toString(),
     );
   }
 

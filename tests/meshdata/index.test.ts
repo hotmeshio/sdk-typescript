@@ -568,7 +568,6 @@ describe('MeshData`', () => {
         return: ['email', 'newsletter', 'reason'],
       })) as { count: number; data: HotMeshTypes.StringStringType[] };
       //most recent result includes a reason
-      //console.log('Indexed Search Results >', indexedResults);
       expect(indexedResults.data.length).toBeGreaterThan(0);
       expect(
         indexedResults.data[indexedResults.data.length - 1].newsletter,

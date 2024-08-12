@@ -652,19 +652,6 @@ class MeshData {
       });
       const jobResponse = ['aAa', '/t', 'aBa', this.toString(result)];
       await store?.exec('HSET', jobKey, ...jobResponse);
-
-      //NOTE: the following is in support of 0.2.1 and prior
-      //      (it emits the `job done` signal manually)
-      if (!supportsDecay()) {
-        await this.publishDone<T>(result, hotMesh, options);
-        if (options.ttl === 'infinity') {
-          //job will only exit upon receiving a flush signal
-          await MeshData.workflow.waitFor(`flush-${options.$guid}`);
-        } else {
-          //will exit after sleeping for 'ttl'
-          await MeshData.workflow.sleepFor(options.ttl);
-        }
-      }
     }
   }
 
