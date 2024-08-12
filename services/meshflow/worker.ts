@@ -466,7 +466,7 @@ export class WorkerService {
           //NOTE: this type is spawned when `Promise.all` is used OR if the interruption is a `waitFor`
           const workflowInput = data.data as unknown as WorkflowDataType;
           const execIndex = counter.counter - interruptionRegistry.length + 1;
-          const { workflowId, workflowTopic, workflowDimension, originJobId } =
+          const { workflowId, workflowTopic, workflowDimension, originJobId, expire } =
             workflowInput;
           const collatorFlowId = `${guid()}$C`;
           return {
@@ -483,6 +483,7 @@ export class WorkerService {
               parentWorkflowId: workflowId,
               workflowId: collatorFlowId,
               workflowTopic: workflowTopic,
+              expire,
             },
           } as StreamDataResponse;
         } else if (err instanceof MeshFlowSleepError) {
