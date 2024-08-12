@@ -1,4 +1,5 @@
 import {
+  CollationError,
   GenerationalError,
   GetStateError,
   InactiveJobError,
@@ -79,6 +80,16 @@ class Hook extends Activity {
       } else if (error instanceof GetStateError) {
         this.logger.error('hook-get-state-error', { ...error });
         return;
+      } else if (error instanceof CollationError) {
+        if (error.fault === 'duplicate') {
+          this.logger.info('hook-collation-overage', {
+            job_id: this.context.metadata.jid,
+            guid: this.context.metadata.guid,
+          });
+          return;
+        }
+        //unknown collation error
+        this.logger.error('hook-collation-error', { ...error });
       } else {
         this.logger.error('hook-process-error', { ...error });
       }

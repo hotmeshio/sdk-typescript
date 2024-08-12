@@ -835,7 +835,7 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
   /**
    * Synthentic collation affects those activities in the graph
    * that represent the synthetic DAG that was materialized during compilation;
-   * Synthetic collation distinguishes `re-entry due to failure` from 
+   * Synthetic collation distinguishes `re-entry due to failure` from
    * `purposeful re-entry`.
    */
   async collateSynthetic(

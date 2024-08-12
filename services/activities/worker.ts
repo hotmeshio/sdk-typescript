@@ -1,4 +1,5 @@
 import {
+  CollationError,
   GenerationalError,
   GetStateError,
   InactiveJobError,
@@ -82,6 +83,16 @@ class Worker extends Activity {
       } else if (error instanceof GetStateError) {
         this.logger.error('worker-get-state-error', { ...error });
         return;
+      } else if (error instanceof CollationError) {
+        if (error.fault === 'duplicate') {
+          this.logger.info('worker-collation-overage', {
+            job_id: this.context.metadata.jid,
+            guid: this.context.metadata.guid,
+          });
+          return;
+        }
+        //unknown collation error
+        this.logger.error('worker-collation-error', { ...error });
       } else {
         this.logger.error('worker-process-error', { ...error });
       }

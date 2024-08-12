@@ -92,11 +92,11 @@ class Trigger extends Activity {
           this.context.metadata.guid,
         );
         if (isOverage) {
-          this.logger.info('duplicate-job-overage', {
+          this.logger.info('trigger-collation-overage', {
             job_id: error.jobId,
             guid: this.context.metadata.guid,
           });
-          return; //will `telemetry?.endJobSpan();` be called if I return here?
+          return;
         }
         this.logger.error('duplicate-job-error', {
           job_id: error.jobId,
@@ -133,11 +133,6 @@ class Trigger extends Activity {
 
   /**
    * `pending` flows will not transition from the trigger to adjacent children until resumed
-   *
-   * `expiring` flows initialize with a job status of `1m + adjacentChildCount` (not 0, the default);
-   * they emit the 'job done' event when 1_000_000 is reached (as if 0 had been reached);
-   * the record is still 'active' once 1m is reached, but the positive integer value is sufficient
-   * to allow the system to accept outside events and keep the record 'alive'.
    */
   initStatus(options: ExtensionType = {}, count: number): number {
     if (options.pending) {
