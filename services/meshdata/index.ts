@@ -416,9 +416,9 @@ class MeshData {
 
   /**
    * Returns a HotMesh client
-   * @param {string} [namespace='durable'] - the namespace for the client
+   * @param {string} [namespace='meshflow'] - the namespace for the client
    */
-  async getHotMesh(namespace = 'durable'): Promise<HotMesh> {
+  async getHotMesh(namespace = 'meshflow'): Promise<HotMesh> {
     //try to reuse an existing client
     let hotMesh: HotMesh | Promise<HotMesh> | undefined =
       await this.instances.get(namespace);
@@ -445,13 +445,13 @@ class MeshData {
    * data interleaved with the function state data.
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} workflowId - the workflow/job id
-   * @param {string} [namespace='durable'] - the namespace for the client
+   * @param {string} [namespace='meshflow'] - the namespace for the client
    * @returns {Promise<string>}
    * @example
    * // mint a key
    * const key = await meshData.mintKey('greeting', 'jsmith123');
    *
-   * // returns 'hmsh:durable:j:greeting-jsmith123'
+   * // returns 'hmsh:meshflow:j:greeting-jsmith123'
    */
   async mintKey(
     entity: string,
@@ -487,7 +487,7 @@ class MeshData {
       callback: QuorumMessageCallback,
       options: SubscriptionOptions = {},
     ): Promise<void> => {
-      const hotMesh = await this.getHotMesh(options.namespace || 'durable');
+      const hotMesh = await this.getHotMesh(options.namespace || 'meshflow');
       const callbackWrapper: QuorumMessageCallback = (topic, message) => {
         if (message.type === 'pong' && !message.originator) {
           if (message.profile?.worker_topic) {
@@ -520,7 +520,7 @@ class MeshData {
       message: QuorumMessage,
       options: SubscriptionOptions = {},
     ): Promise<void> => {
-      const hotMesh = await this.getHotMesh(options.namespace || 'durable');
+      const hotMesh = await this.getHotMesh(options.namespace || 'meshflow');
       await hotMesh.quorum?.pub(message);
     },
 
@@ -534,7 +534,7 @@ class MeshData {
       callback: QuorumMessageCallback,
       options: SubscriptionOptions = {},
     ): Promise<void> => {
-      const hotMesh = await this.getHotMesh(options.namespace || 'durable');
+      const hotMesh = await this.getHotMesh(options.namespace || 'meshflow');
       await hotMesh.quorum?.unsub(callback);
     },
   };
@@ -709,7 +709,7 @@ class MeshData {
    *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - The workflow/job id
-   * @param {string} [namespace='durable'] - the namespace for the client
+   * @param {string} [namespace='meshflow'] - the namespace for the client
    *
    * @example
    * // Flush a function
@@ -753,7 +753,7 @@ class MeshData {
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - The workflow/job id
    * @param {JobInterruptOptions} [options={}] - call options
-   * @param {string} [namespace='durable'] - the namespace for the client
+   * @param {string} [namespace='meshflow'] - the namespace for the client
    *
    * @example
    * // Interrupt a function
@@ -787,7 +787,7 @@ class MeshData {
    *
    * @param {string} guid - The global identifier for the signal
    * @param {StringAnyType} payload - The payload to send with the signal
-   * @param {string} [namespace='durable'] - the namespace for the client
+   * @param {string} [namespace='meshflow'] - the namespace for the client
    * @returns {Promise<string>} - the signal id
    * @example
    * // Signal a function with a payload
@@ -813,7 +813,7 @@ class MeshData {
    * @returns {Promise<QuorumProfile[]>}
    */
   async rollCall(options: RollCallOptions = {}): Promise<QuorumProfile[]> {
-    return (await this.getHotMesh(options.namespace || 'durable')).rollCall(
+    return (await this.getHotMesh(options.namespace || 'meshflow')).rollCall(
       options.delay || 1000,
     );
   }
@@ -832,7 +832,7 @@ class MeshData {
    * await meshData.throttle({ guid: '1234567890', throttle: 10_000 });
    */
   async throttle(options: ThrottleOptions): Promise<boolean> {
-    return (await this.getHotMesh(options.namespace || 'durable')).throttle(
+    return (await this.getHotMesh(options.namespace || 'meshflow')).throttle(
       options as ThrottleOptions,
     );
   }
@@ -997,8 +997,8 @@ class MeshData {
    * // Response: JobOutput
    * {
    *   metadata: {
-   *    tpc: 'durable.execute',
-   *    app: 'durable',
+   *    tpc: 'meshflow.execute',
+   *    app: 'meshflow',
    *    vrs: '1',
    *    jid: 'greeting-jsmith123',
    *    aid: 't1',
@@ -1043,7 +1043,7 @@ class MeshData {
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - The workflow/job id
    * @param {ExportOptions} [options={}] - Configuration options for the export
-   * @param {string} [namespace='durable'] - the namespace for the client
+   * @param {string} [namespace='meshflow'] - the namespace for the client
    *
    * @example
    * // Export a function
@@ -1324,7 +1324,7 @@ class MeshData {
    * // find jobs
    * const [cursor, jobs] = await meshData.findJobs({ match: 'greeting*' });
    *
-   * // returns [ '0', [ 'hmsh:durable:j:greeting-jsmith123', 'hmsh:durable:j:greeting-jdoe456' ] ]
+   * // returns [ '0', [ 'hmsh:meshflow:j:greeting-jsmith123', 'hmsh:meshflow:j:greeting-jdoe456' ] ]
    */
   async findJobs(options: FindJobsOptions = {}): Promise<[string, string[]]> {
     const hotMesh = await this.getHotMesh(options.namespace);
@@ -1353,7 +1353,7 @@ class MeshData {
     return await this.getClient().workflow.search(
       options.taskQueue ?? entity,
       options.workflowName ?? entity,
-      options.namespace || 'durable',
+      options.namespace || 'meshflow',
       options.index ?? options.search?.index ?? this.search.index ?? '',
       ...args,
     ); //[count, [id, fields[]], [id, fields[]], [id, fields[]], ...]]

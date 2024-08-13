@@ -159,7 +159,7 @@ class MeshCall {
       try {
         await hotMesh.activate(version);
       } catch (error) {
-        hotMesh.engine.logger.error('durable-client-activate-err', { error });
+        hotMesh.engine.logger.error('meshcall-client-activate-err', { error });
         throw error;
       }
     } else if (isNaN(Number(appVersion)) || appVersion < version) {
@@ -167,7 +167,7 @@ class MeshCall {
         await hotMesh.deploy(getWorkflowYAML(appId));
         await hotMesh.activate(version);
       } catch (error) {
-        hotMesh.engine.logger.error('durable-client-deploy-activate-err', {
+        hotMesh.engine.logger.error('meshcall-client-deploy-activate-err', {
           ...error,
         });
         throw error;

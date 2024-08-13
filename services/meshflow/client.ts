@@ -187,7 +187,7 @@ export class ClientService {
       const workflowName = options.entity ?? options.workflowName;
       const trc = options.workflowTrace;
       const spn = options.workflowSpan;
-      //hotmesh topic is a combination of the durable queue+workflowname
+      //hotmesh `topic` is equivalent to `queue+workflowname` pattern in other systems
       const workflowTopic = `${taskQueueName}-${workflowName}`;
       const hotMeshClient = await this.getHotMeshClient(
         workflowTopic,
@@ -345,7 +345,7 @@ export class ClientService {
      * await client.workflow.search(
      *   'someTaskQueue'
      *   'someWorkflowName',
-     *   'durable',
+     *   'meshflow',
      *   'user',
      *   ...args,
      * );
@@ -367,7 +367,7 @@ export class ClientService {
       try {
         return await this.search(hotMeshClient, index, query);
       } catch (error) {
-        hotMeshClient.engine.logger.error('durable-client-search-err', {
+        hotMeshClient.engine.logger.error('meshflow-client-search-err', {
           ...error,
         });
         throw error;
@@ -424,7 +424,7 @@ export class ClientService {
       try {
         await hotMesh.activate(version);
       } catch (error) {
-        hotMesh.engine.logger.error('durable-client-activate-err', { error });
+        hotMesh.engine.logger.error('meshflow-client-activate-err', { error });
         throw error;
       }
     } else if (isNaN(Number(appVersion)) || appVersion < version) {
@@ -432,7 +432,7 @@ export class ClientService {
         await hotMesh.deploy(getWorkflowYAML(appId, version));
         await hotMesh.activate(version);
       } catch (error) {
-        hotMesh.engine.logger.error('durable-client-deploy-activate-err', {
+        hotMesh.engine.logger.error('meshflow-client-deploy-activate-err', {
           ...error,
         });
         throw error;

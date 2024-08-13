@@ -42,7 +42,7 @@ import {
 import { MAX_DELAY } from '../../modules/enums';
 
 /**
- * HotMesh transforms Redis into a durable middleware solution.
+ * HotMesh transforms Redis into indispensable middleware.
  * Call `HotMesh.init` to initialize a point of presence
  * and attach to the mesh.
  *

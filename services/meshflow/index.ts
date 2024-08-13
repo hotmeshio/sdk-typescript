@@ -50,7 +50,7 @@ import { WorkflowService } from './workflow';
  *   taskQueue: 'default',
  *   workflowName: 'example',
  *   workflowId: HotMesh.guid(),
- *   namespace: 'durable', //the app name in Redis
+ *   namespace: 'meshflow', //the app name in Redis
  * });
  *
  * //4) subscribe to the eventual result

@@ -158,7 +158,7 @@ describe('MESHFLOW | goodbye | `Workflow Promise.all proxyActivities`', () => {
           workflows.example.name,
           namespace,
           'bye-bye',
-          '@_custom1:durable',
+          '@_custom1:meshflow',
         );
         expect(count).toEqual(1);
         const [id, ..._rest2] = rest;

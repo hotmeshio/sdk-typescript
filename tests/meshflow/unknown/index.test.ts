@@ -102,7 +102,7 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
       //reset counter that increments with each workflow run
       STATE.count = 0;
 
-      //instance a durable client and start the workflow
+      //instance a client and start the workflow
       const client = new Client({ connection: { class: Redis, options } });
       const handle = await client.workflow.start({
         args: [toThrowCount],

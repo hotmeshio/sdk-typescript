@@ -23,11 +23,11 @@
  */
 
 const APP_VERSION = '4';
-const APP_ID = 'durable';
+const APP_ID = 'meshflow';
 
 /**
- * returns a new durable workflow schema
- * @param {string} app - app name (e.g., 'durable')
+ * returns a new meshflow workflow schema
+ * @param {string} app - app name (e.g., 'meshflow')
  * @param {string} version - number as string (e.g., '1')
  * @returns {string} HotMesh App YAML
  */

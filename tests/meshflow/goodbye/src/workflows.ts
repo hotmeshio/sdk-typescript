@@ -10,7 +10,7 @@ export async function example(name: string): Promise<string> {
   //set values (they're added to the workflow HASH AND are indexed)
   //(`custom1` and `custom2` were added to the 'bye-bye' index)
   const search = await MeshFlow.workflow.search();
-  await search.set('custom1', 'durable');
+  await search.set('custom1', 'meshflow');
   await search.set('custom2', '55');
 
   //'jimbo' is not indexed (but it can be retrieved)
