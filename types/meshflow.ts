@@ -65,7 +65,8 @@ type WorkflowContext = {
   replay: StringStringType;
 
   /**
-   * the HotMesh App namespace. `durable` is the default.
+   * the HotMesh App namespace
+   * @default meshflow
    */
   namespace: string;
 
@@ -252,7 +253,8 @@ type SearchResults = {
 
 type WorkflowOptions = {
   /**
-   * the namespace for the workflow; `durable` is the default namespace if not provided
+   * the namespace for the workflow
+   * @default meshflow
    */
   namespace?: string;
 
@@ -358,7 +360,8 @@ type WorkflowOptions = {
 
 /**
  * Options for setting up a hook.
- * 'durable' is the default namespace if not provided; similar to setting `appid` in the YAML
+ * 'meshflow' is the default namespace if not provided;
+ * similar to setting `appid` in the YAML
  */
 type HookOptions = {
   /** Optional namespace under which the hook function will be grouped */
@@ -450,8 +453,8 @@ type WorkerConfig = {
   connection: Connection;
 
   /**
-   * Namespace used in the app configuration, denoted as `appid` in the YAML (e.g., 'durable')
-   * @default durable
+   * Namespace used in the app configuration, denoted as `appid` in the YAML
+   * @default meshflow
    */
   namespace?: string;
 
@@ -505,7 +508,10 @@ type FindJobsOptions = {
   /** The workflow name; include an asterisk for wilcard search; refer to Redis SCAN for the allowed format */
   match?: string;
 
-  /** application namespace; defaults to 'durable' */
+  /**
+   * application namespace
+   * @default meshflow
+  */
   namespace?: string;
 
   /** The suggested response limit. Reduce batch size to reduce the likelihood of large overages. */

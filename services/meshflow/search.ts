@@ -161,7 +161,7 @@ export class Search {
           ...schema,
         );
       } catch (error) {
-        hotMeshClient.engine.logger.info('durable-client-search-err', {
+        hotMeshClient.engine.logger.info('meshflow-client-search-err', {
           ...error,
         });
       }
@@ -183,7 +183,7 @@ export class Search {
       const searchIndexes = await store.exec('FT._LIST');
       return searchIndexes as string[];
     } catch (error) {
-      hotMeshClient.engine.logger.info('durable-client-search-list-err', {
+      hotMeshClient.engine.logger.info('meshflow-client-search-list-err', {
         ...error,
       });
       return [];
@@ -252,7 +252,7 @@ export class Search {
       this.cachedFields[key] = value;
       return value;
     } catch (error) {
-      this.hotMeshClient.logger.error('durable-search-get-error', { ...error });
+      this.hotMeshClient.logger.error('meshflow-search-get-error', { ...error });
       return '';
     }
   }
@@ -288,7 +288,7 @@ export class Search {
       });
       return returnValues;
     } catch (error) {
-      this.hotMeshClient.logger.error('durable-search-mget-error', {
+      this.hotMeshClient.logger.error('meshflow-search-mget-error', {
         ...error,
       });
       return [];

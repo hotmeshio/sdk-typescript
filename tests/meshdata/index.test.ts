@@ -239,7 +239,7 @@ describe('MeshData`', () => {
   });
 
   describe('exec', () => {
-    it('should exec a recursive workflow, await, export and flush a durable function at a custom namespace', async () => {
+    it('should exec a recursive workflow, await, export and flush a persistent function at a custom namespace', async () => {
       const context = await pluck.exec<HotMeshTypes.WorkflowContext>({
         entity: 'howdy',
         args: [2],
@@ -401,7 +401,7 @@ describe('MeshData`', () => {
       expect(brokered).toEqual(direct);
     }, 10_000);
 
-    it('should exec a durable function (ttl:infinity) that calls a proxy and hook', async () => {
+    it('should exec a persistent function (ttl:infinity) that calls a proxy and hook', async () => {
       const email = 'floe.doe@pluck.com';
       const name = { first: 'Floe', last: 'Doe' };
 
@@ -417,7 +417,7 @@ describe('MeshData`', () => {
       expect(brokered).toEqual(direct);
     }, 10_000);
 
-    it('should flush a durable function (ttl:infinity)', async () => {
+    it('should flush a persistent function (ttl:infinity)', async () => {
       //flush causes the main thread to exit (it waits for the flush signal)
       await pluck.flush('greeting', 'abc456');
       //sleep long enough for running hooks in the test to awaken from sleep
@@ -536,7 +536,7 @@ describe('MeshData`', () => {
       // other greeting jobs may exist (e.g. greeting-abc123), but we expect at least 2
       // one path is register another function with a unique entity to filter by
       expect(jobs.length).toBeGreaterThanOrEqual(2);
-      expect(jobs[0].startsWith('hmsh:durable:j:greeting-')).toBeTruthy();
+      expect(jobs[0].startsWith('hmsh:meshflow:j:greeting-')).toBeTruthy();
     });
 
     it('should find all jobs without a wildcard', async () => {

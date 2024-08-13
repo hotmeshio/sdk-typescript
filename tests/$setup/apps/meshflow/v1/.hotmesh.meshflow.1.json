@@ -1,11 +1,11 @@
 {
   "app": {
-    "id": "durable",
+    "id": "meshflow",
     "version": "1",
     "graphs": [
       {
-        "subscribes": "durable.execute",
-        "publishes": "durable.executed",
+        "subscribes": "meshflow.execute",
+        "publishes": "meshflow.executed",
         "expire": {
           "@pipe": [
             [
@@ -360,7 +360,7 @@
           "childer": {
             "title": "Awaits a child flow to be executed/started",
             "type": "await",
-            "topic": "durable.execute",
+            "topic": "meshflow.execute",
             "await": "{worker.output.data.await}",
             "input": {
               "schema": {
@@ -509,7 +509,7 @@
           "proxyer": {
             "title": "Invokes the activity flow and awaits the response",
             "type": "await",
-            "topic": "durable.activity.execute",
+            "topic": "meshflow.activity.execute",
             "input": {
               "schema": {
                 "type": "object",
@@ -631,7 +631,7 @@
           "collator": {
             "title": "Awaits the collator to resolve the idempotent items as a sequential set",
             "type": "await",
-            "topic": "durable.collator.execute",
+            "topic": "meshflow.collator.execute",
             "input": {
               "schema": {
                 "type": "object",
@@ -815,7 +815,7 @@
             "title": "Closes the `Signal In` Channel, allowing for final cleanup",
             "type": "signal",
             "subtype": "one",
-            "topic": "durable.flow.signal",
+            "topic": "meshflow.flow.signal",
             "signal": {
               "schema": {
                 "type": "object",
@@ -1132,7 +1132,7 @@
           "signaler_childer": {
             "title": "Awaits a child flow to be executed/started",
             "type": "await",
-            "topic": "durable.execute",
+            "topic": "meshflow.execute",
             "await": "{signaler_worker.output.data.await}",
             "input": {
               "schema": {
@@ -1281,7 +1281,7 @@
           "signaler_proxyer": {
             "title": "Invokes the activity flow and awaits the response",
             "type": "await",
-            "topic": "durable.activity.execute",
+            "topic": "meshflow.activity.execute",
             "input": {
               "schema": {
                 "type": "object",
@@ -1403,7 +1403,7 @@
           "signaler_collator": {
             "title": "Awaits the collator to resolve the idempotent items as a sequential set",
             "type": "await",
-            "topic": "durable.collator.execute",
+            "topic": "meshflow.collator.execute",
             "input": {
               "schema": {
                 "type": "object",
@@ -1739,7 +1739,7 @@
           ]
         },
         "hooks": {
-          "durable.flow.signal": [
+          "meshflow.flow.signal": [
             {
               "to": "signaler",
               "conditions": {
@@ -1755,8 +1755,8 @@
         }
       },
       {
-        "subscribes": "durable.collator.execute",
-        "publishes": "durable.collator.executed",
+        "subscribes": "meshflow.collator.execute",
+        "publishes": "meshflow.collator.executed",
         "expire": 0,
         "input": {
           "schema": {
@@ -1979,7 +1979,7 @@
           "collator_childer": {
             "title": "Awaits a call for a child flow to be executed/started",
             "type": "await",
-            "topic": "durable.execute",
+            "topic": "meshflow.execute",
             "await": {
               "@pipe": [
                 [
@@ -2224,7 +2224,7 @@
           "collator_proxyer": {
             "title": "Invokes the activity flow and awaits the response",
             "type": "await",
-            "topic": "durable.activity.execute",
+            "topic": "meshflow.activity.execute",
             "input": {
               "schema": {
                 "type": "object",
@@ -2569,7 +2569,7 @@
           ]
         },
         "hooks": {
-          "durable.wfs.signal": [
+          "meshflow.wfs.signal": [
             {
               "to": "collator_waiter",
               "conditions": {
@@ -2599,8 +2599,8 @@
         }
       },
       {
-        "subscribes": "durable.activity.execute",
-        "publishes": "durable.activity.executed",
+        "subscribes": "meshflow.activity.execute",
+        "publishes": "meshflow.activity.executed",
         "expire": 0,
         "input": {
           "schema": {

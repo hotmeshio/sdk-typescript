@@ -170,14 +170,14 @@ describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
         expect(exported.state?.data.done).toBe(true);
 
         //call the FT search module to locate the workflow via fuzzy search
-        //NOTE: always include an underscore prefix before your search term (e.g., `_custom1`).
+        //NOTE: always include an underscore prefix before the search term (e.g., `_custom1`).
         //      HotMesh uses this to avoid collisions with reserved words
         const [count, ...results] = await client.workflow.search(
           'hook-world',
           workflows.example.name,
           namespace,
           'bye-bye',
-          '@_custom1:durable',
+          '@_custom1:meshflow',
         );
         expect(count).toEqual(1);
         const [id, ..._rest2] = results;

@@ -33,16 +33,16 @@ import {
 } from '../../../types';
 
 describe('FUNCTIONAL | MESHFLOW', () => {
-  const appConfig = { id: 'durable', version: '1' };
+  const appConfig = { id: 'meshflow', version: '1' };
   let activityErrorCounter = 0;
-  let workflowId = 'durable';
+  let workflowId = 'meshflow';
   const originJobId = null;
   const workflowTopic = 'childWorld-childWorld';
   const activityTopic = `${workflowTopic}-activity`;
   const activityName = 'helloWorld';
   const workflowName = 'childWorld';
   const entityName = 'childWorld';
-  const collatorSignalTopic = 'durable.wfs.signal';
+  const collatorSignalTopic = 'meshflow.wfs.signal';
   const signalId = 'abcdefg';
 
   type SignalResponseType = { response: string; id: string };
@@ -69,7 +69,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
 
   const replay: StringAnyType = {}; //simulate replay history
 
-  //the list of durable interruptions (the reason...what needs to be resolved before reentering)
+  //the list of interruptions (the reason...what needs to be resolved before reentering)
   const interruptionRegistry: any[] = [];
   const interruptionList: any[] = [];
   let counter = 0;
@@ -319,7 +319,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
                 args: ['f', { g: 7 }],
                 await: awaitChild, // if this is false, use startChild, otherwise execChild
                 workflowName, // `entity` clobbers this
-                entity: entityName, // hotmesh syntax (use taskQueue in durable function)
+                entity: entityName, // hotmesh syntax (use taskQueue in meshflow function)
               });
 
               //all
@@ -336,7 +336,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
                   xProxyActivity<ProxyResponseType>(
                     ...(data.data.arguments as any[]),
                   ),
-                  //standard durable format with taskQueue and workflowName
+                  //standard meshflows format with taskQueue and workflowName
                   //this is standard format (combining workflowName and taskQueue)
                   //xstream address is always taskQueue + workflowName
                   xChild<ChildResponseType>({
@@ -480,7 +480,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
       ],
     };
     hotMesh = await HotMesh.init(config);
-    await hotMesh.deploy('/app/tests/$setup/apps/durable/v1/hotmesh.yaml');
+    await hotMesh.deploy('/app/tests/$setup/apps/meshflow/v1/hotmesh.yaml');
     await hotMesh.activate(appConfig.version);
   }, 10_000);
 
@@ -499,7 +499,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
     });
 
     it('should COMPLETE', async () => {
-      //no interruptions...just test the durable function pipes
+      //no interruptions...just test the persistent function pipes
       workflowId = 'reentrant200';
       const payload = {
         workflowId,
@@ -509,7 +509,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
         maximumAttempts: 3,
         expire: 120,
       };
-      const response = await hotMesh.pubsub('durable.execute', payload);
+      const response = await hotMesh.pubsub('meshflow.execute', payload);
       expect(response.data.done).toBe(true);
     });
 
@@ -525,7 +525,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
         expire: 120,
       };
       const response = await hotMesh.pubsub(
-        'durable.execute',
+        'meshflow.execute',
         payload,
         null,
         10_000,
@@ -545,7 +545,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
         maximumAttempts: 3,
         expire: 120,
       };
-      const jobId = await hotMesh.pub('durable.execute', payload);
+      const jobId = await hotMesh.pub('meshflow.execute', payload);
       await sleepFor(2_500);
 
       await hotMesh.hook(collatorSignalTopic, {
@@ -557,7 +557,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
       let response: JobOutput;
       do {
         await sleepFor(1_000);
-        response = await hotMesh.getState('durable.execute', jobId);
+        response = await hotMesh.getState('meshflow.execute', jobId);
       } while (!response.data.done);
       expect(shouldWait).toBe(false);
     }, 10_000);
@@ -575,7 +575,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
       };
       //activity is designed to throw three errors before completing successfully
       const response = await hotMesh.pubsub(
-        'durable.execute',
+        'meshflow.execute',
         payload,
         null,
         15_000,
@@ -597,7 +597,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
         expire: 120,
       };
       const response = await hotMesh.pubsub(
-        'durable.execute',
+        'meshflow.execute',
         payload,
         null,
         2_500,
@@ -619,7 +619,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
         expire: 120,
       };
       const response = await hotMesh.pubsub(
-        'durable.execute',
+        'meshflow.execute',
         payload,
         null,
         2_500,
@@ -640,7 +640,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
         expire: 120,
       };
       //start the job and sleep for a bit (the workflow will pause in an awaited state)
-      const jobId = await hotMesh.pub('durable.execute', payload);
+      const jobId = await hotMesh.pub('meshflow.execute', payload);
       await sleepFor(2_500);
 
       //send the signal so that the workflow can continue
@@ -653,7 +653,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
       let response: JobOutput;
       do {
         await sleepFor(1000);
-        response = await hotMesh.getState('durable.execute', jobId);
+        response = await hotMesh.getState('meshflow.execute', jobId);
       } while (!response.data.done);
 
       expect(shouldPromise).toBe(false);

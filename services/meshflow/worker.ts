@@ -122,14 +122,14 @@ export class WorkerService {
         );
         await hotMesh.activate(APP_VERSION);
       } catch (err) {
-        hotMesh.engine.logger.error('durable-worker-deploy-activate-err', err);
+        hotMesh.engine.logger.error('meshflow-worker-deploy-activate-err', err);
         throw err;
       }
     } else if (app && !app.active) {
       try {
         await hotMesh.activate(APP_VERSION);
       } catch (err) {
-        hotMesh.engine.logger.error('durable-worker-activate-err', err);
+        hotMesh.engine.logger.error('meshflow-worker-activate-err', err);
         throw err;
       }
     }
@@ -238,7 +238,7 @@ export class WorkerService {
    * Run the connected worker; no-op (unnecessary to call)
    */
   async run() {
-    this.workflowRunner.engine.logger.info('durable-worker-running');
+    this.workflowRunner.engine.logger.info('meshflow-worker-running');
   }
 
   /**
@@ -293,7 +293,7 @@ export class WorkerService {
           data: { response: pojoResponse },
         };
       } catch (err) {
-        this.activityRunner.engine.logger.error('durable-worker-activity-err', {
+        this.activityRunner.engine.logger.error('meshflow-worker-activity-err', {
           name: err.name,
           message: err.message,
           stack: err.stack,

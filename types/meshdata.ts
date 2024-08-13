@@ -36,9 +36,10 @@ export type CallOptions = {
    */
   fields?: string[];
   /**
-   * namespace for the the execution client; how it appears in Redis (defaults to 'durable')
+   * namespace for the the execution client
+   * @default 'meshflow'
    */
-  namespace?: string; //optional namespace for the workflowId (defaults to 'durable')
+  namespace?: string;
 
   /**
    * Custom marker data field used for adding a searchable marker to the job.
@@ -72,9 +73,10 @@ export type ConnectOptions = {
    */
   prefix?: string;
   /**
-   * optional namespace for the the worker; how it appears in Redis (defaults to 'durable')
+   * optional namespace for the the worker
+   * @default 'meshflow'
    */
-  namespace?: string; //optional namespace for the workflowId (defaults to 'durable')
+  namespace?: string;
   /**
    * extended worker options
    */
@@ -175,7 +177,7 @@ export type HookInput = {
 
 export type MeshDataWorkflowOptions = {
   /**
-   * The app deployment namespace; how it appears in redis (e.g., 'durable')
+   * The app deployment namespace; how it appears in redis (e.g., 'meshflow')
    */
   namespace?: string;
 
@@ -225,7 +227,7 @@ export type MeshDataWorkflowOptions = {
   config?: WorkflowConfig;
 
   /**
-   * Set to 'infinity' to make the function durable; otherwise, '1 minute', '1 hour', etc
+   * Set to 'infinity', '1 minute', '1 hour', etc
    */
   ttl?: string;
 

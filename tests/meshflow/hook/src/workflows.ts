@@ -18,7 +18,7 @@ const { greet, bye } = MeshFlow.workflow.proxyActivities<typeof activities>({
 export async function example(name: string): Promise<string> {
   //create a search session and add some job data (this is NOT the same as job state)
   const search = await MeshFlow.workflow.search();
-  await search.set('custom1', 'durable');
+  await search.set('custom1', 'meshflow');
   await search.set('custom2', '55');
   //note: `exampleHook` function will change to 'jackson'
   await search.set('jimbo', 'jones');
