@@ -26,7 +26,7 @@ type responseType = {
     complex: string;
   };
   jobId: string;
-  jobBody: string;
+  jobBody: void;
 };
 
 type payloadType = {
@@ -80,7 +80,7 @@ export async function example(name: string): Promise<responseType> {
       taskQueue: 'basic-world',
       workflowId: 'MyWorkflowId123',
     }),
-    MeshFlow.workflow.execChild<string>({
+    MeshFlow.workflow.execChild<void>({
       workflowName: 'childExample',
       args: [`start-${name}y`],
       taskQueue: 'basic-world',
@@ -101,6 +101,6 @@ export async function example(name: string): Promise<responseType> {
   };
 }
 
-export async function childExample(name: string): Promise<string> {
-  return `Hello from child workflow, ${name}!`;
+export async function childExample(name: string): Promise<void> {
+  return;
 }

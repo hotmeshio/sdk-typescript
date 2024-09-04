@@ -231,7 +231,7 @@ export class WorkflowService {
           }
         }
         return result.$error as T;
-      } else if (result.data) {
+      } else {
         return result.data as T;
       }
     }
@@ -518,16 +518,21 @@ export class WorkflowService {
       const targetWorkflowId = options.workflowId ?? workflowId;
       let targetTopic: string;
       if (options.entity || (options.taskQueue && options.workflowName)) {
-        targetTopic = `${options.entity ?? options.taskQueue}-${options.entity ?? options.workflowName}`;
+        targetTopic = `${options.taskQueue ?? options.entity}-${options.entity ?? options.workflowName}`;
       } else {
         targetTopic = workflowTopic;
       }
       const payload = {
         arguments: [...options.args],
         id: targetWorkflowId,
-        workflowTopic,
+        workflowTopic: targetTopic,
         backoffCoefficient:
           options.config?.backoffCoefficient || HMSH_MESHFLOW_EXP_BACKOFF,
+        maximumAttempts:
+          options.config?.maximumAttempts || HMSH_MESHFLOW_MAX_ATTEMPTS,
+        maximumInterval: s(
+          options?.config?.maximumInterval ?? HMSH_MESHFLOW_MAX_INTERVAL,
+        ),
       };
       return await hotMeshClient.hook(
         `${namespace}.flow.signal`,

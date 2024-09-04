@@ -183,7 +183,7 @@ export class ClientService {
      * adds searchable data to the record.
      */
     start: async (options: WorkflowOptions): Promise<WorkflowHandleService> => {
-      const taskQueueName = options.entity ?? options.taskQueue;
+      const taskQueueName = options.taskQueue ?? options.entity;
       const workflowName = options.entity ?? options.workflowName;
       const trc = options.workflowTrace;
       const spn = options.workflowSpan;
@@ -261,7 +261,7 @@ export class ClientService {
      * ```
      */
     hook: async (options: HookOptions): Promise<string> => {
-      const workflowTopic = `${options.taskQueue}-${options.workflowName}`;
+      const workflowTopic = `${options.taskQueue ?? options.entity}-${options.entity ?? options.workflowName}`;
       const payload = {
         arguments: [...options.args],
         id: options.workflowId,
