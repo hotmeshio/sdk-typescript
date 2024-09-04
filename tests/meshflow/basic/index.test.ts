@@ -115,7 +115,6 @@ describe('MESHFLOW | basic | `MeshFlow Foundational`', () => {
         const r1 = deterministicRandom(1);
         const r2 = deterministicRandom(4);
         expect(result).toEqual({
-          jobBody: 'Hello from child workflow, start-HotMeshy!',
           jobId: 'MyWorkflowId123',
           oneTimeGreeting: { complex: 'Basic, HotMesh!' },
           payload: { data: { hello: 'world', id: 'abcdefg' }, id: 'abcdefg' },
