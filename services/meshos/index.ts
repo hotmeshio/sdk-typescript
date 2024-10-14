@@ -3,6 +3,7 @@ import * as Redis from 'redis';
 import { MeshData } from '../meshdata/index';
 import { arrayToHash, guid } from '../../modules/utils';
 import * as Types from '../../types';
+import { LoggerService } from '../logger';
 
 /**
  * MeshOS is an abstract base class for schema-driven entity management within the Mesh network.
@@ -14,10 +15,19 @@ import * as Types from '../../types';
  *
  * To create a custom entity, subclass MeshOS and implement the required methods. At a minimum, you should implement:
  *
+ * - `getTaskQueue()`: Returns the task queue (use for targeted priority and or version-based routing)
  * - `getEntity()`: Returns the name of the entity.
  * - `getSearchOptions()`: Returns indexing and schema options for the entity.
  *
- * You can also implement other methods as needed for your entity's functionality.
+ * Standard CRUD methods are included and use your provided schema to
+ * fields to return in the response: create, retrieve, update, delete.
+ * 
+ * Search methods are included and use your provided schema to
+ * fields to return in the response: count, find, aggregate.
+ * 
+ * Implement other methods as needed for the entity's 
+ * functionality; For example, subclass/override methods like `create`
+ * to also spawn a transactional workflow
  *
  * @example
  * ```typescript
@@ -28,7 +38,7 @@ import * as Types from '../../types';
  *
  * class Widget extends MeshOS {
  *   
- *   //Return the version
+ *   //Return the function version/priority
  *   getTaskQueue(): string {
  *     return 'v1';
  *   }
@@ -38,7 +48,7 @@ import * as Types from '../../types';
  *     return 'widget';
  *   }
  *
- *   // Return the search options including the schema
+ *   // Return the schema definition, target hash prefixes, and index ID
  *   getSearchOptions(): Types.WorkflowSearchOptions {
  *     return {
  *       index: `${this.getNamespace()}-${this.getEntity()}`,
@@ -46,13 +56,16 @@ import * as Types from '../../types';
  *       schema,
  *     };
  *   }
-
- *   //Subclass the `connect` method to connect workers/hooks
- *   //upon server startup
+ *
+ *   //Subclass the `connect` method to connect workers and
+ *   // hooks (optional) when the container starts
  *   async connect() {
  *     await this.meshData.connect({
- *       entity: 'widget',
- *       target: workflows.createWidget,
+ *       entity: this.getEntity(),
+ *       //the `target widget workflow` runs as a transaction
+ *       target: function() {
+ *         return { hello: 'world' };
+ *       },
  *       options: {
  *         namespace: this.getNamespace(),
  *         taskQueue: this.getTaskQueue(),
@@ -60,14 +73,18 @@ import * as Types from '../../types';
  *     });
  *   }
  *
- *   // subclass the `create` method to start a transactional workflow
- *   // use the options/search field to set record data
- *   async create(input: Record<string, string>): Promise<void> {
- *     await meshData.exec<string>({
+ *   // subclass the `create` method to start a transactional
+ *   // workflow; use the options/search field to set default
+ *   // record data `{ ...input}` and invoke the `target widget workflow`
+ *   async create(input: Types.StringAnyType): Promise<Types.StringStringType> {
+ *     return await this.meshData.exec<Types.StringStringType>({
  *       entity: this.getEntity(),
  *       args: [{ ...input }],
  *       options: {
+ *         id: input.id,
+ *         ttl: '6 months',
  *         taskQueue: this.getTaskQueue(),
+ *         namespace: this.getNamespace(),
  *         search: { data: { ...input }},
  *        },
  *     });
@@ -93,16 +110,16 @@ import * as Types from '../../types';
  *     type: 'TAG',
  *     primitive: 'string',
  *     required: true,
- *     examples: ['widget-H56789'],
+ *     examples: ['H56789'],
  *   },
  *   /**
- *    * Description of the widget.
+ *    * entity type
  *    *\/
- *   widget: {
- *     type: 'TEXT',
+ *   $entity: {
+ *     type: 'TAG',
  *     primitive: 'string',
  *     required: true,
- *     examples: ['Bake a cake.'],
+ *     examples: ['widget'],
  *   },
  *   /**
  *    * Field indicating whether the widget is active ('y') or pruned ('n').
@@ -117,7 +134,8 @@ import * as Types from '../../types';
  * };
  * ```
  *
- * In your entity class (`Widget`), you use this schema in the `getSearchOptions` method to define how your entity's data
+ * In your entity class (`Widget`), you use this schema in the 
+ * `getSearchOptions` method to define how your entity's data
  * is indexed and searched within the mesh network.
  */
 abstract class MeshOS {
@@ -127,12 +145,13 @@ abstract class MeshOS {
   namespaceType: string;
 
   // Static properties
-  static databases: Record<string, any> = {};
+  static databases: Record<string, Types.DB> = {};
   static namespaces: Types.Namespaces = {};
-  static entities: Record<string, any> = {};
+  static entities: Record<string, Types.Entity> = {};
   static schemas: Record<string, Types.WorkflowSearchSchema> = {};
   static profiles: Types.Profiles = {};
   static classes: Record<string, typeof MeshOS> = {};
+  static logger: Types.ILogger = new LoggerService('hotmesh', 'meshos');
 
   constructor(
     namespace: string,
@@ -150,7 +169,8 @@ abstract class MeshOS {
   protected abstract getTaskQueue(): string;
 
   /**
-   * Initialize MeshData instance
+   * Initialize MeshData instance (this backs/supports the class
+   * --the true provider of functionality)
    */
   private initializeMeshData(dbConfig: Types.DBConfig): MeshData {
     return new MeshData(
@@ -208,9 +228,9 @@ abstract class MeshOS {
   // On-container shutdown commands
 
   /**
-   * Shutdown the connection
+   * Shutdown all connections
    */
-  async shutdown(): Promise<void> {
+  static async shutdown(): Promise<void> {
     await MeshData.shutdown();
   }
 
@@ -220,19 +240,14 @@ abstract class MeshOS {
   getIndexName(): string {
     return this.getSearchOptions().index;
   }
-/**
-   * Create entity
-   * NOTE: subclasses can override this method with any signature.
-   */
-  async create(...args: any[]): Promise<any> {
-    const body = args[0] || {};
-    return this._create(body);
-  }
 
   /**
-   * @private
+   * Create the data record
+   * NOTE: subclasses should override this method (or create
+   * an alternate method) for invoking a workflow when
+   * creating the record.
    */
-  async _create(body: Record<string, any>): Promise<Types.StringStringType> {
+  async create(body: Record<string, any>): Promise<Types.StringStringType> {
     const id = body.id || guid();
     await this.meshData.set(this.getEntity(), id, {
       search: { data: body },
@@ -242,7 +257,7 @@ abstract class MeshOS {
   }
 
   /**
-   * Retrieve Entity
+   * Retrieve the record data
    */
   async retrieve(id: string, sparse = false): Promise<Types.StringStringType> {
     const opts = this.getSearchOptions();
@@ -257,7 +272,7 @@ abstract class MeshOS {
   }
 
   /**
-   * Update entity
+   * Update the record data
    */
   async update(
     id: string,
@@ -272,7 +287,7 @@ abstract class MeshOS {
   }
 
   /**
-   * Delete entity
+   * Delete the record/workflow
    */
   async delete(id: string): Promise<boolean> {
     await this.retrieve(id);
@@ -281,7 +296,7 @@ abstract class MeshOS {
   }
 
   /**
-   * Find matching entities
+   * Find matching records
    */
   async find(
     query: {
@@ -362,7 +377,6 @@ abstract class MeshOS {
         data: arrayToHash(results as [number, ...(string | string[])[]]),
       };
     } catch (e) {
-      console.error({ query: command.join(' '), error: e.message });
       throw e;
     }
   }
@@ -470,26 +484,36 @@ abstract class MeshOS {
       .join(' ');
   }
 
+  /**
+   * Instance initializer
+   */
+  async init(search = true): Promise<void> {
+    await this.connect();
+    if (search) {
+      await this.index();
+    }
+  }
+
   // Static registration methods
 
   /**
    * Register a database
    */
-  static registerDatabase(id: string, config: any): void {
+  static registerDatabase(id: string, config: Types.DB): void {
     MeshOS.databases[id] = config;
   }
 
   /**
    * Register a namespace
    */
-  static registerNamespace(id: string, config: any): void {
+  static registerNamespace(id: string, config: Types.Namespace): void {
     MeshOS.namespaces[id] = config;
   }
 
   /**
    * Register an entity
    */
-  static registerEntity(id: string, config: any): void {
+  static registerEntity(id: string, config: Types.Entity): void {
     MeshOS.entities[id] = config;
   }
 
@@ -503,7 +527,7 @@ abstract class MeshOS {
   /**
    * Register a profile
    */
-  static registerProfile(id: string, config: any): void {
+  static registerProfile(id: string, config: Types.Profile): void {
     MeshOS.profiles[id] = config;
   }
 
@@ -521,18 +545,29 @@ abstract class MeshOS {
     for (const key in p) {
       const profile = p[key];
       if (profile.db.config.REDIS_HOST) {
-        console.log(`!!Initializing ${profile.db.name} [${key}]...`);
+        this.logger.info(`meshos-initializing`, {
+          db: profile.db.name,
+          key,
+        });
         profile.instances = {};
         for (const ns in profile.namespaces) {
           const namespace = profile.namespaces[ns];
-          console.log(`  - ${ns}: ${namespace.label}`);
+          this.logger.info(`meshos-initializing-namespace`, {
+            namespace: ns,
+            label: namespace.label,
+          });
+
           let pinstances = profile.instances[ns];
           if (!pinstances) {
             pinstances = {};
             profile.instances[ns] = pinstances;
           }
           for (const entity of namespace.entities) {
-            console.log(`    - ${entity.name}: ${entity.label}`);
+            this.logger.info(`meshos-initializing-entity`, {
+              entity: entity.name,
+              label: entity.label,
+            });
+
             const instance = pinstances[entity.name] = new entity.class(
               ns,
               namespace.type,
@@ -586,7 +621,12 @@ abstract class MeshOS {
       entity
     ] as Types.EntityInstanceTypes | undefined;
     if (!target) {
-      console.error(`Entity not found: ${database}.${namespace}.${entity}`);
+      this.logger.error(`meshos-entity-not-found`, {
+        database,
+        namespace,
+        entity,
+      });
+
       entity = Object.keys(entities)[0];
       return MeshOS.profiles[database]?.instances?.[namespace]?.[entity] as
         | Types.EntityInstanceTypes
@@ -657,14 +697,6 @@ abstract class MeshOS {
       }
     }
     return result;
-  }
-
-  // Instance method to initialize
-  async init(search = true): Promise<void> {
-    await this.connect();
-    if (search) {
-      await this.index();
-    }
   }
 
   workflow = {};
