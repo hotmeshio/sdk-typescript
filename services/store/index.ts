@@ -23,11 +23,10 @@ import { IdsData, JobStats, JobStatsRange, StatsType } from '../../types/stats';
 import { Transitions } from '../../types/transition';
 import { formatISODate, getSymKey, sleepFor } from '../../modules/utils';
 import { ReclaimedMessageType } from '../../types/stream';
-import { JobCompletionOptions, JobInterruptOptions } from '../../types/job';
+import { JobInterruptOptions } from '../../types/job';
 import {
   HMSH_SCOUT_INTERVAL_SECONDS,
   HMSH_CODE_INTERRUPT,
-  HMSH_MAX_TIMEOUT_MS,
   MAX_DELAY,
   HMSH_SIGNAL_EXPIRE,
 } from '../../modules/enums';
@@ -523,58 +522,6 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
     };
     return await this.redisClient[this.commands.hset](key, payload as any);
   }
-
-  /**
-   * Registers the job, `jobId`, with `originJobId`. In the future,
-   * when `originJobId` is interrupted/expired, the items in the
-   * list (added via RPUSH) will be interrupted/expired (removed via LPOPed).
-   */
-  async registerJobDependency(
-    depType: WorkListTaskType,
-    originJobId: string,
-    topic: string,
-    jobId: string,
-    gId: string,
-    pd = '',
-    multi?: U,
-  ): Promise<any> {
-    //todo: determine if this is necessary (`persist` seems sufficient)
-    // const privateMulti = multi || this.getMulti();
-    // const dependencyParams = {
-    //   appId: this.appId,
-    //   jobId: originJobId,
-    // };
-    // const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, dependencyParams);
-    // const expireTask = [depType, topic, gId, pd, jobId].join(VALSEP);
-    // privateMulti[this.commands.rpush](depKey, expireTask);
-    // if (!multi) {
-    //   return await privateMulti.exec();
-    // }
-  }
-
-  /**
-   * Ensures a `hook signal` is delisted when its parent activity/job
-   * is interrupted/expired.
-   */
-  // async registerSignalDependency(
-  //   jobId: string,
-  //   signalKey: string,
-  //   dad: string,
-  //   multi?: U,
-  // ): Promise<any> {
-  //   const privateMulti = multi || this.getMulti();
-  //   const dependencyParams = { appId: this.appId, jobId };
-  //   const dependencyKey = this.mintKey(
-  //     KeyType.JOB_DEPENDENTS,
-  //     dependencyParams,
-  //   );
-  //   //persist dependency tasks as multi-segment composite keys
-  //   const delistTask = ['delist', 'signal', jobId, dad, signalKey].join(VALSEP);
-  //   privateMulti[this.commands.rpush](dependencyKey, delistTask);
-  //   if (!multi) {
-  //     return await privateMulti.exec();
-  //   }
-  // }
 
   async setStats(
     jobKey: string,
@@ -1176,24 +1123,6 @@ abstract class StoreService<T, U extends AbstractRedisClient> {
       );
     }
   }
-
-  /**
-   * register the descendants of an expired origin flow to be
-   * expired at a future date; options indicate whether this
-   * is a standard `expire` or an `interrupt`
-   */
-  // async registerDependenciesForCleanup(
-  //   jobId: string,
-  //   deletionTime: number,
-  //   options: JobCompletionOptions,
-  // ): Promise<void> {
-  //   const depParams = { appId: this.appId, jobId };
-  //   const depKey = this.mintKey(KeyType.JOB_DEPENDENTS, depParams);
-  //   const context = options.interrupt ? 'INTERRUPT' : 'EXPIRE';
-  //   const depKeyContext = `${TYPSEP}${context}${TYPSEP}${depKey}`;
-  //   const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
-  //   await this.zAdd(zsetKey, deletionTime.toString(), depKeyContext);
-  // }
 
   async getDependencies(jobId: string): Promise<string[]> {
     const depParams = { appId: this.appId, jobId };

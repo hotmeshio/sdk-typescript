@@ -252,7 +252,9 @@ export class Search {
       this.cachedFields[key] = value;
       return value;
     } catch (error) {
-      this.hotMeshClient.logger.error('meshflow-search-get-error', { ...error });
+      this.hotMeshClient.logger.error('meshflow-search-get-error', {
+        ...error,
+      });
       return '';
     }
   }

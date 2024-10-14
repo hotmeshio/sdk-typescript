@@ -14,6 +14,7 @@
     "services/meshflow/worker.ts",
     "services/meshflow/workflow.ts",
     "services/meshflow/connection.ts",
+    "services/meshos/index.ts",
     "types/*.ts"
   ],
   "highlightLanguages": [

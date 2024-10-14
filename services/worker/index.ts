@@ -10,14 +10,8 @@ import { ConnectorService } from '../connector';
 import { ILogger } from '../logger';
 import { Router } from '../router';
 import { StoreService } from '../store';
-import { IORedisStoreService as IORedisStore } from '../store/clients/ioredis';
-import { RedisStoreService as RedisStore } from '../store/clients/redis';
 import { StreamService } from '../stream';
-import { IORedisStreamService as IORedisStream } from '../stream/clients/ioredis';
-import { RedisStreamService as RedisStream } from '../stream/clients/redis';
 import { SubService } from '../sub';
-import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
-import { RedisSubService as RedisSub } from '../sub/clients/redis';
 import { HotMeshConfig, HotMeshWorker } from '../../types/hotmesh';
 import {
   QuorumMessage,
@@ -25,14 +19,12 @@ import {
   RollCallMessage,
   SubscriptionCallback,
 } from '../../types/quorum';
-import {
-  IORedisClientType,
-  RedisClient,
-  RedisMulti,
-  RedisRedisClientType as RedisClientType,
-} from '../../types/redis';
+import { RedisClient, RedisMulti } from '../../types/redis';
 import { StreamData, StreamRole, StreamDataResponse } from '../../types/stream';
 import { HMSH_QUORUM_ROLLCALL_CYCLES } from '../../modules/enums';
+import { StreamServiceFactory } from '../stream/factory';
+import { SubServiceFactory } from '../sub/factory';
+import { StoreServiceFactory } from '../store/factory';
 
 class WorkerService {
   namespace: string;
@@ -143,24 +135,20 @@ class WorkerService {
    * @private
    */
   async initStoreChannel(service: WorkerService, store: RedisClient) {
-    if (identifyRedisType(store) === 'redis') {
-      service.store = new RedisStore(store as RedisClientType);
-    } else {
-      service.store = new IORedisStore(store as IORedisClientType);
-    }
-    await service.store.init(service.namespace, service.appId, service.logger);
+    service.store = await StoreServiceFactory.init(
+      store,
+      service.namespace,
+      service.appId,
+      service.logger,
+    );
   }
 
   /**
    * @private
    */
   async initSubChannel(service: WorkerService, sub: RedisClient) {
-    if (identifyRedisType(sub) === 'redis') {
-      service.subscribe = new RedisSub(sub as RedisClientType);
-    } else {
-      service.subscribe = new IORedisSub(sub as IORedisClientType);
-    }
-    await service.subscribe.init(
+    service.subscribe = await SubServiceFactory.init(
+      sub,
       service.namespace,
       service.appId,
       service.guid,
@@ -172,12 +160,12 @@ class WorkerService {
    * @private
    */
   async initStreamChannel(service: WorkerService, stream: RedisClient) {
-    if (identifyRedisType(stream) === 'redis') {
-      service.stream = new RedisStream(stream as RedisClientType);
-    } else {
-      service.stream = new IORedisStream(stream as IORedisClientType);
-    }
-    await service.stream.init(service.namespace, service.appId, service.logger);
+    service.stream = await StreamServiceFactory.init(
+      stream,
+      service.namespace,
+      service.appId,
+      service.logger,
+    );
   }
 
   /**

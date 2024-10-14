@@ -1,5 +1,5 @@
 # HotMesh
-The *MeshData*, *MeshCall*, and *MeshFlow* modules are all created using the HotMesh modeling system. Refer to the following documents to better understand the platform and how it delivers workflow orchestration without a central application server. 
+The *MeshCall*, *MeshFlow*, *MeshData*, and *MeshOS* modules are all created using the HotMesh modeling system. Refer to the following documents to better understand the platform and how it delivers workflow orchestration using decentralized message routers. 
 
 ## FAQ
 Refer to the [FAQ](./faq.md) for terminology, definitions, and an exploration of how HotMesh facilitates orchestration use cases.

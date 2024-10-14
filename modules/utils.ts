@@ -4,7 +4,6 @@ import { createHash } from 'crypto';
 import { nanoid } from 'nanoid';
 import ms from 'ms';
 
-import packageJson from '../package.json';
 import { StoreService } from '../services/store';
 import { AppSubscriptions, AppTransitions, AppVID } from '../types/app';
 import { RedisClient, RedisMulti } from '../types/redis';
@@ -364,4 +363,35 @@ export function isValidCron(cronExpression: string): boolean {
  */
 export const s = (input: string): number => {
   return ms(input) / 1000;
+};
+
+/**
+ * transform redis FT.Search response to an array of objects
+ */
+export const arrayToHash = (
+  response: [number, ...Array<string | string[]>],
+): Record<string, string>[] => {
+  const results: Record<string, string>[] = [];
+  let key: string | undefined;
+  for (let i = 1; i < response.length; i++) {
+    // ignore count
+    const row = response[i];
+    const result: Record<string, string> = {};
+    if (Array.isArray(row)) {
+      // Check if row is an array
+      for (let j = 0; j < row.length; j += 2) {
+        const key = row[j];
+        const value = row[j + 1];
+        result[key] = value;
+      }
+      if (key) {
+        result.$ = key;
+      }
+      results.push(result);
+      key = undefined;
+    } else {
+      key = row as string;
+    }
+  }
+  return results;
 };

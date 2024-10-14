@@ -1,5 +1,10 @@
 import { DuplicateJobError } from '../../modules/errors';
-import { formatISODate, getTimeSeries, guid, sleepFor } from '../../modules/utils';
+import {
+  formatISODate,
+  getTimeSeries,
+  guid,
+  sleepFor,
+} from '../../modules/utils';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
@@ -15,7 +20,6 @@ import {
 import { JobState, ExtensionType, JobStatus } from '../../types/job';
 import { RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
-import { WorkListTaskType } from '../../types/task';
 
 import { Activity } from './activity';
 
@@ -64,8 +68,6 @@ class Trigger extends Activity {
       await this.setStats(multi);
       if (options?.pending) {
         await this.setExpired(options?.pending, multi);
-      } else {
-        await this.registerJobDependency(multi);
       }
       await CollatorService.notarizeInception(
         this,
@@ -295,58 +297,6 @@ class Trigger extends Activity {
     const jobId = this.context.metadata.jid;
     if (!await this.store.setStateNX(jobId, this.engine.appId, status)) {
       throw new DuplicateJobError(jobId);
-    }
-  }
-
-  /**
-   * Registers this job as a dependent of the parent job; when the
-   * parent job is interrupted, this job will be interrupted
-   * NOTE: this method is suppressed for now and not in use
-   * @deprecated
-   */
-  async registerJobDependency(multi?: RedisMulti): Promise<void> {
-    //NOTE: this method is suppressed for now and not in use
-    const depKey = this.config.stats?.parent ?? this.context.metadata.pj;
-    let resolvedDepKey = depKey ? Pipe.resolve(depKey, this.context) : '';
-    const adjKey = this.config.stats?.adjacent;
-    const resolvedAdjKey = depKey ? Pipe.resolve(adjKey, this.context) : '';
-    if (!resolvedDepKey) {
-      resolvedDepKey = this.context.metadata.pj;
-    }
-    if (resolvedDepKey) {
-      const isParentOrigin =
-        resolvedDepKey === this.context.metadata.pj ||
-        resolvedDepKey === resolvedAdjKey;
-      let type: WorkListTaskType;
-      if (isParentOrigin) {
-        if (this.context.metadata.px) {
-          type = 'child';
-        } else {
-          type = 'expire-child';
-        }
-      } else {
-        type = 'expire';
-      }
-      await this.store.registerJobDependency(
-        type,
-        resolvedDepKey,
-        this.context.metadata.tpc,
-        this.context.metadata.jid,
-        this.context.metadata.gid,
-        this.context.metadata.pd,
-        multi,
-      );
-    }
-    if (resolvedAdjKey && resolvedAdjKey !== resolvedDepKey) {
-      await this.store.registerJobDependency(
-        'child',
-        resolvedAdjKey,
-        this.context.metadata.tpc,
-        this.context.metadata.jid,
-        this.context.metadata.gid,
-        this.context.metadata.pd,
-        multi,
-      );
     }
   }
 

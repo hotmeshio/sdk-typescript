@@ -293,11 +293,14 @@ export class WorkerService {
           data: { response: pojoResponse },
         };
       } catch (err) {
-        this.activityRunner.engine.logger.error('meshflow-worker-activity-err', {
-          name: err.name,
-          message: err.message,
-          stack: err.stack,
-        });
+        this.activityRunner.engine.logger.error(
+          'meshflow-worker-activity-err',
+          {
+            name: err.name,
+            message: err.message,
+            stack: err.stack,
+          },
+        );
         if (
           !(err instanceof MeshFlowTimeoutError) &&
           !(err instanceof MeshFlowMaxedError) &&
@@ -466,8 +469,13 @@ export class WorkerService {
           //NOTE: this type is spawned when `Promise.all` is used OR if the interruption is a `waitFor`
           const workflowInput = data.data as unknown as WorkflowDataType;
           const execIndex = counter.counter - interruptionRegistry.length + 1;
-          const { workflowId, workflowTopic, workflowDimension, originJobId, expire } =
-            workflowInput;
+          const {
+            workflowId,
+            workflowTopic,
+            workflowDimension,
+            originJobId,
+            expire,
+          } = workflowInput;
           const collatorFlowId = `${guid()}$C`;
           return {
             status: StreamStatus.SUCCESS,

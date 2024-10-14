@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Unbreakable Workflows",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -28,7 +28,7 @@
     "test:cycle": "NODE_ENV=test jest ./tests/functional/cycle/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow": "NODE_ENV=test jest ./tests/meshflow/*/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:basic": "NODE_ENV=test jest ./tests/meshflow/basic/index.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:meshflow:collision": "NODE_ENV=test jest ./tests/meshflow/collision/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:meshflow:collision": "NODE_ENV=test HMSH_LOGLEVEL=debug jest ./tests/meshflow/collision/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:fatal": "NODE_ENV=test jest ./tests/meshflow/fatal/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:goodbye": "NODE_ENV=test jest ./tests/meshflow/goodbye/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:hello": "HMSH_IS_CLUSTER=true NODE_ENV=test jest ./tests/meshflow/helloworld/index.test.ts --detectOpenHandles --forceExit --verbose",
@@ -64,6 +64,7 @@
     "test:sub:redis": "NODE_ENV=test jest ./tests/functional/sub/clients/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshdata": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshdata/index.test.ts --forceExit --verbose --detectOpenHandles",
+    "test:meshos": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/index.test.ts --forceExit --verbose --detectOpenHandles",
     "test:meshcall": "NODE_ENV=test HMSH_LOGLEVEL=debug jest ./tests/meshcall/index.test.ts --forceExit --verbose --detectOpenHandles",
     "test:unit": "NODE_ENV=test jest ./tests/unit/*/*/index.test.ts --detectOpenHandles --forceExit --verbose"
   },
