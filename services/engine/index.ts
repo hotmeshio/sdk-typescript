@@ -31,14 +31,8 @@ import { ReporterService } from '../reporter';
 import { Router } from '../router';
 import { SerializerService } from '../serializer';
 import { StoreService } from '../store';
-import { RedisStoreService as RedisStore } from '../store/clients/redis';
-import { IORedisStoreService as IORedisStore } from '../store/clients/ioredis';
 import { StreamService } from '../stream';
-import { RedisStreamService as RedisStream } from '../stream/clients/redis';
-import { IORedisStreamService as IORedisStream } from '../stream/clients/ioredis';
 import { SubService } from '../sub';
-import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
-import { RedisSubService as RedisSub } from '../sub/clients/redis';
 import { TaskService } from '../task';
 import { AppVID } from '../../types/app';
 import { ActivityMetadata, ActivityType, Consumes } from '../../types/activity';
@@ -66,12 +60,7 @@ import {
   JobMessageCallback,
   SubscriptionCallback,
 } from '../../types/quorum';
-import {
-  IORedisClientType,
-  RedisClient,
-  RedisMulti,
-  RedisRedisClientType as RedisClientType,
-} from '../../types/redis';
+import { RedisClient, RedisMulti } from '../../types/redis';
 import { StringAnyType, StringStringType } from '../../types/serializer';
 import {
   GetStatsOptions,
@@ -89,6 +78,9 @@ import {
   StreamStatus,
 } from '../../types/stream';
 import { WorkListTaskType } from '../../types/task';
+import { StreamServiceFactory } from '../stream/factory';
+import { SubServiceFactory } from '../sub/factory';
+import { StoreServiceFactory } from '../store/factory';
 
 class EngineService {
   namespace: string;
@@ -173,24 +165,20 @@ class EngineService {
    * @private
    */
   async initStoreChannel(store: RedisClient) {
-    if (identifyRedisType(store) === 'redis') {
-      this.store = new RedisStore(store as RedisClientType);
-    } else {
-      this.store = new IORedisStore(store as IORedisClientType);
-    }
-    await this.store.init(this.namespace, this.appId, this.logger);
+    this.store = await StoreServiceFactory.init(
+      store,
+      this.namespace,
+      this.appId,
+      this.logger,
+    );
   }
 
   /**
    * @private
    */
   async initSubChannel(sub: RedisClient) {
-    if (identifyRedisType(sub) === 'redis') {
-      this.subscribe = new RedisSub(sub as RedisClientType);
-    } else {
-      this.subscribe = new IORedisSub(sub as IORedisClientType);
-    }
-    await this.subscribe.init(
+    this.subscribe = await SubServiceFactory.init(
+      sub,
       this.namespace,
       this.appId,
       this.guid,
@@ -202,12 +190,12 @@ class EngineService {
    * @private
    */
   async initStreamChannel(stream: RedisClient) {
-    if (identifyRedisType(stream) === 'redis') {
-      this.stream = new RedisStream(stream as RedisClientType);
-    } else {
-      this.stream = new IORedisStream(stream as IORedisClientType);
-    }
-    await this.stream.init(this.namespace, this.appId, this.logger);
+    this.stream = await StreamServiceFactory.init(
+      stream,
+      this.namespace,
+      this.appId,
+      this.logger,
+    );
   }
 
   /**

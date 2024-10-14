@@ -15,11 +15,12 @@ const { greet } = MeshFlow.workflow.proxyActivities<ActivitiesType>({
 
 export async function example(name: string): Promise<string> {
   const greet1 = await greet(name);
-  await MeshFlow.workflow.execChild<string>({
+  const response = await MeshFlow.workflow.execChild<string>({
     args: ['Howdy!'],
     taskQueue: 'collision-world',
     workflowName: 'childExample',
-    workflowId: 'collision-child', //the parent is already named this
+    workflowId: 'collision-child', //the parent is already named this,
+    expire: 10_000,
   });
   //should never return as error will be thrown
   return greet1;

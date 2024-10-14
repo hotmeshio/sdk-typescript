@@ -511,7 +511,7 @@ type FindJobsOptions = {
   /**
    * application namespace
    * @default meshflow
-  */
+   */
   namespace?: string;
 
   /** The suggested response limit. Reduce batch size to reduce the likelihood of large overages. */

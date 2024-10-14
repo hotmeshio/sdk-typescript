@@ -63,7 +63,7 @@ describe('MESHFLOW | collision | `Naming Conflict Fatal Error`', () => {
           workflowId: CONFLICTING_NAME, //the child will attempt to use this id
           expire: 600,
           config: {
-            maximumAttempts: 4, //try 4 times and give up
+            maximumAttempts: 3, //try 3 times and give up
             maximumInterval: '1 second',
             backoffCoefficient: 1,
           },

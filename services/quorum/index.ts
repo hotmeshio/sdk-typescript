@@ -14,11 +14,7 @@ import { CompilerService } from '../compiler';
 import { EngineService } from '../engine';
 import { ILogger } from '../logger';
 import { StoreService } from '../store';
-import { IORedisStoreService as IORedisStore } from '../store/clients/ioredis';
-import { RedisStoreService as RedisStore } from '../store/clients/redis';
 import { SubService } from '../sub';
-import { IORedisSubService as IORedisSub } from '../sub/clients/ioredis';
-import { RedisSubService as RedisSub } from '../sub/clients/redis';
 import { CacheMode } from '../../types/cache';
 import { HotMeshConfig, KeyType } from '../../types/hotmesh';
 import {
@@ -28,12 +24,9 @@ import {
   RollCallMessage,
   SubscriptionCallback,
 } from '../../types/quorum';
-import {
-  IORedisClientType,
-  RedisClient,
-  RedisMulti,
-  RedisRedisClientType as RedisClientType,
-} from '../../types/redis';
+import { RedisClient, RedisMulti } from '../../types/redis';
+import { SubServiceFactory } from '../sub/factory';
+import { StoreServiceFactory } from '../store/factory';
 
 class QuorumService {
   namespace: string;
@@ -113,24 +106,20 @@ class QuorumService {
    * @private
    */
   async initStoreChannel(store: RedisClient) {
-    if (identifyRedisType(store) === 'redis') {
-      this.store = new RedisStore(store as RedisClientType);
-    } else {
-      this.store = new IORedisStore(store as IORedisClientType);
-    }
-    await this.store.init(this.namespace, this.appId, this.logger);
+    this.store = await StoreServiceFactory.init(
+      store,
+      this.namespace,
+      this.appId,
+      this.logger,
+    );
   }
 
   /**
    * @private
    */
   async initSubChannel(sub: RedisClient) {
-    if (identifyRedisType(sub) === 'redis') {
-      this.subscribe = new RedisSub(sub as RedisClientType);
-    } else {
-      this.subscribe = new IORedisSub(sub as IORedisClientType);
-    }
-    await this.subscribe.init(
+    this.subscribe = await SubServiceFactory.init(
+      sub,
       this.namespace,
       this.appId,
       this.guid,

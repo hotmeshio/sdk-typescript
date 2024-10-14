@@ -91,6 +91,21 @@ export {
   JobStatus,
   PartialJobState,
 } from './job';
+export {
+  DB,
+  DBConfig,
+  Profile,
+  Namespaces,
+  Entity,
+  EntityInstanceTypes,
+  SubClassInstance,
+  AllSubclassInstances,
+  SubclassType,
+  Namespace,
+  Instance,
+  Instances,
+  Profiles,
+} from './manifest';
 export { MappingStatements } from './map';
 export {
   Pipe,

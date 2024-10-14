@@ -231,7 +231,7 @@ export class WorkflowService {
           }
         }
         return result.$error as T;
-      } else {
+      } else if (!result?.$error) {
         return result.data as T;
       }
     }
@@ -265,7 +265,7 @@ export class WorkflowService {
     if (options.workflowId) {
       childJobId = options.workflowId;
     } else if (options.entity) {
-      childJobId = `${options.entity}-${workflowId.substring(0, 7)}-${guid()}-${workflowDimension}-${execIndex}`;
+      childJobId = `${options.entity}-${guid()}-${workflowDimension}-${execIndex}`;
     } else {
       childJobId = `-${options.workflowName}-${guid()}-${workflowDimension}-${execIndex}`;
     }
