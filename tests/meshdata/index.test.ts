@@ -1,28 +1,35 @@
-import * as Redis from 'redis';
+import Redis from 'ioredis';
 
 import config from '../$setup/config';
 import { HotMesh } from '../../services/hotmesh';
 import { MeshData } from '../../services/meshdata';
-import { RedisConnection } from '../../services/connector/clients/redis';
+import { RedisConnection } from '../../services/connector/clients/ioredis';
 import * as HotMeshTypes from '../../types';
 
 import * as activities from './activities';
 
 describe('MeshData`', () => {
-  const options = {
-    socket: {
-      host: config.REDIS_HOST,
-      port: config.REDIS_PORT,
-      tls: false,
-    },
-    password: config.REDIS_PASSWORD,
-    database: config.REDIS_DATABASE,
-  };
   //redis connection options
+  // const options = {
+  //   socket: {
+  //     host: config.REDIS_HOST,
+  //     port: config.REDIS_PORT,
+  //     tls: false,
+  //   },
+  //   password: config.REDIS_PASSWORD,
+  //   database: config.REDIS_DATABASE,
+  // };
+  //ioredis connection options
+  const options = {
+    host: config.REDIS_HOST,
+    port: config.REDIS_PORT,
+    password: config.REDIS_PASSWORD,
+    db: config.REDIS_DATABASE,
+  };
 
-  //configure pluck instance will full set of options
+  //configure meshData instance will full set of options
   //include redis instance and model/schema for use in search
-  const pluck = new MeshData(Redis, options, {
+  const meshData = new MeshData(Redis, options, {
     schema: {
       email: { type: 'TEXT', sortable: true },
       newsletter: { type: 'TAG', sortable: true },
@@ -55,7 +62,7 @@ describe('MeshData`', () => {
       await Promise.all([
         //exec a child (self)
         MeshData.workflow.execChild<HotMeshTypes.WorkflowContext>({
-          entity: 'howdy', //standard pluck syntax (just provide entity)
+          entity: 'howdy', //standard meshData syntax (just provide entity)
           args: [depth - 1],
         }),
         //exec a child (self)
@@ -107,7 +114,7 @@ describe('MeshData`', () => {
     }
 
     //spawn the `sendRecurringNewsLetter` hook (a parallel subroutine)
-    if (email === 'floe.doe@pluck.com') {
+    if (email === 'floe.doe@hotmesh.com') {
       const msgId = await MeshData.workflow.hook({
         args: [],
         workflowName: 'subscribe',
@@ -131,7 +138,7 @@ describe('MeshData`', () => {
     }
   };
 
-  //once connected by pluck, this function will become a 'hook'
+  //once connected by meshData, this function will become a 'hook'
   //hook functions are reentrant processes and use the job
   //state its bound to when initialized.
   const sendRecurringNewsLetter = async () => {
@@ -162,10 +169,16 @@ describe('MeshData`', () => {
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       HotMesh.guid(),
-      Redis as unknown as HotMeshTypes.RedisRedisClassType,
+      //redis
+      //Redis as unknown as HotMeshTypes.RedisRedisClassType,
+      //ioredis
+      Redis as unknown as HotMeshTypes.IORedisClassType,
       options,
     );
-    redisConnection.getClient().flushDb();
+    //redis
+    // redisConnection.getClient().flushDb();
+    //ioredis
+    redisConnection.getClient().flushdb();
   }, 5_000);
 
   afterAll(async () => {
@@ -181,20 +194,20 @@ describe('MeshData`', () => {
       //should never be more than 5 published events matching 'greeting' entity
       const max = 5;
       let counter = 0;
-      await pluck.mesh.sub(async (topic, message) => {
+      await meshData.mesh.sub(async (topic, message) => {
         if (message.entity === entityName) {
           counter++;
         }
         expect(counter).toBeLessThanOrEqual(max);
       });
 
-      const worker = await pluck.connect<Promise<string>>({
+      const worker = await meshData.connect<Promise<string>>({
         entity: entityName,
         target: greet,
       });
       expect(worker).toBeDefined();
 
-      const sleeperWorker = await pluck.connect({
+      const sleeperWorker = await meshData.connect({
         entity: 'sleeper',
         target: sleeper,
       });
@@ -202,7 +215,7 @@ describe('MeshData`', () => {
     }, 10_000);
 
     it('should connect a function and isolate the namespace', async () => {
-      const worker = await pluck.connect<Promise<HotMeshTypes.WorkflowContext>>(
+      const worker = await meshData.connect<Promise<HotMeshTypes.WorkflowContext>>(
         {
           entity: 'howdy',
           target: howdy,
@@ -213,7 +226,7 @@ describe('MeshData`', () => {
     });
 
     it('should connect a hook function', async () => {
-      const worker = await pluck.connect({
+      const worker = await meshData.connect({
         entity: 'subscribe',
         target: sendRecurringNewsLetter,
       });
@@ -221,7 +234,7 @@ describe('MeshData`', () => {
     });
 
     it('should connect another hook function', async () => {
-      const worker = await pluck.connect({
+      const worker = await meshData.connect({
         entity: 'unsubscribe',
         target: unsubscribeFromNewsLetter,
       });
@@ -231,16 +244,15 @@ describe('MeshData`', () => {
 
   describe('HotMesh Instance', () => {
     it('should return a HotMesh Instance', async () => {
-      const instance = await pluck.getHotMesh();
+      const instance = await meshData.getHotMesh();
       expect(instance.engine).toBeDefined();
       expect(instance.engine?.store).toBeDefined();
-      expect(instance.engine?.store?.redisClient).toBeDefined();
     });
   });
 
   describe('exec', () => {
     it('should exec a recursive workflow, await, export and flush a persistent function at a custom namespace', async () => {
-      const context = await pluck.exec<HotMeshTypes.WorkflowContext>({
+      const context = await meshData.exec<HotMeshTypes.WorkflowContext>({
         entity: 'howdy',
         args: [2],
         options: {
@@ -256,7 +268,7 @@ describe('MeshData`', () => {
       expect(context.workflowDimension).toEqual(''); //main context, no dimension
       expect(context.workflowTopic).toEqual('howdy-howdy');
 
-      const exported = await pluck.export(
+      const exported = await meshData.export(
         'howdy',
         'jimbo123',
         { block: ['transitions'], values: false },
@@ -265,13 +277,13 @@ describe('MeshData`', () => {
       expect(exported.transitions).toBeUndefined();
       expect(exported.timeline).toBeDefined();
 
-      await pluck.flush('howdy', 'jimbo123', 'staging');
+      await meshData.flush('howdy', 'jimbo123', 'staging');
 
       try {
         let job: HotMeshTypes.JobOutput | undefined;
         do {
           await new Promise((resolve) => setTimeout(resolve, 250));
-          job = await pluck.info('howdy', 'jimbo123', { namespace: 'staging' });
+          job = await meshData.info('howdy', 'jimbo123', { namespace: 'staging' });
         } while (true);
       } catch (error) {
         expect(error.message).toBe(`howdy-jimbo123 Not Found`);
@@ -279,13 +291,13 @@ describe('MeshData`', () => {
     }, 25_000);
 
     it('should start a function (and not await)', async () => {
-      const email = 'jan@pluck.com';
+      const email = 'jan@hotmesh.com';
       const name = { first: 'Jan', last: 'Doe' };
       const entity = 'greeting';
       const id = 'jan';
 
       //broker using MeshData (Redis will govern the exchange)
-      const jobId = await pluck.exec<string>({
+      const jobId = await meshData.exec<string>({
         entity,
         args: [email, name],
         options: {
@@ -299,11 +311,11 @@ describe('MeshData`', () => {
     });
 
     it('should exec a function and await the result', async () => {
-      const email = 'jdoe@pluck.com';
+      const email = 'jdoe@hotmesh.com';
       const name = { first: 'John', last: 'Doe' };
 
       //broker using MeshData (Redis will govern the exchange)
-      const brokered = await pluck.exec<Promise<string>>({
+      const brokered = await meshData.exec<Promise<string>>({
         entity: 'greeting',
         args: [email, name],
         options: {
@@ -325,18 +337,18 @@ describe('MeshData`', () => {
     }, 10_000);
 
     it('should return RAW fields (HGETALL)', async () => {
-      const email = 'jdoe@pluck.com';
+      const email = 'jdoe@hotmesh.com';
       const name = { first: 'John', last: 'Doe' };
       const direct = await localGreet(email, name);
-      const raw = await pluck.raw('greeting', 'jdoe');
+      const raw = await meshData.raw('greeting', 'jdoe');
       expect(raw._fred).toEqual('flintstone');
       expect(raw.aBa).toEqual(direct);
     });
 
     it('should only run proxy functions one time', async () => {
-      await pluck.exec<void>({
+      await meshData.exec<void>({
         entity: 'sleeper',
-        args: ['sleeper@pluck.com'],
+        args: ['sleeper@hotmesh.com'],
         options: {
           signalIn: false,
         },
@@ -344,13 +356,13 @@ describe('MeshData`', () => {
     }, 20_000);
 
     it('should return ALL `state` fields', async () => {
-      const all = await pluck.all('greeting', 'jdoe');
+      const all = await meshData.all('greeting', 'jdoe');
       expect(all.fred).toEqual('flintstone');
       expect(all.aBa).toBeUndefined();
     });
 
     it('should GET named `state` fields', async () => {
-      const some = await pluck.get('greeting', 'jdoe', {
+      const some = await meshData.get('greeting', 'jdoe', {
         fields: ['fred', 'newsletter'],
       });
       expect(some.fred).toEqual('flintstone');
@@ -359,13 +371,13 @@ describe('MeshData`', () => {
     });
 
     it('should SET named `state` fields', async () => {
-      const numAdded = await pluck.set('greeting', 'jdoe', {
+      const numAdded = await meshData.set('greeting', 'jdoe', {
         //set 2 new fields and overwrite 1 existing field
         search: {
           data: {
             wilma: 'flintstone',
             bce: '-1000000',
-            email: 'wstone@pluck.com',
+            email: 'wstone@hotmesh.com',
           },
         },
       });
@@ -373,12 +385,12 @@ describe('MeshData`', () => {
     });
 
     it('should INCR named `state` field', async () => {
-      const newAmount = await pluck.incr('greeting', 'jdoe', 'bce', 1);
+      const newAmount = await meshData.incr('greeting', 'jdoe', 'bce', 1);
       expect(newAmount).toEqual(-999999);
     });
 
     it('should DEL named `state` fields', async () => {
-      const numDeleted = await pluck.del('greeting', 'jdoe', {
+      const numDeleted = await meshData.del('greeting', 'jdoe', {
         //delete 2 fields (and ignore 1 non-existent field: emails)
         fields: ['wilma', 'bce', 'emails'],
       });
@@ -386,11 +398,11 @@ describe('MeshData`', () => {
     });
 
     it('should exec a long-running function that calls a proxy', async () => {
-      const email = 'fdoe@pluck.com';
+      const email = 'fdoe@hotmesh.com';
       const name = { first: 'Fred', last: 'Doe' };
 
       //call with MeshData (Redis will govern the exchange)
-      const brokered = await pluck.exec<Promise<string>>({
+      const brokered = await meshData.exec<Promise<string>>({
         entity: 'greeting',
         args: [email, name],
         options: { ttl: '1 second', id: 'abc123' },
@@ -402,11 +414,11 @@ describe('MeshData`', () => {
     }, 10_000);
 
     it('should exec a persistent function (ttl:infinity) that calls a proxy and hook', async () => {
-      const email = 'floe.doe@pluck.com';
+      const email = 'floe.doe@hotmesh.com';
       const name = { first: 'Floe', last: 'Doe' };
 
       //call with MeshData (Redis will govern the exchange)
-      const brokered = await pluck.exec<Promise<string>>({
+      const brokered = await meshData.exec<Promise<string>>({
         entity: 'greeting',
         args: [email, name],
         options: { ttl: 'infinity', id: 'abc456' },
@@ -419,12 +431,12 @@ describe('MeshData`', () => {
 
     it('should flush a persistent function (ttl:infinity)', async () => {
       //flush causes the main thread to exit (it waits for the flush signal)
-      await pluck.flush('greeting', 'abc456');
+      await meshData.flush('greeting', 'abc456');
       //sleep long enough for running hooks in the test to awaken from sleep
       await new Promise((resolve) => setTimeout(resolve, 1_000));
       let pluckResponse: HotMeshTypes.JobOutput;
       try {
-        pluckResponse = await pluck.info('greeting', 'abc456');
+        pluckResponse = await meshData.info('greeting', 'abc456');
       } catch (error) {
         expect(error.message).toBe(`greeting-abc456 Not Found`);
         return;
@@ -433,7 +445,7 @@ describe('MeshData`', () => {
     }, 15_000);
 
     it('should retry if it fails', async () => {
-      const email = 'jim.doe@pluck.com';
+      const email = 'jim.doe@hotmesh.com';
       const name = { first: 'Jim', last: 'Doe' };
 
       //call with MeshData (Redis will govern the exchange)
@@ -441,7 +453,7 @@ describe('MeshData`', () => {
       //b) redis will retry until `showThrowError` switches to `false`
       //c) the 'greet' function will set shouldThrowError to false after 2 runs
       shouldThrowError = true;
-      const brokered = await pluck.exec<Promise<string>>({
+      const brokered = await meshData.exec<Promise<string>>({
         entity: 'greeting',
         args: [email, name],
         options: {
@@ -467,14 +479,14 @@ describe('MeshData`', () => {
 
   describe('info', () => {
     it('should return the full function profile', async () => {
-      const pluckResponse = await pluck.info('greeting', idemKey);
+      const pluckResponse = await meshData.info('greeting', idemKey);
       expect(pluckResponse.data.done).toEqual(true);
     });
   });
 
   describe('rollCall', () => {
     it('should rollCall multiple namespaces', async () => {
-      const pluckNamespaceResponse = await pluck.rollCall({
+      const pluckNamespaceResponse = await meshData.rollCall({
         namespace: 'staging',
         delay: 2500,
       });
@@ -487,11 +499,11 @@ describe('MeshData`', () => {
       let pluckData: any;
       do {
         await new Promise((resolve) => setTimeout(resolve, 500));
-        pluckData = await pluck.all('greeting', idemKey);
+        pluckData = await meshData.all('greeting', idemKey);
       } while (pluckData.newsletter !== 'yes');
       expect(pluckData.newsletter).toEqual('yes');
       //hooks only return an id (this is the `guarantee` the hook will complete)
-      const hookId = await pluck.hook({
+      const hookId = await meshData.hook({
         entity: 'greeting',
         id: idemKey,
         hookEntity: 'unsubscribe',
@@ -500,10 +512,10 @@ describe('MeshData`', () => {
       expect(hookId).toBeDefined();
       //hooks are async; sleep to allow the hook to run
       await new Promise((resolve) => setTimeout(resolve, 1_000));
-      await pluck.info('greeting', idemKey);
+      await meshData.info('greeting', idemKey);
 
       //by now the data should have been updated to 'no'
-      pluckData = await pluck.all('greeting', idemKey);
+      pluckData = await meshData.all('greeting', idemKey);
       expect(pluckData.newsletter).toEqual('no');
       expect(pluckData.reason).toEqual(reason);
     }, 10_000);
@@ -511,11 +523,11 @@ describe('MeshData`', () => {
 
   describe('export', () => {
     it('should export the job timelines, actions, and dependencies', async () => {
-      let exported = await pluck.export('greeting', idemKey);
+      let exported = await meshData.export('greeting', idemKey);
       expect(exported.state?.data.response).toEqual(
-        'Hello, Jim Doe. Your email is [jim.doe@pluck.com].',
+        'Hello, Jim Doe. Your email is [jim.doe@hotmesh.com].',
       );
-      exported = await pluck.export('greeting', idemKey, {
+      exported = await meshData.export('greeting', idemKey, {
         block: ['transitions'],
         values: false,
       });
@@ -526,7 +538,7 @@ describe('MeshData`', () => {
 
   describe('findJobs', () => {
     it('should find matching jobs using a wildcard (SCAN)', async () => {
-      const [cursor, jobs] = await pluck.findJobs({
+      const [cursor, jobs] = await meshData.findJobs({
         match: 'greeting*',
       });
       expect(cursor).toBe('0');
@@ -540,14 +552,14 @@ describe('MeshData`', () => {
     });
 
     it('should find all jobs without a wildcard', async () => {
-      const [_cursor, jobs] = await pluck.findJobs();
+      const [_cursor, jobs] = await meshData.findJobs();
       expect(jobs.length).toBeGreaterThan(5);
     });
   });
 
   describe('search', () => {
     it('should create a search index', async () => {
-      await pluck.createSearchIndex('greeting', undefined, {
+      await meshData.createSearchIndex('greeting', undefined, {
         schema: {
           email: { type: 'TEXT', sortable: true },
           newsletter: { type: 'TAG', sortable: true },
@@ -558,12 +570,12 @@ describe('MeshData`', () => {
     });
 
     it('should list search indexes', async () => {
-      const indexes = await pluck.listSearchIndexes();
+      const indexes = await meshData.listSearchIndexes();
       expect(indexes.length).toBeGreaterThan(0);
     });
 
     it('should conditionally search and limit response fields', async () => {
-      const indexedResults = (await pluck.findWhere('greeting', {
+      const indexedResults = (await meshData.findWhere('greeting', {
         query: [{ field: 'newsletter', is: '=', value: 'no' }],
         return: ['email', 'newsletter', 'reason'],
       })) as { count: number; data: HotMeshTypes.StringStringType[] };
@@ -578,7 +590,7 @@ describe('MeshData`', () => {
     });
 
     it('should conditionally search and paginate responses', async () => {
-      const indexedResults = (await pluck.findWhere('greeting', {
+      const indexedResults = (await meshData.findWhere('greeting', {
         query: [{ field: 'newsletter', is: '=', value: 'no' }],
         return: ['email', 'newsletter', 'reason'],
         limit: { start: 0, size: 1 }, // 0-based index (get first result)
@@ -591,7 +603,7 @@ describe('MeshData`', () => {
     });
 
     it('should conditionally count records', async () => {
-      const count = (await pluck.findWhere('greeting', {
+      const count = (await meshData.findWhere('greeting', {
         query: [{ field: 'newsletter', is: '=', value: 'no' }],
         count: true,
       })) as number;

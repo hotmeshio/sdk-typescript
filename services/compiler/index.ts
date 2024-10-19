@@ -11,16 +11,19 @@ import { RedisClient, RedisMulti } from '../../types/redis';
 
 import { Deployer } from './deployer';
 import { Validator } from './validator';
+import { StreamService } from '../stream';
 
 /**
  * The compiler service converts a graph into a executable program.
  */
 class CompilerService {
   store: StoreService<RedisClient, RedisMulti> | null;
+  stream: StreamService<RedisClient, RedisMulti> | null;
   logger: ILogger;
 
-  constructor(store: StoreService<RedisClient, RedisMulti>, logger: ILogger) {
+  constructor(store: StoreService<RedisClient, RedisMulti>, stream: StreamService<RedisClient, RedisMulti>, logger: ILogger) {
     this.store = store;
+    this.stream = stream;
     this.logger = logger;
   }
 
@@ -75,7 +78,7 @@ class CompilerService {
 
       // 3) deploy the schema (segment, optimize, etc; save to Redis)
       const deployer = new Deployer(schema);
-      await deployer.deploy(this.store);
+      await deployer.deploy(this.store, this.stream);
 
       // 4) save the app version to Redis (so it can be activated later)
       await this.store.setApp(schema.app.id, schema.app.version);

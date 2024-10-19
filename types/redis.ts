@@ -75,7 +75,7 @@ interface RedisRedisMultiType {
   DEL(key: string): this;
   EXISTS(key: string): this;
   EXPIRE(key: string, seconds: number): this;
-  HDEL(key: string, itemId: string): this;
+  HDEL(key: string, fields: string[] | string): this;
   HGET(key: string, itemId: string): this;
   HGETALL(key: string): this;
   HINCRBYFLOAT(key: string, itemId: string, value: number): this;
@@ -151,12 +151,12 @@ interface RedisRedisClientType {
   XLEN(key: string): Promise<number>;
   DEL(key: string): Promise<number>;
   EXISTS(key: string): Promise<number>;
-  HDEL(key: string, itemId: string): Promise<number>;
+  HDEL(key: string, fields: string[] | string): Promise<number>;
   HGET(key: string, itemId: string): Promise<string | null>;
   HGETALL(key: string): Promise<StringStringType>;
   HINCRBYFLOAT(key: string, itemId: string, value: number): Promise<number>;
   HMGET(key: string, itemIds: string[]): Promise<string[]>;
-  HSET(key: string, values: Record<string, string>): this;
+  HSET(key: string, values: Record<string, string>): Promise<number>;
   LPUSH(key: string, items: string[]): Promise<number>;
   LRANGE(key: string, start: number, end: number): Promise<string[]>;
   RPUSH(key: string, items: string[]): Promise<number>;
@@ -250,12 +250,12 @@ interface IORedisClient {
   del(key: string): Promise<number>;
   exists(key: string): Promise<number>;
   get(key: string): Promise<string | null>;
-  hdel(key: string, itemId: string): Promise<number>;
+  hdel(key: string, ...fields: string[]): Promise<number>;
   hget(key: string, itemId: string): Promise<string | null>;
   hgetall(key: string): Promise<StringStringType>;
   hincrbyfloat(key: string, itemId: string, value: number): Promise<number>;
   hmget(key: string, itemIds: string[]): Promise<string[]>;
-  hset(key: string, values: Record<string, string>): this;
+  hset(key: string, values: Record<string, string>): Promise<number>;
   lpush(key: string, ...args: string[]): Promise<number>;
   lrange(key: string, start: number, end: number): Promise<string[]>;
   on(event: string, callback: (...args: any[]) => void): void;

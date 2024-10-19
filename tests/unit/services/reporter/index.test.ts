@@ -1,14 +1,14 @@
 import { HMNS } from '../../../../modules/key';
 import { ILogger } from '../../../../services/logger';
 import { ReporterService } from '../../../../services/reporter';
-import { IORedisStoreService as IORedisStore } from '../../../../services/store/clients/ioredis';
+import { IORedisStoreService as IORedisStore } from '../../../../services/store/providers/redis/ioredis';
 import { JobStatsRange } from '../../../../types/stats';
 import {
   RedisClientType,
   RedisConnection,
 } from '../../../$setup/cache/ioredis';
 
-jest.mock('../../../../services/store/clients/ioredis', () => {
+jest.mock('../../../../services/store/providers/redis/ioredis', () => {
   return {
     IORedisStoreService: jest.fn().mockImplementation(() => {
       return {

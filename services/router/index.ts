@@ -80,7 +80,7 @@ class Router {
 
   async createGroup(stream: string, group: string) {
     try {
-      await this.store.xgroup('CREATE', stream, group, '$', 'MKSTREAM');
+      await this.stream.createConsumerGroup(stream, group);
     } catch (err) {
       this.logger.debug('router-stream-group-exists', { stream, group });
     }
@@ -98,7 +98,7 @@ class Router {
       appId: this.store.appId,
       topic,
     });
-    return await this.store.xadd(
+    return await this.stream.publishMessage(
       stream,
       '*',
       'message',
@@ -170,15 +170,11 @@ class Router {
         //randomizer that asymptotes at 150% of `HMSH_BLOCK_TIME_MS`
         const streamDuration =
           HMSH_BLOCK_TIME_MS + Math.round(HMSH_BLOCK_TIME_MS * Math.random());
-        const result = await this.stream.xreadgroup(
-          'GROUP',
+        const result = await this.stream.consumeMessages(
           group,
           consumer,
-          'BLOCK',
           streamDuration,
-          'STREAMS',
           stream,
-          '>',
         );
         if (this.isStopped(group, consumer, stream)) {
           return;
@@ -303,10 +299,7 @@ class Router {
   }
 
   async ackAndDelete(stream: string, group: string, id: string) {
-    const multi = this.stream.getMulti();
-    await this.stream.xack(stream, group, id, multi);
-    await this.stream.xdel(stream, id, multi);
-    await multi.exec();
+    await this.stream.ackAndDelete(stream, group, id);
   }
 
   async publishResponse(
@@ -477,18 +470,16 @@ class Router {
     limit = HMSH_XPENDING_COUNT,
   ): Promise<[string, [string, string]][]> {
     let pendingMessages = [];
-    const pendingMessagesInfo = await this.stream.xpending(
+    const pendingMessagesInfo = await this.stream.getPendingMessages(
       stream,
       group,
-      '-',
-      '+',
       limit,
     ); //[[ '1688768134881-0', 'testConsumer1', 1017, 1 ]]
     for (const pendingMessageInfo of pendingMessagesInfo) {
       if (Array.isArray(pendingMessageInfo)) {
         const [id, , elapsedTimeMs, deliveryCount] = pendingMessageInfo;
         if (elapsedTimeMs > idleTimeMs) {
-          const reclaimedMessage = await this.stream.xclaim(
+          const reclaimedMessage = await this.stream.claimMessage(
             stream,
             group,
             consumer,

@@ -17,6 +17,7 @@
     "node_modules",
     "tests",
     "build",
-    "docs"
+    "docs",
+    "scripts",
   ]
 }

@@ -85,7 +85,6 @@ class ReporterService {
       return ['0'];
     }
     if (!range) {
-      //pluck just a single value when no range provided
       range = '0m';
     }
     const granularitiesInMinutes = {

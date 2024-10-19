@@ -1,13 +1,12 @@
 import { HotMesh } from '../hotmesh';
-import { RedisClient, RedisMulti } from '../../types/redis';
-import { StoreService } from '../store';
+import { SearchService } from '../search';
 import { KeyService, KeyType } from '../../modules/key';
 import { WorkflowSearchOptions } from '../../types/meshflow';
 import { asyncLocalStorage } from '../../modules/storage';
 
 /**
  * The Search module provides methods for reading and
- * writing data to a workflow record. The instance
+ * writing record data to a workflow. The instance
  * methods exposed by this class are available
  * for use from within a running workflow. The following example
  * uses search to set a `name` field and increment a
@@ -16,11 +15,11 @@ import { asyncLocalStorage } from '../../modules/storage';
  * @example
  * ```typescript
  * //searchWorkflow.ts
- * import { MeshFlow } from '@hotmeshio/hotmesh';
+ * import { workflow } from '@hotmeshio/hotmesh';
 
  * export async function searchExample(name: string): Promise<{counter: number}> {
- *   const search = await MeshFlow.workflow.search();
- *   await search.set('name', name);
+ *   const search = await workflow.search();
+ *   await search.set({ name });
  *   const newCounterValue = await search.incr('counter', 1);
  *   return { counter: newCounterValue };
  * }
@@ -46,7 +45,7 @@ export class Search {
   /**
    * @private
    */
-  store: StoreService<RedisClient, RedisMulti> | null;
+  search: SearchService<any> | null;
   /**
    * @private
    */
@@ -71,17 +70,13 @@ export class Search {
     );
     this.searchSessionId = searchSessionId;
     this.hotMeshClient = hotMeshClient;
-    this.store = hotMeshClient.engine.store as StoreService<
-      RedisClient,
-      RedisMulti
-    >;
+    this.search = hotMeshClient.engine.search;
   }
 
   /**
    * Prefixes the key with an underscore to keep separate from the
    * activity and job history (and searchable via HKEYS)
-   * @param {string} key - the key to be sanitized. Wrap in quotes to avoid sanitization.
-   * @returns {string} - the sanitized key
+   * 
    * @private
    */
   safeKey(key: string): string {
@@ -92,13 +87,9 @@ export class Search {
   }
 
   /**
-   * For those deployments with a redis stack backend (with the FT module),
-   * this method will configure the search index for the workflow. For all
-   * others, this method will exit/fail gracefully and not index
-   * the fields in the HASH. All values are searchable via HKEYS/HSC/HGET
-   * @param {HotMesh} hotMeshClient - the hotmesh client
-   * @param {WorkflowSearchOptions} search - the search options
-   * @returns {Promise<void>}
+   * For those deployments with search configured, this method
+   * will configure the search index with the provided schema.
+   * 
    * @private
    * @example
    * const search = {
@@ -116,7 +107,7 @@ export class Search {
     search?: WorkflowSearchOptions,
   ): Promise<void> {
     if (search?.schema) {
-      const store = hotMeshClient.engine.store;
+      const searchService = hotMeshClient.engine.search;
       const schema: string[] = [];
       for (const [key, value] of Object.entries(search.schema)) {
         if (value.indexed !== false) {
@@ -149,17 +140,7 @@ export class Search {
         const prefixes = search.prefix.map(
           (prefix) => `${hotMeshPrefix}${prefix}`,
         );
-        await store.exec(
-          'FT.CREATE',
-          `${search.index}`,
-          'ON',
-          'HASH',
-          'PREFIX',
-          prefixes.length.toString(),
-          ...prefixes,
-          'SCHEMA',
-          ...schema,
-        );
+        await searchService.createSearchIndex(`${search.index}`, prefixes, schema);
       } catch (error) {
         hotMeshClient.engine.logger.info('meshflow-client-search-err', {
           ...error,
@@ -169,19 +150,15 @@ export class Search {
   }
 
   /**
-   * For those deployments with a redis stack backend (with the FT module),
-   * this method will list all search indexes.
+   * Returns an array of search indexes ids
    *
-   * @param {HotMesh} hotMeshClient - the hotmesh client
-   * @returns {Promise<string[]>} - the list of search indexes
    * @example
    * const searchIndexes = await Search.listSearchIndexes(hotMeshClient);
    */
   static async listSearchIndexes(hotMeshClient: HotMesh): Promise<string[]> {
     try {
-      const store = hotMeshClient.engine.store;
-      const searchIndexes = await store.exec('FT._LIST');
-      return searchIndexes as string[];
+      const searchService = hotMeshClient.engine.search;
+      return await searchService.listSearchIndexes();
     } catch (error) {
       hotMeshClient.engine.logger.info('meshflow-client-search-list-err', {
         ...error,
@@ -196,7 +173,6 @@ export class Search {
    * @private
    */
   getSearchSessionGuid(): string {
-    //return the search session as it would exist in the search session index
     return `${this.searchSessionId}-${this.searchSessionIndex++}-`;
   }
 
@@ -204,52 +180,52 @@ export class Search {
    * Sets the fields listed in args. Returns the
    * count of new fields that were set (does not
    * count fields that were updated)
-   * @param args
-   * @returns {number}
+   * 
    * @example
-   * const search = new Search();
-   * const count = await search.set('field1', 'value1', 'field2', 'value2');
+   * const search = await workflow.search();
+   * const count = await search.set({ field1: 'value1', field2: 'value2' });
    */
-  async set(...args: string[]): Promise<number> {
+  async set(...args: any[]): Promise<number> {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    const safeArgs: string[] = [];
-    for (let i = 0; i < args.length; i += 2) {
-      const keyName = args[i];
-      delete this.cachedFields[keyName];
-      const key = this.safeKey(keyName);
-      const value = args[i + 1].toString();
-      safeArgs.push(key, value);
-    }
     if (ssGuid in replay) {
       return Number(replay[ssGuid]);
     }
-    const fieldCount = await this.store.exec('HSET', this.jobId, ...safeArgs);
-    //no need to wait; set this interim value in the replay
-    this.store.exec('HSET', this.jobId, ssGuid, fieldCount.toString());
-    return Number(fieldCount);
+    const fields: Record<string, string> = {};
+    if (typeof args[0] === 'object') {
+      for (const [key, value] of Object.entries(args[0])) {
+        delete this.cachedFields[key];
+        fields[this.safeKey(key)] = value.toString();
+      }
+    } else {
+      for (let i = 0; i < args.length; i += 2) {
+        const keyName = args[i];
+        delete this.cachedFields[keyName];
+        const key = this.safeKey(keyName);
+        const value = args[i + 1].toString();
+        fields[key] = value;
+      }
+    }
+    const fieldCount = await this.search.setFields(this.jobId, fields);
+    await this.search.setFields(this.jobId, { [ssGuid]: fieldCount.toString() });
+    return fieldCount;
   }
 
   /**
-   * Returns the value of the field in the HASH stored at key.
-   * @param key
-   * @returns {string}
+   * Returns the value of the record data field, given a field id
+   * 
    * @example
-   * const search = new Search();
+   * const search = await workflow.search();
    * const value = await search.get('field1');
    */
-  async get(key: string): Promise<string> {
+  async get(id: string): Promise<string> {
     try {
-      if (key in this.cachedFields) {
-        return this.cachedFields[key];
+      if (id in this.cachedFields) {
+        return this.cachedFields[id];
       }
-      const value = (await this.store.exec(
-        'HGET',
-        this.jobId,
-        this.safeKey(key),
-      )) as string;
-      this.cachedFields[key] = value;
+      const value = await this.search.getField(this.jobId, this.safeKey(id));
+      this.cachedFields[id] = value;
       return value;
     } catch (error) {
       this.hotMeshClient.logger.error('meshflow-search-get-error', {
@@ -278,11 +254,7 @@ export class Search {
       if (isCached) {
         return values;
       }
-      const returnValues = (await this.store.exec(
-        'HMGET',
-        this.jobId,
-        ...safeArgs,
-      )) as string[];
+      const returnValues = await this.search.getFields(this.jobId, safeArgs);
       returnValues.forEach((value, index) => {
         if (value !== null) {
           this.cachedFields[args[index]] = value;
@@ -301,10 +273,8 @@ export class Search {
    * Deletes the fields provided as args. Returns the
    * count of fields that were deleted.
    *
-   * @param args
-   * @returns {number}
    * @example
-   * const search = new Search();
+   * const search = await workflow.search();
    * const count = await search.del('field1', 'field2', 'field3');
    */
   async del(...args: string[]): Promise<number | void> {
@@ -320,11 +290,9 @@ export class Search {
     if (ssGuid in replay) {
       return Number(replay[ssGuid]);
     }
-    const response = await this.store.exec('HDEL', this.jobId, ...safeArgs);
-    const formattedResponse = isNaN(response as unknown as number)
-      ? 0
-      : Number(response);
-    this.store.exec('HSET', this.jobId, ssGuid, formattedResponse.toString());
+    const response = await this.search.deleteFields(this.jobId, safeArgs);
+    const formattedResponse = isNaN(response as unknown as number) ? 0 : Number(response);
+    await this.search.setFields(this.jobId, { [ssGuid]: formattedResponse.toString() });
     return formattedResponse;
   }
 
@@ -333,11 +301,8 @@ export class Search {
    * new value of the field after the increment. Pass a negative
    * number to decrement the value.
    *
-   * @param key - the key to increment
-   * @param val - the value to increment by
-   * @returns {number} - the new value
    * @example
-   * const search = new Search();
+   * const search = await workflow.search();
    * const count = await search.incr('field1', 1.5);
    */
   async incr(key: string, val: number): Promise<number> {
@@ -348,14 +313,9 @@ export class Search {
     if (ssGuid in replay) {
       return Number(replay[ssGuid]);
     }
-    const num = (await this.store.exec(
-      'HINCRBYFLOAT',
-      this.jobId,
-      this.safeKey(key),
-      val.toString(),
-    )) as string;
-    this.store.exec('HSET', this.jobId, ssGuid, num.toString());
-    return Number(num);
+    const num = await this.search.incrementFieldByFloat(this.jobId, this.safeKey(key), val);
+    await this.search.setFields(this.jobId, { [ssGuid]: num.toString() });
+    return num;
   }
 
   /**
@@ -363,11 +323,8 @@ export class Search {
    * new value of the field after the multiplication. NOTE:
    * this is exponential multiplication.
    *
-   * @param key - the key to multiply
-   * @param val - the value to multiply by
-   * @returns {number} - the new product of the multiplication
    * @example
-   * const search = new Search();
+   * const search = await workflow.search();
    * const product = await search.mult('field1', 1.5);
    */
   async mult(key: string, val: number): Promise<number> {
@@ -378,24 +335,16 @@ export class Search {
     if (ssGuid in replay) {
       return Math.exp(Number(replay[ssGuid]));
     }
-    const ssGuidValue = Number(
-      (await this.store.exec(
-        'HINCRBYFLOAT',
-        this.jobId,
-        ssGuid,
-        '1',
-      )) as string,
-    );
+    const ssGuidValue = await this.search.incrementFieldByFloat(this.jobId, ssGuid, 1);
     if (ssGuidValue === 1) {
       const log = Math.log(val);
-      const logTotal = (await this.store.exec(
-        'HINCRBYFLOAT',
-        this.jobId,
-        this.safeKey(key),
-        log.toString(),
-      )) as string;
-      this.store.exec('HSET', this.jobId, ssGuid, logTotal.toString());
-      return Math.exp(Number(logTotal));
+      const logTotal = await this.search.incrementFieldByFloat(this.jobId, this.safeKey(key), log);
+      await this.search.setFields(this.jobId, { [ssGuid]: logTotal.toString() });
+      return Math.exp(logTotal);
+    } else {
+      const logTotalStr = await this.search.getField(this.jobId, ssGuid);
+      const logTotal = Number(logTotalStr);
+      return Math.exp(logTotal);
     }
   }
 }

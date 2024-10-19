@@ -125,13 +125,11 @@ export class WorkflowService {
       KeyType.JOB_STATE,
       keyParams,
     );
-    const guidValue = Number(
-      (await hotMeshClient.engine.store.exec(
-        'HINCRBYFLOAT',
-        workflowGuid,
-        sessionId,
-        '1',
-      )) as string,
+    const searchClient = hotMeshClient.engine.search;
+    const guidValue = await searchClient.incrementFieldByFloat(
+      workflowGuid,
+      sessionId,
+      1,
     );
     return guidValue === 1;
   }
@@ -250,6 +248,8 @@ export class WorkflowService {
     await sleepImmediate();
     throw new MeshFlowChildError(interruptionMessage);
   }
+
+  static executeChild = WorkflowService.execChild;
 
   /**
    * constructs the payload necessary to spawn a child job
@@ -541,61 +541,6 @@ export class WorkflowService {
         202,
       );
     }
-  }
-
-  /**
-   * Executes a function once and caches the result. If the function is called
-   * again, the cached result is returned. This is useful for wrapping
-   * expensive activity calls that should only be run once, but which might
-   * not require the cost and safety provided by proxyActivities.
-   * @template T - the result type
-   */
-  static async once<T>(
-    fn: (...args: any[]) => Promise<T>,
-    ...args: any[]
-  ): Promise<T> {
-    const {
-      COUNTER,
-      connection,
-      namespace,
-      workflowId,
-      workflowTopic,
-      workflowDimension,
-      replay,
-    } = WorkflowService.getContext();
-    const execIndex = COUNTER.counter = COUNTER.counter + 1;
-    const sessionId = `-once${workflowDimension}-${execIndex}-`;
-    if (sessionId in replay) {
-      return SerializerService.fromString(replay[sessionId]).data as T;
-    }
-    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
-      connection,
-      namespace,
-    });
-    const keyParams = {
-      appId: hotMeshClient.appId,
-      jobId: workflowId,
-    };
-    const workflowGuid = KeyService.mintKey(
-      hotMeshClient.namespace,
-      KeyType.JOB_STATE,
-      keyParams,
-    );
-    const t1 = new Date();
-    const response = await fn(...args);
-    const t2 = new Date();
-    const payload = {
-      data: response,
-      ac: formatISODate(t1),
-      au: formatISODate(t2),
-    };
-    await hotMeshClient.engine.store.exec(
-      'HSET',
-      workflowGuid,
-      sessionId,
-      SerializerService.toString(payload),
-    );
-    return response;
   }
 
   /**

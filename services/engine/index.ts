@@ -81,6 +81,8 @@ import { WorkListTaskType } from '../../types/task';
 import { StreamServiceFactory } from '../stream/factory';
 import { SubServiceFactory } from '../sub/factory';
 import { StoreServiceFactory } from '../store/factory';
+import { SearchService } from '../search';
+import { SearchServiceFactory } from '../search/factory';
 
 class EngineService {
   namespace: string;
@@ -89,6 +91,7 @@ class EngineService {
   guid: string;
   exporter: ExporterService | null;
   router: Router | null;
+  search: SearchService<RedisClient> | null;
   store: StoreService<RedisClient, RedisMulti> | null;
   stream: StreamService<RedisClient, RedisMulti> | null;
   subscribe: SubService<RedisClient, RedisMulti> | null;
@@ -125,13 +128,15 @@ class EngineService {
       instance.guid = guid;
       instance.logger = logger;
 
+      await instance.initSearchChannel(config.engine.store);
       await instance.initStoreChannel(config.engine.store);
-      await instance.initSubChannel(config.engine.sub);
-      await instance.initStreamChannel(config.engine.stream);
+      await instance.initSubChannel(config.engine.sub, config.engine.store);
+      await instance.initStreamChannel(config.engine.stream, config.engine.store);
 
       instance.router = await instance.initRouter(config);
+      const streamName = instance.store.mintKey(KeyType.STREAMS, { appId: instance.appId });
       instance.router.consumeMessages(
-        instance.stream.mintKey(KeyType.STREAMS, { appId: instance.appId }),
+        streamName,
         'ENGINE',
         instance.guid,
         instance.processStreamMessage.bind(instance),
@@ -164,6 +169,19 @@ class EngineService {
   /**
    * @private
    */
+  async initSearchChannel(search: RedisClient, store?: RedisClient) {
+    this.search = await SearchServiceFactory.init(
+      search,
+      store,
+      this.namespace,
+      this.appId,
+      this.logger,
+    );
+  }
+
+  /**
+   * @private
+   */
   async initStoreChannel(store: RedisClient) {
     this.store = await StoreServiceFactory.init(
       store,
@@ -176,9 +194,10 @@ class EngineService {
   /**
    * @private
    */
-  async initSubChannel(sub: RedisClient) {
+  async initSubChannel(sub: RedisClient, store: RedisClient) {
     this.subscribe = await SubServiceFactory.init(
       sub,
+      store,
       this.namespace,
       this.appId,
       this.guid,
@@ -189,9 +208,10 @@ class EngineService {
   /**
    * @private
    */
-  async initStreamChannel(stream: RedisClient) {
+  async initStreamChannel(stream: RedisClient, store: RedisClient) {
     this.stream = await StreamServiceFactory.init(
       stream,
+      store,
       this.namespace,
       this.appId,
       this.logger,
@@ -394,14 +414,14 @@ class EngineService {
    * @private
    */
   async plan(pathOrYAML: string): Promise<HotMeshManifest> {
-    const compiler = new CompilerService(this.store, this.logger);
+    const compiler = new CompilerService(this.store, this.stream, this.logger);
     return await compiler.plan(pathOrYAML);
   }
   /**
    * @private
    */
   async deploy(pathOrYAML: string): Promise<HotMeshManifest> {
-    const compiler = new CompilerService(this.store, this.logger);
+    const compiler = new CompilerService(this.store, this.stream, this.logger);
     return await compiler.deploy(pathOrYAML);
   }
 
@@ -738,7 +758,7 @@ class EngineService {
             ].join(VALSEP),
           ),
         );
-        this.store.publish(
+        this.subscribe.publish(
           KeyType.QUORUM,
           { type: 'work', originator: this.guid },
           this.appId,
@@ -864,7 +884,7 @@ class EngineService {
         topic: context.metadata.jid,
         job: restoreHierarchy(jobOutput) as JobOutput,
       };
-      this.store.publish(
+      this.subscribe.publish(
         KeyType.QUORUM,
         message,
         this.appId,
@@ -893,7 +913,7 @@ class EngineService {
         topic,
         job: restoreHierarchy(jobOutput) as JobOutput,
       };
-      this.store.publish(
+      this.subscribe.publish(
         KeyType.QUORUM,
         message,
         this.appId,

@@ -69,7 +69,7 @@ class QuorumService {
 
       //note: `quorum` shares/re-uses the engine's `store`/`sub` Redis clients
       await instance.initStoreChannel(config.engine.store);
-      await instance.initSubChannel(config.engine.sub);
+      await instance.initSubChannel(config.engine.sub, config.engine.store);
       //general quorum subscription
       await instance.subscribe.subscribe(
         KeyType.QUORUM,
@@ -117,9 +117,10 @@ class QuorumService {
   /**
    * @private
    */
-  async initSubChannel(sub: RedisClient) {
+  async initSubChannel(sub: RedisClient, store: RedisClient) {
     this.subscribe = await SubServiceFactory.init(
       sub,
+      store,
       this.namespace,
       this.appId,
       this.guid,
@@ -177,7 +178,7 @@ class QuorumService {
   ) {
     let profile: QuorumProfile;
     if (details) {
-      const stream = this.engine.stream.mintKey(KeyType.STREAMS, {
+      const stream = this.engine.store.mintKey(KeyType.STREAMS, {
         appId: this.appId,
       });
       profile = {
@@ -194,7 +195,7 @@ class QuorumService {
         system: await getSystemHealth(),
       };
     }
-    this.store.publish(
+    this.subscribe.publish(
       KeyType.QUORUM,
       {
         type: 'pong',
@@ -217,7 +218,7 @@ class QuorumService {
     const quorum = this.quorum;
     this.quorum = 0;
     this.profiles.length = 0;
-    await this.store.publish(
+    await this.subscribe.publish(
       KeyType.QUORUM,
       {
         type: 'ping',
@@ -269,7 +270,7 @@ class QuorumService {
    * @private
    */
   async pub(quorumMessage: QuorumMessage) {
-    return await this.store.publish(
+    return await this.subscribe.publish(
       KeyType.QUORUM,
       quorumMessage,
       this.appId,
@@ -298,7 +299,7 @@ class QuorumService {
     this.profiles.forEach((profile: QuorumProfile) => {
       if (!targetStreams.includes(profile.stream)) {
         targetStreams.push(profile.stream);
-        this.store.xlen(profile.stream, multi);
+        this.engine.stream.getMessageDepth(profile.stream, multi);
       }
     });
     const stream_depths = (await multi.exec()) as number[];
@@ -339,7 +340,7 @@ class QuorumService {
     const q3 = await this.requestQuorum(delay);
     if (q1 && q1 === q2 && q2 === q3) {
       this.logger.info('quorum-rollcall-succeeded', { q1, q2, q3 });
-      this.store.publish(
+      this.subscribe.publish(
         KeyType.QUORUM,
         { type: 'activate', cache_mode: 'nocache', until_version: version },
         this.appId,
@@ -350,7 +351,7 @@ class QuorumService {
       if (this.engine.untilVersion === version) {
         this.logger.info('quorum-activation-succeeded', { version });
         const { id } = config;
-        const compiler = new CompilerService(this.store, this.logger);
+        const compiler = new CompilerService(this.store, this.engine.stream, this.logger);
         return await compiler.activate(id, version);
       } else {
         this.logger.error('quorum-activation-error', { version });

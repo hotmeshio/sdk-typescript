@@ -139,9 +139,7 @@ class TaskService {
             const key = this.store.mintKey(KeyType.SIGNALS, {
               appId: this.store.appId,
             });
-            await this.store.redisClient[this.store.commands.del](
-              `${key}:${target}`,
-            );
+            await this.store.delistSignalKey(key, target);
           } else {
             //awaken/expire/interrupt
             await timeEventCallback(target, gId, activityId, type);

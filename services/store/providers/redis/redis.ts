@@ -1,26 +1,15 @@
-import { KeyType } from '../../../modules/key';
-import { ILogger } from '../../logger';
-import { SerializerService as Serializer } from '../../serializer';
-import { Cache } from '../cache';
-import { StoreService } from '../index';
+import { HMSH_IS_CLUSTER } from '../../../../modules/enums';
+import { RedisStoreBase } from './_base';
+import { StoreInitializable } from '../store-initializable';
 import {
   RedisRedisClientType as RedisClientType,
   RedisRedisMultiType as RedisMultiType,
-} from '../../../types/redis';
-import { ReclaimedMessageType } from '../../../types/stream';
-import { HMSH_IS_CLUSTER } from '../../../modules/enums';
+} from '../../../../types/redis';
 
-class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
-  redisClient: RedisClientType;
-  cache: Cache;
-  namespace: string;
-  appId: string;
-  logger: ILogger;
-  serializer: Serializer;
-  commands: Record<string, string>;
+class RedisStoreService extends RedisStoreBase<RedisClientType, RedisMultiType> implements StoreInitializable {
 
-  constructor(redisClient: RedisClientType) {
-    super(redisClient);
+  constructor(storeClient: RedisClientType) {
+    super(storeClient);
     this.commands = {
       get: 'GET',
       set: 'SET',
@@ -43,7 +32,6 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
       zadd: 'ZADD',
       lmove: 'LMOVE',
       lrange: 'LRANGE',
-      llen: 'LLEN',
       lpop: 'LPOP',
       rename: 'RENAME',
       rpush: 'RPUSH',
@@ -72,7 +60,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
 
       const multiInstance: RedisMultiType = {
         sendCommand(command: string, ...args) {
-          return my.redisClient.sendCommand([command, ...args]);
+          return my.storeClient.sendCommand([command, ...args]);
         },
         async exec() {
           if (commands.length === 0) return [];
@@ -82,7 +70,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
           });
 
           if (sameKey) {
-            const multi = my.redisClient.multi();
+            const multi = my.storeClient.multi();
             commands.forEach((cmd) => {
               if (cmd.command === 'ZADD') {
                 return multi.ZADD(cmd.args[0], cmd.args[1], cmd.args[2]);
@@ -95,13 +83,13 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
             return Promise.all(
               commands.map((cmd) => {
                 if (cmd.command === 'ZADD') {
-                  return my.redisClient.ZADD(
+                  return my.storeClient.ZADD(
                     cmd.args[0],
                     cmd.args[1],
                     cmd.args[2],
                   );
                 }
-                return my.redisClient[cmd.command](
+                return my.storeClient[cmd.command](
                   ...(cmd.args as unknown as any[]),
                 );
               }),
@@ -233,11 +221,11 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
       return multiInstance;
     }
 
-    return this.redisClient.multi() as unknown as RedisMultiType;
+    return this.storeClient.multi() as unknown as RedisMultiType;
   }
 
   async exec(...args: any[]): Promise<string | string[] | string[][]> {
-    return await this.redisClient.sendCommand(args);
+    return await this.storeClient.sendCommand(args);
   }
 
   async setnxex(
@@ -245,24 +233,10 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
     value: string,
     expireSeconds: number,
   ): Promise<boolean> {
-    const status: number = await this.redisClient[this.commands.set](
+    const status: number = await this.storeClient[this.commands.set](
       key,
       value,
       { NX: true, EX: expireSeconds },
-    );
-    return this.isSuccessful(status);
-  }
-
-  async publish(
-    keyType: KeyType.QUORUM,
-    message: Record<string, any>,
-    appId: string,
-    engineId?: string,
-  ): Promise<boolean> {
-    const topic = this.mintKey(keyType, { appId, engineId });
-    const status: number = await this.redisClient.publish(
-      topic,
-      JSON.stringify(message),
     );
     return this.isSuccessful(status);
   }
@@ -273,7 +247,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
     value: string | number,
     redisMulti?: RedisMultiType,
   ): Promise<any> {
-    return await (redisMulti || this.redisClient)[this.commands.zadd](key, {
+    return await (redisMulti || this.storeClient)[this.commands.zadd](key, {
       score: score,
       value: value.toString(),
     } as any);
@@ -284,7 +258,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
     score: number | string,
     value: string | number,
   ): Promise<string | null> {
-    const result = await this.redisClient[
+    const result = await this.storeClient[
       this.commands.zrangebyscore_withscores
     ](key, score, value);
     if (result?.length > 0) {
@@ -298,7 +272,7 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
     score: number | string,
     value: string | number,
   ): Promise<string | null> {
-    const result = await this.redisClient[this.commands.zrangebyscore](
+    const result = await this.storeClient[this.commands.zrangebyscore](
       key,
       score,
       value,
@@ -307,169 +281,6 @@ class RedisStoreService extends StoreService<RedisClientType, RedisMultiType> {
       return result[0];
     }
     return null;
-  }
-
-  async xgroup(
-    command: 'CREATE',
-    key: string,
-    groupName: string,
-    id: string,
-    mkStream?: 'MKSTREAM',
-  ): Promise<boolean> {
-    const args = mkStream === 'MKSTREAM' ? ['MKSTREAM'] : [];
-    try {
-      return (
-        (await this.redisClient.sendCommand([
-          'XGROUP',
-          'CREATE',
-          key,
-          groupName,
-          id,
-          ...args,
-        ])) === 1
-      );
-    } catch (error) {
-      const streamType =
-        mkStream === 'MKSTREAM' ? 'with MKSTREAM' : 'without MKSTREAM';
-      this.logger.debug(
-        `x-group-error ${streamType} for key: ${key} and group: ${groupName}`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xadd(
-    key: string,
-    id: string,
-    ...args: any[]
-  ): Promise<string | RedisMultiType> {
-    let multi: RedisMultiType;
-    if (typeof args[args.length - 1] !== 'string') {
-      multi = args.pop() as RedisMultiType;
-    }
-    try {
-      return await (multi || this.redisClient).XADD(key, id, {
-        [args[0]]: args[1],
-      });
-    } catch (error) {
-      this.logger.error(`Error publishing 'xadd'; key: ${key}`, { ...error });
-      throw error;
-    }
-  }
-
-  async xpending(
-    key: string,
-    group: string,
-    start?: string,
-    end?: string,
-    count?: number,
-    consumer?: string,
-  ): Promise<
-    | [string, string, number, [string, number][]][]
-    | [string, string, number, number]
-  > {
-    try {
-      const args = [key, group];
-      if (start) args.push(start);
-      if (end) args.push(end);
-      if (count !== undefined) args.push(count.toString());
-      if (consumer) args.push(consumer);
-      return await this.redisClient.sendCommand(['XPENDING', ...args]);
-    } catch (error) {
-      this.logger.error(
-        `Error in retrieving pending messages for group: ${group} in key: ${key}`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xclaim(
-    key: string,
-    group: string,
-    consumer: string,
-    minIdleTime: number,
-    id: string,
-    ...args: string[]
-  ): Promise<ReclaimedMessageType> {
-    try {
-      return (await this.redisClient.sendCommand([
-        'XCLAIM',
-        key,
-        group,
-        consumer,
-        minIdleTime.toString(),
-        id,
-        ...args,
-      ])) as unknown as ReclaimedMessageType;
-    } catch (error) {
-      this.logger.error(
-        `Error in claiming message with id: ${id} in group: ${group} for key: ${key}`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xack(
-    key: string,
-    group: string,
-    id: string,
-    multi?: RedisMultiType,
-  ): Promise<number | RedisMultiType> {
-    try {
-      if (multi) {
-        multi[this.commands.xack](key, group, id);
-        return multi;
-      } else {
-        return await this.redisClient[this.commands.xack](key, group, id);
-      }
-    } catch (error) {
-      this.logger.error(
-        `Error in acknowledging messages in group: ${group} for key: ${key}`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xdel(
-    key: string,
-    id: string,
-    multi?: RedisMultiType,
-  ): Promise<number | RedisMultiType> {
-    try {
-      if (multi) {
-        multi[this.commands.xdel](key, id);
-        return multi;
-      } else {
-        return await this.redisClient[this.commands.xdel](key, id);
-      }
-    } catch (error) {
-      this.logger.error(
-        `Error in deleting messages with ids: ${id} for key: ${key}`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xlen(
-    key: string,
-    multi?: RedisMultiType,
-  ): Promise<number | RedisMultiType> {
-    try {
-      if (multi) {
-        multi.XLEN(key);
-        return multi;
-      } else {
-        return await this.redisClient.XLEN(key);
-      }
-    } catch (error) {
-      this.logger.error(`Error getting stream depth: ${key}`, { ...error });
-      throw error;
-    }
   }
 }
 

@@ -11,6 +11,7 @@ import { StringAnyType, Symbols } from '../../types/serializer';
 import { Pipe } from '../pipe';
 
 import { Validator } from './validator';
+import { StreamService } from '../stream';
 
 const DEFAULT_METADATA_RANGE_SIZE = 26; //metadata is 26 slots ([a-z] * 1)
 const DEFAULT_DATA_RANGE_SIZE = 260; //data is 260 slots ([a-zA-Z] * 5)
@@ -20,13 +21,15 @@ const DEFAULT_RANGE_SIZE =
 class Deployer {
   manifest: HotMeshManifest | null = null;
   store: StoreService<RedisClient, RedisMulti> | null;
+  stream: StreamService<RedisClient, RedisMulti> | null;
 
   constructor(manifest: HotMeshManifest) {
     this.manifest = manifest;
   }
 
-  async deploy(store: StoreService<RedisClient, RedisMulti>) {
+  async deploy(store: StoreService<RedisClient, RedisMulti>, stream: StreamService<RedisClient, RedisMulti>) {
     this.store = store;
+    this.stream = stream;
     CollatorService.compile(this.manifest.app.graphs);
     this.convertActivitiesToHooks();
     this.convertTopicsToTypes();
@@ -546,7 +549,7 @@ class Deployer {
 
   async deployConsumerGroup(stream: string, group: string) {
     try {
-      await this.store.xgroup('CREATE', stream, group, '$', 'MKSTREAM');
+      await this.stream.createConsumerGroup(stream, group);
     } catch (err) {
       this.store.logger.info('router-stream-group-exists', { stream, group });
     }
