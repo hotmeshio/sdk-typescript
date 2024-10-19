@@ -314,7 +314,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
                 ...(data.data.arguments as any[]),
               );
 
-              //child (the entity format used by pluck)
+              //child
               childData = await xChild<ChildResponseType>({
                 args: ['f', { g: 7 }],
                 await: awaitChild, // if this is false, use startChild, otherwise execChild

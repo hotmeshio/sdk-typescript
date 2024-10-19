@@ -1,37 +1,37 @@
-import { KeyType, HMNS, VALSEP } from '../../../../modules/key';
-import { getSymKey, sleepFor } from '../../../../modules/utils';
-import { LoggerService } from '../../../../services/logger';
-import { MDATA_SYMBOLS } from '../../../../services/serializer';
-import { IORedisStoreService } from '../../../../services/store/clients/ioredis';
-import { ActivityType, Consumes } from '../../../../types/activity';
-import { HookSignal } from '../../../../types/hook';
+import { KeyType, HMNS, VALSEP } from '../../../../../modules/key';
+import { getSymKey, sleepFor } from '../../../../../modules/utils';
+import { LoggerService } from '../../../../../services/logger';
+import { MDATA_SYMBOLS } from '../../../../../services/serializer';
+import { IORedisStoreService } from '../../../../../services/store/providers/redis/ioredis';
+import { ActivityType, Consumes } from '../../../../../types/activity';
+import { HookSignal } from '../../../../../types/hook';
 import {
   StringAnyType,
   StringStringType,
   Symbols,
-} from '../../../../types/serializer';
-import { StatsType } from '../../../../types/stats';
+} from '../../../../../types/serializer';
+import { StatsType } from '../../../../../types/stats';
 import {
   RedisConnection,
   RedisClientType,
-} from '../../../$setup/cache/ioredis';
+} from '../../../../$setup/cache/ioredis';
 
 describe('FUNCTIONAL | IORedisStoreService', () => {
   const appConfig = { id: 'test-app', version: '1' };
   const cacheConfig = { appId: 'test-app', appVersion: '1' };
   let redisConnection: RedisConnection;
-  let redisClient: RedisClientType;
+  let storeClient: RedisClientType;
   let redisStoreService: IORedisStoreService;
 
   beforeEach(async () => {
-    await redisClient.flushdb();
-    redisStoreService = new IORedisStoreService(redisClient);
+    await storeClient.flushdb();
+    redisStoreService = new IORedisStoreService(storeClient);
     await redisStoreService.init(HMNS, appConfig.id, new LoggerService());
   });
 
   beforeAll(async () => {
     redisConnection = await RedisConnection.getConnection('test-connection-1');
-    redisClient = await redisConnection.getClient();
+    storeClient = await redisConnection.getClient();
   });
 
   afterAll(async () => {
@@ -50,16 +50,6 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
     });
   });
 
-  describe('getMulti', () => {
-    it('execute two calls using multi', async () => {
-      const multi = redisStoreService.getMulti();
-      redisStoreService.xack('abc', 'def', '12345', multi);
-      redisStoreService.xack('ghi', 'def', '67890', multi);
-      const result = await multi.exec();
-      expect(result?.length).toEqual(2); //[ [ null, 0 ], [ null, 0 ] ]
-    });
-  });
-
   describe('reserveSymbolRange', () => {
     it('should reserve a symbol range for a given activity and handle existing values', async () => {
       const activityId = 'a1';
@@ -74,7 +64,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       const rangeKey = redisStoreService.mintKey(KeyType.SYMKEYS, {
         appId: appConfig.id,
       });
-      const range = await redisClient.hget(rangeKey, activityId);
+      const range = await storeClient.hget(rangeKey, activityId);
       expect(range).toEqual(
         `${lowerLimit - MDATA_SYMBOLS.SLOTS}:${lowerLimit - MDATA_SYMBOLS.SLOTS + size - 1}`,
       );
@@ -317,7 +307,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         appId: appConfig.id,
         jobId,
       });
-      const storedActivityId = await redisStoreService.redisClient.hget(
+      const storedActivityId = await redisStoreService.storeClient.hget(
         hashKey,
         ':',
       );
@@ -349,7 +339,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         KeyType.JOB_STATS_GENERAL,
         { ...cacheConfig, jobId, jobKey, dateTime },
       );
-      const generalStats = await redisClient.hgetall(generalStatsKey);
+      const generalStats = await storeClient.hgetall(generalStatsKey);
       expect(generalStats[stats.general[0].target]).toEqual(
         stats.general[0].value.toString(),
       );
@@ -361,7 +351,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         dateTime,
         facet: stats.index[0].target,
       });
-      const indexStats = await redisClient.lrange(indexStatsKey, 0, -1);
+      const indexStats = await storeClient.lrange(indexStatsKey, 0, -1);
       expect(indexStats[0]).toEqual(stats.index[0].value.toString());
 
       const medianStatsKey = redisStoreService.mintKey(
@@ -374,7 +364,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
           facet: stats.median[0].target,
         },
       );
-      const medianStats = await redisClient.zrange(
+      const medianStats = await storeClient.zrange(
         medianStatsKey,
         0,
         -1,
@@ -423,7 +413,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         appId: appConfig.id,
         timeValue: awakenTime,
       });
-      const jobList = await redisClient.lrange(listKey, 0, -1);
+      const jobList = await storeClient.lrange(listKey, 0, -1);
       expect(jobList?.[0]).toEqual(
         `${type}${VALSEP}${activityId}${VALSEP}${gId1}${VALSEP}${dad1}${VALSEP}${jobId1}`,
       );
@@ -444,7 +434,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       expect(nextGID).toEqual(gId1);
       expect(nextActivityId).toEqual(activityId);
       // Check that jobId1 was removed from the list
-      const updatedJobList = await redisClient.lrange(listKey, 0, -1);
+      const updatedJobList = await storeClient.lrange(listKey, 0, -1);
       expect(updatedJobList.length).toEqual(1);
       expect(updatedJobList[0]).toEqual(
         `${type}${VALSEP}${activityId}${VALSEP}${gId2}${VALSEP}${dad2}${VALSEP}${jobId2}`,
@@ -509,16 +499,16 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         appId: appConfig.id,
         scoutType: role,
       });
-      const reservedRole = await redisClient.get(key);
+      const reservedRole = await storeClient.get(key);
       expect(reservedRole).not.toBeNull();
 
       const result2 = await redisStoreService.reserveScoutRole(role, 3);
       expect(result2).toEqual(false);
-      const reservedRole2 = await redisClient.get(key);
+      const reservedRole2 = await storeClient.get(key);
       expect(reservedRole2).not.toBeNull();
 
       await sleepFor(2000);
-      const reservedRole3 = await redisClient.get(key);
+      const reservedRole3 = await storeClient.get(key);
       expect(reservedRole3).toBeNull();
     });
   });
@@ -530,7 +520,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         appId: appConfig.id,
       });
       for (const key of keys) {
-        const score = await redisClient.zscore(zsetKey, key);
+        const score = await storeClient.zscore(zsetKey, key);
         expect(score).not.toBeNull();
       }
     });
@@ -541,9 +531,9 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       const zsetKey = redisStoreService.mintKey(KeyType.WORK_ITEMS, {
         appId: appConfig.id,
       });
-      await redisClient.zadd(zsetKey, existingScore.toString(), existingKey);
+      await storeClient.zadd(zsetKey, existingScore.toString(), existingKey);
       await redisStoreService.addTaskQueues([existingKey]);
-      const newScore = await redisClient.zscore(zsetKey, existingKey);
+      const newScore = await storeClient.zscore(zsetKey, existingKey);
       expect(newScore).toEqual(existingScore.toString());
     });
   });
@@ -563,7 +553,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         appId: appConfig.id,
       });
       for (const item of workItems) {
-        await redisStoreService.redisClient.zadd(
+        await redisStoreService.storeClient.zadd(
           zsetKey,
           item.score.toString(),
           item.key,
@@ -578,7 +568,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       const zsetKey = redisStoreService.mintKey(KeyType.WORK_ITEMS, {
         appId: appConfig.id,
       });
-      await redisStoreService.redisClient.zadd(zsetKey, '1000', cachedKey);
+      await redisStoreService.storeClient.zadd(zsetKey, '1000', cachedKey);
       redisStoreService.cache.setWorkItem(appConfig.id, cachedKey);
       const workItemKey = await redisStoreService.getActiveTaskQueue();
       expect(workItemKey).toEqual(cachedKey);
@@ -602,23 +592,23 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       const zsetKey = redisStoreService.mintKey(KeyType.WORK_ITEMS, {
         appId: appConfig.id,
       });
-      await redisStoreService.redisClient.zadd(
+      await redisStoreService.storeClient.zadd(
         zsetKey,
         'NX',
         1000,
         workItemKey,
       );
-      await redisStoreService.redisClient.set(processedKey, 'processed data');
+      await redisStoreService.storeClient.set(processedKey, 'processed data');
       await redisStoreService.deleteProcessedTaskQueue(
         workItemKey,
         key,
         processedKey,
       );
       const workItemExists =
-        await redisStoreService.redisClient.exists(workItemKey);
+        await redisStoreService.storeClient.exists(workItemKey);
       const processedItemExists =
-        await redisStoreService.redisClient.exists(processedKey);
-      const workItemInZSet = await redisStoreService.redisClient.zrank(
+        await redisStoreService.storeClient.exists(processedKey);
+      const workItemInZSet = await redisStoreService.storeClient.zrank(
         zsetKey,
         workItemKey,
       );
@@ -651,22 +641,22 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
     const item2 = 'item-2';
 
     beforeEach(async () => {
-      await redisStoreService.redisClient.del(sourceKey);
-      await redisStoreService.redisClient.del(destinationKey);
+      await redisStoreService.storeClient.del(sourceKey);
+      await redisStoreService.storeClient.del(destinationKey);
     });
 
     it('should move an item from the source list to the destination list', async () => {
-      await redisStoreService.redisClient.lpush(sourceKey, item1, item2);
+      await redisStoreService.storeClient.lpush(sourceKey, item1, item2);
       const val2 = await redisStoreService.processTaskQueue(
         sourceKey,
         destinationKey,
       );
-      let sourceList = await redisStoreService.redisClient.lrange(
+      let sourceList = await redisStoreService.storeClient.lrange(
         sourceKey,
         0,
         -1,
       );
-      let destinationList = await redisStoreService.redisClient.lrange(
+      let destinationList = await redisStoreService.storeClient.lrange(
         destinationKey,
         0,
         -1,
@@ -679,8 +669,8 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
         destinationKey,
       );
       expect(val1).toEqual(item1);
-      sourceList = await redisStoreService.redisClient.lrange(sourceKey, 0, -1);
-      destinationList = await redisStoreService.redisClient.lrange(
+      sourceList = await redisStoreService.storeClient.lrange(sourceKey, 0, -1);
+      destinationList = await redisStoreService.storeClient.lrange(
         destinationKey,
         0,
         -1,
@@ -696,12 +686,12 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
 
     it('should not move any item when the source list is empty', async () => {
       await redisStoreService.processTaskQueue(sourceKey, destinationKey);
-      const sourceList = await redisStoreService.redisClient.lrange(
+      const sourceList = await redisStoreService.storeClient.lrange(
         sourceKey,
         0,
         -1,
       );
-      const destinationList = await redisStoreService.redisClient.lrange(
+      const destinationList = await redisStoreService.storeClient.lrange(
         destinationKey,
         0,
         -1,
@@ -723,7 +713,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       const key = redisStoreService.mintKey(KeyType.SIGNALS, {
         appId: appConfig.id,
       });
-      const value = await redisClient.get(
+      const value = await storeClient.get(
         `${key}:${hook.topic}:${hook.resolved}`,
       );
       expect(value).toEqual(hook.jobId);
@@ -747,7 +737,7 @@ describe('FUNCTIONAL | IORedisStoreService', () => {
       const key = redisStoreService.mintKey(KeyType.SIGNALS, {
         appId: appConfig.id,
       });
-      const remainingValue = await redisClient.get(
+      const remainingValue = await storeClient.get(
         `${key}:${hook.topic}:${hook.resolved}`,
       );
       expect(remainingValue).toEqual(hook.jobId);

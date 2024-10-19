@@ -201,7 +201,6 @@ class MeshData {
     random: MeshFlow.workflow.random,
     search: MeshFlow.workflow.search,
     getContext: MeshFlow.workflow.getContext,
-    once: MeshFlow.workflow.once,
 
     /**
      * Interrupts a job by its entity and id.
@@ -645,13 +644,12 @@ class MeshData {
       await new Promise((resolve) => setImmediate(resolve));
       options.$guid = options.$guid ?? workflowId;
       const hotMesh = await MeshData.workflow.getHotMesh();
-      const store = hotMesh.engine?.store;
-      const jobKey = store?.mintKey(KeyType.JOB_STATE, {
+      const jobKey = hotMesh.engine?.store?.mintKey(KeyType.JOB_STATE, {
         jobId: options.$guid,
         appId: hotMesh.engine?.appId,
       });
-      const jobResponse = ['aAa', '/t', 'aBa', this.toString(result)];
-      await store?.exec('HSET', jobKey, ...jobResponse);
+      const jobResponse = { aAa: '/t', aBa: this.toString(result) };
+      await hotMesh.engine?.search.setFields(jobKey, jobResponse);
     }
   }
 
@@ -673,7 +671,7 @@ class MeshData {
     hotMesh: HotMesh,
     options: CallOptions,
   ): Promise<void> {
-    await hotMesh.engine?.store?.publish(
+    await hotMesh.engine?.subscribe?.publish(
       KeyType.QUORUM,
       {
         type: 'job',
@@ -1114,9 +1112,9 @@ class MeshData {
       workflowId,
       options.namespace,
     );
-    const store = handle.hotMesh.engine?.store;
+    const search = handle.hotMesh.engine?.search;
     const jobKey = await this.mintKey(entity, workflowId, options.namespace);
-    const vals = await store?.exec('HMGET', jobKey, ...prefixedFields);
+    const vals = await search?.getFields(jobKey, prefixedFields);
     const result = prefixedFields.reduce(
       (obj, field: string, index) => {
         obj[field.substring(1)] = vals?.[index];
@@ -1197,14 +1195,9 @@ class MeshData {
       workflowId,
       options.namespace,
     );
-    const store = handle.hotMesh.engine?.store;
+    const search = handle.hotMesh.engine?.search;
     const jobKey = await this.mintKey(entity, workflowId, options.namespace);
-    const rawResponse = (await store?.exec('HGETALL', jobKey)) as string[];
-    const responseObj = {};
-    for (let i = 0; i < rawResponse.length; i += 2) {
-      responseObj[rawResponse[i] as string] = rawResponse[i + 1];
-    }
-    return responseObj;
+    return await search?.getAllFields(jobKey);
   }
 
   /**
@@ -1235,13 +1228,13 @@ class MeshData {
       workflowId,
       options.namespace,
     );
-    const store = handle.hotMesh.engine?.store;
+    const search = handle.hotMesh.engine?.search;
     const jobId = await this.mintKey(entity, workflowId, options.namespace);
-    const safeArgs: string[] = [];
+    const safeArgs: StringStringType = {};
     for (const key in options.search?.data) {
-      safeArgs.push(this.safeKey(key), options.search?.data[key].toString());
+      safeArgs[this.safeKey(key)] = options.search?.data[key].toString();
     }
-    return (await store?.exec('HSET', jobId, ...safeArgs)) as unknown as number;
+    return await search?.setFields(jobId, safeArgs);
   }
 
   /**
@@ -1272,15 +1265,13 @@ class MeshData {
       workflowId,
       options.namespace,
     );
-    const store = handle.hotMesh.engine?.store;
+    const search = handle.hotMesh.engine?.search;
     const jobId = await this.mintKey(entity, workflowId, options.namespace);
-    const result = await store?.exec(
-      'HINCRBYFLOAT',
+    return await search?.incrementFieldByFloat(
       jobId,
       this.safeKey(field),
-      amount.toString(),
+      amount,
     );
-    return Number(result as string);
   }
 
   /**
@@ -1307,9 +1298,9 @@ class MeshData {
       workflowId,
       options.namespace,
     );
-    const store = handle.hotMesh.engine?.store;
+    const search = handle.hotMesh.engine?.search;
     const jobKey = await this.mintKey(entity, workflowId, options.namespace);
-    const count = await store?.exec('HDEL', jobKey, ...prefixedFields);
+    const count = await search?.deleteFields(jobKey, prefixedFields);
     return Number(count);
   }
 

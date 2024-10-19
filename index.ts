@@ -5,6 +5,20 @@ import { MeshFlow } from './services/meshflow';
 import { MeshData } from './services/meshdata';
 import { MeshOS } from './services/meshos';
 
-export { HotMesh, HotMeshConfig, MeshCall, MeshData, MeshFlow, MeshOS };
+const { Client, Connection, Search, Worker, workflow} = MeshFlow;
+
+export {
+  HotMesh,
+  HotMeshConfig,
+  MeshCall,
+  MeshData,
+  MeshOS,
+  MeshFlow,
+  Client,
+  Connection,
+  Search,
+  Worker,
+  workflow,
+};
 
 export * as Types from './types';

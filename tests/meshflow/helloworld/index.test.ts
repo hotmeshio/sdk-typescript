@@ -94,7 +94,7 @@ describe('MESHFLOW | hello | `Workflow Sleepy Hello-World`', () => {
         //note: testing the deterministic random number generator
         const r1 = deterministicRandom(1);
         const r2 = deterministicRandom(3);
-        expect(result).toEqual(`${r1} Hello, HotMesh! ${r2} Hello, HotMesh!`);
+        expect(result).toEqual(`${r1} Hello, HotMesh! ${r2}`);
       });
     });
   });

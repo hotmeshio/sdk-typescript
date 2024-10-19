@@ -1,28 +1,50 @@
-import { KeyType } from '../../../modules/key';
-import { ILogger } from '../../logger';
-import { SerializerService as Serializer } from '../../serializer';
-import { Cache } from '../cache';
-import { StoreService } from '../index';
+import { KeyType } from '../../../../modules/key';
 import {
   IORedisClientType as RedisClientType,
   IORedisMultiType as RedisMultiType,
-} from '../../../types/redis';
-import { ReclaimedMessageType } from '../../../types/stream';
-import { HMSH_IS_CLUSTER } from '../../../modules/enums';
+} from '../../../../types/redis';
+import { HMSH_IS_CLUSTER } from '../../../../modules/enums';
+import { RedisStoreBase } from './_base';
+import { StoreInitializable } from '../store-initializable';
 
-class IORedisStoreService extends StoreService<
+class IORedisStoreService extends RedisStoreBase<
   RedisClientType,
   RedisMultiType
-> {
-  redisClient: RedisClientType;
-  cache: Cache;
-  namespace: string;
-  appId: string;
-  logger: ILogger;
-  serializer: Serializer;
+> implements StoreInitializable {
 
-  constructor(redisClient: RedisClientType) {
-    super(redisClient);
+  constructor(storeClient: RedisClientType) {
+    super(storeClient);
+    this.commands = {
+
+    get: 'get',
+    set: 'set', //nx, nx+ex
+    setnx: 'setnx',
+    del: 'del',
+    expire: 'expire', 
+    hset: 'hset', //nx, nx+ex
+    hscan: 'hscan',
+    hsetnx: 'hsetnx',
+    hincrby: 'hincrby',
+    hdel: 'hdel',
+    hget: 'hget',
+    hmget: 'hmget',
+    hgetall: 'hgetall',
+    hincrbyfloat: 'hincrbyfloat',
+    zrank: 'zrank',
+    zrange: 'zrange',
+    zrangebyscore_withscores: 'zrangebyscore',
+    zrangebyscore: 'zrangebyscore',
+    zrem: 'zrem',
+    zadd: 'zadd', //nx
+    lmove: 'lmove',
+    lpop: 'lpop',
+    lrange: 'lrange',
+    rename: 'rename',
+    rpush: 'rpush',
+    scan: 'scan',
+    xack: 'xack',
+    xdel: 'xdel',
+    }
   }
 
   /**
@@ -43,7 +65,7 @@ class IORedisStoreService extends StoreService<
 
       const multiInstance: RedisMultiType = {
         sendCommand(command: string[]): Promise<any> {
-          return my.redisClient.sendCommand(command);
+          return my.storeClient.sendCommand(command);
         },
         async exec() {
           if (commands.length === 0) return [];
@@ -53,13 +75,13 @@ class IORedisStoreService extends StoreService<
           });
 
           if (sameKey) {
-            const multi = my.redisClient.multi();
+            const multi = my.storeClient.multi();
             commands.forEach((cmd) => multi[cmd.command](...cmd.args));
             const results = await multi.exec();
             return results.map((item) => item);
           } else {
             return Promise.all(
-              commands.map((cmd) => my.redisClient[cmd.command](...cmd.args)),
+              commands.map((cmd) => my.storeClient[cmd.command](...cmd.args)),
             );
           }
         },
@@ -156,12 +178,12 @@ class IORedisStoreService extends StoreService<
       return multiInstance;
     }
 
-    return this.redisClient.multi() as unknown as RedisMultiType;
+    return this.storeClient.multi() as unknown as RedisMultiType;
   }
 
   async exec(...args: any[]): Promise<string | string[] | string[][]> {
-    const response = await this.redisClient.call.apply(
-      this.redisClient,
+    const response = await this.storeClient.call.apply(
+      this.storeClient,
       args as any,
     );
     if (typeof response === 'string') {
@@ -180,7 +202,7 @@ class IORedisStoreService extends StoreService<
     value: string,
     expireSeconds: number,
   ): Promise<boolean> {
-    const status: number = await this.redisClient[this.commands.set](
+    const status: number = await this.storeClient[this.commands.set](
       key,
       value,
       'NX',
@@ -196,183 +218,12 @@ class IORedisStoreService extends StoreService<
   }
 
   async addTaskQueues(keys: string[]): Promise<void> {
-    const multi = this.redisClient.multi();
+    const multi = this.storeClient.multi();
     const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
     for (const key of keys) {
       multi.zadd(zsetKey, 'NX', Date.now(), key);
     }
     await multi.exec();
-  }
-
-  async publish(
-    keyType: KeyType.QUORUM,
-    message: Record<string, any>,
-    appId: string,
-    engineId?: string,
-  ): Promise<boolean> {
-    const topic = this.mintKey(keyType, { appId, engineId });
-    const status: number = await this.redisClient.publish(
-      topic,
-      JSON.stringify(message),
-    );
-    return status === 1;
-  }
-
-  async xgroup(
-    command: 'CREATE',
-    key: string,
-    groupName: string,
-    id: string,
-    mkStream?: 'MKSTREAM',
-  ): Promise<boolean> {
-    if (mkStream === 'MKSTREAM') {
-      try {
-        return (
-          (await this.redisClient.xgroup(
-            command,
-            key,
-            groupName,
-            id,
-            mkStream,
-          )) === 'OK'
-        );
-      } catch (err) {
-        this.logger.debug('stream-mkstream-caught', { key, group: groupName });
-        throw err;
-      }
-    } else {
-      try {
-        return (
-          (await this.redisClient.xgroup(command, key, groupName, id)) === 'OK'
-        );
-      } catch (err) {
-        this.logger.debug(
-          `Consumer group not created for key: ${key} and group: ${groupName}`,
-        );
-        throw err;
-      }
-    }
-  }
-
-  async xadd(
-    key: string,
-    id: string,
-    messageId: string,
-    messageValue: string,
-    multi?: RedisMultiType,
-  ): Promise<string | RedisMultiType> {
-    try {
-      return await (multi || this.redisClient).xadd(
-        key,
-        id,
-        messageId,
-        messageValue,
-      );
-    } catch (error) {
-      this.logger.error(`Error publishing 'xadd'; key: ${key}`, { ...error });
-      throw error;
-    }
-  }
-
-  async xpending(
-    key: string,
-    group: string,
-    start?: string,
-    end?: string,
-    count?: number,
-    consumer?: string,
-  ): Promise<
-    | [string, string, number, [string, number][]][]
-    | [string, string, number, number]
-    | unknown[]
-  > {
-    try {
-      return await this.redisClient.xpending(
-        key,
-        group,
-        start,
-        end,
-        count,
-        consumer,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Error in retrieving pending messages for [stream ${key}], [group ${group}]`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xclaim(
-    key: string,
-    group: string,
-    consumer: string,
-    minIdleTime: number,
-    id: string,
-    ...args: string[]
-  ): Promise<ReclaimedMessageType> {
-    try {
-      return (await this.redisClient.xclaim(
-        key,
-        group,
-        consumer,
-        minIdleTime,
-        id,
-        ...args,
-      )) as unknown as ReclaimedMessageType;
-    } catch (error) {
-      this.logger.error(
-        `Error in claiming message with id: ${id} in group: ${group} for key: ${key}`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xack(
-    key: string,
-    group: string,
-    id: string,
-    multi?: RedisMultiType,
-  ): Promise<number | RedisMultiType> {
-    try {
-      return await (multi || this.redisClient).xack(key, group, id);
-    } catch (error) {
-      this.logger.error(
-        `Error in acknowledging messages in group: ${group} for key: ${key}`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xdel(
-    key: string,
-    id: string,
-    multi?: RedisMultiType,
-  ): Promise<number | RedisMultiType> {
-    try {
-      return await (multi || this.redisClient).xdel(key, id);
-    } catch (error) {
-      this.logger.error(
-        `Error in deleting messages with id: ${id} for key: ${key}`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xlen(
-    key: string,
-    multi?: RedisMultiType,
-  ): Promise<number | RedisMultiType> {
-    try {
-      return await (multi || this.redisClient).xlen(key);
-    } catch (error) {
-      this.logger.error(`Error getting stream depth: ${key}`, { ...error });
-      throw error;
-    }
   }
 }
 

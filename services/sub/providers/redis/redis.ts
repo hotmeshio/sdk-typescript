@@ -3,23 +3,19 @@ import {
   KeyStoreParams,
   KeyType,
   HMNS,
-} from '../../../modules/key';
-import { ILogger } from '../../logger';
-import { SubService } from '../index';
+} from '../../../../modules/key';
+import { ILogger } from '../../../logger';
+import { SubService } from '../../index';
 import {
   RedisRedisClientType as RedisClientType,
   RedisRedisMultiType as RedisMultiType,
-} from '../../../types/redis';
-import { SubscriptionCallback } from '../../../types/quorum';
+} from '../../../../types/redis';
+import { SubscriptionCallback } from '../../../../types/quorum';
 
 class RedisSubService extends SubService<RedisClientType, RedisMultiType> {
-  redisClient: RedisClientType;
-  namespace: string;
-  logger: ILogger;
-  appId: string;
 
-  constructor(redisClient: RedisClientType) {
-    super(redisClient);
+  constructor(eventClient: RedisClientType, storeClient: RedisClientType) {
+    super(eventClient, storeClient);
   }
 
   async init(
@@ -34,7 +30,7 @@ class RedisSubService extends SubService<RedisClientType, RedisMultiType> {
   }
 
   getMulti(): RedisMultiType {
-    const multi = this.redisClient.multi();
+    const multi = this.eventClient.multi();
     return multi as unknown as RedisMultiType;
   }
 
@@ -49,10 +45,10 @@ class RedisSubService extends SubService<RedisClientType, RedisMultiType> {
     appId: string,
     engineId?: string,
   ): Promise<void> {
-    if (this.redisClient) {
+    if (this.eventClient) {
       const self = this;
       const topic = this.mintKey(keyType, { appId, engineId });
-      await this.redisClient.subscribe(topic, (message) => {
+      await this.eventClient.subscribe(topic, (message) => {
         try {
           const payload = JSON.parse(message);
           callback(topic, payload);
@@ -69,7 +65,7 @@ class RedisSubService extends SubService<RedisClientType, RedisMultiType> {
     engineId?: string,
   ): Promise<void> {
     const topic = this.mintKey(keyType, { appId, engineId });
-    await this.redisClient.unsubscribe(topic);
+    await this.eventClient.unsubscribe(topic);
   }
 
   async psubscribe(
@@ -78,10 +74,10 @@ class RedisSubService extends SubService<RedisClientType, RedisMultiType> {
     appId: string,
     engineId?: string,
   ): Promise<void> {
-    if (this.redisClient) {
+    if (this.eventClient) {
       const self = this;
       const topic = this.mintKey(keyType, { appId, engineId });
-      await this.redisClient.pSubscribe(topic, (message, channel) => {
+      await this.eventClient.pSubscribe(topic, (message, channel) => {
         try {
           const payload = JSON.parse(message);
           callback(channel, payload);
@@ -98,7 +94,24 @@ class RedisSubService extends SubService<RedisClientType, RedisMultiType> {
     engineId?: string,
   ): Promise<void> {
     const topic = this.mintKey(keyType, { appId, engineId });
-    await this.redisClient.pUnsubscribe(topic);
+    await this.eventClient.pUnsubscribe(topic);
+  }
+
+  async publish(
+    keyType: KeyType.QUORUM,
+    message: Record<string, any>,
+    appId: string,
+    engineId?: string,
+  ): Promise<boolean> {
+    const topic = this.mintKey(keyType, { appId, engineId });
+    //NOTE: `storeClient.publish` is used,
+    //      because a Redis connection with subscriptions
+    //      may not publish (is read only).
+    const status: number = await this.storeClient.publish(
+      topic,
+      JSON.stringify(message),
+    );
+    return status > 0;
   }
 }
 

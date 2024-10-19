@@ -16,21 +16,6 @@ import { HMSH_GUID_SIZE } from './enums';
 /**
  * @private
  */
-// async function safeExecute<T>(
-//   operation: Promise<T>,
-//   defaultValue: T,
-// ): Promise<T> {
-//   try {
-//     return await operation;
-//   } catch (error) {
-//     console.error(`Operation Error: ${error}`);
-//     return defaultValue;
-//   }
-// }
-
-/**
- * @private
- */
 export const hashOptions = (options: any): string => {
   const str = JSON.stringify(options);
   return createHash('sha256').update(str).digest('hex');
@@ -40,22 +25,6 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   const totalMemory = os.totalmem();
   const freeMemory = os.freemem();
   const usedMemory = totalMemory - freeMemory;
-
-  //NOTE: enable the following if desired; for now, only
-  //      `memory` is emitted when system health is requested
-
-  //const cpus = os.cpus();
-
-  // CPU load calculation remains unchanged
-  // const cpuLoad = cpus.map((cpu, i) => {
-  //   const total = Object.values(cpu.times).reduce((acc, tv) => acc + tv, 0);
-  //   const idle = cpu.times.idle;
-  //   const usage = ((total - idle) / total) * 100;
-  //   return { [`CPU ${i} Usage`]: `${usage.toFixed(2)}%` };
-  // });
-
-  // Wrap each systeminformation call with safeExecute (systeminformation npm package)
-  //const networkStats = await safeExecute(si.networkStats(), []);
 
   const systemHealth = {
     TotalMemoryGB: `${(totalMemory / 1024 / 1024 / 1024).toFixed(2)} GB`,

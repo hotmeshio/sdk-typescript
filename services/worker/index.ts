@@ -77,7 +77,7 @@ class WorkerService {
         service.logger = logger;
 
         await service.initStoreChannel(service, worker.store);
-        await service.initSubChannel(service, worker.sub);
+        await service.initSubChannel(service, worker.sub, worker.store);
         await service.subscribe.subscribe(
           KeyType.QUORUM,
           service.subscriptionHandler(),
@@ -95,10 +95,10 @@ class WorkerService {
           appId,
           service.guid,
         );
-        await service.initStreamChannel(service, worker.stream);
+        await service.initStreamChannel(service, worker.stream, worker.store);
         service.router = await service.initRouter(worker, logger);
 
-        const key = service.stream.mintKey(KeyType.STREAMS, {
+        const key = service.store.mintKey(KeyType.STREAMS, {
           appId: service.appId,
           topic: worker.topic,
         });
@@ -146,9 +146,10 @@ class WorkerService {
   /**
    * @private
    */
-  async initSubChannel(service: WorkerService, sub: RedisClient) {
+  async initSubChannel(service: WorkerService, sub: RedisClient, store: RedisClient) {
     service.subscribe = await SubServiceFactory.init(
       sub,
+      store,
       service.namespace,
       service.appId,
       service.guid,
@@ -159,9 +160,10 @@ class WorkerService {
   /**
    * @private
    */
-  async initStreamChannel(service: WorkerService, stream: RedisClient) {
+  async initStreamChannel(service: WorkerService, stream: RedisClient, store: RedisClient) {
     service.stream = await StreamServiceFactory.init(
       stream,
+      store,
       service.namespace,
       service.appId,
       service.logger,
@@ -275,7 +277,7 @@ class WorkerService {
         namespace: this.namespace,
         app_id: this.appId,
         worker_topic: this.topic,
-        stream: this.stream.mintKey(KeyType.STREAMS, params),
+        stream: this.store.mintKey(KeyType.STREAMS, params),
         counts: this.router.counts,
         timestamp: formatISODate(new Date()),
         inited: this.inited,
@@ -286,7 +288,7 @@ class WorkerService {
         signature: signature ? this.callback.toString() : undefined,
       };
     }
-    this.store.publish(
+    this.subscribe.publish(
       KeyType.QUORUM,
       {
         type: 'pong',

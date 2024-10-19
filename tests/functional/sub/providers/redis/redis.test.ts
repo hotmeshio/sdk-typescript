@@ -1,10 +1,10 @@
-import { KeyType, HMNS } from '../../../../modules/key';
-import { LoggerService } from '../../../../services/logger';
-import { RedisStoreService } from '../../../../services/store/clients/redis';
-import { RedisSubService } from '../../../../services/sub/clients/redis';
-import { SubscriptionCallback } from '../../../../types/quorum';
-import { RedisConnection, RedisClientType } from '../../../$setup/cache/redis';
-import { sleepFor } from '../../../../modules/utils';
+import { KeyType, HMNS } from '../../../../../modules/key';
+import { LoggerService } from '../../../../../services/logger';
+import { RedisStoreService } from '../../../../../services/store/providers/redis/redis';
+import { RedisSubService } from '../../../../../services/sub/providers/redis/redis';
+import { SubscriptionCallback } from '../../../../../types/quorum';
+import { RedisConnection, RedisClientType } from '../../../../$setup/cache/redis';
+import { sleepFor } from '../../../../../modules/utils';
 
 describe('FUNCTIONAL | RedisSubService', () => {
   const appConfig = { id: 'test-app', version: '1' };
@@ -12,12 +12,11 @@ describe('FUNCTIONAL | RedisSubService', () => {
   let redisConnection: RedisConnection;
   let redisPublisherConnection: RedisConnection;
   let redisClient: RedisClientType;
-  let redisPublisherClient: RedisClientType;
+  let redisStoreClient: RedisClientType;
   let redisSubService: RedisSubService;
-  let redisPubService: RedisStoreService;
 
   beforeEach(async () => {
-    redisSubService = new RedisSubService(redisClient);
+    redisSubService = new RedisSubService(redisClient, redisStoreClient);
   });
 
   beforeAll(async () => {
@@ -25,10 +24,8 @@ describe('FUNCTIONAL | RedisSubService', () => {
     redisPublisherConnection =
       await RedisConnection.getConnection('test-publisher-1');
     redisClient = await redisConnection.getClient();
-    redisPublisherClient = await redisPublisherConnection.getClient();
-    await redisPublisherClient.flushDb();
-    redisPubService = new RedisStoreService(redisPublisherClient);
-    await redisPubService.init(HMNS, appConfig.id, new LoggerService());
+    redisStoreClient = await redisPublisherConnection.getClient();
+    await redisStoreClient.flushDb();
   });
 
   afterAll(async () => {
@@ -56,7 +53,7 @@ describe('FUNCTIONAL | RedisSubService', () => {
         subscriptionHandler,
         appConfig.id,
       );
-      await redisPubService.publish(KeyType.QUORUM, payload, appConfig.id);
+      await redisSubService.publish(KeyType.QUORUM, payload, appConfig.id);
     });
 
     it('unsubscribes and subscribes', async () => {
@@ -79,7 +76,7 @@ describe('FUNCTIONAL | RedisSubService', () => {
         subscriptionHandler,
         appConfig.id,
       );
-      const pub = await redisPubService.publish(
+      const pub = await redisSubService.publish(
         KeyType.QUORUM,
         payload,
         appConfig.id,
@@ -115,7 +112,7 @@ describe('FUNCTIONAL | RedisSubService', () => {
         appConfig.id,
         wild,
       );
-      await redisPubService.publish(
+      await redisSubService.publish(
         KeyType.QUORUM,
         payload,
         appConfig.id,

@@ -15,9 +15,6 @@ type responseType = {
     complex: string;
   };
   random2: number;
-  oneTimeGreeting: {
-    complex: string;
-  };
   payload: { id: string; data: { hello: string; id: string } };
   proxyGreeting3: {
     complex: string;
@@ -46,8 +43,6 @@ export async function example(name: string): Promise<responseType> {
   const proxyGreeting = await greet(name); //execIndex: 2
   const proxyGreeting2 = await greet(`${name}2`); //execIndex: 3
   const random2 = MeshFlow.workflow.random(); //execIndex: 4
-  const oneTimeGreeting = await MeshFlow.workflow //execIndex: 5
-    .once<{ complex: string }>(activities.default, name);
   const durationInSeconds = await MeshFlow.workflow //execIndex: 6
     .sleepFor('2 seconds');
 
@@ -92,7 +87,6 @@ export async function example(name: string): Promise<responseType> {
     random1,
     proxyGreeting,
     random2,
-    oneTimeGreeting,
     payload,
     proxyGreeting3,
     proxyGreeting4,

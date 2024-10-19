@@ -126,11 +126,10 @@ export class ClientService {
     workflowTopic: string,
     namespace?: string,
   ) => {
-    const store = hotMeshClient.engine.store;
     const params = { appId: namespace ?? APP_ID, topic: workflowTopic };
-    const streamKey = store.mintKey(KeyType.STREAMS, params);
+    const streamKey = hotMeshClient.engine.store.mintKey(KeyType.STREAMS, params);
     try {
-      await store.xgroup('CREATE', streamKey, 'WORKER', '$', 'MKSTREAM');
+      await hotMeshClient.engine.stream.createConsumerGroup(streamKey, 'WORKER');
     } catch (err) {
       //ignore if already exists
     }
@@ -164,11 +163,8 @@ export class ClientService {
     index: string,
     query: string[],
   ): Promise<string[]> => {
-    const store = hotMeshClient.engine.store;
-    if (query[0]?.startsWith('FT.')) {
-      return (await store.exec(...query)) as string[];
-    }
-    return (await store.exec('FT.SEARCH', index, ...query)) as string[];
+    const searchClient = hotMeshClient.engine.search;
+    return await searchClient.sendIndexedQuery(index, query);
   };
 
   /**

@@ -1,61 +1,49 @@
-import { KeyStoreParams, KeyType } from '../../modules/key';
 import { ReclaimedMessageType } from '../../types/stream';
 import { ILogger } from '../logger';
 
-abstract class StreamService<T, U> {
-  redisClient: T;
+abstract class StreamService<Client, MultiClient> {
+  streamClient: Client;
+  storeClient: Client;
   namespace: string;
   logger: ILogger;
   appId: string;
 
-  constructor(redisClient: T) {
-    this.redisClient = redisClient;
+  constructor(streamClient: Client, storeClient: Client) {
+    this.streamClient = streamClient;
+    this.storeClient = storeClient;
   }
 
-  abstract init(
-    namespace: string,
-    appId: string,
-    logger: ILogger,
-  ): Promise<void>;
-  abstract getMulti(): U;
-  abstract mintKey(type: KeyType, params: KeyStoreParams): string;
-  abstract xgroup(
-    command: 'CREATE',
-    key: string,
-    groupName: string,
-    id: string,
-    mkStream?: 'MKSTREAM',
-  ): Promise<boolean>;
-  abstract xadd(
-    key: string,
-    id: string,
-    messageId: string,
-    messageValue: string,
-    multi?: U,
-  ): Promise<string | U>;
-  abstract xreadgroup(
-    command: 'GROUP',
+  abstract init(namespace: string, appId: string, logger: ILogger): Promise<void>;
+  abstract consumeMessages(//xreadgroup
     groupName: string,
     consumerName: string,
-    blockOption: 'BLOCK' | 'COUNT',
     blockTime: number | string,
-    streamsOption: 'STREAMS',
     streamName: string,
-    id: string,
-  ): Promise<string[][][] | null | unknown[]>;
-  abstract xpending(
+    //onMessage: (message: any) => Promise<void>
+  ): Promise<string[][][] | null>;
+  abstract ackAndDelete(
     key: string,
     group: string,
-    start?: string,
-    end?: string,
+    id: string,
+  ): Promise<number | MultiClient>;
+  abstract acknowledgeMessage(
+    key: string,
+    group: string,
+    id: string,
+    multi?: MultiClient,
+  ): Promise<number | MultiClient>;
+  abstract deleteMessage(
+    key: string,
+    id: string,
+    multi?: MultiClient,
+  ): Promise<number | MultiClient>;
+  abstract getPendingMessages(
+    stream: string,
+    groupName: string,
     count?: number,
     consumer?: string,
-  ): Promise<
-    | [string, string, number, [string, number][]][]
-    | [string, string, number, number]
-    | unknown[]
-  >;
-  abstract xclaim(
+  ): Promise<any[]>;
+  abstract claimMessage(
     key: string,
     group: string,
     consumer: string,
@@ -63,14 +51,21 @@ abstract class StreamService<T, U> {
     id: string,
     ...args: string[]
   ): Promise<ReclaimedMessageType>;
-  abstract xack(
+  abstract createConsumerGroup(
     key: string,
-    group: string,
+    groupName: string
+  ): Promise<boolean>;
+  abstract publishMessage(
+    key: string,
     id: string,
-    multi?: U,
-  ): Promise<number | U>;
-  abstract xdel(key: string, id: string, multi?: U): Promise<number | U>;
-  abstract xlen(key: string, multi?: U): Promise<number | U>;
+    messageId: string,
+    messageValue: string,
+    multi?: MultiClient
+  ): Promise<string | MultiClient>;
+  abstract getMessageDepth(
+    key: string,
+    multi?: MultiClient,
+  ): Promise<number | MultiClient>;
 }
 
 export { StreamService };

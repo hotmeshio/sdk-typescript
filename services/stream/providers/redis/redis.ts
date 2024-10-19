@@ -3,26 +3,22 @@ import {
   KeyStoreParams,
   KeyType,
   HMNS,
-} from '../../../modules/key';
-import { ILogger } from '../../logger';
-import { StreamService } from '../index';
+} from '../../../../modules/key';
+import { ILogger } from '../../../logger';
+import { StreamService } from '../../index';
 import {
   RedisRedisClientType as RedisClientType,
   RedisRedisMultiType as RedisMultiType,
-} from '../../../types/redis';
-import { ReclaimedMessageType } from '../../../types/stream';
+} from '../../../../types/redis';
+import { ReclaimedMessageType } from '../../../../types/stream';
 
 class RedisStreamService extends StreamService<
   RedisClientType,
   RedisMultiType
 > {
-  redisClient: RedisClientType;
-  namespace: string;
-  logger: ILogger;
-  appId: string;
 
-  constructor(redisClient: RedisClientType) {
-    super(redisClient);
+  constructor(streamClient: RedisClientType, storeClient: RedisClientType) {
+    super(streamClient, storeClient);
   }
 
   async init(namespace = HMNS, appId: string, logger: ILogger): Promise<void> {
@@ -32,7 +28,7 @@ class RedisStreamService extends StreamService<
   }
 
   getMulti(): RedisMultiType {
-    return this.redisClient.multi() as unknown as RedisMultiType;
+    return this.streamClient.multi() as unknown as RedisMultiType;
   }
 
   mintKey(type: KeyType, params: KeyStoreParams): string {
@@ -40,67 +36,18 @@ class RedisStreamService extends StreamService<
     return KeyService.mintKey(this.namespace, type, params);
   }
 
-  async xgroup(
-    command: 'CREATE',
-    key: string,
-    groupName: string,
-    id: string,
-    mkStream?: 'MKSTREAM',
-  ): Promise<boolean> {
-    const args = mkStream === 'MKSTREAM' ? ['MKSTREAM'] : [];
-    try {
-      return (
-        (await this.redisClient.sendCommand([
-          'XGROUP',
-          'CREATE',
-          key,
-          groupName,
-          id,
-          ...args,
-        ])) === 1
-      );
-    } catch (error) {
-      const streamType =
-        mkStream === 'MKSTREAM' ? 'with MKSTREAM' : 'without MKSTREAM';
-      this.logger.error(
-        `x-group-error ${streamType} for key: ${key} and group: ${groupName}`,
-        { ...error },
-      );
-      throw error;
-    }
-  }
-
-  async xadd(
-    key: string,
-    id: string,
-    ...args: any[]
-  ): Promise<string | RedisMultiType> {
-    let multi: RedisMultiType;
-    if (typeof args[args.length - 1] !== 'string') {
-      multi = args.pop() as RedisMultiType;
-    }
-    try {
-      return await (multi || this.redisClient).XADD(key, id, {
-        [args[0]]: args[1],
-      });
-    } catch (error) {
-      this.logger.error(`Error publishing 'xadd'; key: ${key}`, { ...error });
-      throw error;
-    }
-  }
-
-  async xreadgroup(
-    command: 'GROUP',
+  async consumeMessages(
     groupName: string,
     consumerName: string,
-    blockOption: 'BLOCK' | 'COUNT',
-    blockTime: number | string,
-    streamsOption: 'STREAMS',
+    blockTime: number | string, //should be externalized
     streamName: string,
-    id: string,
   ): Promise<string[][][] | null> {
+    const command = 'GROUP';
+    const blockOption = 'BLOCK';
+    const streamsOption = 'STREAMS';
+    const id = '>';
     try {
-      return await this.redisClient.sendCommand([
+      return await this.streamClient.sendCommand([
         'XREADGROUP',
         command,
         groupName,
@@ -120,11 +67,9 @@ class RedisStreamService extends StreamService<
     }
   }
 
-  async xpending(
+  async getPendingMessages(
     key: string,
     group: string,
-    start?: string,
-    end?: string,
     count?: number,
     consumer?: string,
   ): Promise<
@@ -132,13 +77,15 @@ class RedisStreamService extends StreamService<
     | [string, string, number, number]
   > {
     try {
+      const start = '-';
+      const end = '+';
       const args = [key, group];
       if (start) args.push(start);
       if (end) args.push(end);
       if (count !== undefined) args.push(count.toString());
       if (consumer) args.push(consumer);
       try {
-        return await this.redisClient.sendCommand(['XPENDING', ...args]);
+        return await this.streamClient.sendCommand(['XPENDING', ...args]);
       } catch (error) {
         this.logger.error('error, args', { ...error }, args);
       }
@@ -151,7 +98,7 @@ class RedisStreamService extends StreamService<
     }
   }
 
-  async xclaim(
+  async claimMessage(
     key: string,
     group: string,
     consumer: string,
@@ -160,7 +107,7 @@ class RedisStreamService extends StreamService<
     ...args: string[]
   ): Promise<ReclaimedMessageType> {
     try {
-      return (await this.redisClient.sendCommand([
+      return (await this.streamClient.sendCommand([
         'XCLAIM',
         key,
         group,
@@ -171,14 +118,21 @@ class RedisStreamService extends StreamService<
       ])) as unknown as ReclaimedMessageType;
     } catch (error) {
       this.logger.error(
-        `Error claiming message with id: ${id} in group: ${group} for key: ${key}`,
+        `Error in claiming message with id: ${id} in group: ${group} for key: ${key}`,
         { ...error },
       );
       throw error;
     }
   }
 
-  async xack(
+  async ackAndDelete(key: string, group: string, id: string): Promise<number | RedisMultiType> {
+    const multi = this.getMulti();
+    this.acknowledgeMessage(key, group, id, multi);
+    this.deleteMessage(key, id, multi);
+    return await multi.exec() as unknown as number;
+  }
+
+  async acknowledgeMessage(
     key: string,
     group: string,
     id: string,
@@ -189,18 +143,18 @@ class RedisStreamService extends StreamService<
         multi.XACK(key, group, id);
         return multi;
       } else {
-        return await this.redisClient.XACK(key, group, id);
+        return await this.streamClient.XACK(key, group, id);
       }
     } catch (error) {
       this.logger.error(
-        `Error acknowledging messages in group: ${group} for key: ${key}`,
+        `Error in acknowledging messages in group: ${group} for key: ${key}`,
         { ...error },
       );
       throw error;
     }
   }
 
-  async xdel(
+  async deleteMessage(
     key: string,
     id: string,
     multi?: RedisMultiType,
@@ -210,18 +164,60 @@ class RedisStreamService extends StreamService<
         multi.XDEL(key, id);
         return multi;
       } else {
-        return await this.redisClient.XDEL(key, id);
+        return await this.streamClient.XDEL(key, id);
       }
     } catch (error) {
       this.logger.error(
-        `Error deleting messages with ids: ${id} for key: ${key}`,
+        `Error in deleting messages with ids: ${id} for key: ${key}`,
         { ...error },
       );
       throw error;
     }
   }
 
-  async xlen(
+  async createConsumerGroup(
+    key: string,
+    groupName: string,
+  ): Promise<boolean> {
+    try {
+      return (
+        (await this.storeClient.sendCommand([
+          'XGROUP',
+          'CREATE',
+          key,
+          groupName,
+          '$',
+          'MKSTREAM',
+        ])) === 1
+      );
+    } catch (error) {
+      const streamType = 'with MKSTREAM';
+      this.logger.debug(
+        `x-group-error ${streamType} for key: ${key} and group: ${groupName}`,
+        { ...error },
+      );
+      throw error;
+    }
+  }
+
+  async publishMessage(
+    key: string,
+    id: string,
+    messageId: string,
+    messageValue: string,
+    multi?: RedisMultiType,
+  ): Promise<string | RedisMultiType> {
+    try {
+      return await (multi || this.storeClient).XADD(key, id, {
+        [messageId]: messageValue,
+      });
+    } catch (error) {
+      this.logger.error(`Error publishingMessage [xadd]; key: ${key}`, { ...error });
+      throw error;
+    }
+  }
+
+  async getMessageDepth(
     key: string,
     multi?: RedisMultiType,
   ): Promise<number | RedisMultiType> {
@@ -230,7 +226,7 @@ class RedisStreamService extends StreamService<
         multi.XLEN(key);
         return multi;
       } else {
-        return await this.redisClient.XLEN(key);
+        return await this.storeClient.XLEN(key);
       }
     } catch (error) {
       this.logger.error(`Error getting stream depth: ${key}`, { ...error });

@@ -17,9 +17,5 @@ export async function example(name: string): Promise<string> {
   const random1 = MeshFlow.workflow.random();
   const proxyGreeting = await greet(name);
   const random2 = MeshFlow.workflow.random();
-  const oneTimeGreeting = await MeshFlow.workflow.once<string>(
-    activities.default,
-    name,
-  );
-  return `${random1} ${proxyGreeting} ${random2} ${oneTimeGreeting}`;
+  return `${random1} ${proxyGreeting} ${random2}`;
 }
