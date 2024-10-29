@@ -4,8 +4,9 @@ import { MeshCall } from './services/meshcall';
 import { MeshFlow } from './services/meshflow';
 import { MeshData } from './services/meshdata';
 import { MeshOS } from './services/meshos';
+import * as Utils from './modules/utils';
 
-const { Client, Connection, Search, Worker, workflow} = MeshFlow;
+const { Client, Connection, Handle, Search, Worker, workflow } = MeshFlow;
 
 export {
   HotMesh,
@@ -16,7 +17,9 @@ export {
   MeshFlow,
   Client,
   Connection,
+  Handle,
   Search,
+  Utils,
   Worker,
   workflow,
 };

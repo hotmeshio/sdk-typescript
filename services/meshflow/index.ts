@@ -6,6 +6,7 @@ import { ConnectionService } from './connection';
 import { Search } from './search';
 import { WorkerService } from './worker';
 import { WorkflowService } from './workflow';
+import { WorkflowHandleService } from './handle';
 
 /**
  * The MeshFlow service is a collection of services that
@@ -82,6 +83,14 @@ class MeshFlowClass {
    * @private
    */
   static Search = Search;
+
+  /**
+   * The Handle provides methods to interact with a running
+   * workflow. This includes exporting the workflow, sending signals, and
+   * querying the state of the workflow. An instance of the Handle service
+   * is typically accessed via the MeshFlow.Client class (workflow.getHandle).
+   */
+  static Handle = WorkflowHandleService;
 
   /**
    * The MeshFlow `Worker` service is functionally

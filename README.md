@@ -1,12 +1,24 @@
 # HotMesh
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-**HotMesh** transforms **Redis** into indispensable **Middleware**. Connect **anything** to **everything**.
+**HotMesh** offers "Temporal Your Way"—providing the power of orchestration platforms like Temporal.io in a flexible, decentralized manner. Replace everything with robust **Queues** and **Routers**...even the app server.
+
+*Note: This is a beta release and currently focuses on TypeScript/Redis.*
+
+## Features
+
+- **Temporal Your Way**: Orchestrate your microservices using message queues and routers, without the need for a central server.
+- **Pluggable Middleware**: Mix and match technologies through a standard interface. Currently supporting **Redis/ValKey/Dragonfly/KVRocks**, with **Postgres**, **ElasticSearch**, and **NATS** coming next.
+- **Decentralized Orchestration**: Build a resilient architecture with decentralized queues and routers.
+- **Linear Scalability**: Scale your application by scaling the database.
+- **Real-Time Analytics**: Gain insights into your workflows with real-time analytics.
 
 ## Install
+
 ```sh
 npm install @hotmeshio/hotmesh
 ```
+
 You have a Redis instance? Good. You're ready to go.
 
 ## Learn
