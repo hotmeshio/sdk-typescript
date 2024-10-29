@@ -15,7 +15,8 @@
     "services/meshflow/workflow.ts",
     "services/meshflow/connection.ts",
     "services/meshos/index.ts",
-    "types/*.ts"
+    "types/*.ts",
+    "index.ts"
   ],
   "highlightLanguages": [
     "bash",

@@ -335,7 +335,7 @@ export const s = (input: string): number => {
 };
 
 /**
- * transform redis FT.Search response to an array of objects
+ * Transforms  an array of arrays to an array of objects.
  */
 export const arrayToHash = (
   response: [number, ...Array<string | string[]>],
