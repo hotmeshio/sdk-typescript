@@ -2,7 +2,7 @@ import * as Redis from 'redis';
 
 import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
-import { RedisConnection } from '../../../services/connector/clients/redis';
+import { RedisConnection } from '../../../services/connector/providers/redis';
 import { ClientService } from '../../../services/meshflow/client';
 import { guid, sleepFor } from '../../../modules/utils';
 import { RedisRedisClassType } from '../../../types';

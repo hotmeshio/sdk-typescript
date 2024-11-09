@@ -3,7 +3,7 @@ import Redis from 'ioredis';
 import config from '../$setup/config';
 import { HotMesh } from '../../services/hotmesh';
 import { MeshData } from '../../services/meshdata';
-import { RedisConnection } from '../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../services/connector/providers/ioredis';
 import * as HotMeshTypes from '../../types';
 
 import * as activities from './activities';
@@ -215,13 +215,13 @@ describe('MeshData`', () => {
     }, 10_000);
 
     it('should connect a function and isolate the namespace', async () => {
-      const worker = await meshData.connect<Promise<HotMeshTypes.WorkflowContext>>(
-        {
-          entity: 'howdy',
-          target: howdy,
-          options: { namespace: 'staging' },
-        },
-      );
+      const worker = await meshData.connect<
+        Promise<HotMeshTypes.WorkflowContext>
+      >({
+        entity: 'howdy',
+        target: howdy,
+        options: { namespace: 'staging' },
+      });
       expect(worker).toBeDefined();
     });
 
@@ -283,7 +283,9 @@ describe('MeshData`', () => {
         let job: HotMeshTypes.JobOutput | undefined;
         do {
           await new Promise((resolve) => setTimeout(resolve, 250));
-          job = await meshData.info('howdy', 'jimbo123', { namespace: 'staging' });
+          job = await meshData.info('howdy', 'jimbo123', {
+            namespace: 'staging',
+          });
         } while (true);
       } catch (error) {
         expect(error.message).toBe(`howdy-jimbo123 Not Found`);

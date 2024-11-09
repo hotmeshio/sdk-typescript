@@ -178,7 +178,7 @@ export {
   IORedisClassType,
   IORedisMultiType,
   RedisOptions,
-  MultiResponseFlags,
+  TransactionResultList,
   isRedisClient,
   isIORedisClient,
 } from './redis'; //common redis types
@@ -213,14 +213,19 @@ export {
 } from './stats';
 export {
   ReclaimedMessageType,
+  RouterConfig,
   StreamCode,
   StreamConfig,
   StreamData,
   StreamDataType,
   StreamError,
   StreamDataResponse,
+  StreamMessage,
+  StreamMessageMetadata,
+  StreamProviderType,
   StreamRetryPolicy,
   StreamRole,
+  StreamStats,
   StreamStatus,
 } from './stream';
 export {

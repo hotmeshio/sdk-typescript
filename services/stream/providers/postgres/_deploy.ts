@@ -1,11 +1,9 @@
 export class DeployService {
-  constructor() {
-
-  }
+  constructor() {}
 
   async deploy(): Promise<void> {
-   //deploy the tables
-   const query = `
+    //deploy the tables
+    const query = `
 -- messages table
 CREATE TABLE IF NOT EXISTS messages (
     stream VARCHAR(255) NOT NULL,

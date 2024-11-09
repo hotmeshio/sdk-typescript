@@ -7,14 +7,13 @@ import {
 import { ILogger } from '../../../logger';
 import { SubService } from '../../index';
 import {
-  RedisRedisClientType as RedisClientType,
-  RedisRedisMultiType as RedisMultiType,
+  RedisRedisClientType as ClientProvider,
+  RedisRedisMultiType as TransactionProvider,
 } from '../../../../types/redis';
 import { SubscriptionCallback } from '../../../../types/quorum';
 
-class RedisSubService extends SubService<RedisClientType, RedisMultiType> {
-
-  constructor(eventClient: RedisClientType, storeClient: RedisClientType) {
+class RedisSubService extends SubService<ClientProvider, TransactionProvider> {
+  constructor(eventClient: ClientProvider, storeClient: ClientProvider) {
     super(eventClient, storeClient);
   }
 
@@ -29,9 +28,9 @@ class RedisSubService extends SubService<RedisClientType, RedisMultiType> {
     this.appId = appId;
   }
 
-  getMulti(): RedisMultiType {
+  transact(): TransactionProvider {
     const multi = this.eventClient.multi();
-    return multi as unknown as RedisMultiType;
+    return multi as unknown as TransactionProvider;
   }
 
   mintKey(type: KeyType, params: KeyStoreParams): string {

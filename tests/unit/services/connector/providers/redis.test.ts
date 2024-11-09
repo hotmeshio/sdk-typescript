@@ -1,7 +1,7 @@
 import * as Redis from 'redis';
 
 import config from '../../../../$setup/config';
-import { RedisConnection } from '../../../../../services/connector/clients/redis';
+import { RedisConnection } from '../../../../../services/connector/providers/redis';
 import {
   RedisRedisClientOptions as RedisClientOptions,
   RedisRedisClientType as RedisClientType,

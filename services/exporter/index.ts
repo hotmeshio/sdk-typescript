@@ -9,7 +9,7 @@ import {
   JobActionExport,
   JobExport,
 } from '../../types/exporter';
-import { RedisClient, RedisMulti } from '../../types/redis';
+import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
 import {
   StringAnyType,
   StringStringType,
@@ -23,12 +23,12 @@ import {
 class ExporterService {
   appId: string;
   logger: ILogger;
-  store: StoreService<RedisClient, RedisMulti>;
+  store: StoreService<ProviderClient, ProviderTransaction>;
   symbols: Promise<Symbols> | Symbols;
 
   constructor(
     appId: string,
-    store: StoreService<RedisClient, RedisMulti>,
+    store: StoreService<ProviderClient, ProviderTransaction>,
     logger: ILogger,
   ) {
     this.appId = appId;

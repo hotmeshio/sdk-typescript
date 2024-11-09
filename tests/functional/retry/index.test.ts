@@ -4,7 +4,7 @@ import config from '../../$setup/config';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { MathHandler } from '../../../services/pipe/functions/math';
 import { JobOutput } from '../../../types/job';
 import {

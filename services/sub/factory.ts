@@ -1,10 +1,7 @@
 import { identifyRedisType } from '../../modules/utils';
-import {
-  RedisClient,
-  RedisRedisClientType,
-  IORedisClientType,
-} from '../../types/redis';
+import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
+import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
 
 import { IORedisSubService } from './providers/redis/ioredis';
 import { RedisSubService } from './providers/redis/redis';
@@ -13,14 +10,14 @@ import { SubService } from './index';
 
 class SubServiceFactory {
   static async init(
-    redisClient: RedisClient,
-    redisStoreClient: RedisClient,
+    redisClient: ProviderClient,
+    redisStoreClient: ProviderClient,
     namespace: string,
     appId: string,
     engineId: string,
     logger: ILogger,
-  ): Promise<SubService<any, any>> {
-    let service: SubService<any, any>;
+  ): Promise<SubService<ProviderClient, ProviderTransaction>> {
+    let service: SubService<ProviderClient, ProviderTransaction>;
     if (identifyRedisType(redisClient) === 'redis') {
       service = new RedisSubService(
         redisClient as RedisRedisClientType,

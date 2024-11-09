@@ -14,8 +14,8 @@ import {
   ActivityType,
   InterruptActivity,
 } from '../../types/activity';
+import { TransactionResultList } from '../../types/hotmesh';
 import { JobInterruptOptions, JobState } from '../../types/job';
-import { MultiResponseFlags } from '../../types/redis';
 
 import { Activity } from './activity';
 
@@ -104,11 +104,11 @@ class Interrupt extends Activity {
 
     // Notarize completion and log
     telemetry.mapActivityAttributes();
-    const multi = this.store.getMulti();
-    await CollatorService.notarizeEarlyCompletion(this, multi);
-    await this.setStatus(-1, multi);
-    const multiResponse = (await multi.exec()) as MultiResponseFlags;
-    const jobStatus = this.resolveStatus(multiResponse);
+    const transaction = this.store.transact();
+    await CollatorService.notarizeEarlyCompletion(this, transaction);
+    await this.setStatus(-1, transaction);
+    const txResponse = (await transaction.exec()) as TransactionResultList;
+    const jobStatus = this.resolveStatus(txResponse);
     telemetry.setActivityAttributes({
       'app.activity.mid': messageId,
       'app.job.jss': jobStatus,
@@ -128,16 +128,16 @@ class Interrupt extends Activity {
     if (this.config.job?.maps || this.config.output?.maps) {
       this.mapOutputData();
       this.mapJobData();
-      const multi = this.store.getMulti();
-      await this.setState(multi);
+      const transaction = this.store.transact();
+      await this.setState(transaction);
     }
 
     // Notarize completion
-    const multi = this.store.getMulti();
-    await CollatorService.notarizeEarlyCompletion(this, multi);
-    await this.setStatus(this.adjacencyList.length - 1, multi);
-    const multiResponse = (await multi.exec()) as MultiResponseFlags;
-    const jobStatus = this.resolveStatus(multiResponse);
+    const transaction = this.store.transact();
+    await CollatorService.notarizeEarlyCompletion(this, transaction);
+    await this.setStatus(this.adjacencyList.length - 1, transaction);
+    const txResponse = (await transaction.exec()) as TransactionResultList;
+    const jobStatus = this.resolveStatus(txResponse);
     attrs['app.job.jss'] = jobStatus;
 
     // Transition next generation and log

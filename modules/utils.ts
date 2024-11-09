@@ -4,14 +4,17 @@ import { createHash } from 'crypto';
 import { nanoid } from 'nanoid';
 import ms from 'ms';
 
+import { LoggerService } from '../services/logger';
 import { StoreService } from '../services/store';
 import { AppSubscriptions, AppTransitions, AppVID } from '../types/app';
-import { RedisClient, RedisMulti } from '../types/redis';
+import { ProviderClient, ProviderTransaction } from '../types/hotmesh';
 import { StringAnyType } from '../types/serializer';
-import { StreamCode, StreamStatus } from '../types/stream';
+import { StreamCode, StreamData, StreamStatus } from '../types/stream';
 import { SystemHealth } from '../types/quorum';
 
 import { HMSH_GUID_SIZE } from './enums';
+
+const logger = new LoggerService('hotmesh', 'utils');
 
 /**
  * @private
@@ -94,7 +97,7 @@ export function identifyRedisType(
         return 'ioredis';
       }
     } else if (
-      redisInstance.constructor.name === 'RedisClient' ||
+      redisInstance.constructor.name === 'ProviderClient' ||
       redisInstance.constructor.name === 'Commander'
     ) {
       if ('HSET' in redisInstance) {
@@ -193,7 +196,7 @@ export function findSubscriptionForTrigger(
  */
 export async function getSubscriptionTopic(
   activityId: string,
-  store: StoreService<RedisClient, RedisMulti>,
+  store: StoreService<ProviderClient, ProviderTransaction>,
   appVID: AppVID,
 ): Promise<string | undefined> {
   const appTransitions = await store.getTransitions(appVID);
@@ -332,6 +335,25 @@ export function isValidCron(cronExpression: string): boolean {
  */
 export const s = (input: string): number => {
   return ms(input) / 1000;
+};
+
+/**
+ * @private
+ */
+export const parseStreamMessage = (message: string): StreamData => {
+  try {
+    return JSON.parse(message);
+  } catch (error) {
+    logger.error('Error parsing Stream message', { ...error });
+    throw error;
+  }
+};
+
+/**
+ * @private
+ */
+export const isStreamMessage = (result: any): boolean => {
+  return Array.isArray(result) && Array.isArray(result[0]);
 };
 
 /**

@@ -16,7 +16,12 @@ import { ILogger } from '../logger';
 import { StoreService } from '../store';
 import { SubService } from '../sub';
 import { CacheMode } from '../../types/cache';
-import { HotMeshConfig, KeyType } from '../../types/hotmesh';
+import {
+  HotMeshConfig,
+  KeyType,
+  ProviderClient,
+  ProviderTransaction,
+} from '../../types/hotmesh';
 import {
   QuorumMessage,
   QuorumMessageCallback,
@@ -24,7 +29,6 @@ import {
   RollCallMessage,
   SubscriptionCallback,
 } from '../../types/quorum';
-import { RedisClient, RedisMulti } from '../../types/redis';
 import { SubServiceFactory } from '../sub/factory';
 import { StoreServiceFactory } from '../store/factory';
 
@@ -34,8 +38,8 @@ class QuorumService {
   guid: string;
   engine: EngineService;
   profiles: QuorumProfile[] = [];
-  store: StoreService<RedisClient, RedisMulti> | null;
-  subscribe: SubService<RedisClient, RedisMulti> | null;
+  store: StoreService<ProviderClient, ProviderTransaction> | null;
+  subscribe: SubService<ProviderClient, ProviderTransaction> | null;
   logger: ILogger;
   cacheMode: CacheMode = 'cache';
   untilVersion: string | null = null;
@@ -105,7 +109,7 @@ class QuorumService {
   /**
    * @private
    */
-  async initStoreChannel(store: RedisClient) {
+  async initStoreChannel(store: ProviderClient) {
     this.store = await StoreServiceFactory.init(
       store,
       this.namespace,
@@ -117,7 +121,7 @@ class QuorumService {
   /**
    * @private
    */
-  async initSubChannel(sub: RedisClient, store: RedisClient) {
+  async initSubChannel(sub: ProviderClient, store: ProviderClient) {
     this.subscribe = await SubServiceFactory.init(
       sub,
       store,
@@ -294,22 +298,11 @@ class QuorumService {
    */
   async rollCall(delay = HMSH_QUORUM_DELAY_MS): Promise<QuorumProfile[]> {
     await this.requestQuorum(delay, true);
-    const targetStreams = [];
-    const multi = this.store.getMulti();
-    this.profiles.forEach((profile: QuorumProfile) => {
-      if (!targetStreams.includes(profile.stream)) {
-        targetStreams.push(profile.stream);
-        this.engine.stream.getMessageDepth(profile.stream, multi);
-      }
-    });
-    const stream_depths = (await multi.exec()) as number[];
-    this.profiles.forEach(async (profile: QuorumProfile) => {
-      const index = targetStreams.indexOf(profile.stream);
-      if (index != -1) {
-        profile.stream_depth = Array.isArray(stream_depths[index])
-          ? stream_depths[index][1]
-          : stream_depths[index];
-      }
+    const stream_depths = await this.engine.stream.getStreamDepths(
+      this.profiles as { stream: string }[],
+    );
+    this.profiles.forEach(async (profile: QuorumProfile, index: number) => {
+      profile.stream_depth = stream_depths[index].depth;
     });
     return this.profiles;
   }
@@ -351,7 +344,11 @@ class QuorumService {
       if (this.engine.untilVersion === version) {
         this.logger.info('quorum-activation-succeeded', { version });
         const { id } = config;
-        const compiler = new CompilerService(this.store, this.engine.stream, this.logger);
+        const compiler = new CompilerService(
+          this.store,
+          this.engine.stream,
+          this.logger,
+        );
         return await compiler.activate(id, version);
       } else {
         this.logger.error('quorum-activation-error', { version });

@@ -1,7 +1,8 @@
+import { ProviderClient, ProviderTransaction } from './hotmesh';
 import { StringStringType } from './serializer';
 import { ReclaimedMessageType } from './stream';
 
-type MultiResponseFlags = (string | number)[]; // e.g., [3, 2, '0']
+type TransactionResultList = (string | number)[]; // e.g., [3, 2, '0']
 
 /**
  * Redis types
@@ -64,14 +65,10 @@ interface RedisRedisClientOptions {
   stringNumbers?: boolean;
 }
 
-interface RedisRedisMultiType {
+interface RedisRedisMultiType extends ProviderTransaction {
   sendCommand(command: string, ...args: string[]): Promise<any>;
   exec: () => Promise<unknown[]>;
 
-  XADD(key: string, id: string, fields: any): this;
-  XACK(key: string, group: string, id: string): this;
-  XDEL(key: string, id: string): this;
-  XLEN(key: string): this;
   DEL(key: string): this;
   EXISTS(key: string): this;
   EXPIRE(key: string, seconds: number): this;
@@ -87,6 +84,11 @@ interface RedisRedisMultiType {
   LRANGE(key: string, start: number, end: number): this;
   RPUSH(key: string, items: string[]): this;
   SET(key: string, value: string): this;
+  XADD(key: string, id: string, fields: any): this;
+  XACK(key: string, group: string, id: string): this;
+  XACK(key: string, group: string, ...ids: string[]): this;
+  XDEL(key: string, id: string): this;
+  XDEL(key: string, ...ids: string[]): this;
   XCLAIM(
     key: string,
     group: string,
@@ -95,6 +97,7 @@ interface RedisRedisMultiType {
     id: string,
     ...args: string[]
   ): this;
+  XLEN(key: string): this;
   XGROUP(
     command: 'CREATE' | string,
     key: string,
@@ -120,7 +123,7 @@ interface RedisRedisMultiType {
   ZSCORE(key: string, value: string): this;
 }
 
-interface RedisRedisClientType {
+interface RedisRedisClientType extends ProviderClient {
   multi(): Partial<RedisRedisMultiType>;
   connect(): Promise<void>;
   sendCommand(args: any[]): Promise<any>;
@@ -145,10 +148,6 @@ interface RedisRedisClientType {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<string>;
 
-  XADD(key: string, id: string, fields: any): Promise<string>;
-  XACK(key: string, group: string, id: string): Promise<number>;
-  XDEL(key: string, id: string): Promise<number>;
-  XLEN(key: string): Promise<number>;
   DEL(key: string): Promise<number>;
   EXISTS(key: string): Promise<number>;
   HDEL(key: string, fields: string[] | string): Promise<number>;
@@ -161,6 +160,31 @@ interface RedisRedisClientType {
   LRANGE(key: string, start: number, end: number): Promise<string[]>;
   RPUSH(key: string, items: string[]): Promise<number>;
   SET(key: string, value: string): Promise<string>;
+  XADD(key: string, id: string, fields: any): Promise<string>;
+  XACK(key: string, group: string, ...ids: string[]): Promise<number>;
+  XACK(key: string, group: string, id: string): Promise<number>;
+  XCLAIM(
+    key: string,
+    group: string,
+    consumer: string,
+    minIdleTime: number,
+    id: string,
+    ...args: string[]
+  ): Promise<ReclaimedMessageType>;
+  XDEL(key: string, id: string): Promise<number>;
+  XDEL(key: string, ...ids: string[]): Promise<number>;
+  xGroupDestroy(key: string, groupName: string): Promise<boolean>;
+  XINFO(command: 'GROUPS' | string, key: string): Promise<unknown>;
+  XINFO_GROUPS(key: string): Promise<unknown>;
+  XLEN(key: string): Promise<number>;
+  XPENDING(
+    key: string,
+    group: string,
+    start?: string,
+    end?: string,
+    count?: number,
+    consumer?: string,
+  ): this;
   ZADD(
     key: string,
     values: { score: string; value: string },
@@ -200,7 +224,7 @@ interface IORedisClientOptions {
   reconnectOnError?: (err: Error) => boolean;
 }
 
-interface IORedisClient {
+interface IORedisClient extends ProviderClient {
   multi(): IORedisMultiType;
   exec(): Promise<unknown[]>;
   sendCommand(args: any[]): Promise<any>;
@@ -223,7 +247,9 @@ interface IORedisClient {
 
   xadd(key: string, id: string, fields: any, message?: string): Promise<string>;
   xack(key: string, group: string, id: string): Promise<number>;
+  xack(key: string, group: string, ...ids: string[]): Promise<number>;
   xdel(key: string, id: string): Promise<number>;
+  xdel(key: string, ...ids: string[]): Promise<number>;
   xlen(key: string): Promise<number>;
   xpending(
     key: string,
@@ -247,6 +273,16 @@ interface IORedisClient {
   ): Promise<ReclaimedMessageType>;
   xinfo(command: 'GROUPS' | string, key: string): Promise<unknown>;
   xrange(key: string, start: string, end: string): Promise<string[][]>;
+  xreadgroup(
+    command: 'GROUP',
+    groupName: string,
+    consumerName: string,
+    blockOption: string,
+    blockTime: number,
+    streamsOption: string,
+    streamName: string,
+    key: string,
+  ): Promise<string[][]>;
   del(key: string): Promise<number>;
   exists(key: string): Promise<number>;
   get(key: string): Promise<string | null>;
@@ -271,22 +307,24 @@ interface IORedisClient {
   zrank(key: string, member: string): Promise<number>;
   zscore(key: string, value: string): Promise<number>;
   xgroup(
-    command: 'CREATE' | string,
+    command: 'CREATE' | 'DESTROY' | string,
     key: string,
     groupName: string,
-    id: string,
+    id?: string,
     mkStream?: 'MKSTREAM',
-  ): Promise<string>;
+  ): Promise<string | number>;
 }
 
 type IORedisClassType = new (
   options: IORedisClientOptions,
   ...args: any[]
 ) => IORedisClient;
-interface IORedisMultiType {
+interface IORedisMultiType extends ProviderTransaction {
   xadd(key: string, id: string, fields: any, message?: string): this;
   xack(key: string, group: string, id: string): this;
+  xack(key: string, group: string, ...ids: string[]): this;
   xdel(key: string, id: string): this;
+  xdel(key: string, ...ids: string[]): this;
   xlen(key: string): this;
   xpending(
     key: string,
@@ -353,7 +391,7 @@ export {
   IORedisClassType,
   IORedisMultiType,
   RedisOptions,
-  MultiResponseFlags,
+  TransactionResultList,
   isRedisClient,
   isIORedisClient,
 };

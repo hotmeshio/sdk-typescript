@@ -12,14 +12,18 @@ import { Router } from '../router';
 import { StoreService } from '../store';
 import { StreamService } from '../stream';
 import { SubService } from '../sub';
-import { HotMeshConfig, HotMeshWorker } from '../../types/hotmesh';
+import {
+  HotMeshConfig,
+  HotMeshWorker,
+  ProviderClient,
+  ProviderTransaction,
+} from '../../types/hotmesh';
 import {
   QuorumMessage,
   QuorumProfile,
   RollCallMessage,
   SubscriptionCallback,
 } from '../../types/quorum';
-import { RedisClient, RedisMulti } from '../../types/redis';
 import { StreamData, StreamRole, StreamDataResponse } from '../../types/stream';
 import { HMSH_QUORUM_ROLLCALL_CYCLES } from '../../modules/enums';
 import { StreamServiceFactory } from '../stream/factory';
@@ -33,10 +37,10 @@ class WorkerService {
   topic: string;
   config: HotMeshConfig;
   callback: (streamData: StreamData) => Promise<StreamDataResponse | void>;
-  store: StoreService<RedisClient, RedisMulti> | null;
-  stream: StreamService<RedisClient, RedisMulti> | null;
-  subscribe: SubService<RedisClient, RedisMulti> | null;
-  router: Router | null;
+  store: StoreService<ProviderClient, ProviderTransaction> | null;
+  stream: StreamService<ProviderClient, ProviderTransaction> | null;
+  subscribe: SubService<ProviderClient, ProviderTransaction> | null;
+  router: Router<typeof this.stream> | null;
   logger: ILogger;
   reporting = false;
   inited: string;
@@ -134,7 +138,7 @@ class WorkerService {
   /**
    * @private
    */
-  async initStoreChannel(service: WorkerService, store: RedisClient) {
+  async initStoreChannel(service: WorkerService, store: ProviderClient) {
     service.store = await StoreServiceFactory.init(
       store,
       service.namespace,
@@ -146,7 +150,11 @@ class WorkerService {
   /**
    * @private
    */
-  async initSubChannel(service: WorkerService, sub: RedisClient, store: RedisClient) {
+  async initSubChannel(
+    service: WorkerService,
+    sub: ProviderClient,
+    store: ProviderClient,
+  ) {
     service.subscribe = await SubServiceFactory.init(
       sub,
       store,
@@ -160,7 +168,11 @@ class WorkerService {
   /**
    * @private
    */
-  async initStreamChannel(service: WorkerService, stream: RedisClient, store: RedisClient) {
+  async initStreamChannel(
+    service: WorkerService,
+    stream: ProviderClient,
+    store: ProviderClient,
+  ) {
     service.stream = await StreamServiceFactory.init(
       stream,
       store,
@@ -173,7 +185,10 @@ class WorkerService {
   /**
    * @private
    */
-  async initRouter(worker: HotMeshWorker, logger: ILogger): Promise<Router> {
+  async initRouter(
+    worker: HotMeshWorker,
+    logger: ILogger,
+  ): Promise<Router<StreamService<ProviderClient, ProviderTransaction>>> {
     const throttle = await this.store.getThrottleRate(worker.topic);
 
     return new Router(
@@ -188,7 +203,6 @@ class WorkerService {
         throttle,
       },
       this.stream,
-      this.store,
       logger,
     );
   }
@@ -278,12 +292,12 @@ class WorkerService {
         app_id: this.appId,
         worker_topic: this.topic,
         stream: this.store.mintKey(KeyType.STREAMS, params),
-        counts: this.router.counts,
+        counts: this.router?.counts,
         timestamp: formatISODate(new Date()),
         inited: this.inited,
-        throttle: this.router.throttle,
-        reclaimDelay: this.router.reclaimDelay,
-        reclaimCount: this.router.reclaimCount,
+        throttle: this.router?.throttle,
+        reclaimDelay: this.router?.reclaimDelay,
+        reclaimCount: this.router?.reclaimCount,
         system: await getSystemHealth(),
         signature: signature ? this.callback.toString() : undefined,
       };
@@ -304,7 +318,7 @@ class WorkerService {
    * @private
    */
   async throttle(delayInMillis: number) {
-    this.router.setThrottle(delayInMillis);
+    this.router?.setThrottle(delayInMillis);
   }
 }
 

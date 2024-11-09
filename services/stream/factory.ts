@@ -1,26 +1,26 @@
 import { identifyRedisType } from '../../modules/utils';
-import {
-  RedisClient,
-  RedisRedisClientType,
-  IORedisClientType,
-} from '../../types/redis';
+import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
+import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
 
 import { IORedisStreamService } from './providers/redis/ioredis';
 import { RedisStreamService } from './providers/redis/redis';
+import { StreamInitializable } from './providers/stream-initializable';
 
 import { StreamService } from './index';
-import { StreamInitializable } from './providers/stream-initializable';
 
 class StreamServiceFactory {
   static async init(
-    redisClient: RedisClient,
-    redisStoreClient: RedisClient,
+    redisClient: ProviderClient,
+    redisStoreClient: ProviderClient,
     namespace: string,
     appId: string,
     logger: ILogger,
-  ): Promise<StreamService<any, any> & StreamInitializable<any, any>> {
-    let service: StreamService<any, any> & StreamInitializable<any, any>;
+  ): Promise<
+    StreamService<ProviderClient, ProviderTransaction> & StreamInitializable
+  > {
+    let service: StreamService<ProviderClient, ProviderTransaction> &
+      StreamInitializable;
     if (identifyRedisType(redisClient) === 'redis') {
       service = new RedisStreamService(
         redisClient as RedisRedisClientType,
@@ -31,7 +31,7 @@ class StreamServiceFactory {
         redisClient as IORedisClientType,
         redisStoreClient as IORedisClientType,
       );
-    }
+    } //etc
     await service.init(namespace, appId, logger);
     return service;
   }

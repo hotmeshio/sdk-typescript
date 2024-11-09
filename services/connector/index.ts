@@ -1,6 +1,4 @@
 import { guid, identifyRedisTypeFromClass } from '../../modules/utils';
-import { RedisConnection as IORedisConnection } from '../connector/clients/ioredis';
-import { RedisConnection } from '../connector/clients/redis';
 import { HotMeshEngine, HotMeshWorker } from '../../types/hotmesh';
 import {
   RedisClass,
@@ -10,6 +8,9 @@ import {
   IORedisClassType,
   IORedisClientOptions,
 } from '../../types/redis';
+
+import { RedisConnection as IORedisConnection } from './providers/ioredis';
+import { RedisConnection } from './providers/redis';
 
 export class ConnectorService {
   //1) Initialize `store`, `stream`, and `subscription` Redis clients.

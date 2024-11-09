@@ -13,8 +13,11 @@ import {
   ActivityType,
   CycleActivity,
 } from '../../types/activity';
+import {
+  TransactionResultList,
+  ProviderTransaction,
+} from '../../types/hotmesh';
 import { JobState } from '../../types/job';
-import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData } from '../../types/stream';
 import { TelemetryService } from '../telemetry';
 
@@ -55,24 +58,24 @@ class Cycle extends Activity {
       this.mapInputData();
 
       //set state/status
-      let multi = this.store.getMulti();
-      await this.setState(multi);
-      await this.setStatus(0, multi); //leg 1 never changes job status
-      const multiResponse = (await multi.exec()) as MultiResponseFlags;
+      let transaction = this.store.transact();
+      await this.setState(transaction);
+      await this.setStatus(0, transaction); //leg 1 never changes job status
+      const txResponse = (await transaction.exec()) as TransactionResultList;
       telemetry.mapActivityAttributes();
-      const jobStatus = this.resolveStatus(multiResponse);
+      const jobStatus = this.resolveStatus(txResponse);
 
       //cycle the target ancestor
-      multi = this.store.getMulti();
-      const messageId = await this.cycleAncestorActivity(multi);
+      transaction = this.store.transact();
+      const messageId = await this.cycleAncestorActivity(transaction);
       telemetry.setActivityAttributes({
         'app.activity.mid': messageId,
         'app.job.jss': jobStatus,
       });
 
       //exit early (`Cycle` activities only execute Leg 1)
-      await CollatorService.notarizeEarlyExit(this, multi);
-      (await multi.exec()) as MultiResponseFlags;
+      await CollatorService.notarizeEarlyExit(this, transaction);
+      (await transaction.exec()) as TransactionResultList;
 
       return this.context.metadata.aid;
     } catch (error) {
@@ -117,7 +120,9 @@ class Cycle extends Activity {
    * thread while `shared job state` can change. This
    * pattern allows for retries without violating the DAG.
    */
-  async cycleAncestorActivity(multi: RedisMulti): Promise<string> {
+  async cycleAncestorActivity(
+    transaction: ProviderTransaction,
+  ): Promise<string> {
     //Cycle activity L1 is a standin for the target ancestor L1.
     //Input data mapping (mapInputData) allows for the
     //next dimensonal thread to execute with different
@@ -138,7 +143,7 @@ class Cycle extends Activity {
     return (await this.engine.router?.publishMessage(
       null,
       streamData,
-      multi,
+      transaction,
     )) as string;
   }
 }

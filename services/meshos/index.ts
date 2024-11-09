@@ -21,11 +21,11 @@ import { LoggerService } from '../logger';
  *
  * Standard CRUD methods are included and use your provided schema to
  * fields to return in the response: create, retrieve, update, delete.
- * 
+ *
  * Search methods are included and use your provided schema to
  * fields to return in the response: count, find, aggregate.
- * 
- * Implement other methods as needed for the entity's 
+ *
+ * Implement other methods as needed for the entity's
  * functionality; For example, subclass/override methods like `create`
  * to also spawn a transactional workflow
  *
@@ -37,12 +37,12 @@ import { LoggerService } from '../logger';
  * import * as workflows from './workflows';
  *
  * class Widget extends MeshOS {
- *   
+ *
  *   //Return the function version/priority
  *   getTaskQueue(): string {
  *     return 'v1';
  *   }
- * 
+ *
  *   // Return the entity name
  *   getEntity(): string {
  *     return 'widget';
@@ -134,7 +134,7 @@ import { LoggerService } from '../logger';
  * };
  * ```
  *
- * In your entity class (`Widget`), you use this schema in the 
+ * In your entity class (`Widget`), you use this schema in the
  * `getSearchOptions` method to define how your entity's data
  * is indexed and searched within the mesh network.
  */

@@ -1,7 +1,7 @@
 import Redis from 'ioredis';
 
 import config from '../../../../$setup/config';
-import { RedisConnection } from '../../../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../../../services/connector/providers/ioredis';
 import {
   IORedisClientOptions as RedisClientOptions,
   IORedisClientType as RedisClientType,

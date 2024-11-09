@@ -1,7 +1,7 @@
 import { HMNS } from '../../modules/key';
 import { guid } from '../../modules/utils';
-import { RedisConnection } from '../connector/clients/redis';
-import { RedisConnection as IORedisConnection } from '../connector/clients/ioredis';
+import { RedisConnection } from '../connector/providers/redis';
+import { RedisConnection as IORedisConnection } from '../connector/providers/ioredis';
 import { ConnectorService } from '../connector';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
@@ -42,10 +42,6 @@ import {
 import { MAX_DELAY } from '../../modules/enums';
 
 /**
- * HotMesh transforms Redis into indispensable middleware.
- * Call `HotMesh.init` to initialize a point of presence
- * and attach to the mesh.
- *
  * This example shows the full lifecycle of a HotMesh engine instance,
  * including: initialization, deployment, activation and execution.
  *

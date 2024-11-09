@@ -5,7 +5,7 @@ import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { MathHandler } from '../../../services/pipe/functions/math';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import {
   StreamData,
   StreamDataResponse,

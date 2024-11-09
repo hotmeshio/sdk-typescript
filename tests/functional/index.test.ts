@@ -8,7 +8,7 @@ import {
   StreamDataResponse,
   StreamStatus,
 } from '../../types/stream';
-import { RedisConnection } from '../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../services/connector/providers/ioredis';
 import { JobOutput } from '../../types/job';
 import { guid, sleepFor } from '../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../modules/enums';

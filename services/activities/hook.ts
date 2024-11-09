@@ -16,8 +16,11 @@ import {
   HookActivity,
 } from '../../types/activity';
 import { HookRule } from '../../types/hook';
+import {
+  ProviderTransaction,
+  TransactionResultList,
+} from '../../types/hotmesh';
 import { JobState, JobStatus } from '../../types/job';
-import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 import { StreamCode, StreamStatus } from '../../types/stream';
 import { HMSH_IS_CLUSTER } from '../../modules/enums';
@@ -117,33 +120,33 @@ class Hook extends Activity {
   }
 
   async doHook(telemetry: TelemetryService) {
-    const multi = this.store.getMulti();
+    const transaction = this.store.transact();
     //call registerHook separately if in cluster mode
     //(ok to run this command multiple times if it fails),
     //but the commands that follow must exec as a transaction
-    await this.registerHook(HMSH_IS_CLUSTER ? undefined : multi);
+    await this.registerHook(HMSH_IS_CLUSTER ? undefined : transaction);
     this.mapOutputData();
     this.mapJobData();
-    await this.setState(multi);
-    await CollatorService.authorizeReentry(this, multi);
+    await this.setState(transaction);
+    await CollatorService.authorizeReentry(this, transaction);
 
-    await this.setStatus(0, multi);
-    await multi.exec();
+    await this.setStatus(0, transaction);
+    await transaction.exec();
     telemetry.mapActivityAttributes();
   }
 
   async doPassThrough(telemetry: TelemetryService) {
-    const multi = this.store.getMulti();
-    let multiResponse: MultiResponseFlags;
+    const transaction = this.store.transact();
+    let multiResponse: TransactionResultList;
 
     this.adjacencyList = await this.filterAdjacent();
     this.mapOutputData();
     this.mapJobData();
-    await this.setState(multi);
-    await CollatorService.notarizeEarlyCompletion(this, multi);
+    await this.setState(transaction);
+    await CollatorService.notarizeEarlyCompletion(this, transaction);
 
-    await this.setStatus(this.adjacencyList.length - 1, multi);
-    multiResponse = (await multi.exec()) as MultiResponseFlags;
+    await this.setStatus(this.adjacencyList.length - 1, transaction);
+    multiResponse = (await transaction.exec()) as TransactionResultList;
     telemetry.mapActivityAttributes();
     const jobStatus = this.resolveStatus(multiResponse);
     const attrs: StringScalarType = { 'app.job.jss': jobStatus };
@@ -159,14 +162,16 @@ class Hook extends Activity {
     return rules?.[topic]?.[0] as HookRule;
   }
 
-  async registerHook(multi?: RedisMulti): Promise<string | void> {
+  async registerHook(
+    transaction?: ProviderTransaction,
+  ): Promise<string | void> {
     if (this.config.hook?.topic) {
       return await this.engine.taskService.registerWebHook(
         this.config.hook.topic,
         this.context,
         this.resolveDad(),
         this.context.metadata.expire,
-        multi,
+        transaction,
       );
     } else if (this.config.sleep) {
       const duration = Pipe.resolve(this.config.sleep, this.context);

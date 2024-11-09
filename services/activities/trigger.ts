@@ -17,8 +17,8 @@ import {
   ActivityType,
   TriggerActivity,
 } from '../../types/activity';
+import { ProviderTransaction } from '../../types/hotmesh';
 import { JobState, ExtensionType, JobStatus } from '../../types/job';
-import { RedisMulti } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 
 import { Activity } from './activity';
@@ -63,18 +63,18 @@ class Trigger extends Activity {
       this.bindSearchData(options);
       this.bindMarkerData(options);
 
-      const multi = this.store.getMulti();
-      await this.setState(multi);
-      await this.setStats(multi);
+      const transaction = this.store.transact();
+      await this.setState(transaction);
+      await this.setStats(transaction);
       if (options?.pending) {
-        await this.setExpired(options?.pending, multi);
+        await this.setExpired(options?.pending, transaction);
       }
       await CollatorService.notarizeInception(
         this,
         this.context.metadata.guid,
-        multi,
+        transaction,
       );
-      await multi.exec();
+      await transaction.exec();
 
       this.execAdjacentParent();
       telemetry.mapActivityAttributes();
@@ -88,7 +88,7 @@ class Trigger extends Activity {
     } catch (error) {
       telemetry?.setActivityError(error.message);
       if (error instanceof DuplicateJobError) {
-        //todo: verify baseline in multi-AZ rollover
+        //todo: verify baseline in x-AZ rollover
         await sleepFor(1000);
         const isOverage = await CollatorService.isInceptionOverage(
           this,
@@ -144,8 +144,8 @@ class Trigger extends Activity {
     return count;
   }
 
-  async setExpired(seconds: number, multi: RedisMulti) {
-    await this.store.expireJob(this.context.metadata.jid, seconds, multi);
+  async setExpired(seconds: number, transaction: ProviderTransaction) {
+    await this.store.expireJob(this.context.metadata.jid, seconds, transaction);
   }
 
   safeKey(key: string): string {
@@ -300,7 +300,7 @@ class Trigger extends Activity {
     }
   }
 
-  async setStats(multi?: RedisMulti): Promise<void> {
+  async setStats(transaction?: ProviderTransaction): Promise<void> {
     const md = this.context.metadata;
     if (md.key && this.config.stats?.measures) {
       const config = await this.engine.getVID();
@@ -311,7 +311,7 @@ class Trigger extends Activity {
         md.ts,
         reporter.resolveTriggerStatistics(this.config, this.context),
         config,
-        multi,
+        transaction,
       );
     }
   }

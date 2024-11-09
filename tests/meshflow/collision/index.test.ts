@@ -4,7 +4,7 @@ import config from '../../$setup/config';
 import { guid, sleepFor } from '../../../modules/utils';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
-import { RedisConnection } from '../../../services/connector/clients/redis';
+import { RedisConnection } from '../../../services/connector/providers/redis';
 import { RedisRedisClassType } from '../../../types';
 
 import * as workflows from './src/workflows';

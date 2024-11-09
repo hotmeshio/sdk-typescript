@@ -2,7 +2,7 @@ import * as Redis from 'redis';
 
 import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/clients/redis';
+import { RedisConnection } from '../../../services/connector/providers/redis';
 import {
   StreamData,
   StreamDataResponse,

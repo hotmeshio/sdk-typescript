@@ -127,9 +127,15 @@ export class ClientService {
     namespace?: string,
   ) => {
     const params = { appId: namespace ?? APP_ID, topic: workflowTopic };
-    const streamKey = hotMeshClient.engine.store.mintKey(KeyType.STREAMS, params);
+    const streamKey = hotMeshClient.engine.store.mintKey(
+      KeyType.STREAMS,
+      params,
+    );
     try {
-      await hotMeshClient.engine.stream.createConsumerGroup(streamKey, 'WORKER');
+      await hotMeshClient.engine.stream.createConsumerGroup(
+        streamKey,
+        'WORKER',
+      );
     } catch (err) {
       //ignore if already exists
     }

@@ -4,7 +4,7 @@ import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HMNS } from '../../../modules/key';
 import { guid } from '../../../modules/utils';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import config from '../../$setup/config';
 
 describe('FUNCTIONAL | AWAIT (OR NOT)', () => {

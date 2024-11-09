@@ -1,13 +1,16 @@
 import { HMSH_IS_CLUSTER } from '../../../../modules/enums';
-import { RedisStoreBase } from './_base';
 import { StoreInitializable } from '../store-initializable';
 import {
   RedisRedisClientType as RedisClientType,
   RedisRedisMultiType as RedisMultiType,
 } from '../../../../types/redis';
 
-class RedisStoreService extends RedisStoreBase<RedisClientType, RedisMultiType> implements StoreInitializable {
+import { RedisStoreBase } from './_base';
 
+class RedisStoreService
+  extends RedisStoreBase<RedisClientType, RedisMultiType>
+  implements StoreInitializable
+{
   constructor(storeClient: RedisClientType) {
     super(storeClient);
     this.commands = {
@@ -43,12 +46,12 @@ class RedisStoreService extends RedisStoreBase<RedisClientType, RedisMultiType> 
   }
 
   /**
-   * When in cluster mode, the getMulti wrapper only
+   * When in cluster mode, the transact wrapper only
    * sends commands to the same node/shard if they share a key.
    * All other commands are sent simultaneouslyusing Promise.all
    * and are then collated
    */
-  getMulti(): RedisMultiType {
+  transact(): RedisMultiType {
     const my = this;
     if (HMSH_IS_CLUSTER) {
       const commands: { command: string; args: any[] }[] = [];

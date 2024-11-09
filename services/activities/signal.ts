@@ -15,8 +15,8 @@ import {
   ActivityType,
   SignalActivity,
 } from '../../types/activity';
+import { TransactionResultList } from '../../types/hotmesh';
 import { JobState } from '../../types/job';
-import { MultiResponseFlags } from '../../types/redis';
 import { StringScalarType } from '../../types/serializer';
 import { JobStatsInput } from '../../types/stats';
 
@@ -56,14 +56,14 @@ class Signal extends Activity {
       telemetry.startActivitySpan(this.leg);
 
       //save state and notarize early completion (signals only run leg1)
-      const multi = this.store.getMulti();
+      const transaction = this.store.transact();
       this.adjacencyList = await this.filterAdjacent();
       this.mapOutputData();
       this.mapJobData();
-      await this.setState(multi);
-      await CollatorService.notarizeEarlyCompletion(this, multi);
-      await this.setStatus(this.adjacencyList.length - 1, multi);
-      const multiResponse = (await multi.exec()) as MultiResponseFlags;
+      await this.setState(transaction);
+      await CollatorService.notarizeEarlyCompletion(this, transaction);
+      await this.setStatus(this.adjacencyList.length - 1, transaction);
+      const multiResponse = (await transaction.exec()) as TransactionResultList;
 
       //todo: this should execute BEFORE the status is decremented
       if (this.config.subtype === 'all') {

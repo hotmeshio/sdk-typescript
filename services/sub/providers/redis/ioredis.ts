@@ -13,7 +13,6 @@ import {
 import { SubscriptionCallback } from '../../../../types/quorum';
 
 class IORedisSubService extends SubService<RedisClientType, RedisMultiType> {
-
   constructor(eventClient: RedisClientType, storeClient: RedisClientType) {
     super(eventClient, storeClient);
   }
@@ -29,7 +28,7 @@ class IORedisSubService extends SubService<RedisClientType, RedisMultiType> {
     this.appId = appId;
   }
 
-  getMulti(): RedisMultiType {
+  transact(): RedisMultiType {
     return this.eventClient.multi();
   }
 

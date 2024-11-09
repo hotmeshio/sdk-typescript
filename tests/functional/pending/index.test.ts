@@ -4,7 +4,7 @@ import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import {
   StreamData,
   StreamDataResponse,

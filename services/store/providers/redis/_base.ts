@@ -8,18 +8,32 @@ import {
   TYPSEP,
 } from '../../../../modules/key';
 import { ILogger } from '../../../logger';
-import { MDATA_SYMBOLS, SerializerService as Serializer } from '../../../serializer';
+import {
+  MDATA_SYMBOLS,
+  SerializerService as Serializer,
+} from '../../../serializer';
 import { ActivityType, Consumes } from '../../../../types/activity';
 import { AppVID } from '../../../../types/app';
 import { HookRule, HookSignal } from '../../../../types/hook';
-import { HotMeshApp, HotMeshApps, HotMeshSettings } from '../../../../types/hotmesh';
+import {
+  HotMeshApp,
+  HotMeshApps,
+  HotMeshSettings,
+  ProviderClient,
+  ProviderTransaction,
+} from '../../../../types/hotmesh';
 import {
   SymbolSets,
   StringStringType,
   StringAnyType,
   Symbols,
 } from '../../../../types/serializer';
-import { IdsData, JobStats, JobStatsRange, StatsType } from '../../../../types/stats';
+import {
+  IdsData,
+  JobStats,
+  JobStatsRange,
+  StatsType,
+} from '../../../../types/stats';
 import { Transitions } from '../../../../types/transition';
 import { formatISODate, getSymKey, sleepFor } from '../../../../modules/utils';
 import { JobInterruptOptions } from '../../../../types/job';
@@ -34,15 +48,13 @@ import { ThrottleOptions } from '../../../../types/quorum';
 import { Cache } from '../../cache';
 import { StoreService } from '../..';
 
-interface AbstractRedisClient {
-  exec(): Promise<any>;
-}
-
-abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> extends StoreService<Client, MultiClient> {
-
+abstract class RedisStoreBase<
+  ClientProvider extends ProviderClient,
+  TransactionProvider extends ProviderTransaction,
+> extends StoreService<ClientProvider, TransactionProvider> {
   commands: Record<string, string> = {};
 
-  abstract getMulti(): MultiClient;
+  abstract transact(): TransactionProvider;
   abstract exec(...args: any[]): Promise<any>;
   abstract setnxex(
     key: string,
@@ -50,7 +62,7 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     expireSeconds: number,
   ): Promise<boolean>;
 
-  constructor(storeClient: Client) {
+  constructor(storeClient: ClientProvider) {
     super(storeClient);
     this.storeClient = storeClient;
   }
@@ -75,16 +87,14 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
   }
 
   async delistSignalKey(key: string, target: string): Promise<void> {
-    await this.storeClient[this.commands.del](
-      `${key}:${target}`,
-    );
+    await this.storeClient[this.commands.del](`${key}:${target}`);
   }
 
   async zAdd(
     key: string,
     score: number | string,
     value: string | number,
-    redisMulti?: MultiClient,
+    redisMulti?: TransactionProvider,
   ): Promise<any> {
     //default call signature uses 'ioredis' NPM Package format
     return await (redisMulti || this.storeClient)[this.commands.zadd](
@@ -259,15 +269,15 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     const ranges = await this.storeClient[this.commands.hgetall](rangeKey);
     const rangeKeys = Object.keys(ranges).sort();
     delete rangeKeys[':cursor'];
-    const multi = this.getMulti();
+    const transaction = this.transact();
     for (const rangeKey of rangeKeys) {
       const symbolKey = this.mintKey(KeyType.SYMKEYS, {
         activityId: rangeKey,
         appId: this.appId,
       });
-      multi[this.commands.hgetall](symbolKey);
+      transaction[this.commands.hgetall](symbolKey);
     }
-    const results = (await multi.exec()) as
+    const results = (await transaction.exec()) as
       | Array<[null, Symbols]>
       | Array<Symbols>;
 
@@ -453,7 +463,7 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     dateTime: string,
     stats: StatsType,
     appVersion: AppVID,
-    multi?: MultiClient,
+    transaction?: TransactionProvider,
   ): Promise<any> {
     const params: KeyStoreParams = {
       appId: appVersion.id,
@@ -461,7 +471,7 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
       jobKey,
       dateTime,
     };
-    const privateMulti = multi || this.getMulti();
+    const privateMulti = transaction || this.transact();
     if (stats.general.length) {
       const generalStatsKey = this.mintKey(KeyType.JOB_STATS_GENERAL, params);
       for (const { target, value } of stats.general) {
@@ -485,7 +495,7 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
       );
       this.zAdd(medianStatsKey, value, target, privateMulti);
     }
-    if (!multi) {
+    if (!transaction) {
       return await privateMulti.exec();
     }
   }
@@ -496,11 +506,11 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
   }
 
   async getJobStats(jobKeys: string[]): Promise<JobStatsRange> {
-    const multi = this.getMulti();
+    const transaction = this.transact();
     for (const jobKey of jobKeys) {
-      multi[this.commands.hgetall](jobKey);
+      transaction[this.commands.hgetall](jobKey);
     }
-    const results = await multi.exec();
+    const results = await transaction.exec();
     const output: { [key: string]: JobStats } = {};
     for (const [index, result] of results.entries()) {
       const key = jobKeys[index];
@@ -522,11 +532,11 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     indexKeys: string[],
     idRange: [number, number],
   ): Promise<IdsData> {
-    const multi = this.getMulti();
+    const transaction = this.transact();
     for (const idsKey of indexKeys) {
-      multi[this.commands.lrange](idsKey, idRange[0], idRange[1]); //0,-1 returns all ids
+      transaction[this.commands.lrange](idsKey, idRange[0], idRange[1]); //0,-1 returns all ids
     }
-    const results = await multi.exec();
+    const results = await transaction.exec();
     const output: IdsData = {};
     for (const [index, result] of results.entries()) {
       const key = indexKeys[index];
@@ -547,10 +557,10 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     collationKeyStatus: number,
     jobId: string,
     appId: string,
-    multi?: MultiClient,
+    transaction?: TransactionProvider,
   ): Promise<any> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
-    return await (multi || this.storeClient)[this.commands.hincrbyfloat](
+    return await (transaction || this.storeClient)[this.commands.hincrbyfloat](
       jobKey,
       ':',
       collationKeyStatus,
@@ -572,7 +582,7 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     jobId: string,
     symbolNames: string[],
     dIds: StringStringType,
-    multi?: MultiClient,
+    transaction?: TransactionProvider,
   ): Promise<string> {
     delete state['metadata/js'];
     const hashKey = this.mintKey(KeyType.JOB_STATE, {
@@ -589,7 +599,10 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     } else {
       delete hashData[':'];
     }
-    await (multi || this.storeClient)[this.commands.hset](hashKey, hashData);
+    await (transaction || this.storeClient)[this.commands.hset](
+      hashKey,
+      hashData,
+    );
     return jobId;
   }
 
@@ -681,7 +694,7 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     activityId: string,
     amount: number,
     dIds: StringStringType,
-    multi?: MultiClient,
+    transaction?: TransactionProvider,
   ): Promise<number> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, {
       appId: this.appId,
@@ -696,7 +709,7 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     const payload = { [collationKey]: amount.toString() };
     const hashData = this.serializer.package(payload, symbolNames);
     const targetId = Object.keys(hashData)[0];
-    return await (multi || this.storeClient)[this.commands.hincrbyfloat](
+    return await (transaction || this.storeClient)[this.commands.hincrbyfloat](
       jobKey,
       targetId,
       amount,
@@ -713,13 +726,13 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     jobId: string,
     guid: string,
     amount: number,
-    multi?: MultiClient,
+    transaction?: TransactionProvider,
   ): Promise<number> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, {
       appId: this.appId,
       jobId,
     });
-    return await (multi || this.storeClient)[this.commands.hincrbyfloat](
+    return await (transaction || this.storeClient)[this.commands.hincrbyfloat](
       jobKey,
       guid,
       amount.toString(),
@@ -930,7 +943,10 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     }
   }
 
-  async setHookSignal(hook: HookSignal, multi?: MultiClient): Promise<any> {
+  async setHookSignal(
+    hook: HookSignal,
+    transaction?: TransactionProvider,
+  ): Promise<any> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
     const { topic, resolved, jobId } = hook;
     const signalKey = `${topic}:${resolved}`;
@@ -964,16 +980,16 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
   }
 
   async addTaskQueues(keys: string[]): Promise<void> {
-    const multi = this.getMulti();
+    const transaction = this.transact();
     const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
     for (const key of keys) {
-      multi[this.commands.zadd](
+      transaction[this.commands.zadd](
         zsetKey,
         { score: Date.now().toString(), value: key } as any,
         { NX: true },
       );
     }
-    await multi.exec();
+    await transaction.exec();
   }
 
   async getActiveTaskQueue(): Promise<string | null> {
@@ -1034,7 +1050,7 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
   async expireJob(
     jobId: string,
     inSeconds: number,
-    redisMulti?: MultiClient,
+    redisMulti?: TransactionProvider,
   ): Promise<void> {
     if (!isNaN(inSeconds) && inSeconds > 0) {
       const jobKey = this.mintKey(KeyType.JOB_STATE, {
@@ -1067,7 +1083,7 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     type: WorkListTaskType,
     deletionTime: number,
     dad: string,
-    multi?: MultiClient,
+    transaction?: TransactionProvider,
   ): Promise<void> {
     const listKey = this.mintKey(KeyType.TIME_RANGE, {
       appId: this.appId,
@@ -1075,13 +1091,13 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
     });
     //construct the composite key (the key has enough info to signal the hook)
     const timeEvent = [type, activityId, gId, dad, jobId].join(VALSEP);
-    const len = await (multi || this.storeClient)[this.commands.rpush](
+    const len = await (transaction || this.storeClient)[this.commands.rpush](
       listKey,
       timeEvent,
     );
-    if (multi || len === 1) {
+    if (transaction || len === 1) {
       const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
-      await this.zAdd(zsetKey, deletionTime.toString(), listKey, multi);
+      await this.zAdd(zsetKey, deletionTime.toString(), listKey, transaction);
     }
   }
 
@@ -1300,10 +1316,10 @@ abstract class RedisStoreBase<Client, MultiClient extends AbstractRedisClient> e
       });
     } else {
       //if no topic, update all
-      const multi = this.getMulti();
-      multi[this.commands.del](key);
-      multi[this.commands.hset](key, { ':': rate });
-      await multi.exec();
+      const transaction = this.transact();
+      transaction[this.commands.del](key);
+      transaction[this.commands.hset](key, { ':': rate });
+      await transaction.exec();
     }
   }
 

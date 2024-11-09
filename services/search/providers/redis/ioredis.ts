@@ -3,7 +3,10 @@ import { ILogger } from '../../../logger';
 import { IORedisClientType } from '../../../../types/redis';
 
 class IORedisSearchService extends SearchService<IORedisClientType> {
-  constructor(searchClient: IORedisClientType, storeClient?: IORedisClientType) {
+  constructor(
+    searchClient: IORedisClientType,
+    storeClient?: IORedisClientType,
+  ) {
     super(searchClient, storeClient);
   }
 
@@ -13,7 +16,11 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
     this.logger = logger;
   }
 
-  async createSearchIndex(indexName: string, prefixes: string[], schema: string[]): Promise<void> {
+  async createSearchIndex(
+    indexName: string,
+    prefixes: string[],
+    schema: string[],
+  ): Promise<void> {
     try {
       await this.searchClient.call(
         'FT.CREATE',
@@ -42,7 +49,10 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
     }
   }
 
-  async setFields(key: string, fields: Record<string, string>): Promise<number> {
+  async setFields(
+    key: string,
+    fields: Record<string, string>,
+  ): Promise<number> {
     try {
       const result = await this.searchClient.hset(key, fields);
       return Number(result);
@@ -56,7 +66,9 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
     try {
       return await this.searchClient.hget(key, field);
     } catch (error) {
-      this.logger.error(`Error getting field ${field} for key: ${key}`, { error });
+      this.logger.error(`Error getting field ${field} for key: ${key}`, {
+        error,
+      });
       throw error;
     }
   }
@@ -89,12 +101,22 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
     }
   }
 
-  async incrementFieldByFloat(key: string, field: string, increment: number): Promise<number> {
+  async incrementFieldByFloat(
+    key: string,
+    field: string,
+    increment: number,
+  ): Promise<number> {
     try {
-      const result = await this.searchClient.hincrbyfloat(key, field, increment);
+      const result = await this.searchClient.hincrbyfloat(
+        key,
+        field,
+        increment,
+      );
       return Number(result);
     } catch (error) {
-      this.logger.error(`Error incrementing field ${field} for key: ${key}`, { error });
+      this.logger.error(`Error incrementing field ${field} for key: ${key}`, {
+        error,
+      });
       throw error;
     }
   }
@@ -108,13 +130,17 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
     }
   }
 
-  async sendIndexedQuery(index: string, query:string[]): Promise<string[]> {
+  async sendIndexedQuery(index: string, query: string[]): Promise<string[]> {
     try {
       if (query[0]?.startsWith('FT.')) {
         const [cmd, ...rest] = query;
         return (await this.searchClient.call(cmd, ...rest)) as string[];
       }
-      return (await this.searchClient.call('FT.SEARCH', index, ...query)) as string[];
+      return (await this.searchClient.call(
+        'FT.SEARCH',
+        index,
+        ...query,
+      )) as string[];
     } catch (error) {
       this.logger.error('Error executing query', { error });
       throw error;

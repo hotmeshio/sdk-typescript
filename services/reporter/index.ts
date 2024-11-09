@@ -3,8 +3,8 @@ import { Pipe } from '../pipe';
 import { StoreService } from '../store';
 import { TriggerActivity } from '../../types/activity';
 import { AppVID } from '../../types/app';
+import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
 import { JobState } from '../../types/job';
-import { RedisClient, RedisMulti } from '../../types/redis';
 import {
   GetStatsOptions,
   StatsResponse,
@@ -24,12 +24,12 @@ import {
 class ReporterService {
   private appVersion: AppVID;
   private logger: ILogger;
-  private store: StoreService<RedisClient, RedisMulti>;
+  private store: StoreService<ProviderClient, ProviderTransaction>;
   static DEFAULT_GRANULARITY = '5m';
 
   constructor(
     appVersion: AppVID,
-    store: StoreService<RedisClient, RedisMulti>,
+    store: StoreService<ProviderClient, ProviderTransaction>,
     logger: ILogger,
   ) {
     this.appVersion = appVersion;

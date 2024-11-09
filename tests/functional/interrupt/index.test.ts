@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 
 import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 

@@ -2,13 +2,13 @@ import * as Redis from 'redis';
 
 import config from '../$setup/config';
 import { HotMesh } from '../../services/hotmesh';
-import { MeshOS } from '../../services/meshos'
-import { RedisConnection } from '../../services/connector/clients/redis';
+import { MeshOS } from '../../services/meshos';
+import { RedisConnection } from '../../services/connector/providers/redis';
 import * as HotMeshTypes from '../../types';
-
-import { Widget } from './src/widget'
-import { schema } from './src/schema';
 import { guid } from '../../modules/utils';
+
+import { Widget } from './src/widget';
+import { schema } from './src/schema';
 
 describe('MeshData`', () => {
   const options = {
@@ -54,7 +54,7 @@ describe('MeshData`', () => {
           REDIS_PORT: config.REDIS_PORT,
           REDIS_USE_TLS: config.REDIS_USE_TLS,
           REDIS_USERNAME: config.REDIS_USERNAME,
-        }
+        },
       });
 
       MeshOS.registerEntity('widget', {
@@ -69,9 +69,7 @@ describe('MeshData`', () => {
         type: 'meshostest',
         name: 'meshostest',
         label: 'MeshOS TEST',
-        entities: [
-          MeshOS.entities['widget'],
-        ],
+        entities: [MeshOS.entities['widget']],
       });
 
       // many to many
@@ -79,7 +77,7 @@ describe('MeshData`', () => {
         db: MeshOS.databases.redis,
         namespaces: {
           meshostest: MeshOS.namespaces.meshostest,
-        }
+        },
       });
 
       MeshOS.registerSchema('widget', schema);
@@ -96,9 +94,15 @@ describe('MeshData`', () => {
 
       //create a widget (both a workflow and data record)
       const id = guid();
-      const response = await entity?.create({ $entity: 'widget', id, active: 'y' }) as { hello: string};
+      const response = (await entity?.create({
+        $entity: 'widget',
+        id,
+        active: 'y',
+      })) as { hello: string };
       expect(response.hello).toBe(id);
-      const response2 = await entity?.update(id, { active: 'n' }) as { active: 'y'|'n'};
+      const response2 = (await entity?.update(id, { active: 'n' })) as {
+        active: 'y' | 'n';
+      };
       expect(response2.active).toBe('n');
     }, 15_000);
   });

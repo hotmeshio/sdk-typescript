@@ -6,7 +6,7 @@ import * as HotMeshTypes from '../../../types';
  */
 export const schema: HotMeshTypes.WorkflowSearchSchema = {
   /**
-   * Entity tag for the workflow, representing its type. 
+   * Entity tag for the workflow, representing its type.
    * Indexed indicates if it's shared with the indexing service.
    */
   $entity: {

@@ -8,20 +8,26 @@ import { ILogger } from '../logger';
 import { Pipe } from '../pipe';
 import { StoreService } from '../store';
 import { HookInterface, HookRule, HookSignal } from '../../types/hook';
-import { KeyType } from '../../types/hotmesh';
+import {
+  KeyType,
+  ProviderClient,
+  ProviderTransaction,
+} from '../../types/hotmesh';
 import { JobCompletionOptions, JobState } from '../../types/job';
-import { RedisClient, RedisMulti } from '../../types/redis';
 import { WorkListTaskType } from '../../types/task';
 import { VALSEP, WEBSEP } from '../../modules/key';
 
 class TaskService {
-  store: StoreService<RedisClient, RedisMulti>;
+  store: StoreService<ProviderClient, ProviderTransaction>;
   logger: ILogger;
   cleanupTimeout: NodeJS.Timeout | null = null;
   isScout = false;
   errorCount = 0;
 
-  constructor(store: StoreService<RedisClient, RedisMulti>, logger: ILogger) {
+  constructor(
+    store: StoreService<ProviderClient, ProviderTransaction>,
+    logger: ILogger,
+  ) {
     this.logger = logger;
     this.store = store;
   }
@@ -76,7 +82,7 @@ class TaskService {
     type: WorkListTaskType,
     inSeconds = HMSH_FIDELITY_SECONDS,
     dad: string,
-    multi?: RedisMulti,
+    transaction?: ProviderTransaction,
   ): Promise<void> {
     const fromNow = Date.now() + inSeconds * 1000;
     const fidelityMS = HMSH_FIDELITY_SECONDS * 1000;
@@ -88,7 +94,7 @@ class TaskService {
       type,
       awakenTimeSlot,
       dad,
-      multi,
+      transaction,
     );
   }
 
@@ -197,7 +203,7 @@ class TaskService {
     context: JobState,
     dad: string,
     expire: number,
-    multi?: RedisMulti,
+    transaction?: ProviderTransaction,
   ): Promise<string> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
@@ -215,7 +221,7 @@ class TaskService {
         jobId: compositeJobKey,
         expire,
       };
-      await this.store.setHookSignal(hook, multi);
+      await this.store.setHookSignal(hook, transaction);
       return jobId;
     } else {
       throw new Error('signaler.registerWebHook:error: hook rule not found');

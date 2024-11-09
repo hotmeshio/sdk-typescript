@@ -3,7 +3,10 @@ import { ILogger } from '../../../logger';
 import { RedisRedisClientType } from '../../../../types/redis';
 
 class RedisSearchService extends SearchService<RedisRedisClientType> {
-  constructor(searchClient: RedisRedisClientType, storeClient?: RedisRedisClientType) {
+  constructor(
+    searchClient: RedisRedisClientType,
+    storeClient?: RedisRedisClientType,
+  ) {
     super(searchClient, storeClient);
   }
 
@@ -13,7 +16,11 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
     this.logger = logger;
   }
 
-  async createSearchIndex(indexName: string, prefixes: string[], schema: string[]): Promise<void> {
+  async createSearchIndex(
+    indexName: string,
+    prefixes: string[],
+    schema: string[],
+  ): Promise<void> {
     try {
       await this.searchClient.sendCommand([
         'FT.CREATE',
@@ -42,7 +49,10 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
     }
   }
 
-  async setFields(key: string, fields: Record<string, string>): Promise<number> {
+  async setFields(
+    key: string,
+    fields: Record<string, string>,
+  ): Promise<number> {
     try {
       const result = await this.searchClient.HSET(key, fields);
       return Number(result);
@@ -56,7 +66,9 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
     try {
       return await this.searchClient.HGET(key, field);
     } catch (error) {
-      this.logger.error(`Error getting field ${field} for key: ${key}`, { error });
+      this.logger.error(`Error getting field ${field} for key: ${key}`, {
+        error,
+      });
       throw error;
     }
   }
@@ -89,12 +101,22 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
     }
   }
 
-  async incrementFieldByFloat(key: string, field: string, increment: number): Promise<number> {
+  async incrementFieldByFloat(
+    key: string,
+    field: string,
+    increment: number,
+  ): Promise<number> {
     try {
-      const result = await this.searchClient.HINCRBYFLOAT(key, field, increment);
+      const result = await this.searchClient.HINCRBYFLOAT(
+        key,
+        field,
+        increment,
+      );
       return Number(result);
     } catch (error) {
-      this.logger.error(`Error incrementing field ${field} for key: ${key}`, { error });
+      this.logger.error(`Error incrementing field ${field} for key: ${key}`, {
+        error,
+      });
       throw error;
     }
   }
@@ -108,12 +130,16 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
     }
   }
 
-  async sendIndexedQuery(index: string, query:string[]): Promise<string[]> {
+  async sendIndexedQuery(index: string, query: string[]): Promise<string[]> {
     try {
       if (query[0]?.startsWith('FT.')) {
         return (await this.searchClient.sendCommand(query)) as string[];
       }
-      return (await this.searchClient.sendCommand(['FT.SEARCH', index, ...query])) as string[];
+      return (await this.searchClient.sendCommand([
+        'FT.SEARCH',
+        index,
+        ...query,
+      ])) as string[];
     } catch (error) {
       this.logger.error('Error executing query', { error });
       throw error;

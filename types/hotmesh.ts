@@ -180,3 +180,29 @@ export {
   KeyType,
   KeyStoreParams,
 };
+
+/**
+ * A provider transaction is a set of operations that are executed
+ * atomically by the provider. The transaction is created by calling
+ * the `transact` method on the provider. The transaction object
+ * contains methods specific to the provider allowing it to optionally
+ * choose to execute a single command or collect all commands and
+ * execute as a single transaction.
+ */
+export interface ProviderTransaction {
+  //outside callers can execute the transaction, regardless of provider by calling this method
+  exec(): Promise<any>;
+
+  // All other transaction methods are provider specific
+  [key: string]: any;
+}
+
+export interface ProviderClient {
+  /**  The provider-specific transaction object */
+  transact(): ProviderTransaction;
+
+  /** The provider-specific client object */
+  [key: string]: any;
+}
+
+export type TransactionResultList = (string | number)[]; // e.g., [3, 2, '0']
