@@ -1,4 +1,4 @@
-import { identifyRedisType } from '../../modules/utils';
+import { identifyProvider } from '../../modules/utils';
 import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
 import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
@@ -18,7 +18,7 @@ class SubServiceFactory {
     logger: ILogger,
   ): Promise<SubService<ProviderClient, ProviderTransaction>> {
     let service: SubService<ProviderClient, ProviderTransaction>;
-    if (identifyRedisType(redisClient) === 'redis') {
+    if (identifyProvider(redisClient) === 'redis') {
       service = new RedisSubService(
         redisClient as RedisRedisClientType,
         redisStoreClient as RedisRedisClientType,

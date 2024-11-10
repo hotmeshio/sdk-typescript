@@ -1,4 +1,4 @@
-import { identifyRedisType } from '../../modules/utils';
+import { identifyProvider } from '../../modules/utils';
 import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
 import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
@@ -20,7 +20,7 @@ class StoreServiceFactory {
   > {
     let service: StoreService<ProviderClient, ProviderTransaction> &
       StoreInitializable;
-    if (identifyRedisType(redisClient) === 'redis') {
+    if (identifyProvider(redisClient) === 'redis') {
       service = new RedisStoreService(redisClient as RedisRedisClientType);
     } else {
       service = new IORedisStoreService(redisClient as IORedisClientType);

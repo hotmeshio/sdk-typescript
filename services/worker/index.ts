@@ -3,10 +3,10 @@ import {
   XSleepFor,
   formatISODate,
   getSystemHealth,
-  identifyRedisType,
+  identifyProvider,
   sleepFor,
 } from '../../modules/utils';
-import { ConnectorService } from '../connector';
+import { ConnectorService } from '../connector/factory';
 import { ILogger } from '../logger';
 import { Router } from '../router';
 import { StoreService } from '../store';
@@ -64,11 +64,7 @@ class WorkerService {
     const services: WorkerService[] = [];
     if (Array.isArray(config.workers)) {
       for (const worker of config.workers) {
-        await ConnectorService.initRedisClients(
-          worker.redis?.class,
-          worker.redis?.options,
-          worker,
-        );
+        await ConnectorService.initClients(worker);
 
         const service = new WorkerService();
         service.verifyWorkerFields(worker);
@@ -124,9 +120,9 @@ class WorkerService {
    */
   verifyWorkerFields(worker: HotMeshWorker) {
     if (
-      !identifyRedisType(worker.store) ||
-      !identifyRedisType(worker.stream) ||
-      !identifyRedisType(worker.sub) ||
+      !identifyProvider(worker.store) ||
+      !identifyProvider(worker.stream) ||
+      !identifyProvider(worker.sub) ||
       !(worker.topic && worker.callback)
     ) {
       throw new Error(

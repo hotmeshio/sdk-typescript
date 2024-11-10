@@ -8,12 +8,12 @@ abstract class SubService<
   TransactionProvider extends ProviderTransaction,
 > {
   protected eventClient: ClientProvider;
-  protected storeClient: ClientProvider;
+  protected storeClient: ProviderClient;
   protected namespace: string;
   protected logger: ILogger;
   protected appId: string;
 
-  constructor(eventClient: ClientProvider, storeClient: ClientProvider) {
+  constructor(eventClient: ClientProvider, storeClient: ProviderClient) {
     this.eventClient = eventClient;
     this.storeClient = storeClient;
   }

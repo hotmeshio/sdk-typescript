@@ -1,4 +1,4 @@
-import { identifyRedisType } from '../../modules/utils';
+import { identifyProvider } from '../../modules/utils';
 import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
 import { ProviderClient } from '../../types/hotmesh';
@@ -17,7 +17,7 @@ class SearchServiceFactory {
     logger: ILogger,
   ): Promise<SearchService<ProviderClient>> {
     let service: SearchService<ProviderClient>;
-    if (identifyRedisType(redisClient) === 'redis') {
+    if (identifyProvider(redisClient) === 'redis') {
       service = new RedisSearchService(
         redisClient as RedisRedisClientType,
         redisStoreClient as RedisRedisClientType,

@@ -7,7 +7,7 @@ import ms from 'ms';
 import { LoggerService } from '../services/logger';
 import { StoreService } from '../services/store';
 import { AppSubscriptions, AppTransitions, AppVID } from '../types/app';
-import { ProviderClient, ProviderTransaction } from '../types/hotmesh';
+import { ProviderClient, Providers, ProviderTransaction } from '../types/hotmesh';
 import { StringAnyType } from '../types/serializer';
 import { StreamCode, StreamData, StreamStatus } from '../types/stream';
 import { SystemHealth } from '../types/quorum';
@@ -76,11 +76,15 @@ export function XSleepFor(ms: number): {
 /**
  * @private
  */
-export function identifyRedisType(
-  redisInstance: any,
-): 'redis' | 'ioredis' | null {
-  const prototype = Object.getPrototypeOf(redisInstance);
-  if (
+export function identifyProvider (
+  provider: any,
+): Providers | null {
+  const prototype = Object.getPrototypeOf(provider);
+  if (provider.constructor && provider.constructor.name === 'Client') {
+    return 'nats';
+  } else if (provider.constructor && provider.constructor.name === 'Pool') {
+    return 'postgres';
+  } else if (
     'defineCommand' in prototype ||
     Object.keys(prototype).includes('multi')
   ) {
@@ -88,22 +92,29 @@ export function identifyRedisType(
   } else if (Object.keys(prototype).includes('Multi')) {
     return 'redis';
   }
-  if (redisInstance.constructor) {
+
+  if (provider.constructor) {
     if (
-      redisInstance.constructor.name === 'Redis' ||
-      redisInstance.constructor.name === 'EventEmitter'
+      provider.constructor.name === 'Redis' ||
+      provider.constructor.name === 'EventEmitter'
     ) {
-      if ('hset' in redisInstance) {
+      if ('hset' in provider) {
         return 'ioredis';
       }
     } else if (
-      redisInstance.constructor.name === 'ProviderClient' ||
-      redisInstance.constructor.name === 'Commander'
+      provider.constructor.name === 'ProviderClient' ||
+      provider.constructor.name === 'Commander'
     ) {
-      if ('HSET' in redisInstance) {
+      if ('HSET' in provider) {
         return 'redis';
       }
     }
+  }
+
+  if (Object.keys(provider).includes('Pipeline')) {
+    return 'ioredis';
+  } else if (Object.keys(provider).includes('createClient')) {
+    return 'redis';
   }
   return null;
 }

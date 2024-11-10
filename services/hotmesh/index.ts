@@ -2,7 +2,7 @@ import { HMNS } from '../../modules/key';
 import { guid } from '../../modules/utils';
 import { RedisConnection } from '../connector/providers/redis';
 import { RedisConnection as IORedisConnection } from '../connector/providers/ioredis';
-import { ConnectorService } from '../connector';
+import { ConnectorService } from '../connector/factory';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
 import { QuorumService } from '../quorum';
@@ -175,11 +175,7 @@ class HotMesh {
    */
   async initEngine(config: HotMeshConfig, logger: ILogger): Promise<void> {
     if (config.engine) {
-      await ConnectorService.initRedisClients(
-        config.engine.redis?.class,
-        config.engine.redis?.options,
-        config.engine,
-      );
+      await ConnectorService.initClients(config.engine);
       this.engine = await EngineService.init(
         this.namespace,
         this.appId,

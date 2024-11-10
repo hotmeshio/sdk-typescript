@@ -5,6 +5,7 @@ import { HookRules } from './hook';
 import { RedisClass, RedisClient, RedisOptions } from './redis';
 import { StreamData, StreamDataResponse } from './stream';
 import { LogLevel } from './logger';
+import { StringAnyType } from './serializer';
 
 /**
  * the full set of entity types that are stored in the key/value store
@@ -50,7 +51,13 @@ type KeyStoreParams = {
 
 type HotMesh = typeof HotMeshService;
 
-type RedisConfig = {
+type Providers = 'redis' | 'nats' | 'postgres' | 'ioredis';
+
+type ConnectionConfig = {
+  class: any;
+  options: StringAnyType;
+};
+interface RedisConfig extends ConnectionConfig {
   class: Partial<RedisClass>;
   options: Partial<RedisOptions>;
 };
@@ -60,6 +67,12 @@ type HotMeshEngine = {
   stream?: RedisClient; //set by hotmesh using instanced `redis` class
   sub?: RedisClient; //set by hotmesh using instanced `redis` class
   redis?: RedisConfig;
+  connection?: ConnectionConfig;
+  connections?: {
+    store: ConnectionConfig;
+    stream: ConnectionConfig;
+    sub: ConnectionConfig;
+  };
   reclaimDelay?: number; //milliseconds
   reclaimCount?: number;
   readonly?: boolean; //if true, the engine will not route stream messages
@@ -71,6 +84,12 @@ type HotMeshWorker = {
   stream?: RedisClient; //set by hotmesh using instanced `redis` class
   sub?: RedisClient; //set by hotmesh using instanced `redis` class
   redis?: RedisConfig;
+  connection?: ConnectionConfig;
+  connections?: {
+    store: ConnectionConfig;
+    stream: ConnectionConfig;
+    sub: ConnectionConfig;
+  };
   reclaimDelay?: number; //milliseconds
   reclaimCount?: number; //max number of times to reclaim a stream
   callback: (payload: StreamData) => Promise<StreamDataResponse>;
@@ -166,21 +185,6 @@ type HotMeshApps = {
   [appId: string]: HotMeshApp;
 };
 
-export {
-  HotMesh,
-  HotMeshEngine,
-  RedisConfig,
-  HotMeshWorker,
-  HotMeshSettings,
-  HotMeshApp, //a single app in the db
-  HotMeshApps, //object array of all apps in the db
-  HotMeshConfig, //customer config
-  HotMeshManifest,
-  HotMeshGraph,
-  KeyType,
-  KeyStoreParams,
-};
-
 /**
  * A provider transaction is a set of operations that are executed
  * atomically by the provider. The transaction is created by calling
@@ -189,7 +193,7 @@ export {
  * choose to execute a single command or collect all commands and
  * execute as a single transaction.
  */
-export interface ProviderTransaction {
+interface ProviderTransaction {
   //outside callers can execute the transaction, regardless of provider by calling this method
   exec(): Promise<any>;
 
@@ -197,12 +201,35 @@ export interface ProviderTransaction {
   [key: string]: any;
 }
 
-export interface ProviderClient {
+interface ProviderClient {
   /**  The provider-specific transaction object */
   transact(): ProviderTransaction;
+
+  /** Mint a provider-specific key */
+  mintKey(type: KeyType, params: KeyStoreParams): string;
 
   /** The provider-specific client object */
   [key: string]: any;
 }
 
-export type TransactionResultList = (string | number)[]; // e.g., [3, 2, '0']
+type TransactionResultList = (string | number)[]; // e.g., [3, 2, '0']
+
+export {
+  ConnectionConfig,
+  HotMesh,
+  HotMeshEngine,
+  HotMeshWorker,
+  HotMeshSettings,
+  HotMeshApp,
+  HotMeshApps,
+  HotMeshConfig,
+  HotMeshManifest,
+  HotMeshGraph,
+  KeyType,
+  KeyStoreParams,
+  ProviderClient,
+  Providers,
+  ProviderTransaction,
+  RedisConfig,
+  TransactionResultList,
+};

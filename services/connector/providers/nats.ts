@@ -1,51 +1,37 @@
-import { connect, NatsConnection, ConnectionOptions } from 'nats';
+import { AbstractConnection } from '..';
+import { 
+  NatsClientOptions, 
+  NatsClientType, 
+  NatsClassType 
+} from '../../../types/nats';
 
-class NATSConnection {
-  private static instances: Map<string, NATSConnection> = new Map();
-  private connection: NatsConnection | null = null;
-  private id: string | null = null;
+class NatsConnection extends AbstractConnection<
+  NatsClassType,
+  NatsClientOptions
+> {
 
-  private constructor() {}
+  defaultOptions: NatsClientOptions = {
+    servers: ['localhost:4222'],
+    timeout: 5000,
+  };
 
-  public getClient(): NatsConnection {
+  async createConnection(
+    Connect: NatsClassType,
+    options: NatsClientOptions,
+  ): Promise<NatsClientType> {
+    return (await Connect(options)) as NatsClientType;
+  }
+
+  public getClient(): NatsClientType {
     if (!this.connection) {
       throw new Error('NATS client is not connected');
     }
     return this.connection;
   }
 
-  public async disconnect(): Promise<void> {
-    if (this.connection) {
-      await this.connection.close();
-      this.connection = null;
-    }
-    if (this.id) {
-      NATSConnection.instances.delete(this.id);
-    }
-  }
-
-  public static async connect(
-    id: string,
-    options: ConnectionOptions,
-  ): Promise<NATSConnection> {
-    if (this.instances.has(id)) {
-      return this.instances.get(id) as NATSConnection;
-    }
-    const instance = new NATSConnection();
-    instance.connection = await connect(options);
-    instance.id = id;
-    this.instances.set(id, instance);
-    return instance;
-  }
-
-  public static async disconnectAll(): Promise<void> {
-    await Promise.all(
-      Array.from(this.instances.values()).map((instance) =>
-        instance.disconnect(),
-      ),
-    );
-    this.instances.clear();
+  public async closeConnection(connection: NatsClientType): Promise<void> {
+    await connection.close();
   }
 }
 
-export { NATSConnection };
+export { NatsConnection, NatsClientOptions };

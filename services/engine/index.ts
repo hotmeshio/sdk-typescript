@@ -1,5 +1,3 @@
-import { PrivateIdentifier } from 'typescript';
-
 import { KeyType, VALSEP } from '../../modules/key';
 import {
   HMSH_OTT_WAIT_TIME,
@@ -13,7 +11,7 @@ import {
   formatISODate,
   getSubscriptionTopic,
   guid,
-  identifyRedisType,
+  identifyProvider,
   polyfill,
   restoreHierarchy,
   sleepFor,
@@ -64,7 +62,6 @@ import {
   JobMessageCallback,
   SubscriptionCallback,
 } from '../../types/quorum';
-import { RedisClient } from '../../types/redis';
 import { StringAnyType, StringStringType } from '../../types/serializer';
 import {
   GetStatsOptions,
@@ -167,11 +164,11 @@ class EngineService {
    */
   verifyEngineFields(config: HotMeshConfig) {
     if (
-      !identifyRedisType(config.engine.store) ||
-      !identifyRedisType(config.engine.stream) ||
-      !identifyRedisType(config.engine.sub)
+      !identifyProvider(config.engine.store) ||
+      !identifyProvider(config.engine.stream) ||
+      !identifyProvider(config.engine.sub)
     ) {
-      throw new Error('engine config must reference 3 redis client instances');
+      throw new Error('engine must include `store`, `stream`, and `sub` fields.');
     }
   }
 

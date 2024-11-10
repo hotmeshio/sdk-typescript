@@ -7,7 +7,7 @@ import {
   XSleepFor,
   formatISODate,
   getSystemHealth,
-  identifyRedisType,
+  identifyProvider,
   sleepFor,
 } from '../../modules/utils';
 import { CompilerService } from '../compiler';
@@ -99,8 +99,8 @@ class QuorumService {
    */
   verifyQuorumFields(config: HotMeshConfig) {
     if (
-      !identifyRedisType(config.engine.store) ||
-      !identifyRedisType(config.engine.sub)
+      !identifyProvider(config.engine.store) ||
+      !identifyProvider(config.engine.sub)
     ) {
       throw new Error('quorum config must include `store` and `sub` fields.');
     }

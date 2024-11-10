@@ -1,52 +1,51 @@
-import { guid, identifyRedisTypeFromClass } from '../../modules/utils';
-import { HotMeshEngine, HotMeshWorker } from '../../types/hotmesh';
-import {
-  RedisClass,
-  RedisOptions,
-  RedisRedisClassType,
-  RedisRedisClientOptions,
-  IORedisClassType,
-  IORedisClientOptions,
-} from '../../types/redis';
+abstract class AbstractConnection<TClient, TOptions> {
+  protected connection: any | null = null;
+  protected static instances: Map<string, AbstractConnection<any, any>> = new Map();
+  protected id: string | null = null;
 
-import { RedisConnection as IORedisConnection } from './providers/ioredis';
-import { RedisConnection } from './providers/redis';
+  protected abstract defaultOptions: any;
 
-export class ConnectorService {
-  //1) Initialize `store`, `stream`, and `subscription` Redis clients.
-  //2) Bind to the target if not already present
-  static async initRedisClients(
-    Redis: Partial<RedisClass>,
-    options: Partial<RedisOptions>,
-    target: HotMeshEngine | HotMeshWorker,
-  ): Promise<void> {
-    if (!target.store || !target.stream || !target.sub) {
-      const instances = [];
-      if (identifyRedisTypeFromClass(Redis) === 'redis') {
-        for (let i = 1; i <= 3; i++) {
-          instances.push(
-            RedisConnection.connect(
-              guid(),
-              Redis as RedisRedisClassType,
-              options as RedisRedisClientOptions,
-            ),
-          );
-        }
-      } else {
-        for (let i = 1; i <= 3; i++) {
-          instances.push(
-            IORedisConnection.connect(
-              guid(),
-              Redis as IORedisClassType,
-              options as IORedisClientOptions,
-            ),
-          );
-        }
-      }
-      const [store, stream, sub] = await Promise.all(instances);
-      target.store = target.store || store.getClient();
-      target.stream = target.stream || stream.getClient();
-      target.sub = target.sub || sub.getClient();
+  protected abstract createConnection(client: TClient, options: TOptions): Promise<any>;
+
+  public abstract getClient(): any;
+
+  public async disconnect(): Promise<void> {
+    if (this.connection) {
+      await this.closeConnection(this.connection);
+      this.connection = null;
+    }
+    if (this.id) {
+      AbstractConnection.instances.delete(this.id);
     }
   }
+
+  protected abstract closeConnection(connection: any): Promise<void>;
+
+  public static async connect<T extends AbstractConnection<any, any>>(
+    this: new () => T,
+    id: string,
+    client: any,
+    options?: any,
+  ): Promise<T> {
+    if (AbstractConnection.instances.has(id)) {
+      return AbstractConnection.instances.get(id) as T;
+    }
+    const instance = new this();
+    const opts = options || instance.defaultOptions;
+    instance.connection = await instance.createConnection(client, opts);
+    instance.id = id;
+    AbstractConnection.instances.set(id, instance);
+    return instance;
+  }
+
+  public static async disconnectAll(): Promise<void> {
+    await Promise.all(
+      Array.from(this.instances.values()).map((instance) =>
+        instance.disconnect(),
+      ),
+    );
+    this.instances.clear();
+  }
 }
+
+export { AbstractConnection };

@@ -14,7 +14,7 @@ export abstract class StreamService<
   TransactionProvider extends ProviderTransaction,
 > {
   protected streamClient: ClientProvider;
-  protected storeClient: ClientProvider;
+  protected storeClient: ProviderClient;
   protected namespace: string;
   protected logger: ILogger;
   protected appId: string;
@@ -22,7 +22,7 @@ export abstract class StreamService<
 
   constructor(
     streamClient: ClientProvider,
-    storeClient: ClientProvider,
+    storeClient: ProviderClient,
     config: StreamConfig = {},
   ) {
     this.streamClient = streamClient;
