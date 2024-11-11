@@ -2,6 +2,20 @@ import { KeyStoreParams } from '../modules/key';
 
 import { StringAnyType } from './serializer';
 
+/**
+ * Generic type for provider class
+ */
+export interface ProviderClass {
+  [key: string]: any;
+}
+
+/**
+ * Generic type for provider options
+ */
+export interface ProviderOptions {
+  [key: string]: any;
+}
+
 export type Providers = 'redis' | 'nats' | 'postgres' | 'ioredis';
 
 /**
@@ -20,8 +34,22 @@ export interface ProviderTransaction {
   [key: string]: any;
 }
 
+/**
+ * A provider native client is the raw client object provided by the
+ * connecter service. This object is passed to the ProviderClient
+ * (which wraps it), providing a standardized interface for all
+ * providers.
+ */
+export interface ProviderNativeClient {
+  [key: string]: any;
+}
+
+/**
+ * Wrapped provider native client object that standardizes the
+ * interface for all providers.
+ */
 export interface ProviderClient {
-  /**  The provider-specific transaction object */
+  /** The provider-specific transaction object */
   transact(): ProviderTransaction;
 
   /** Mint a provider-specific key */

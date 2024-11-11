@@ -10,7 +10,7 @@ import { guid } from '../../modules/utils';
 import { Widget } from './src/widget';
 import { schema } from './src/schema';
 
-describe('MeshData`', () => {
+describe('MeshOS`', () => {
   const options = {
     socket: {
       host: config.REDIS_HOST,
@@ -44,16 +44,14 @@ describe('MeshData`', () => {
       //registration methods (register the participants in the mesh)
 
       MeshOS.registerDatabase('redis', {
-        label: 'Redis',
         name: 'redis',
-        search: true,
-        config: {
-          REDIS_DATABASE: config.REDIS_DATABASE,
-          REDIS_HOST: config.REDIS_HOST,
-          REDIS_PASSWORD: config.REDIS_PASSWORD,
-          REDIS_PORT: config.REDIS_PORT,
-          REDIS_USE_TLS: config.REDIS_USE_TLS,
-          REDIS_USERNAME: config.REDIS_USERNAME,
+        label: 'Redis',
+        search: true, //searchable
+        connection: {
+          class: Redis,
+          options: {
+            url: `redis${config.REDIS_USE_TLS ? 's' : ''}://${config.REDIS_USERNAME ?? ''}:${config.REDIS_PASSWORD}@${config.REDIS_HOST}:${config.REDIS_PORT}`,
+          },
         },
       });
 
@@ -66,8 +64,8 @@ describe('MeshData`', () => {
 
       // many to many
       MeshOS.registerNamespace('meshostest', {
-        type: 'meshostest',
         name: 'meshostest',
+        type: 'meshostest',
         label: 'MeshOS TEST',
         entities: [MeshOS.entities['widget']],
       });
@@ -84,10 +82,10 @@ describe('MeshData`', () => {
 
       MeshOS.registerClass('Widget', Widget);
 
-      //init everything; start it up!!!!!
+      //connect to the mesh (if we're the first to connect, we ARE the mesh)
       await MeshOS.init();
 
-      //locate an entity instance (class instance of the widget class in the specific database/namespace)
+      //locate an entity instance (singleton instance of the widget class in the specific database/namespace)
       //the mesh initialization script allows for an entity to exist anywhere, so it must be specifically targeted
       const entity = MeshOS.findEntity('redis', 'meshostest', 'widget');
       expect(entity).toBeDefined();

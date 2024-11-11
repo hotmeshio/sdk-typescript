@@ -105,7 +105,6 @@ export {
 } from './job';
 export {
   DB,
-  DBConfig,
   Profile,
   Namespaces,
   Entity,
@@ -128,6 +127,7 @@ export {
   ReduceObject,
 } from './pipe';
 export {
+  ProviderClass,
   ProviderClient,
   ProviderConfig,
   ProviderTransaction,

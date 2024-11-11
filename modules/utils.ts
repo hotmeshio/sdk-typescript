@@ -9,6 +9,7 @@ import { StoreService } from '../services/store';
 import { AppSubscriptions, AppTransitions, AppVID } from '../types/app';
 import {
   ProviderClient,
+  ProviderConfig,
   ProviderTransaction,
   Providers,
 } from '../types/provider';
@@ -125,14 +126,34 @@ export function identifyProvider(provider: any): Providers | null {
  * @private
  */
 export const polyfill = {
+  /**
+   * `activity` is deprecated; `hook` is the replacement
+   */
   resolveActivityType(activityType: string): string {
-    if (activityType === 'activity') {
-      return 'hook';
-    }
-    return activityType;
+    return activityType === 'activity' ? 'hook' : activityType;
   },
+
+  /**
+   * `redis` is deprecated; `connection` is the generic replacement
+   */
   providerConfig(obj: any): any {
     return obj?.connection ?? obj?.redis;
+  },
+
+  /**
+   * `redisClass and redisOptions` are deprecated; use `connection`
+   */
+  meshDataConfig(obj: {
+    connection?: Partial<ProviderConfig>;
+    redisClass?: any;
+    redisOptions?: StringAnyType;
+  }): Partial<ProviderConfig> {
+    return (
+      obj?.connection ?? {
+        class: obj?.redisClass,
+        options: obj?.redisOptions,
+      }
+    );
   },
 };
 

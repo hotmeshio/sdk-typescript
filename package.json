@@ -64,7 +64,7 @@
     "test:stream:ioredis": "NODE_ENV=test jest ./tests/functional/stream/providers/redis/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:stream:redis": "NODE_ENV=test jest ./tests/functional/stream/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:stream:postgres": "NODE_ENV=test jest ./tests/functional/stream/providers/postgres.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:stream:nats": "NODE_ENV=test jest ./tests/functional/stream/providers/nats.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:stream:nats": "NODE_ENV=test jest ./tests/functional/stream/providers/nats/nats.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:ioredis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:redis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",

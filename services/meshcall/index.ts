@@ -38,7 +38,7 @@ import { getWorkflowYAML, VERSION } from './schemas/factory';
  * ```typescript
  * import * as Redis from 'redis';
  * import { MeshCall } from '@hotmesh/meshcall';
- * 
+ *
  * MeshCall.cron({
  *   topic: 'my.cron.function',
  *   connection: {

@@ -2,20 +2,11 @@ import { MeshOS } from '../services/meshos';
 
 import * as Types from './index';
 
-export type DBConfig = {
-  REDIS_DATABASE: number;
-  REDIS_HOST: string | undefined;
-  REDIS_PORT: number;
-  REDIS_USERNAME: string;
-  REDIS_PASSWORD: string;
-  REDIS_USE_TLS: boolean;
-};
-
 export type DB = {
   name: string;
   label: string;
   search: boolean;
-  config: DBConfig;
+  connection: Types.ProviderConfig;
 };
 
 export type SubClassInstance<T extends typeof MeshOS> = T extends abstract new (

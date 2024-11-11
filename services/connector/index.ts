@@ -1,28 +1,36 @@
+import {
+  ProviderClass,
+  ProviderNativeClient,
+  ProviderOptions,
+} from '../../types/provider';
+
 /**
- * Abstract class for creating connections to different services.
+ * Abstract class for creating connections to different backend providers.
  * All implementations should extend this class and implement
- * the abstract methods. To register another connector provider:
+ * the following steps:
  *
  * 1) Add the provider to ./providers/<name>.ts
  * 2) Update ./factory.ts to reference the provider
- * 3) Register the name with the `Provider` type in ./types/provider.ts.
- * 4) Declare the specific provider types in ./types/<name>.ts
- * 5) Update ./modules/utils.ts (identifyProvider) with logic to resolve the provider
+ * 3) Register the tag with the `Provider` type in ./types/provider.ts.
+ * 4) Create the specific provider type file at ./types/<name>.ts
+ * 5) Update ./modules/utils.ts (identifyProvider) with logic to resolve the provider by inspecting the class/import
  */
-abstract class AbstractConnection<TClient, TOptions> {
+abstract class AbstractConnection<PClass, POptions> {
   protected connection: any | null = null;
-  protected static instances: Map<string, AbstractConnection<any, any>> =
-    new Map();
+  protected static instances: Map<
+    string,
+    AbstractConnection<ProviderClass, ProviderOptions>
+  > = new Map();
   protected id: string | null = null;
 
   protected abstract defaultOptions: any;
 
   protected abstract createConnection(
-    client: TClient,
-    options: TOptions,
+    client: PClass,
+    options: POptions,
   ): Promise<any>;
 
-  public abstract getClient(): any;
+  public abstract getClient(): ProviderNativeClient;
 
   public async disconnect(): Promise<void> {
     if (this.connection) {
@@ -36,11 +44,13 @@ abstract class AbstractConnection<TClient, TOptions> {
 
   protected abstract closeConnection(connection: any): Promise<void>;
 
-  public static async connect<T extends AbstractConnection<any, any>>(
+  public static async connect<
+    T extends AbstractConnection<ProviderClass, ProviderOptions>,
+  >(
     this: new () => T,
     id: string,
-    client: any,
-    options?: any,
+    client: ProviderClass,
+    options?: ProviderOptions,
   ): Promise<T> {
     if (AbstractConnection.instances.has(id)) {
       return AbstractConnection.instances.get(id) as T;

@@ -10,7 +10,7 @@ class NatsConnection extends AbstractConnection<
   NatsClientOptions
 > {
   defaultOptions: NatsClientOptions = {
-    servers: ['localhost:4222'],
+    servers: ['nats:4222'],
     timeout: 5000,
   };
 

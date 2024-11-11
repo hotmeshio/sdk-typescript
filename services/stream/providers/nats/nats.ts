@@ -1,15 +1,4 @@
-//todo: never import! Declare the types manually after the full set
-//      of APIs is implemented; this should be done in the types!
-import {
-  JetStreamClient,
-  JetStreamManager,
-  StreamConfig as NatsStreamConfig,
-  ConsumerConfig,
-  RetentionPolicy,
-  StorageType,
-  AckPolicy,
-} from 'nats';
-
+// /app/services/stream/providers/nats/nats.ts
 import { ILogger } from '../../../logger';
 import { StreamService } from '../../index';
 import {
@@ -19,7 +8,17 @@ import {
   StreamStats,
 } from '../../../../types/stream';
 import { KeyStoreParams, StringAnyType } from '../../../../types';
-import { NatsClientType, NatsPubAckType } from '../../../../types/nats';
+import {
+  NatsJetStreamType,
+  NatsJetStreamManager as NatsJetStreamManagerType,
+  NatsStreamConfigType,
+  NatsConsumerConfigType,
+  NatsPubAckType,
+  NatsRetentionPolicyWorkqueueType,
+  NatsClientType,
+  NatsStorageMemoryType,
+  NatsAckPolicyExplicitType,
+} from '../../../../types/nats';
 import { KeyService, KeyType } from '../../../../modules/key';
 import {
   ProviderClient,
@@ -29,8 +28,8 @@ import { HMSH_BLOCK_TIME_MS } from '../../../../modules/enums';
 import { parseStreamMessage } from '../../../../modules/utils';
 
 class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
-  private jetstream: JetStreamClient;
-  private jsm: JetStreamManager;
+  jetstream: NatsJetStreamType;
+  jsm: NatsJetStreamManagerType;
 
   constructor(
     streamClient: NatsClientType,
@@ -62,11 +61,11 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
 
   async createStream(streamName: string): Promise<boolean> {
     try {
-      const config: Partial<NatsStreamConfig> = {
+      const config: NatsStreamConfigType = {
         name: streamName,
         subjects: [`${streamName}.*`],
-        retention: RetentionPolicy.Workqueue,
-        storage: StorageType.Memory,
+        retention: 'workqueue' as NatsRetentionPolicyWorkqueueType,
+        storage: 'memory' as NatsStorageMemoryType,
         num_replicas: 1,
       };
       await this.jsm.streams.add(config);
@@ -92,10 +91,10 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
     groupName: string,
   ): Promise<boolean> {
     try {
-      const consumerConfig: Partial<ConsumerConfig> = {
+      const consumerConfig: NatsConsumerConfigType = {
         durable_name: groupName,
         deliver_group: groupName,
-        ack_policy: AckPolicy.Explicit,
+        ack_policy: 'explicit' as NatsAckPolicyExplicitType,
         ack_wait: 30 * 1000,
         max_deliver: 10,
       };
