@@ -1,15 +1,14 @@
 import { AbstractConnection } from '..';
-import { 
-  PostgresClientOptions, 
-  PostgresClientType, 
-  PostgresClassType 
+import {
+  PostgresClientOptions,
+  PostgresClientType,
+  PostgresClassType,
 } from '../../../types/postgres';
 
 class PostgresConnection extends AbstractConnection<
   PostgresClassType,
   PostgresClientOptions
-  > {
-
+> {
   defaultOptions: PostgresClientOptions = {
     host: 'localhost',
     port: 5432,

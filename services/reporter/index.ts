@@ -3,7 +3,7 @@ import { Pipe } from '../pipe';
 import { StoreService } from '../store';
 import { TriggerActivity } from '../../types/activity';
 import { AppVID } from '../../types/app';
-import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import { JobState } from '../../types/job';
 import {
   GetStatsOptions,

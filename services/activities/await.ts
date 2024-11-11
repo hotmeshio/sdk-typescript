@@ -18,7 +18,7 @@ import {
 import {
   ProviderTransaction,
   TransactionResultList,
-} from '../../types/hotmesh';
+} from '../../types/provider';
 import { JobState } from '../../types/job';
 import { StreamData, StreamDataType } from '../../types/stream';
 

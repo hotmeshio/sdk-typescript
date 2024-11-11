@@ -5,12 +5,8 @@ import { SerializerService } from '../serializer';
 import { StoreService } from '../store';
 import { ActivityType } from '../../types/activity';
 import { HookRule } from '../../types/hook';
-import {
-  HotMeshGraph,
-  HotMeshManifest,
-  ProviderClient,
-  ProviderTransaction,
-} from '../../types/hotmesh';
+import { HotMeshGraph, HotMeshManifest } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import { StringAnyType, Symbols } from '../../types/serializer';
 import { Pipe } from '../pipe';
 import { StreamService } from '../stream';

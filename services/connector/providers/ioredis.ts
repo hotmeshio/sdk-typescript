@@ -9,7 +9,6 @@ class RedisConnection extends AbstractConnection<
   RedisClassType,
   RedisClientOptions
 > {
-
   defaultOptions: RedisClientOptions = {
     host: 'localhost',
     port: 6379,

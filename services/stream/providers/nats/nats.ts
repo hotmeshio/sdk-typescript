@@ -1,32 +1,34 @@
-import { ILogger } from '../../../logger';
-import { StreamService } from '../../index';
-import { 
-  PublishMessageConfig, 
-  StreamConfig, 
-  StreamMessage, 
-  StreamStats 
-} from '../../../../types/stream';
-import { KeyStoreParams, StringAnyType } from '../../../../types';
-import { NatsClientType, NatsPubAckType } from '../../../../types/nats';
-import { ProviderClient, ProviderTransaction } from '../../../../types/hotmesh';
-import { KeyService, KeyType } from '../../../../modules/key';
-import { 
-  JetStreamClient, 
-  JetStreamManager, 
+//todo: never import! Declare the types manually after the full set
+//      of APIs is implemented; this should be done in the types!
+import {
+  JetStreamClient,
+  JetStreamManager,
   StreamConfig as NatsStreamConfig,
   ConsumerConfig,
   RetentionPolicy,
   StorageType,
-  AckPolicy
+  AckPolicy,
 } from 'nats';
+
+import { ILogger } from '../../../logger';
+import { StreamService } from '../../index';
+import {
+  PublishMessageConfig,
+  StreamConfig,
+  StreamMessage,
+  StreamStats,
+} from '../../../../types/stream';
+import { KeyStoreParams, StringAnyType } from '../../../../types';
+import { NatsClientType, NatsPubAckType } from '../../../../types/nats';
+import { KeyService, KeyType } from '../../../../modules/key';
+import {
+  ProviderClient,
+  ProviderTransaction,
+} from '../../../../types/provider';
 import { HMSH_BLOCK_TIME_MS } from '../../../../modules/enums';
 import { parseStreamMessage } from '../../../../modules/utils';
 
-
-class NatsStreamService extends StreamService<
- NatsClientType,
- NatsPubAckType
-> {
+class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
   private jetstream: JetStreamClient;
   private jsm: JetStreamManager;
 
@@ -85,7 +87,10 @@ class NatsStreamService extends StreamService<
     }
   }
 
-  async createConsumerGroup(streamName: string, groupName: string): Promise<boolean> {
+  async createConsumerGroup(
+    streamName: string,
+    groupName: string,
+  ): Promise<boolean> {
     try {
       const consumerConfig: Partial<ConsumerConfig> = {
         durable_name: groupName,
@@ -97,22 +102,35 @@ class NatsStreamService extends StreamService<
       await this.jsm.consumers.add(streamName, consumerConfig);
       return true;
     } catch (error) {
-      this.logger.error(`Error creating consumer group ${groupName} for stream ${streamName}`, { error });
+      this.logger.error(
+        `Error creating consumer group ${groupName} for stream ${streamName}`,
+        { error },
+      );
       throw error;
     }
   }
 
-  async deleteConsumerGroup(streamName: string, groupName: string): Promise<boolean> {
+  async deleteConsumerGroup(
+    streamName: string,
+    groupName: string,
+  ): Promise<boolean> {
     try {
       await this.jsm.consumers.delete(streamName, groupName);
       return true;
     } catch (error) {
-      this.logger.error(`Error deleting consumer group ${groupName} for stream ${streamName}`, { error });
+      this.logger.error(
+        `Error deleting consumer group ${groupName} for stream ${streamName}`,
+        { error },
+      );
       throw error;
     }
   }
 
-  async publishMessages(streamName: string, messages: string[], options?: PublishMessageConfig): Promise<string[] | ProviderTransaction> {
+  async publishMessages(
+    streamName: string,
+    messages: string[],
+    options?: PublishMessageConfig,
+  ): Promise<string[] | ProviderTransaction> {
     try {
       const publishPromises = messages.map(async (message) => {
         const subject = `${streamName}.message`;
@@ -122,7 +140,9 @@ class NatsStreamService extends StreamService<
       const acks = await Promise.all(publishPromises);
       return acks.map((ack) => ack.seq.toString());
     } catch (error) {
-      this.logger.error(`Error publishing messages to ${streamName}`, { error });
+      this.logger.error(`Error publishing messages to ${streamName}`, {
+        error,
+      });
       throw error;
     }
   }
@@ -138,52 +158,73 @@ class NatsStreamService extends StreamService<
     },
   ): Promise<StreamMessage[]> {
     try {
-      const consumer = await this.jetstream.consumers.get(streamName, groupName);
+      const consumer = await this.jetstream.consumers.get(
+        streamName,
+        groupName,
+      );
       const messages: StreamMessage[] = [];
-  
+
       // Construct FetchOptions with batch size and timeout
       const fetchOptions = {
         batch: options?.batchSize || 1,
         expires: options?.blockTimeout || HMSH_BLOCK_TIME_MS,
       };
-  
+
       // Fetch a specified batch of messages using the FetchOptions object
       const fetchedMessages = await consumer.fetch(fetchOptions);
-  
+
       for await (const msg of fetchedMessages) {
         messages.push({
           id: msg.seq.toString(),
           data: parseStreamMessage(msg.string()),
         });
-  
+
         if (options?.autoAck) {
           await msg.ack();
         }
       }
-  
+
       return messages;
     } catch (error) {
-      this.logger.error(`Error consuming messages from ${streamName}`, { error });
+      this.logger.error(`Error consuming messages from ${streamName}`, {
+        error,
+      });
       throw error;
     }
   }
 
-  async ackAndDelete(streamName: string, groupName: string, messageIds: string[]): Promise<number> {
+  async ackAndDelete(
+    streamName: string,
+    groupName: string,
+    messageIds: string[],
+  ): Promise<number> {
     try {
       await this.acknowledgeMessages(streamName, groupName, messageIds);
       return messageIds.length;
     } catch (error) {
-      this.logger.error(`Error in ack and delete for stream ${streamName}`, { error });
+      this.logger.error(`Error in ack and delete for stream ${streamName}`, {
+        error,
+      });
       throw error;
     }
   }
 
-  async acknowledgeMessages(streamName: string, groupName: string, messageIds: string[], options?: StringAnyType): Promise<number> {
+  async acknowledgeMessages(
+    streamName: string,
+    groupName: string,
+    messageIds: string[],
+    options?: StringAnyType,
+  ): Promise<number> {
     //no-op
     return messageIds.length;
   }
 
-  async deleteMessages(streamName: string, groupName: string, messageIds: string[], options?: StringAnyType): Promise<number> {
+  async deleteMessages(
+    streamName: string,
+    groupName: string,
+    messageIds: string[],
+    options?: StringAnyType,
+  ): Promise<number> {
     try {
       await Promise.all(
         messageIds.map((id) =>
@@ -192,12 +233,25 @@ class NatsStreamService extends StreamService<
       );
       return messageIds.length;
     } catch (error) {
-      this.logger.error(`Error deleting messages from ${streamName}`, { error });
+      this.logger.error(`Error deleting messages from ${streamName}`, {
+        error,
+      });
       throw error;
     }
   }
 
-  async retryMessages(streamName: string, groupName: string, options?: { consumerName?: string; minIdleTime?: number; messageIds?: string[]; delay?: number; maxRetries?: number; limit?: number; }): Promise<StreamMessage[]> {
+  async retryMessages(
+    streamName: string,
+    groupName: string,
+    options?: {
+      consumerName?: string;
+      minIdleTime?: number;
+      messageIds?: string[];
+      delay?: number;
+      maxRetries?: number;
+      limit?: number;
+    },
+  ): Promise<StreamMessage[]> {
     return [];
   }
 
@@ -223,7 +277,9 @@ class NatsStreamService extends StreamService<
     }
   }
 
-  async getStreamDepths(streamNames: { stream: string }[]): Promise<{ stream: string; depth: number }[]> {
+  async getStreamDepths(
+    streamNames: { stream: string }[],
+  ): Promise<{ stream: string; depth: number }[]> {
     try {
       const results = await Promise.all(
         streamNames.map(async ({ stream }) => ({
@@ -250,7 +306,7 @@ class NatsStreamService extends StreamService<
       // Retrieve the current stream info
       const streamInfo = await this.jsm.streams.info(streamName);
       const config = { ...streamInfo.config }; // Clone to avoid direct mutation
-  
+
       // Apply new limits based on options
       if (options.maxLen !== undefined) {
         config.max_msgs = options.maxLen;
@@ -258,7 +314,7 @@ class NatsStreamService extends StreamService<
       if (options.maxAge !== undefined) {
         config.max_age = options.maxAge * 1e9; // Convert maxAge to nanoseconds
       }
-  
+
       // Update the stream with the modified config
       await this.jsm.streams.update(streamName, config);
       return 0; // Trimming is applied automatically based on updated config
@@ -266,7 +322,7 @@ class NatsStreamService extends StreamService<
       this.logger.error(`Error trimming stream ${streamName}`, { error });
       throw error;
     }
-  }  
+  }
 
   getProviderSpecificFeatures() {
     return {

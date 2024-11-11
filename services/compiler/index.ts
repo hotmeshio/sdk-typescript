@@ -6,11 +6,8 @@ import yaml from 'js-yaml';
 
 import { ILogger } from '../logger';
 import { StoreService } from '../store';
-import {
-  HotMeshManifest,
-  ProviderClient,
-  ProviderTransaction,
-} from '../../types/hotmesh';
+import { HotMeshManifest } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import { StreamService } from '../stream';
 
 import { Deployer } from './deployer';

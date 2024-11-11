@@ -17,18 +17,18 @@ import { WorkflowHandleService } from './handle';
  * to the result, and shutdown the system.
  * @example
  * ```typescript
- * import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
+ * import { Client, Worker, MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
  * import * as Redis from 'redis';
  * import * as workflows from './workflows';
  *
  * //1) Initialize the worker
- * await MeshFlow.Worker.create({
+ * await Worker.create({
  *   connection: {
  *     class: Redis,
  *     options: { url: 'redis://:key_admin@redis:6379' }
  *   },
  *   taskQueue: 'default',
- *   namespace: 'MeshFlow',
+ *   namespace: 'meshflow',
  *   workflow: workflows.example,
  *   options: {
  *     backoffCoefficient: 2,
@@ -38,7 +38,7 @@ import { WorkflowHandleService } from './handle';
  * });
  *
  * //2) initialize the client
- * const client = new MeshFlow.Client({
+ * const client = new Client({
  *   connection: {
  *     class: Redis,
  *     options: { url: 'redis://:key_admin@redis:6379' }

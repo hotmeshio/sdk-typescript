@@ -8,14 +8,11 @@ import { ILogger } from '../logger';
 import { Pipe } from '../pipe';
 import { StoreService } from '../store';
 import { HookInterface, HookRule, HookSignal } from '../../types/hook';
-import {
-  KeyType,
-  ProviderClient,
-  ProviderTransaction,
-} from '../../types/hotmesh';
+import { KeyType } from '../../types/hotmesh';
 import { JobCompletionOptions, JobState } from '../../types/job';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import { WorkListTaskType } from '../../types/task';
-import { VALSEP, WEBSEP } from '../../modules/key';
+import { WEBSEP } from '../../modules/key';
 
 class TaskService {
   store: StoreService<ProviderClient, ProviderTransaction>;

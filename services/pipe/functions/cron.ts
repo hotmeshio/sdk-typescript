@@ -2,6 +2,8 @@ import { parseExpression } from 'cron-parser';
 
 import { HMSH_FIDELITY_SECONDS } from '../../../modules/enums';
 import { isValidCron } from '../../../modules/utils';
+import { ILogger } from '../../../types/logger';
+import { LoggerService } from '../../logger';
 
 /**
  * Safely calculates the delay in seconds until the next execution of a cron job.
@@ -10,6 +12,8 @@ import { isValidCron } from '../../../modules/utils';
  * @returns The delay in seconds until the next cron job execution (minimum 5 seconds).
  */
 class CronHandler {
+  static logger: ILogger = new LoggerService('hotmesh', 'meshos');
+
   nextDelay(cronExpression: string): number {
     try {
       if (!isValidCron(cronExpression)) {
@@ -28,7 +32,10 @@ class CronHandler {
       const iDelay = Math.round(delay);
       return iDelay;
     } catch (error) {
-      console.error('Error calculating next cron job execution  delay:', error);
+      CronHandler.logger.error(
+        'Error calculating next cron job execution  delay:',
+        { ...error },
+      );
       return -1;
     }
   }

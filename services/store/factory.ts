@@ -1,7 +1,7 @@
 import { identifyProvider } from '../../modules/utils';
 import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
-import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
 import { IORedisStoreService } from './providers/redis/ioredis';
 import { RedisStoreService } from './providers/redis/redis';

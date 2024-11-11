@@ -28,7 +28,6 @@ export {
   ClientConfig,
   ClientWorkflow,
   ContextType,
-  ConnectionConfig,
   Connection,
   ProxyResponseType,
   ProxyType,
@@ -78,6 +77,19 @@ export {
   HookRules,
   HookSignal,
 } from './hook';
+export {
+  HotMesh,
+  HotMeshEngine,
+  HotMeshWorker,
+  HotMeshSettings,
+  HotMeshApp,
+  HotMeshApps,
+  HotMeshConfig,
+  HotMeshManifest,
+  HotMeshGraph,
+  KeyType,
+  KeyStoreParams,
+} from './hotmesh';
 export { ILogger, LogLevel } from './logger';
 export {
   ExtensionType,
@@ -116,19 +128,12 @@ export {
   ReduceObject,
 } from './pipe';
 export {
-  HotMesh,
-  HotMeshApp,
-  HotMeshApps,
-  HotMeshConfig,
-  HotMeshEngine,
-  RedisConfig,
-  HotMeshGraph,
-  HotMeshManifest,
-  HotMeshSettings,
-  HotMeshWorker,
-  KeyStoreParams,
-  KeyType,
-} from './hotmesh';
+  ProviderClient,
+  ProviderConfig,
+  ProviderTransaction,
+  Providers,
+  TransactionResultList,
+} from './provider';
 export {
   MeshCallConnectParams,
   MeshCallExecParams,
@@ -178,10 +183,9 @@ export {
   IORedisClassType,
   IORedisMultiType,
   RedisOptions,
-  TransactionResultList,
   isRedisClient,
   isIORedisClient,
-} from './redis'; //common redis types
+} from './redis';
 export {
   JSONSchema,
   StringAnyType,

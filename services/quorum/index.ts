@@ -16,12 +16,8 @@ import { ILogger } from '../logger';
 import { StoreService } from '../store';
 import { SubService } from '../sub';
 import { CacheMode } from '../../types/cache';
-import {
-  HotMeshConfig,
-  KeyType,
-  ProviderClient,
-  ProviderTransaction,
-} from '../../types/hotmesh';
+import { HotMeshConfig, KeyType } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import {
   QuorumMessage,
   QuorumMessageCallback,

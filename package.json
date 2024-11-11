@@ -68,7 +68,7 @@
     "test:sub:ioredis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:redis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:meshdata": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshdata/index.test.ts --forceExit --verbose --detectOpenHandles",
+    "test:meshdata": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshdata/index.test.ts --forceExit --verbose",
     "test:meshos": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/index.test.ts --forceExit --verbose --detectOpenHandles",
     "test:meshcall": "NODE_ENV=test jest ./tests/meshcall/index.test.ts --forceExit --verbose --detectOpenHandles",
     "test:unit": "NODE_ENV=test jest ./tests/unit/*/*/index.test.ts --detectOpenHandles --forceExit --verbose"

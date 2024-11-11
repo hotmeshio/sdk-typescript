@@ -1,8 +1,8 @@
-import { 
-  ConnectionOptions, 
-  NatsConnection, 
-  connect, 
-  JetStreamClient, 
+import {
+  ConnectionOptions,
+  NatsConnection,
+  connect,
+  JetStreamClient,
   JetStreamManager,
   StreamConfig as NatsStreamConfig,
   ConsumerConfig,
@@ -10,9 +10,10 @@ import {
   PubAck,
   Msg,
   StreamInfo,
-  NatsError
+  NatsError,
 } from 'nats';
-import { ProviderClient, ProviderTransaction } from './hotmesh';
+
+import { ProviderClient, ProviderTransaction } from './provider';
 
 export interface NatsStreamOptions extends ConnectionOptions {
   jetstream?: {

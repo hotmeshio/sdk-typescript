@@ -26,7 +26,7 @@ import {
   StreamRole,
   StreamStatus,
 } from '../../types/stream';
-import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
 class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
   static instances: Set<Router<any>> = new Set();

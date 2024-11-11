@@ -12,12 +12,8 @@ import { Router } from '../router';
 import { StoreService } from '../store';
 import { StreamService } from '../stream';
 import { SubService } from '../sub';
-import {
-  HotMeshConfig,
-  HotMeshWorker,
-  ProviderClient,
-  ProviderTransaction,
-} from '../../types/hotmesh';
+import { HotMeshConfig, HotMeshWorker } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import {
   QuorumMessage,
   QuorumProfile,

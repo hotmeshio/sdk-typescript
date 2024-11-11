@@ -1,15 +1,15 @@
 import { identifyProvider } from '../../modules/utils';
 import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
-import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
+import { NatsClientType } from '../../types/nats';
 
 import { IORedisStreamService } from './providers/redis/ioredis';
 import { RedisStreamService } from './providers/redis/redis';
 import { StreamInitializable } from './providers/stream-initializable';
+import { NatsStreamService } from './providers/nats/nats';
 
 import { StreamService } from './index';
-import { NatsStreamService } from './providers/nats/nats';
-import { NatsClientType } from '../../types/nats';
 
 class StreamServiceFactory {
   static async init(
@@ -21,26 +21,28 @@ class StreamServiceFactory {
   ): Promise<
     StreamService<ProviderClient, ProviderTransaction> & StreamInitializable
   > {
-      let service: StreamService<ProviderClient, ProviderTransaction> &
+    let service: StreamService<ProviderClient, ProviderTransaction> &
       StreamInitializable;
-      const providerType = identifyProvider(provider);
-      if (providerType === 'nats') {
-        let storeProvider: RedisRedisClientType | IORedisClientType;
-        if (identifyProvider(storeProvider) === 'redis') {
-          storeProvider = storeProvider as RedisRedisClientType;
-        } else { //ioredis
-          storeProvider = storeProvider as IORedisClientType;
-        }
-        service = new NatsStreamService(
-          provider as NatsClientType,
-          storeProvider,
-        );
+    const providerType = identifyProvider(provider);
+    if (providerType === 'nats') {
+      let storeProvider: RedisRedisClientType | IORedisClientType;
+      if (identifyProvider(storeProvider) === 'redis') {
+        storeProvider = storeProvider as RedisRedisClientType;
+      } else {
+        //ioredis
+        storeProvider = storeProvider as IORedisClientType;
+      }
+      service = new NatsStreamService(
+        provider as NatsClientType,
+        storeProvider,
+      );
     } else if (providerType === 'redis') {
-        service = new RedisStreamService(
-          provider as RedisRedisClientType,
-          storeProvider as RedisRedisClientType,
-        );
-    } else { //ioredis
+      service = new RedisStreamService(
+        provider as RedisRedisClientType,
+        storeProvider as RedisRedisClientType,
+      );
+    } else {
+      //ioredis
       service = new IORedisStreamService(
         provider as IORedisClientType,
         storeProvider as IORedisClientType,

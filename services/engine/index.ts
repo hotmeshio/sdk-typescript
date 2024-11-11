@@ -30,9 +30,14 @@ import { ILogger } from '../logger';
 import { ReporterService } from '../reporter';
 import { Router } from '../router';
 import { SerializerService } from '../serializer';
+import { SearchService } from '../search';
+import { SearchServiceFactory } from '../search/factory';
 import { StoreService } from '../store';
+import { StoreServiceFactory } from '../store/factory';
 import { StreamService } from '../stream';
+import { StreamServiceFactory } from '../stream/factory';
 import { SubService } from '../sub';
+import { SubServiceFactory } from '../sub/factory';
 import { TaskService } from '../task';
 import { AppVID } from '../../types/app';
 import { ActivityMetadata, ActivityType, Consumes } from '../../types/activity';
@@ -54,9 +59,8 @@ import {
   HotMeshConfig,
   HotMeshManifest,
   HotMeshSettings,
-  ProviderClient,
-  ProviderTransaction,
 } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import {
   JobMessage,
   JobMessageCallback,
@@ -79,11 +83,6 @@ import {
   StreamStatus,
 } from '../../types/stream';
 import { WorkListTaskType } from '../../types/task';
-import { StreamServiceFactory } from '../stream/factory';
-import { SubServiceFactory } from '../sub/factory';
-import { StoreServiceFactory } from '../store/factory';
-import { SearchService } from '../search';
-import { SearchServiceFactory } from '../search/factory';
 
 class EngineService {
   namespace: string;
@@ -168,7 +167,9 @@ class EngineService {
       !identifyProvider(config.engine.stream) ||
       !identifyProvider(config.engine.sub)
     ) {
-      throw new Error('engine must include `store`, `stream`, and `sub` fields.');
+      throw new Error(
+        'engine must include `store`, `stream`, and `sub` fields.',
+      );
     }
   }
 

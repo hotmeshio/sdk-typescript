@@ -1,12 +1,12 @@
+import { KeyStoreParams, KeyType } from '../../modules/key';
 import { ILogger } from '../logger';
 import { SerializerService as Serializer } from '../serializer';
-import {
-  HotMeshSettings,
-  ProviderClient,
-  ProviderTransaction,
-} from '../../types/hotmesh';
-import { KeyStoreParams, KeyType } from '../../modules/key';
 import { Consumes } from '../../types/activity';
+import { AppVID } from '../../types/app';
+import { HookRule, HookSignal } from '../../types/hook';
+import { HotMeshSettings } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
+import { ThrottleOptions } from '../../types/quorum';
 import {
   StringAnyType,
   Symbols,
@@ -14,9 +14,6 @@ import {
   SymbolSets,
 } from '../../types/serializer';
 import { IdsData, JobStatsRange, StatsType } from '../../types/stats';
-import { AppVID } from '../../types/app';
-import { HookRule, HookSignal } from '../../types/hook';
-import { ThrottleOptions } from '../../types/quorum';
 import { WorkListTaskType } from '../../types/task';
 
 import { Cache } from './cache';

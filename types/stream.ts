@@ -1,5 +1,4 @@
-import { ProviderTransaction } from './hotmesh';
-import { StringAnyType } from './serializer';
+import { ProviderTransaction } from './provider';
 
 /** Represents a policy for retrying stream operations based on error codes */
 export interface StreamRetryPolicy {

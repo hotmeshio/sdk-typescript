@@ -1,3 +1,4 @@
+import { HMSH_IS_CLUSTER } from '../../modules/enums';
 import {
   CollationError,
   GenerationalError,
@@ -16,14 +17,13 @@ import {
   HookActivity,
 } from '../../types/activity';
 import { HookRule } from '../../types/hook';
+import { JobState, JobStatus } from '../../types/job';
 import {
   ProviderTransaction,
   TransactionResultList,
-} from '../../types/hotmesh';
-import { JobState, JobStatus } from '../../types/job';
+} from '../../types/provider';
 import { StringScalarType } from '../../types/serializer';
 import { StreamCode, StreamStatus } from '../../types/stream';
-import { HMSH_IS_CLUSTER } from '../../modules/enums';
 
 import { Activity } from './activity';
 

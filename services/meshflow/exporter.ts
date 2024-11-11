@@ -9,7 +9,7 @@ import {
   TransitionType,
   ExportFields,
 } from '../../types/exporter';
-import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import {
   StringAnyType,
   StringStringType,

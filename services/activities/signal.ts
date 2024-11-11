@@ -15,7 +15,7 @@ import {
   ActivityType,
   SignalActivity,
 } from '../../types/activity';
-import { TransactionResultList } from '../../types/hotmesh';
+import { TransactionResultList } from '../../types/provider';
 import { JobState } from '../../types/job';
 import { StringScalarType } from '../../types/serializer';
 import { JobStatsInput } from '../../types/stats';

@@ -1,5 +1,5 @@
-import { ProviderClient } from '../../types/hotmesh';
 import { ILogger } from '../logger';
+import { ProviderClient } from '../../types/provider';
 
 abstract class SearchService<ClientProvider extends ProviderClient> {
   protected searchClient: ClientProvider;

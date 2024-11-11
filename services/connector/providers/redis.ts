@@ -9,7 +9,6 @@ class RedisConnection extends AbstractConnection<
   RedisClassType,
   RedisClientOptions
 > {
-
   defaultOptions: RedisClientOptions = {
     socket: {
       host: 'localhost',
@@ -23,9 +22,7 @@ class RedisConnection extends AbstractConnection<
     options: RedisClientOptions,
   ): Promise<Partial<RedisClientType>> {
     return new Promise((resolve, reject) => {
-      const client = Redis.createClient(
-        options,
-      ) as unknown as RedisClientType;
+      const client = Redis.createClient(options) as unknown as RedisClientType;
 
       client.on('error', (error: any) => {
         reject(error);

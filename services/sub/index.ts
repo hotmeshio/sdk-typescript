@@ -1,7 +1,7 @@
 import { KeyStoreParams, KeyType } from '../../modules/key';
 import { ILogger } from '../logger';
 import { SubscriptionCallback } from '../../types/quorum';
-import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
 abstract class SubService<
   ClientProvider extends ProviderClient,

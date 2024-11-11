@@ -1,7 +1,8 @@
 import { CollationError, InactiveJobError } from '../../modules/errors';
 import { CollationFaultType, CollationStage } from '../../types/collator';
 import { ActivityDuplex } from '../../types/activity';
-import { HotMeshGraph, ProviderTransaction } from '../../types/hotmesh';
+import { HotMeshGraph } from '../../types/hotmesh';
+import { ProviderTransaction } from '../../types/provider';
 import { Activity } from '../activities/activity';
 import { Cycle } from '../activities/cycle';
 

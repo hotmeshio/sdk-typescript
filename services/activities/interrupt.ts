@@ -14,7 +14,7 @@ import {
   ActivityType,
   InterruptActivity,
 } from '../../types/activity';
-import { TransactionResultList } from '../../types/hotmesh';
+import { TransactionResultList } from '../../types/provider';
 import { JobInterruptOptions, JobState } from '../../types/job';
 
 import { Activity } from './activity';

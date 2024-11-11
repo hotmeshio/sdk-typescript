@@ -19,9 +19,11 @@ import {
   HotMeshApp,
   HotMeshApps,
   HotMeshSettings,
+} from '../../../../types/hotmesh';
+import {
   ProviderClient,
   ProviderTransaction,
-} from '../../../../types/hotmesh';
+} from '../../../../types/provider';
 import {
   SymbolSets,
   StringStringType,

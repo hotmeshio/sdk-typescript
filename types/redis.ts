@@ -1,8 +1,10 @@
-import { ProviderClient, ProviderTransaction } from './hotmesh';
+import {
+  ProviderClient,
+  ProviderConfig,
+  ProviderTransaction,
+} from './provider';
 import { StringStringType } from './serializer';
 import { ReclaimedMessageType } from './stream';
-
-type TransactionResultList = (string | number)[]; // e.g., [3, 2, '0']
 
 /**
  * Redis types
@@ -378,8 +380,14 @@ function isIORedisClient(client: RedisClient): client is IORedisClient {
   return 'pipeline' in client;
 }
 
+interface RedisConfig extends ProviderConfig {
+  class: Partial<RedisClass>;
+  options: Partial<RedisOptions>;
+}
+
 export {
   RedisClass,
+  RedisConfig,
   RedisRedisClientType,
   RedisRedisClientOptions,
   RedisRedisClassType,
@@ -391,7 +399,6 @@ export {
   IORedisClassType,
   IORedisMultiType,
   RedisOptions,
-  TransactionResultList,
   isRedisClient,
   isIORedisClient,
 };

@@ -15,7 +15,7 @@ import { KeyStoreParams, StringAnyType } from '../../../../types';
 import { isStreamMessage, parseStreamMessage } from '../../../../modules/utils';
 import { KeyService, KeyType } from '../../../../modules/key';
 import { HMSH_BLOCK_TIME_MS } from '../../../../modules/enums';
-import { ProviderTransaction } from '../../../../types/hotmesh';
+import { ProviderTransaction } from '../../../../types/provider';
 
 class RedisStreamService extends StreamService<
   RedisRedisClientType,
@@ -74,12 +74,15 @@ class RedisStreamService extends StreamService<
   }
 
   // Consumer group operations
-  async createConsumerGroup(key: string, groupName: string): Promise<boolean> {
+  async createConsumerGroup(
+    streamName: string,
+    groupName: string,
+  ): Promise<boolean> {
     try {
       const result = (await this.storeClient.sendCommand([
         'XGROUP',
         'CREATE',
-        key,
+        streamName,
         groupName,
         '$',
         'MKSTREAM',
@@ -88,7 +91,7 @@ class RedisStreamService extends StreamService<
     } catch (error) {
       const streamType = 'with MKSTREAM';
       this.logger.debug(
-        `x-group-error ${streamType} for key: ${key} and group: ${groupName}`,
+        `x-group-error ${streamType} for key: ${streamName} and group: ${groupName}`,
         { ...error },
       );
       throw error;
@@ -183,7 +186,6 @@ class RedisStreamService extends StreamService<
       } else {
         return [];
       }
-
       return response;
     } catch (error) {
       this.logger.error(`Error consuming messages from ${streamName}`, {

@@ -17,8 +17,8 @@ import {
   ActivityType,
   TriggerActivity,
 } from '../../types/activity';
-import { ProviderTransaction } from '../../types/hotmesh';
 import { JobState, ExtensionType, JobStatus } from '../../types/job';
+import { ProviderTransaction } from '../../types/provider';
 import { StringScalarType } from '../../types/serializer';
 
 import { Activity } from './activity';

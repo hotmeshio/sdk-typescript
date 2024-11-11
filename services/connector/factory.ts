@@ -1,27 +1,21 @@
-import { guid, identifyProvider } from '../../modules/utils';
-import {
-  ConnectionConfig,
-  HotMeshEngine,
-  HotMeshWorker,
-} from '../../types/hotmesh';
+import { guid, identifyProvider, polyfill } from '../../modules/utils';
+import { HotMeshEngine, HotMeshWorker } from '../../types/hotmesh';
+import { ProviderConfig } from '../../types/provider';
 import {
   RedisRedisClassType,
   RedisRedisClientOptions,
   IORedisClassType,
   IORedisClientOptions,
 } from '../../types/redis';
-import {
-  NatsClassType,
-  NatsClientOptions,
-} from '../../types/nats';
+import { NatsClassType, NatsClientOptions } from '../../types/nats';
 
 import { RedisConnection as IORedisConnection } from './providers/ioredis';
 import { RedisConnection } from './providers/redis';
 import { NatsConnection } from './providers/nats';
+
 import { AbstractConnection } from './index';
 
 export class ConnectorService {
-
   /**
    * Initialize `store`, `stream`, and `subscription` clients for any provider.
    */
@@ -41,24 +35,29 @@ export class ConnectorService {
       if (connections.sub) {
         await ConnectorService.initClient(connections.sub, target, 'sub');
       }
+      //todo: add search after refactoring
     } else {
       // Collapsed form
-      const connectionConfig = target.connection || target.redis;
-      if (connectionConfig) {
-        await ConnectorService.initClient(connectionConfig, target, 'store');
-        await ConnectorService.initClient(connectionConfig, target, 'stream');
-        await ConnectorService.initClient(connectionConfig, target, 'sub');
+      const ProviderConfig = polyfill.providerConfig(target);
+      if (ProviderConfig) {
+        await ConnectorService.initClient(ProviderConfig, target, 'store');
+        await ConnectorService.initClient(ProviderConfig, target, 'stream');
+        await ConnectorService.initClient(ProviderConfig, target, 'sub');
+        //todo: add search after refactoring
       }
     }
   }
 
   static async initClient(
-    connectionConfig: ConnectionConfig,
-    target: HotMeshEngine | HotMeshWorker, 
+    ProviderConfig: ProviderConfig,
+    target: HotMeshEngine | HotMeshWorker,
     field: string,
   ) {
-    const providerClass = connectionConfig.class;
-    const options = connectionConfig.options;
+    if (target[field]) {
+      return;
+    }
+    const providerClass = ProviderConfig.class;
+    const options = ProviderConfig.options;
     const providerName = identifyProvider(providerClass);
 
     let clientInstance: AbstractConnection<any, any>;

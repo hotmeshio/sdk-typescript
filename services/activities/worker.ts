@@ -15,11 +15,11 @@ import {
   ActivityType,
   WorkerActivity,
 } from '../../types/activity';
+import { JobState } from '../../types/job';
 import {
   ProviderTransaction,
   TransactionResultList,
-} from '../../types/hotmesh';
-import { JobState } from '../../types/job';
+} from '../../types/provider';
 import { StreamData } from '../../types/stream';
 
 import { Activity } from './activity';

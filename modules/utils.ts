@@ -7,7 +7,11 @@ import ms from 'ms';
 import { LoggerService } from '../services/logger';
 import { StoreService } from '../services/store';
 import { AppSubscriptions, AppTransitions, AppVID } from '../types/app';
-import { ProviderClient, Providers, ProviderTransaction } from '../types/hotmesh';
+import {
+  ProviderClient,
+  ProviderTransaction,
+  Providers,
+} from '../types/provider';
 import { StringAnyType } from '../types/serializer';
 import { StreamCode, StreamData, StreamStatus } from '../types/stream';
 import { SystemHealth } from '../types/quorum';
@@ -76,9 +80,7 @@ export function XSleepFor(ms: number): {
 /**
  * @private
  */
-export function identifyProvider (
-  provider: any,
-): Providers | null {
+export function identifyProvider(provider: any): Providers | null {
   const prototype = Object.getPrototypeOf(provider);
   if (provider.constructor && provider.constructor.name === 'Client') {
     return 'nats';
@@ -128,6 +130,9 @@ export const polyfill = {
       return 'hook';
     }
     return activityType;
+  },
+  providerConfig(obj: any): any {
+    return obj?.connection ?? obj?.redis;
   },
 };
 

@@ -7,7 +7,7 @@ import {
 } from '../../types/stream';
 import { StringAnyType } from '../../types';
 import { KeyStoreParams, KeyType } from '../../modules/key';
-import { ProviderClient, ProviderTransaction } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
 export abstract class StreamService<
   ClientProvider extends ProviderClient,

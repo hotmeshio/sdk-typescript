@@ -31,7 +31,7 @@ import {
   ProviderClient,
   ProviderTransaction,
   TransactionResultList,
-} from '../../types/hotmesh';
+} from '../../types/provider';
 import { JobState, JobStatus } from '../../types/job';
 import { StringAnyType, StringScalarType } from '../../types/serializer';
 import {

@@ -16,7 +16,7 @@ import {
 import {
   TransactionResultList,
   ProviderTransaction,
-} from '../../types/hotmesh';
+} from '../../types/provider';
 import { JobState } from '../../types/job';
 import { StreamData } from '../../types/stream';
 import { TelemetryService } from '../telemetry';

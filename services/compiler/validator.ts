@@ -1,11 +1,8 @@
 import { Pipe } from '../pipe';
 import { StoreService } from '../store';
 import { MappingStatements } from '../../types/map';
-import {
-  HotMeshManifest,
-  ProviderClient,
-  ProviderTransaction,
-} from '../../types/hotmesh';
+import { HotMeshManifest } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
 class Validator {
   manifest: HotMeshManifest | null = null;

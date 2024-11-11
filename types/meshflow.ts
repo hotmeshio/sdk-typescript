@@ -1,7 +1,7 @@
 import { WorkflowHandleService } from '../services/meshflow/handle';
 
 import { LogLevel } from './logger';
-import { RedisClass, RedisOptions } from './redis';
+import { ProviderConfig } from './provider';
 import { StringAnyType, StringStringType } from './serializer';
 import { StreamData, StreamError } from './stream';
 
@@ -435,11 +435,7 @@ type WorkflowDataType = {
   expire?: number;
 };
 
-type ConnectionConfig = {
-  class: Partial<RedisClass>;
-  options: Partial<RedisOptions>;
-};
-type Connection = ConnectionConfig;
+type Connection = ProviderConfig;
 
 type ClientConfig = {
   connection: Connection;
@@ -628,7 +624,6 @@ export {
   ClientConfig,
   ClientWorkflow,
   ContextType,
-  ConnectionConfig,
   Connection,
   ProxyResponseType,
   ProxyType,

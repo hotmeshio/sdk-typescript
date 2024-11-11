@@ -1,15 +1,14 @@
 import { AbstractConnection } from '..';
-import { 
-  NatsClientOptions, 
-  NatsClientType, 
-  NatsClassType 
+import {
+  NatsClientOptions,
+  NatsClientType,
+  NatsClassType,
 } from '../../../types/nats';
 
 class NatsConnection extends AbstractConnection<
   NatsClassType,
   NatsClientOptions
 > {
-
   defaultOptions: NatsClientOptions = {
     servers: ['localhost:4222'],
     timeout: 5000,

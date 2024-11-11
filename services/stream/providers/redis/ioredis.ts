@@ -12,7 +12,7 @@ import { KeyStoreParams, StringAnyType } from '../../../../types';
 import { isStreamMessage, parseStreamMessage } from '../../../../modules/utils';
 import { KeyService, KeyType } from '../../../../modules/key';
 import { HMSH_BLOCK_TIME_MS } from '../../../../modules/enums';
-import { ProviderTransaction } from '../../../../types/hotmesh';
+import { ProviderTransaction } from '../../../../types/provider';
 
 class IORedisStreamService extends StreamService<
   IORedisClientType,
