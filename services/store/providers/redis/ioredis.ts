@@ -1,59 +1,61 @@
 import { KeyType } from '../../../../modules/key';
 import {
+  IORedisMultiType,
   IORedisClientType as RedisClientType,
   IORedisMultiType as RedisMultiType,
 } from '../../../../types/redis';
 import { HMSH_IS_CLUSTER } from '../../../../modules/enums';
-import { RedisStoreBase } from './_base';
 import { StoreInitializable } from '../store-initializable';
 
-class IORedisStoreService extends RedisStoreBase<
-  RedisClientType,
-  RedisMultiType
-> implements StoreInitializable {
+import { RedisStoreBase } from './_base';
 
+class IORedisStoreService
+  extends RedisStoreBase<RedisClientType, RedisMultiType>
+  implements StoreInitializable
+{
   constructor(storeClient: RedisClientType) {
     super(storeClient);
     this.commands = {
-
-    get: 'get',
-    set: 'set', //nx, nx+ex
-    setnx: 'setnx',
-    del: 'del',
-    expire: 'expire', 
-    hset: 'hset', //nx, nx+ex
-    hscan: 'hscan',
-    hsetnx: 'hsetnx',
-    hincrby: 'hincrby',
-    hdel: 'hdel',
-    hget: 'hget',
-    hmget: 'hmget',
-    hgetall: 'hgetall',
-    hincrbyfloat: 'hincrbyfloat',
-    zrank: 'zrank',
-    zrange: 'zrange',
-    zrangebyscore_withscores: 'zrangebyscore',
-    zrangebyscore: 'zrangebyscore',
-    zrem: 'zrem',
-    zadd: 'zadd', //nx
-    lmove: 'lmove',
-    lpop: 'lpop',
-    lrange: 'lrange',
-    rename: 'rename',
-    rpush: 'rpush',
-    scan: 'scan',
-    xack: 'xack',
-    xdel: 'xdel',
-    }
+      get: 'get',
+      set: 'set', //nx, nx+ex
+      setnx: 'setnx',
+      del: 'del',
+      expire: 'expire',
+      hset: 'hset', //nx, nx+ex
+      hscan: 'hscan',
+      hsetnx: 'hsetnx',
+      hincrby: 'hincrby',
+      hdel: 'hdel',
+      hget: 'hget',
+      hmget: 'hmget',
+      hgetall: 'hgetall',
+      hincrbyfloat: 'hincrbyfloat',
+      zrank: 'zrank',
+      zrange: 'zrange',
+      zrangebyscore_withscores: 'zrangebyscore',
+      zrangebyscore: 'zrangebyscore',
+      zrem: 'zrem',
+      zadd: 'zadd', //nx
+      lmove: 'lmove',
+      lpop: 'lpop',
+      lrange: 'lrange',
+      rename: 'rename',
+      rpush: 'rpush',
+      scan: 'scan',
+      xack: 'xack',
+      xdel: 'xdel',
+    };
   }
 
   /**
-   * When in cluster mode, the getMulti wrapper only
+   * When in cluster mode, the transact wrapper only
    * sends commands to the same node/shard if they share a key.
    * All other commands are sent simultaneouslyusing Promise.all
-   * and are then collated
+   * and are then collated. this is effectiely a wrapper for
+   * `multi` but is closer to `pipeline` in terms of usage when
+   * promises are used.
    */
-  getMulti(): RedisMultiType {
+  transact(): RedisMultiType {
     const my = this;
     if (HMSH_IS_CLUSTER) {
       const commands: { command: string; args: any[] }[] = [];
@@ -178,7 +180,7 @@ class IORedisStoreService extends RedisStoreBase<
       return multiInstance;
     }
 
-    return this.storeClient.multi() as unknown as RedisMultiType;
+    return this.storeClient.multi() as unknown as IORedisMultiType;
   }
 
   async exec(...args: any[]): Promise<string | string[] | string[][]> {

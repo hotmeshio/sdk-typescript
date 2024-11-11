@@ -1,10 +1,10 @@
-import { MeshOS } from "../../../services/meshos";
-import { schema } from './schema'
+import { MeshOS } from '../../../services/meshos';
 import * as HotMeshTypes from '../../../types';
-import { guid } from "../../../modules/utils";
+import { guid } from '../../../modules/utils';
+
+import { schema } from './schema';
 
 export class Widget extends MeshOS {
-  
   //Return the function version/priority
   getTaskQueue(): string {
     return 'v1';
@@ -30,7 +30,11 @@ export class Widget extends MeshOS {
     await this.meshData.connect({
       entity: this.getEntity(),
       //this function runs transactionally
-      target: async function(input: { id: string, $entity: string, active: 'y'|'n'}) {
+      target: async function (input: {
+        id: string;
+        $entity: string;
+        active: 'y' | 'n';
+      }) {
         return { hello: input.id };
       },
       options: {
@@ -44,7 +48,9 @@ export class Widget extends MeshOS {
   // workflow use the options/search field to set default
   // record data `{ ...input}` and invoke the `createWidget`
   // workflow.
-  async create(input: HotMeshTypes.StringAnyType): Promise<HotMeshTypes.StringStringType> {
+  async create(
+    input: HotMeshTypes.StringAnyType,
+  ): Promise<HotMeshTypes.StringStringType> {
     return await this.meshData.exec<HotMeshTypes.StringStringType>({
       entity: this.getEntity(),
       args: [{ ...input }],
@@ -53,8 +59,8 @@ export class Widget extends MeshOS {
         ttl: '5 minutes',
         namespace: this.getNamespace(),
         taskQueue: this.getTaskQueue(),
-        search: { data: { ...input }},
-       },
+        search: { data: { ...input } },
+      },
     });
   }
 }

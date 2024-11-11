@@ -4,7 +4,13 @@ import {
   HMSH_LOGLEVEL,
   HMSH_QUORUM_DELAY_MS,
 } from '../../modules/enums';
-import { hashOptions, isValidCron, s, sleepFor } from '../../modules/utils';
+import {
+  hashOptions,
+  isValidCron,
+  polyfill,
+  s,
+  sleepFor,
+} from '../../modules/utils';
 import {
   MeshCallConnectParams,
   MeshCallCronParams,
@@ -13,29 +19,34 @@ import {
   MeshCallInstanceOptions,
   MeshCallInterruptParams,
 } from '../../types/meshcall';
-import { RedisConfig, StreamData } from '../../types';
-import { HMNS } from '../../modules/key';
+import { StreamData } from '../../types/stream';
+import { ProviderConfig } from '../../types/provider';
+import { HMNS, KeyType } from '../../modules/key';
 import { CronHandler } from '../pipe/functions/cron';
 
 import { getWorkflowYAML, VERSION } from './schemas/factory';
 
 /**
- * MeshCall connects your functions to the Redis-backed mesh,
- * exposing them as idempotent endpoints. Call functions
- * from anywhere on the network with a connection to Redis. Function
- * responses are cacheable and functions can even
- * run as idempotent cron jobs (this one runs once a day).
+ * MeshCall connects any function as an idempotent endpoint.
+ * Call functions from anywhere on the network connected to the
+ * target backend (Redis, Postgres, NATS, etc). Function
+ * responses are cacheable and invocations can be scheduled to
+ * run as idempotent cron jobs (this one runs nightly at midnight
+ * and uses Redis as the backend provider).
  *
  * @example
  * ```typescript
+ * import * as Redis from 'redis';
+ * import { MeshCall } from '@hotmesh/meshcall';
+ *
  * MeshCall.cron({
  *   topic: 'my.cron.function',
- *   redis: {
+ *   connection: {
  *     class: Redis,
  *     options: { url: 'redis://:key_admin@redis:6379' }
  *   },
  *   callback: async () => {
- *     //your code here...
+ *     //your code here...anything goes
  *   },
  *   options: { id: 'myDailyCron123', interval: '0 0 * * *' }
  * });
@@ -70,7 +81,7 @@ class MeshCall {
   static async findFirstMatching(
     targets: Map<string, HotMesh | Promise<HotMesh>>,
     namespace = HMNS,
-    config: RedisConfig,
+    config: ProviderConfig,
     options: MeshCallInstanceOptions = {},
   ): Promise<HotMesh | void> {
     for (const [id, hotMeshInstance] of targets) {
@@ -93,7 +104,7 @@ class MeshCall {
    */
   static getHotMeshClient = async (
     namespace: string,
-    connection: RedisConfig,
+    connection: ProviderConfig,
     options: MeshCallInstanceOptions = {},
   ): Promise<HotMesh> => {
     //namespace isolation requires the connection options to be hashed
@@ -113,7 +124,7 @@ class MeshCall {
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: {
+        connection: {
           class: connection.class,
           options: connection.options,
         },
@@ -181,7 +192,7 @@ class MeshCall {
    */
   static async getInstance(
     namespace: string,
-    redis: RedisConfig,
+    providerConfig: ProviderConfig,
     options: MeshCallInstanceOptions = {},
   ): Promise<HotMesh> {
     let hotMeshInstance: HotMesh | void;
@@ -190,7 +201,7 @@ class MeshCall {
       hotMeshInstance = await MeshCall.findFirstMatching(
         MeshCall.workers,
         namespace,
-        redis,
+        providerConfig,
         options,
       );
     }
@@ -198,13 +209,13 @@ class MeshCall {
       hotMeshInstance = await MeshCall.findFirstMatching(
         MeshCall.engines,
         namespace,
-        redis,
+        providerConfig,
         options,
       );
       if (!hotMeshInstance) {
         hotMeshInstance = (await MeshCall.getHotMeshClient(
           namespace,
-          redis,
+          providerConfig,
           options,
         )) as unknown as HotMesh;
       }
@@ -216,9 +227,12 @@ class MeshCall {
    * Connects and links a worker function to the mesh
    * @example
    * ```typescript
+   * import * as Redis from 'redis';
+   * import { MeshCall } from '@hotmesh/meshcall';
+   *
    * MeshCall.connect({
    *   topic: 'my.function',
-   *   redis: {
+   *   connection: {
    *     class: Redis,
    *     options: { url: 'redis://:key_admin@redis:6379' }
    *   },
@@ -230,17 +244,18 @@ class MeshCall {
    */
   static async connect(params: MeshCallConnectParams): Promise<HotMesh> {
     const targetNamespace = params.namespace ?? HMNS;
-    const optionsHash = hashOptions(params.redis?.options);
+    const optionsHash = hashOptions(polyfill.providerConfig(params)?.options);
+
     const targetTopic = `${optionsHash}.${targetNamespace}.${params.topic}`;
     const hotMeshWorker = await HotMesh.init({
       guid: params.guid,
       logLevel: params.logLevel ?? HMSH_LOGLEVEL,
       appId: params.namespace ?? HMNS,
-      engine: { redis: params.redis },
+      engine: { connection: polyfill.providerConfig(params) },
       workers: [
         {
           topic: params.topic,
-          redis: params.redis,
+          connection: polyfill.providerConfig(params),
           callback: async function (input: StreamData) {
             const response = await params.callback.apply(this, input.data.args);
             return {
@@ -266,7 +281,7 @@ class MeshCall {
    * const response = await MeshCall.exec({
    *   topic: 'my.function',
    *   args: [{ my: 'args' }],
-   *   redis: {
+   *   connection: {
    *     class: Redis,
    *     options: { url: 'redis://:key_admin@redis:6379' }
    *   }
@@ -277,7 +292,7 @@ class MeshCall {
     const TOPIC = `${params.namespace ?? HMNS}.call`;
     const hotMeshInstance = await MeshCall.getInstance(
       params.namespace,
-      params.redis,
+      polyfill.providerConfig(params),
     );
 
     let id = params.options?.id;
@@ -318,9 +333,12 @@ class MeshCall {
    *
    * @example
    * ```typescript
+   * import * as Redis from 'redis';
+   * import { MeshCall } from '@hotmesh/meshcall';
+   *
    * MeshCall.flush({
    *   topic: 'my.function',
-   *   redis: {
+   *   connection: {
    *     class: Redis,
    *     options: { url: 'redis://:key_admin@redis:6379' }
    *   },
@@ -331,10 +349,36 @@ class MeshCall {
   static async flush(params: MeshCallFlushParams): Promise<void> {
     const hotMeshInstance = await MeshCall.getInstance(
       params.namespace,
-      params.redis,
+      polyfill.providerConfig(params),
     );
     await hotMeshInstance.scrub(params.id ?? params?.options?.id);
   }
+
+  /**
+   * Creates a stream where messages can be published to ensure there is a
+   * channel in place when the message arrives (a race condition for those
+   * platforms without implicit topic setup).
+   * @private
+   */
+  static createStream = async (
+    hotMeshClient: HotMesh,
+    workflowTopic: string,
+    namespace?: string,
+  ) => {
+    const params = { appId: namespace ?? HMNS, topic: workflowTopic };
+    const streamKey = hotMeshClient.engine.store.mintKey(
+      KeyType.STREAMS,
+      params,
+    );
+    try {
+      await hotMeshClient.engine.stream.createConsumerGroup(
+        streamKey,
+        'WORKER',
+      );
+    } catch (err) {
+      //ignore if already exists
+    }
+  };
 
   /**
    * Schedules a cron job to run at a specified interval
@@ -345,10 +389,13 @@ class MeshCall {
    *
    * @example
    * ```typescript
+   * import * as Redis from 'redis';
+   * import { MeshCall } from '@hotmesh/meshcall';
+   *
    * MeshCall.cron({
    *   topic: 'my.cron.function',
    *   args: ['arg1', 'arg2'], //optionally pass args
-   *   redis: {
+   *   connection: {
    *     class: Redis,
    *     options: { url: 'redis://:key_admin@redis:6379' }
    *   },
@@ -360,16 +407,24 @@ class MeshCall {
    * ```
    */
   static async cron(params: MeshCallCronParams): Promise<boolean> {
+    let hotMeshInstance: HotMesh | void;
+    let readonly = true;
     if (params.callback) {
       //always connect cron worker if provided
-      await MeshCall.connect({
+      hotMeshInstance = await MeshCall.connect({
         logLevel: params.logLevel,
         guid: params.guid,
         topic: params.topic,
-        redis: params.redis,
+        connection: polyfill.providerConfig(params),
         callback: params.callback,
         namespace: params.namespace,
       });
+      readonly = false;
+    } else {
+      //this is a readonly cron connection which means
+      //it is only being created to connect as a readonly member
+      //of the mesh network that the cron is running on. it
+      //can start a job, but it cannot run the job itself in RO mode.
     }
 
     //configure job inputs
@@ -389,13 +444,22 @@ class MeshCall {
       delay = params.options.delay ? s(params.options.delay) : undefined;
     }
 
-    //spawn the job (ok if it's a duplicate)
     try {
-      const hotMeshInstance = await MeshCall.getInstance(
-        params.namespace,
-        params.redis,
-        { readonly: params.callback ? false : true, guid: params.guid },
-      );
+      if (!hotMeshInstance) {
+        //get or create a read-only engine instance to start the cron
+        hotMeshInstance = await MeshCall.getInstance(
+          params.namespace,
+          polyfill.providerConfig(params),
+          { readonly, guid: params.guid },
+        );
+        await MeshCall.createStream(
+          hotMeshInstance,
+          params.topic,
+          params.namespace,
+        );
+      }
+
+      //spawn the job (ok if it's a duplicate)
       await hotMeshInstance.pub(TOPIC, {
         id: params.options.id,
         topic: params.topic,
@@ -421,9 +485,12 @@ class MeshCall {
    *
    * @example
    * ```typescript
+   * import * as Redis from 'redis';
+   * import { MeshCall } from '@hotmesh/meshcall';
+   *
    * MeshCall.interrupt({
    *   topic: 'my.cron.function',
-   *   redis: {
+   *   connection: {
    *     class: Redis,
    *     options: { url: 'redis://:key_admin@redis:6379' }
    *   },
@@ -434,7 +501,7 @@ class MeshCall {
   static async interrupt(params: MeshCallInterruptParams): Promise<boolean> {
     const hotMeshInstance = await MeshCall.getInstance(
       params.namespace,
-      params.redis,
+      polyfill.providerConfig(params),
     );
     try {
       await hotMeshInstance.interrupt(

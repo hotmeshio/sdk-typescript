@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "description": "Unbreakable Workflows",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -25,8 +25,8 @@
     "test:await": "NODE_ENV=test jest ./tests/functional/awaiter/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:compile": "NODE_ENV=test jest ./tests/functional/compile/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:connect": "NODE_ENV=test jest ./tests/unit/services/connector/index.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:connect:ioredis": "NODE_ENV=test jest ./tests/unit/services/connector/clients/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:connect:redis": "NODE_ENV=test jest ./tests/unit/services/connector/clients/redis.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:connect:ioredis": "NODE_ENV=test jest ./tests/unit/services/connector/providers/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:connect:redis": "NODE_ENV=test jest ./tests/unit/services/connector/providers/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:cycle": "NODE_ENV=test jest ./tests/functional/cycle/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow": "NODE_ENV=test jest ./tests/meshflow/*/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:basic": "NODE_ENV=test jest ./tests/meshflow/basic/index.test.ts --detectOpenHandles --forceExit --verbose",
@@ -63,12 +63,14 @@
     "test:store:redis": "NODE_ENV=test jest ./tests/functional/store/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:stream:ioredis": "NODE_ENV=test jest ./tests/functional/stream/providers/redis/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:stream:redis": "NODE_ENV=test jest ./tests/functional/stream/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:stream:postgres": "NODE_ENV=test jest ./tests/functional/stream/providers/postgres.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:stream:nats": "NODE_ENV=test jest ./tests/functional/stream/providers/nats/nats.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:ioredis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:redis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:meshdata": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshdata/index.test.ts --forceExit --verbose --detectOpenHandles",
+    "test:meshdata": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshdata/index.test.ts --forceExit --verbose",
     "test:meshos": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/index.test.ts --forceExit --verbose --detectOpenHandles",
-    "test:meshcall": "NODE_ENV=test HMSH_LOGLEVEL=debug jest ./tests/meshcall/index.test.ts --forceExit --verbose --detectOpenHandles",
+    "test:meshcall": "NODE_ENV=test jest ./tests/meshcall/index.test.ts --forceExit --verbose --detectOpenHandles",
     "test:unit": "NODE_ENV=test jest ./tests/unit/*/*/index.test.ts --detectOpenHandles --forceExit --verbose"
   },
   "keywords": [
@@ -111,10 +113,15 @@
     "ts-node": "^10.9.1",
     "ts-node-dev": "^2.0.0",
     "typedoc": "^0.26.4",
-    "typescript": "^5.0.4"
+    "typescript": "^5.0.4",
+    "@types/pg": "^8.10.0",
+    "nats": "^2.28.0",
+    "pg": "^8.10.0"
   },
   "peerDependencies": {
     "ioredis": "^4.0.0 || ^5.0.0",
-    "redis": "^4.0.0"
+    "redis": "^4.0.0",
+    "nats": "^2.0.0",
+    "pg": "^8.0.0"
   }
 }

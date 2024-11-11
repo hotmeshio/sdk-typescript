@@ -16,7 +16,10 @@ import {
   WorkerActivity,
 } from '../../types/activity';
 import { JobState } from '../../types/job';
-import { MultiResponseFlags, RedisMulti } from '../../types/redis';
+import {
+  ProviderTransaction,
+  TransactionResultList,
+} from '../../types/provider';
 import { StreamData } from '../../types/stream';
 
 import { Activity } from './activity';
@@ -56,17 +59,17 @@ class Worker extends Activity {
       this.mapInputData();
 
       //save state and authorize reentry
-      const multi = this.store.getMulti();
+      const transaction = this.store.transact();
       //todo: await this.registerTimeout();
-      const messageId = await this.execActivity(multi);
-      await CollatorService.authorizeReentry(this, multi);
-      await this.setState(multi);
-      await this.setStatus(0, multi);
-      const multiResponse = (await multi.exec()) as MultiResponseFlags;
+      const messageId = await this.execActivity(transaction);
+      await CollatorService.authorizeReentry(this, transaction);
+      await this.setState(transaction);
+      await this.setStatus(0, transaction);
+      const txResponse = (await transaction.exec()) as TransactionResultList;
 
       //telemetry
       telemetry.mapActivityAttributes();
-      const jobStatus = this.resolveStatus(multiResponse);
+      const jobStatus = this.resolveStatus(txResponse);
       telemetry.setActivityAttributes({
         'app.activity.mid': messageId,
         'app.job.jss': jobStatus,
@@ -108,7 +111,7 @@ class Worker extends Activity {
     }
   }
 
-  async execActivity(multi: RedisMulti): Promise<string> {
+  async execActivity(transaction: ProviderTransaction): Promise<string> {
     const topic = Pipe.resolve(this.config.subtype, this.context);
     const streamData: StreamData = {
       metadata: {
@@ -131,7 +134,7 @@ class Worker extends Activity {
     return (await this.engine.router?.publishMessage(
       topic,
       streamData,
-      multi,
+      transaction,
     )) as string;
   }
 }

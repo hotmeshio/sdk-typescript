@@ -14,29 +14,27 @@ import {
 import { KeyType } from '../../modules/key';
 import { guid, sleepFor } from '../../modules/utils';
 import { ILogger } from '../logger';
-import { StoreService } from '../store';
 import { StreamService } from '../stream';
 import { TelemetryService } from '../telemetry';
-import { RedisClient, RedisMulti } from '../../types/redis';
 import {
-  ReclaimedMessageType,
-  StreamConfig,
+  RouterConfig,
   StreamData,
   StreamDataResponse,
   StreamDataType,
   StreamError,
+  StreamMessage,
   StreamRole,
   StreamStatus,
 } from '../../types/stream';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
-class Router {
-  static instances: Set<Router> = new Set();
+class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
+  static instances: Set<Router<any>> = new Set();
   appId: string;
   guid: string;
   role: StreamRole;
   topic: string | undefined;
-  store: StoreService<RedisClient, RedisMulti>;
-  stream: StreamService<RedisClient, RedisMulti>;
+  stream: S;
   reclaimDelay: number;
   reclaimCount: number;
   logger: ILogger;
@@ -51,18 +49,12 @@ class Router {
   sleepTimout: NodeJS.Timeout | null = null;
   readonly: boolean;
 
-  constructor(
-    config: StreamConfig,
-    stream: StreamService<RedisClient, RedisMulti>,
-    store: StoreService<RedisClient, RedisMulti>,
-    logger: ILogger,
-  ) {
+  constructor(config: RouterConfig, stream: S, logger: ILogger) {
     this.appId = config.appId;
     this.guid = config.guid;
     this.role = config.role;
     this.topic = config.topic;
     this.stream = stream;
-    this.store = store;
     this.throttle = config.throttle;
     this.reclaimDelay = config.reclaimDelay || HMSH_XCLAIM_DELAY_MS;
     this.reclaimCount = config.reclaimCount || HMSH_XCLAIM_COUNT;
@@ -89,22 +81,18 @@ class Router {
   async publishMessage(
     topic: string,
     streamData: StreamData | StreamDataResponse,
-    multi?: RedisMulti,
-  ): Promise<string | RedisMulti> {
+    transaction?: ProviderTransaction,
+  ): Promise<string | ProviderTransaction> {
     const code = streamData?.code || '200';
     this.counts[code] = (this.counts[code] || 0) + 1;
 
-    const stream = this.store.mintKey(KeyType.STREAMS, {
-      appId: this.store.appId,
-      topic,
-    });
-    return await this.stream.publishMessage(
+    const stream = this.stream.mintKey(KeyType.STREAMS, { topic });
+    const responses = await this.stream.publishMessages(
       stream,
-      '*',
-      'message',
-      JSON.stringify(streamData),
-      multi,
+      [JSON.stringify(streamData)],
+      { transaction },
     );
+    return responses[0];
   }
 
   /**
@@ -165,41 +153,64 @@ class Router {
         setImmediate(consume.bind(this));
         return;
       }
+      //randomizer that asymptotes at 150% of `HMSH_BLOCK_TIME_MS`
+      const streamDuration =
+        HMSH_BLOCK_TIME_MS + Math.round(HMSH_BLOCK_TIME_MS * Math.random());
 
       try {
-        //randomizer that asymptotes at 150% of `HMSH_BLOCK_TIME_MS`
-        const streamDuration =
-          HMSH_BLOCK_TIME_MS + Math.round(HMSH_BLOCK_TIME_MS * Math.random());
-        const result = await this.stream.consumeMessages(
+        //check for messages
+        const messages = (await this.stream.consumeMessages(
+          stream,
           group,
           consumer,
-          streamDuration,
-          stream,
-        );
+          { blockTimeout: streamDuration },
+        )) as StreamMessage[];
+
         if (this.isStopped(group, consumer, stream)) {
           return;
         } else if (this.isPaused()) {
           setImmediate(consume.bind(this));
           return;
         }
-        if (this.isStreamMessage(result)) {
-          const [[, messages]] = result;
-          for (const [id, message] of messages) {
-            await this.consumeOne(stream, group, id, message, callback);
-          }
-        }
 
-        // Check for pending messages (note: Redis 6.2 simplifies)
-        const now = Date.now();
-        if (now - lastCheckedPendingMessagesAt > this.reclaimDelay) {
-          lastCheckedPendingMessagesAt = now;
-          const pendingMessages = await this.claimUnacknowledged(
+        for (let i = 0; i < messages.length; i++) {
+          const message = messages[i];
+          await this.consumeOne(
             stream,
             group,
-            consumer,
+            message.id,
+            message.data,
+            callback,
           );
-          for (const [id, message] of pendingMessages) {
-            await this.consumeOne(stream, group, id, message, callback);
+        }
+
+        // Check for pending messages
+        const now = Date.now();
+        if (
+          this.stream.getProviderSpecificFeatures().supportsRetry &&
+          now - lastCheckedPendingMessagesAt > this.reclaimDelay
+        ) {
+          lastCheckedPendingMessagesAt = now;
+          const pendingMessages = await this.stream.retryMessages(
+            stream,
+            group,
+            {
+              consumerName: consumer,
+              minIdleTime: this.reclaimDelay,
+              limit: HMSH_XPENDING_COUNT,
+            },
+          );
+
+          //process reclaimed messages one-by-one
+          for (let i = 0; i < pendingMessages.length; i++) {
+            const message = pendingMessages[i];
+            await this.consumeOne(
+              stream,
+              group,
+              message.id,
+              message.data,
+              callback,
+            );
           }
         }
         setImmediate(consume.bind(this));
@@ -246,11 +257,10 @@ class Router {
     stream: string,
     group: string,
     id: string,
-    message: string[],
+    input: StreamData,
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ) {
     this.logger.debug(`stream-read-one`, { group, stream, id });
-    const [err, input] = this.parseStreamData(message[1]);
     let output: StreamDataResponse | void;
     let telemetry: TelemetryService;
     try {
@@ -299,7 +309,7 @@ class Router {
   }
 
   async ackAndDelete(stream: string, group: string, id: string) {
-    await this.stream.ackAndDelete(stream, group, id);
+    await this.stream.ackAndDelete(stream, group, [id]);
   }
 
   async publishResponse(
@@ -459,134 +469,6 @@ class Router {
       if (this.innerPromiseResolve) {
         this.innerPromiseResolve();
       }
-    }
-  }
-
-  async claimUnacknowledged(
-    stream: string,
-    group: string,
-    consumer: string,
-    idleTimeMs = this.reclaimDelay,
-    limit = HMSH_XPENDING_COUNT,
-  ): Promise<[string, [string, string]][]> {
-    let pendingMessages = [];
-    const pendingMessagesInfo = await this.stream.getPendingMessages(
-      stream,
-      group,
-      limit,
-    ); //[[ '1688768134881-0', 'testConsumer1', 1017, 1 ]]
-    for (const pendingMessageInfo of pendingMessagesInfo) {
-      if (Array.isArray(pendingMessageInfo)) {
-        const [id, , elapsedTimeMs, deliveryCount] = pendingMessageInfo;
-        if (elapsedTimeMs > idleTimeMs) {
-          const reclaimedMessage = await this.stream.claimMessage(
-            stream,
-            group,
-            consumer,
-            idleTimeMs,
-            id,
-          );
-          if (reclaimedMessage.length) {
-            if (deliveryCount <= this.reclaimCount) {
-              pendingMessages = pendingMessages.concat(reclaimedMessage);
-            } else {
-              await this.expireUnacknowledged(
-                reclaimedMessage,
-                stream,
-                group,
-                consumer,
-                id,
-                deliveryCount,
-              );
-            }
-          }
-        }
-      }
-    }
-    return pendingMessages;
-  }
-
-  async expireUnacknowledged(
-    reclaimedMessage: ReclaimedMessageType,
-    stream: string,
-    group: string,
-    consumer: string,
-    id: string,
-    count: number,
-  ) {
-    //The stream activity was not processed within established limits. Possibilities Include:
-    // 1) user error: the workers were not properly configured and are timing out
-    // 2a) system error: JSON is corrupt
-    //     i) unwitting actor
-    //     ii) corrupt hardware/network/transport/etc
-    // 3b) system error: Redis unable to accept `xadd` request
-    // 4c) system error: Redis unable to accept `xdel`/`xack` request
-    this.logger.error('stream-message-max-delivery-count-exceeded', {
-      id,
-      stream,
-      group,
-      consumer,
-      code: HMSH_CODE_UNACKED,
-      count,
-    });
-    const streamData = reclaimedMessage[0]?.[1]?.[1];
-
-    //fatal risk point 1 of 3): json is corrupt
-    const [err, input] = this.parseStreamData(streamData as string);
-    if (err) {
-      return this.logger.error('expire-unacknowledged-parse-fatal-error', {
-        id,
-        err,
-      });
-    } else if (!input || !input.metadata) {
-      return this.logger.error('expire-unacknowledged-parse-fatal-error', {
-        id,
-      });
-    }
-    let telemetry: TelemetryService;
-    let messageId: string;
-    try {
-      telemetry = new TelemetryService(this.appId);
-      telemetry.startStreamSpan(input, StreamRole.SYSTEM);
-      telemetry.setStreamError(`Stream Message Max Delivery Count Exceeded`);
-
-      //fatal risk point 2 of 3): unable to publish error message (to notify the parent job)
-      const output = this.structureUnacknowledgedError(input);
-      messageId = await this.publishResponse(input, output);
-      telemetry.setStreamAttributes({ 'app.worker.mid': messageId });
-
-      //fatal risk point 3 of 3): unable to ack and delete stream message
-      await this.ackAndDelete(stream, group, id);
-    } catch (err) {
-      if (messageId) {
-        this.logger.error('expire-unacknowledged-pub-fatal-error', {
-          id,
-          err,
-          ...input.metadata,
-        });
-        telemetry.setStreamAttributes({
-          'app.system.fatal': 'expire-unacknowledged-pub-fatal-error',
-        });
-      } else {
-        this.logger.error('expire-unacknowledged-ack-fatal-error', {
-          id,
-          err,
-          ...input.metadata,
-        });
-        telemetry.setStreamAttributes({
-          'app.system.fatal': 'expire-unacknowledged-ack-fatal-error',
-        });
-      }
-    } finally {
-      telemetry.endStreamSpan();
-    }
-  }
-
-  parseStreamData(str: string): [undefined, StreamData] | [Error] {
-    try {
-      return [, JSON.parse(str)];
-    } catch (e) {
-      return [e as Error];
     }
   }
 }

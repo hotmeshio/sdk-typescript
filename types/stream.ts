@@ -1,3 +1,5 @@
+import { ProviderTransaction } from './provider';
+
 /** Represents a policy for retrying stream operations based on error codes */
 export interface StreamRetryPolicy {
   /**
@@ -121,7 +123,7 @@ export type ReclaimedMessageType = [
 ][];
 
 /** Configuration parameters for a stream */
-export type StreamConfig = {
+export type RouterConfig = {
   /** Namespace under which the stream operates */
   namespace: string;
   /** Application identifier */
@@ -141,3 +143,85 @@ export type StreamConfig = {
   /** if true, will not process stream messages; default true */
   readonly?: boolean;
 };
+
+export type StreamProviderType =
+  | 'redis'
+  | 'ioredis'
+  | 'postgres'
+  | 'nats'
+  | 'sqs';
+
+export interface StreamConfig {
+  // Common configuration
+  provider?: StreamProviderType;
+  namespace?: string;
+  appId?: string;
+  maxRetries?: number;
+  batchSize?: number;
+  timeout?: number;
+
+  // Provider-specific configurations
+  redis?: {
+    claimTimeout?: number;
+    blockingTimeout?: number;
+    minIdleTime?: number;
+  };
+  postgres?: {
+    pollInterval?: number;
+    vacuumInterval?: number;
+    partitionInterval?: 'daily' | 'weekly' | 'monthly';
+    cleanupInterval?: number;
+  };
+  nats?: {
+    jetstream?: boolean;
+    durableName?: string;
+    deliverPolicy?: 'all' | 'last' | 'new' | 'byStartSequence' | 'byStartTime';
+    ackWait?: number;
+  };
+  sqs?: {
+    deadLetterQueue?: string;
+    visibilityTimeout?: number;
+    waitTimeSeconds?: number;
+    messageRetentionPeriod?: number;
+    dlqArn?: string;
+  };
+}
+
+export interface StreamMessage {
+  id: string;
+  data: StreamData;
+  metadata?: StreamMessageMetadata;
+}
+
+export interface StreamMessageMetadata {
+  timestamp?: number;
+  stream?: string;
+  groupName?: string;
+  consumerName?: string;
+  retryCount?: number;
+  deliveryTime?: number;
+  originalMessageId?: string;
+  [key: string]: any; // For provider-specific metadata
+}
+
+export interface StreamStats {
+  messageCount: number;
+  consumerCount?: number;
+  bytesInMemory?: number;
+  oldestMessageTimestamp?: number;
+  pendingMessages?: number;
+  deadLetterQueueMessageCount?: number;
+  averageProcessingTime?: number;
+  lastErrorTimestamp?: number;
+  lastErrorMessage?: string;
+  [key: string]: any; // For provider-specific stats
+}
+
+/**
+ * When publishing a message to the stream, the configuration
+ * can include a transaction object to execute the operation
+ * atomically.
+ */
+export interface PublishMessageConfig {
+  transaction?: ProviderTransaction;
+}

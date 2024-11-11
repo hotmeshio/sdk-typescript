@@ -1,8 +1,8 @@
 import { HMNS } from '../../modules/key';
 import { guid } from '../../modules/utils';
-import { RedisConnection } from '../connector/clients/redis';
-import { RedisConnection as IORedisConnection } from '../connector/clients/ioredis';
-import { ConnectorService } from '../connector';
+import { RedisConnection } from '../connector/providers/redis';
+import { RedisConnection as IORedisConnection } from '../connector/providers/ioredis';
+import { ConnectorService } from '../connector/factory';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
 import { QuorumService } from '../quorum';
@@ -42,10 +42,6 @@ import {
 import { MAX_DELAY } from '../../modules/enums';
 
 /**
- * HotMesh transforms Redis into indispensable middleware.
- * Call `HotMesh.init` to initialize a point of presence
- * and attach to the mesh.
- *
  * This example shows the full lifecycle of a HotMesh engine instance,
  * including: initialization, deployment, activation and execution.
  *
@@ -179,11 +175,7 @@ class HotMesh {
    */
   async initEngine(config: HotMeshConfig, logger: ILogger): Promise<void> {
     if (config.engine) {
-      await ConnectorService.initRedisClients(
-        config.engine.redis?.class,
-        config.engine.redis?.options,
-        config.engine,
-      );
+      await ConnectorService.initClients(config.engine);
       this.engine = await EngineService.init(
         this.namespace,
         this.appId,

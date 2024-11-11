@@ -3,7 +3,7 @@ import * as Redis from 'redis';
 import config from '../$setup/config';
 import { guid, sleepFor } from '../../modules/utils';
 import { MeshCall } from '../../services/meshcall';
-import { RedisConnection } from '../../services/connector/clients/redis';
+import { RedisConnection } from '../../services/connector/providers/redis';
 import { RedisRedisClassType } from '../../types';
 
 describe('MESHCALL', () => {
@@ -22,7 +22,7 @@ describe('MESHCALL', () => {
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis as unknown as RedisRedisClassType,
-      options,
+      { ...options },
     );
     redisConnection.getClient().flushDb();
   });
@@ -37,7 +37,7 @@ describe('MESHCALL', () => {
         const worker = await MeshCall.connect({
           guid: 'jimmy',
           topic: 'my.function',
-          redis: {
+          connection: {
             class: Redis,
             options,
           },
@@ -58,7 +58,7 @@ describe('MESHCALL', () => {
         const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
-          redis: {
+          connection: {
             class: Redis,
             options,
           },
@@ -72,7 +72,7 @@ describe('MESHCALL', () => {
         let response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'CoolMesh' }],
           topic: 'my.function',
-          redis: {
+          connection: {
             class: Redis,
             options,
           },
@@ -84,7 +84,7 @@ describe('MESHCALL', () => {
         response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
-          redis: {
+          connection: {
             class: Redis,
             options,
           },
@@ -98,7 +98,7 @@ describe('MESHCALL', () => {
         const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
-          redis: {
+          connection: {
             class: Redis,
             options,
           },
@@ -111,7 +111,7 @@ describe('MESHCALL', () => {
         const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
-          redis: {
+          connection: {
             class: Redis,
             options,
           },
@@ -124,7 +124,7 @@ describe('MESHCALL', () => {
         //manually flush first
         await MeshCall.flush({
           topic: 'my.function',
-          redis: {
+          connection: {
             class: Redis,
             options,
           },
@@ -135,7 +135,7 @@ describe('MESHCALL', () => {
         const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'ColdMesh' }],
           topic: 'my.function',
-          redis: {
+          connection: {
             class: Redis,
             options,
           },
@@ -147,18 +147,18 @@ describe('MESHCALL', () => {
   });
 
   describe('Cron', () => {
-    describe('infinite cron', () => {
-      it('should start an infinite cron (readonly mode)', async () => {
+    describe('idempotent cron', () => {
+      it('should start an idempotent cron (readonly mode)', async () => {
         //kick off the cron, but don't do work
         //(the next test will register the callback)
         const inited = await MeshCall.cron({
           //NOTE: this ID will show up in the logs as being inited in readonly mode
-          guid: 'RO-ENGINE-123',
+          guid: 'idemcron-RO',
           args: [{ payload: 'HotMesh' }],
           topic: 'my.cron.function',
-          redis: {
+          connection: {
             class: Redis,
-            options,
+            options: { ...options },
           },
           options: {
             id: 'mycron123',
@@ -168,15 +168,15 @@ describe('MESHCALL', () => {
         expect(inited).toBe(true);
       });
 
-      it('should run an infinite cron', async () => {
+      it('should run an idempotent cron', async () => {
         let counter = 0;
         const inited = await MeshCall.cron({
-          guid: 'franky',
+          guid: 'idemcron-RW',
           args: [{ payload: 'HotMesh' }],
           topic: 'my.cron.function',
-          redis: {
+          connection: {
             class: Redis,
-            options,
+            options: { ...options },
           },
           options: {
             id: 'mycron123',
@@ -200,9 +200,9 @@ describe('MESHCALL', () => {
           guid: 'freddy',
           args: [{ payload: 'HotMesh' }],
           topic: 'my.cron.function',
-          redis: {
+          connection: {
             class: Redis,
-            options,
+            options: { ...options },
           },
           options: {
             id: 'mycron123',
@@ -215,12 +215,12 @@ describe('MESHCALL', () => {
         expect(didSucceed).toBe(false);
       });
 
-      it('should interrupt an infinite cron', async () => {
+      it('should interrupt an idempotent cron', async () => {
         let interrupted = await MeshCall.interrupt({
           topic: 'my.cron.function',
-          redis: {
+          connection: {
             class: Redis,
-            options,
+            options: { ...options },
           },
           options: { id: 'mycron123' },
         });
@@ -229,9 +229,9 @@ describe('MESHCALL', () => {
         //method returns false if the cron is not running
         interrupted = await MeshCall.interrupt({
           topic: 'my.cron.function',
-          redis: {
+          connection: {
             class: Redis,
-            options,
+            options: { ...options },
           },
           options: { id: 'mycron123' },
         });
@@ -247,7 +247,7 @@ describe('MESHCALL', () => {
           //      so the other cron callback isn't called
           //      (which references the other `counter`)
           topic: 'my.cron.function.max',
-          redis: {
+          connection: {
             class: Redis,
             options,
           },

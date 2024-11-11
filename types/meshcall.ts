@@ -1,4 +1,4 @@
-import { RedisConfig } from './hotmesh';
+import { ProviderConfig } from './provider';
 import { LogLevel } from './logger';
 
 interface MeshCallExecOptions {
@@ -33,13 +33,18 @@ interface MeshCallConnectParams {
    */
   topic: string;
   /**
-   * Redis configuration for the worker
+   * Redis configuration; use 'connection' instead of 'redis'
+   * @deprecated
    */
-  redis: RedisConfig;
+  redis?: ProviderConfig;
   /**
-   * The linked worker function that will be called
+   * Provider configuration
    */
-  callback: (...args: any[]) => any;
+  connection?: ProviderConfig;
+  /**
+   * The linked worker function that will be called; optional if read only
+   */
+  callback?: (...args: any[]) => any;
 }
 
 interface MeshCallExecParams {
@@ -56,9 +61,14 @@ interface MeshCallExecParams {
    */
   args: any[];
   /**
-   * Redis configuration
+   * Redis configuration; use 'connection' instead of 'redis'
+   * @deprecated
    */
-  redis: RedisConfig;
+  redis?: ProviderConfig;
+  /**
+   * Provider configuration
+   */
+  connection?: ProviderConfig;
   /**
    * Execution options like caching ttl
    */
@@ -86,9 +96,14 @@ interface MeshCallFlushParams {
    */
   topic: string;
   /**
-   * Redis configuration
+   * Redis configuration; use 'connection' instead of 'redis'
+   * @deprecated
    */
-  redis: RedisConfig;
+  redis?: ProviderConfig;
+  /**
+   * Provider configuration
+   */
+  connection?: ProviderConfig;
   /**
    * Options for the flush
    */
@@ -144,9 +159,14 @@ interface MeshCallCronParams {
    */
   topic: string;
   /**
-   * Redis configuration for the cron job
+   * Redis configuration; use 'connection' instead of 'redis'
+   * @deprecated
    */
-  redis: RedisConfig;
+  redis?: ProviderConfig;
+  /**
+   * Provider configuration
+   */
+  connection?: ProviderConfig;
   /**
    * Arguments to pass to the cron job; arguments will be passed to the callback
    * each time it runs
@@ -188,9 +208,14 @@ interface MeshCallInterruptParams {
    */
   topic: string;
   /**
-   * Redis configuration
+   * Redis configuration; use 'connection' instead of 'redis'
+   * @deprecated
    */
-  redis: RedisConfig;
+  redis?: ProviderConfig;
+  /**
+   * Provider configuration
+   */
+  connection?: ProviderConfig;
   /**
    * Options for interrupting the cron
    */

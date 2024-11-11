@@ -76,7 +76,7 @@ export class Search {
   /**
    * Prefixes the key with an underscore to keep separate from the
    * activity and job history (and searchable via HKEYS)
-   * 
+   *
    * @private
    */
   safeKey(key: string): string {
@@ -89,7 +89,7 @@ export class Search {
   /**
    * For those deployments with search configured, this method
    * will configure the search index with the provided schema.
-   * 
+   *
    * @private
    * @example
    * const search = {
@@ -140,7 +140,11 @@ export class Search {
         const prefixes = search.prefix.map(
           (prefix) => `${hotMeshPrefix}${prefix}`,
         );
-        await searchService.createSearchIndex(`${search.index}`, prefixes, schema);
+        await searchService.createSearchIndex(
+          `${search.index}`,
+          prefixes,
+          schema,
+        );
       } catch (error) {
         hotMeshClient.engine.logger.info('meshflow-client-search-err', {
           ...error,
@@ -180,7 +184,7 @@ export class Search {
    * Sets the fields listed in args. Returns the
    * count of new fields that were set (does not
    * count fields that were updated)
-   * 
+   *
    * @example
    * const search = await workflow.search();
    * const count = await search.set({ field1: 'value1', field2: 'value2' });
@@ -208,13 +212,15 @@ export class Search {
       }
     }
     const fieldCount = await this.search.setFields(this.jobId, fields);
-    await this.search.setFields(this.jobId, { [ssGuid]: fieldCount.toString() });
+    await this.search.setFields(this.jobId, {
+      [ssGuid]: fieldCount.toString(),
+    });
     return fieldCount;
   }
 
   /**
    * Returns the value of the record data field, given a field id
-   * 
+   *
    * @example
    * const search = await workflow.search();
    * const value = await search.get('field1');
@@ -291,8 +297,12 @@ export class Search {
       return Number(replay[ssGuid]);
     }
     const response = await this.search.deleteFields(this.jobId, safeArgs);
-    const formattedResponse = isNaN(response as unknown as number) ? 0 : Number(response);
-    await this.search.setFields(this.jobId, { [ssGuid]: formattedResponse.toString() });
+    const formattedResponse = isNaN(response as unknown as number)
+      ? 0
+      : Number(response);
+    await this.search.setFields(this.jobId, {
+      [ssGuid]: formattedResponse.toString(),
+    });
     return formattedResponse;
   }
 
@@ -313,7 +323,11 @@ export class Search {
     if (ssGuid in replay) {
       return Number(replay[ssGuid]);
     }
-    const num = await this.search.incrementFieldByFloat(this.jobId, this.safeKey(key), val);
+    const num = await this.search.incrementFieldByFloat(
+      this.jobId,
+      this.safeKey(key),
+      val,
+    );
     await this.search.setFields(this.jobId, { [ssGuid]: num.toString() });
     return num;
   }
@@ -335,11 +349,21 @@ export class Search {
     if (ssGuid in replay) {
       return Math.exp(Number(replay[ssGuid]));
     }
-    const ssGuidValue = await this.search.incrementFieldByFloat(this.jobId, ssGuid, 1);
+    const ssGuidValue = await this.search.incrementFieldByFloat(
+      this.jobId,
+      ssGuid,
+      1,
+    );
     if (ssGuidValue === 1) {
       const log = Math.log(val);
-      const logTotal = await this.search.incrementFieldByFloat(this.jobId, this.safeKey(key), log);
-      await this.search.setFields(this.jobId, { [ssGuid]: logTotal.toString() });
+      const logTotal = await this.search.incrementFieldByFloat(
+        this.jobId,
+        this.safeKey(key),
+        log,
+      );
+      await this.search.setFields(this.jobId, {
+        [ssGuid]: logTotal.toString(),
+      });
       return Math.exp(logTotal);
     } else {
       const logTotalStr = await this.search.getField(this.jobId, ssGuid);

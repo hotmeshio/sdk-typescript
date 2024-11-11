@@ -1,13 +1,12 @@
 export class DeployService {
-  constructor() {
+  constructor() {}
 
-  }
-
-  async deploy(): Promise<void> {
-   //deploy the tables
-   const query = `
+  //add namespace to the other tables (multitenancy)
+  async deploy(namespace: string): Promise<void> {
+    //deploy the tables
+    const query = `
 -- messages table
-CREATE TABLE IF NOT EXISTS messages (
+CREATE TABLE IF NOT EXISTS messages${namespace} (
     stream VARCHAR(255) NOT NULL,
     message_id BIGSERIAL PRIMARY KEY,
     message JSONB NOT NULL,
@@ -42,3 +41,5 @@ CREATE INDEX IF NOT EXISTS idx_pending_messages_message_id ON pending_messages (
 `;
   }
 }
+
+export default DeployService;

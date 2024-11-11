@@ -115,10 +115,9 @@ export class ClientService {
   };
 
   /**
-   * Creates a stream (Redis `XGROUP.CREATE`) where events can be published (XADD).
-   * It is possible that the worker that will read from this stream channel
-   * has not yet been initialized, so this call ensures that the channel
-   * exists and is ready to serve as a container for events.
+   * Creates a stream where messages can be published to ensure there is a
+   * channel in place when the message arrives (a race condition for those
+   * platforms without implicit topic setup).
    * @private
    */
   static createStream = async (
@@ -127,9 +126,15 @@ export class ClientService {
     namespace?: string,
   ) => {
     const params = { appId: namespace ?? APP_ID, topic: workflowTopic };
-    const streamKey = hotMeshClient.engine.store.mintKey(KeyType.STREAMS, params);
+    const streamKey = hotMeshClient.engine.store.mintKey(
+      KeyType.STREAMS,
+      params,
+    );
     try {
-      await hotMeshClient.engine.stream.createConsumerGroup(streamKey, 'WORKER');
+      await hotMeshClient.engine.stream.createConsumerGroup(
+        streamKey,
+        'WORKER',
+      );
     } catch (err) {
       //ignore if already exists
     }

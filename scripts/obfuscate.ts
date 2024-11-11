@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+
 import JavaScriptObfuscator from 'javascript-obfuscator';
 
 const obfuscateTargets = [
@@ -59,7 +60,10 @@ const obfuscateDir = (dir: string) => {
 
     if (stat.isDirectory()) {
       obfuscateDir(filePath);
-    } else if (path.extname(file) === '.js' && shouldObfuscate(`/app/${filePath}`)) {
+    } else if (
+      path.extname(file) === '.js' &&
+      shouldObfuscate(`/app/${filePath}`)
+    ) {
       obfuscate(filePath);
     }
   }
@@ -69,7 +73,7 @@ const obfuscateDir = (dir: string) => {
 const shouldObfuscate = (filePath: string): boolean => {
   return obfuscateTargets.some((target) => {
     return filePath.startsWith(path.resolve(target));
-});
+  });
 };
 
 // Obfuscate only files in the specified folders or paths

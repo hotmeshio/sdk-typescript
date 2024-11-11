@@ -1,15 +1,19 @@
 import { KeyStoreParams, KeyType } from '../../modules/key';
 import { ILogger } from '../logger';
 import { SubscriptionCallback } from '../../types/quorum';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
-abstract class SubService<Client, MultiClient> {
-  protected eventClient: Client;
-  protected storeClient: Client;
+abstract class SubService<
+  ClientProvider extends ProviderClient,
+  TransactionProvider extends ProviderTransaction,
+> {
+  protected eventClient: ClientProvider;
+  protected storeClient: ProviderClient;
   protected namespace: string;
   protected logger: ILogger;
   protected appId: string;
 
-  constructor(eventClient: Client, storeClient: Client) {
+  constructor(eventClient: ClientProvider, storeClient: ProviderClient) {
     this.eventClient = eventClient;
     this.storeClient = storeClient;
   }
@@ -21,7 +25,7 @@ abstract class SubService<Client, MultiClient> {
     logger: ILogger,
   ): Promise<void>;
 
-  abstract getMulti(): MultiClient;
+  abstract transact(): TransactionProvider;
 
   abstract mintKey(type: KeyType, params: KeyStoreParams): string;
 
@@ -55,7 +59,7 @@ abstract class SubService<Client, MultiClient> {
     keyType: KeyType,
     message: Record<string, any>,
     appId: string,
-    engineId?: string
+    engineId?: string,
   ): Promise<boolean>;
 }
 

@@ -1,5 +1,3 @@
-import * as Redis from 'redis';
-
 import { MeshData } from '../meshdata/index';
 import { arrayToHash, guid } from '../../modules/utils';
 import * as Types from '../../types';
@@ -21,11 +19,11 @@ import { LoggerService } from '../logger';
  *
  * Standard CRUD methods are included and use your provided schema to
  * fields to return in the response: create, retrieve, update, delete.
- * 
+ *
  * Search methods are included and use your provided schema to
  * fields to return in the response: count, find, aggregate.
- * 
- * Implement other methods as needed for the entity's 
+ *
+ * Implement other methods as needed for the entity's
  * functionality; For example, subclass/override methods like `create`
  * to also spawn a transactional workflow
  *
@@ -37,12 +35,12 @@ import { LoggerService } from '../logger';
  * import * as workflows from './workflows';
  *
  * class Widget extends MeshOS {
- *   
+ *
  *   //Return the function version/priority
  *   getTaskQueue(): string {
  *     return 'v1';
  *   }
- * 
+ *
  *   // Return the entity name
  *   getEntity(): string {
  *     return 'widget';
@@ -134,9 +132,9 @@ import { LoggerService } from '../logger';
  * };
  * ```
  *
- * In your entity class (`Widget`), you use this schema in the 
+ * In your entity class (`Widget`), you use this schema in the
  * `getSearchOptions` method to define how your entity's data
- * is indexed and searched within the mesh network.
+ * is indexed and searched.
  */
 abstract class MeshOS {
   meshData: MeshData;
@@ -154,13 +152,14 @@ abstract class MeshOS {
   static logger: Types.ILogger = new LoggerService('hotmesh', 'meshos');
 
   constructor(
+    providerClass: Types.ProviderClass,
     namespace: string,
     namespaceType: string,
-    config: Types.DBConfig,
+    config: Types.ProviderConfig,
   ) {
     this.namespace = namespace; // e.g., 's'
     this.namespaceType = namespaceType; // e.g., 'fuzzy' (friendly name in case namespace is abbreviated)
-    this.meshData = this.initializeMeshData(config);
+    this.meshData = this.initializeMeshData(providerClass, config);
   }
 
   // Abstract methods to be implemented by child classes
@@ -172,12 +171,11 @@ abstract class MeshOS {
    * Initialize MeshData instance (this backs/supports the class
    * --the true provider of functionality)
    */
-  private initializeMeshData(dbConfig: Types.DBConfig): MeshData {
-    return new MeshData(
-      Redis,
-      this.getRedisUrl(dbConfig),
-      this.getSearchOptions(),
-    );
+  private initializeMeshData(
+    providerClass: Types.ProviderClass,
+    providerConfig: Types.ProviderConfig,
+  ): MeshData {
+    return new MeshData(providerClass, providerConfig, this.getSearchOptions());
   }
 
   /**
@@ -193,12 +191,6 @@ abstract class MeshOS {
   getNamespace(): string {
     return this.namespace;
   }
-
-  getRedisUrl = (config: Types.DBConfig) => {
-    return {
-      url: `redis${config.REDIS_USE_TLS ? 's' : ''}://${config.REDIS_USERNAME ?? ''}:${config.REDIS_PASSWORD}@${config.REDIS_HOST}:${config.REDIS_PORT}`,
-    };
-  };
 
   /**
    * Connect to the database
@@ -544,7 +536,7 @@ abstract class MeshOS {
   static async init(p = MeshOS.profiles): Promise<void> {
     for (const key in p) {
       const profile = p[key];
-      if (profile.db.config.REDIS_HOST) {
+      if (profile.db?.connection?.options) {
         this.logger.info(`meshos-initializing`, {
           db: profile.db.name,
           key,
@@ -569,9 +561,10 @@ abstract class MeshOS {
             });
 
             const instance = pinstances[entity.name] = new entity.class(
+              profile.db.connection.class,
               ns,
               namespace.type,
-              profile.db.config,
+              profile.db.connection.options,
             );
             await instance.init(profile.db.search);
           }
@@ -588,13 +581,9 @@ abstract class MeshOS {
     namespace: string,
     entity: string,
   ): Types.EntityInstanceTypes | undefined {
-    if (
-      !database ||
-      !MeshOS.profiles[database] ||
-      !MeshOS.profiles[database]?.db?.config?.REDIS_HOST
-    ) {
+    if (!database || !MeshOS.profiles[database]) {
       const activeProfiles = Object.keys(MeshOS.profiles).filter(
-        (key) => MeshOS.profiles[key]?.db?.config?.REDIS_HOST,
+        (key) => MeshOS.profiles[key]?.db?.connection,
       );
       throw new Error(
         `The database query parameter [${database}] was not found. Use one of: ${activeProfiles.join(', ')}`,
@@ -642,13 +631,9 @@ abstract class MeshOS {
     database: string,
     ns: string,
   ): Record<string, Types.WorkflowSearchSchema> {
-    if (
-      !database ||
-      !MeshOS.profiles[database] ||
-      !MeshOS.profiles[database]?.db?.config?.REDIS_HOST
-    ) {
+    if (!database || !MeshOS.profiles[database]) {
       const activeProfiles = Object.keys(MeshOS.profiles).filter(
-        (key) => MeshOS.profiles[key]?.db?.config?.REDIS_HOST,
+        (key) => MeshOS.profiles[key]?.db?.connection,
       );
       throw new Error(
         `The database query parameter [${database}] was not found. Use one of: ${activeProfiles.join(', ')}`,
@@ -672,7 +657,7 @@ abstract class MeshOS {
     const result: any = {};
     for (const key in p) {
       const profile = p[key];
-      if (!profile.db.config.REDIS_HOST) {
+      if (!profile.db.connection) {
         continue;
       } else {
         result[key] = {

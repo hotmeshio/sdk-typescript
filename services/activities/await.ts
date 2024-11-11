@@ -15,8 +15,11 @@ import {
   AwaitActivity,
   ActivityType,
 } from '../../types/activity';
+import {
+  ProviderTransaction,
+  TransactionResultList,
+} from '../../types/provider';
 import { JobState } from '../../types/job';
-import { MultiResponseFlags, RedisMulti } from '../../types/redis';
 import { StreamData, StreamDataType } from '../../types/stream';
 
 import { Activity } from './activity';
@@ -56,13 +59,13 @@ class Await extends Activity {
       this.mapInputData();
 
       //save state and authorize reentry
-      const multi = this.store.getMulti();
+      const transaction = this.store.transact();
       //todo: await this.registerTimeout();
-      const messageId = await this.execActivity(multi);
-      await CollatorService.authorizeReentry(this, multi);
-      await this.setState(multi);
-      await this.setStatus(0, multi);
-      const multiResponse = (await multi.exec()) as MultiResponseFlags;
+      const messageId = await this.execActivity(transaction);
+      await CollatorService.authorizeReentry(this, transaction);
+      await this.setState(transaction);
+      await this.setStatus(0, transaction);
+      const multiResponse = (await transaction.exec()) as TransactionResultList;
 
       //telemetry
       telemetry.mapActivityAttributes();
@@ -107,7 +110,7 @@ class Await extends Activity {
     }
   }
 
-  async execActivity(multi: RedisMulti): Promise<string> {
+  async execActivity(transaction: ProviderTransaction): Promise<string> {
     const topic = Pipe.resolve(this.config.subtype, this.context);
     const streamData: StreamData = {
       metadata: {
@@ -137,7 +140,7 @@ class Await extends Activity {
     return (await this.engine.router?.publishMessage(
       null,
       streamData,
-      multi,
+      transaction,
     )) as string;
   }
 }

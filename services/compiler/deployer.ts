@@ -6,12 +6,12 @@ import { StoreService } from '../store';
 import { ActivityType } from '../../types/activity';
 import { HookRule } from '../../types/hook';
 import { HotMeshGraph, HotMeshManifest } from '../../types/hotmesh';
-import { RedisClient, RedisMulti } from '../../types/redis';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import { StringAnyType, Symbols } from '../../types/serializer';
 import { Pipe } from '../pipe';
+import { StreamService } from '../stream';
 
 import { Validator } from './validator';
-import { StreamService } from '../stream';
 
 const DEFAULT_METADATA_RANGE_SIZE = 26; //metadata is 26 slots ([a-z] * 1)
 const DEFAULT_DATA_RANGE_SIZE = 260; //data is 260 slots ([a-zA-Z] * 5)
@@ -20,14 +20,17 @@ const DEFAULT_RANGE_SIZE =
 
 class Deployer {
   manifest: HotMeshManifest | null = null;
-  store: StoreService<RedisClient, RedisMulti> | null;
-  stream: StreamService<RedisClient, RedisMulti> | null;
+  store: StoreService<ProviderClient, ProviderTransaction> | null;
+  stream: StreamService<ProviderClient, ProviderTransaction> | null;
 
   constructor(manifest: HotMeshManifest) {
     this.manifest = manifest;
   }
 
-  async deploy(store: StoreService<RedisClient, RedisMulti>, stream: StreamService<RedisClient, RedisMulti>) {
+  async deploy(
+    store: StoreService<ProviderClient, ProviderTransaction>,
+    stream: StreamService<ProviderClient, ProviderTransaction>,
+  ) {
     this.store = store;
     this.stream = stream;
     CollatorService.compile(this.manifest.app.graphs);

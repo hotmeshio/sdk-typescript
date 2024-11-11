@@ -3,7 +3,7 @@ import Redis from 'ioredis';
 import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid, s, sleepFor } from '../../../modules/utils';
 import { APP_VERSION } from '../../../services/meshflow/schemas/factory';
 

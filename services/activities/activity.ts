@@ -27,8 +27,12 @@ import {
   ActivityType,
   Consumes,
 } from '../../types/activity';
+import {
+  ProviderClient,
+  ProviderTransaction,
+  TransactionResultList,
+} from '../../types/provider';
 import { JobState, JobStatus } from '../../types/job';
-import { MultiResponseFlags, RedisClient, RedisMulti } from '../../types/redis';
 import { StringAnyType, StringScalarType } from '../../types/serializer';
 import {
   StreamCode,
@@ -46,7 +50,7 @@ class Activity {
   data: ActivityData;
   hook: ActivityData;
   metadata: ActivityMetadata;
-  store: StoreService<RedisClient, RedisMulti>;
+  store: StoreService<ProviderClient, ProviderTransaction>;
   context: JobState;
   engine: EngineService;
   logger: ILogger;
@@ -177,7 +181,7 @@ class Activity {
         this.context,
       );
       telemetry.startActivitySpan(this.leg);
-      let multiResponse: MultiResponseFlags;
+      let multiResponse: TransactionResultList;
 
       if (status === StreamStatus.PENDING) {
         multiResponse = await this.processPending(type);
@@ -215,47 +219,51 @@ class Activity {
     }
   }
 
-  async processPending(type: 'hook' | 'output'): Promise<MultiResponseFlags> {
+  async processPending(
+    type: 'hook' | 'output',
+  ): Promise<TransactionResultList> {
     this.bindActivityData(type);
     this.adjacencyList = await this.filterAdjacent();
     this.mapJobData();
-    const multi = this.store.getMulti();
-    await this.setState(multi);
-    await CollatorService.notarizeContinuation(this, multi);
+    const transaction = this.store.transact();
+    await this.setState(transaction);
+    await CollatorService.notarizeContinuation(this, transaction);
 
-    await this.setStatus(this.adjacencyList.length, multi);
-    return (await multi.exec()) as MultiResponseFlags;
+    await this.setStatus(this.adjacencyList.length, transaction);
+    return (await transaction.exec()) as TransactionResultList;
   }
 
-  async processSuccess(type: 'hook' | 'output'): Promise<MultiResponseFlags> {
+  async processSuccess(
+    type: 'hook' | 'output',
+  ): Promise<TransactionResultList> {
     this.bindActivityData(type);
     this.adjacencyList = await this.filterAdjacent();
     this.mapJobData();
-    const multi = this.store.getMulti();
-    await this.setState(multi);
-    await CollatorService.notarizeCompletion(this, multi);
+    const transaction = this.store.transact();
+    await this.setState(transaction);
+    await CollatorService.notarizeCompletion(this, transaction);
 
-    await this.setStatus(this.adjacencyList.length - 1, multi);
-    return (await multi.exec()) as MultiResponseFlags;
+    await this.setStatus(this.adjacencyList.length - 1, transaction);
+    return (await transaction.exec()) as TransactionResultList;
   }
 
-  async processError(): Promise<MultiResponseFlags> {
+  async processError(): Promise<TransactionResultList> {
     this.bindActivityError(this.data);
     this.adjacencyList = await this.filterAdjacent();
     if (!this.adjacencyList.length) {
       this.bindJobError(this.data);
     }
     this.mapJobData();
-    const multi = this.store.getMulti();
-    await this.setState(multi);
-    await CollatorService.notarizeCompletion(this, multi);
+    const transaction = this.store.transact();
+    await this.setState(transaction);
+    await CollatorService.notarizeCompletion(this, transaction);
 
-    await this.setStatus(this.adjacencyList.length - 1, multi);
-    return (await multi.exec()) as MultiResponseFlags;
+    await this.setStatus(this.adjacencyList.length - 1, transaction);
+    return (await transaction.exec()) as TransactionResultList;
   }
 
   async transitionAdjacent(
-    multiResponse: MultiResponseFlags,
+    multiResponse: TransactionResultList,
     telemetry: TelemetryService,
   ): Promise<void> {
     telemetry.mapActivityAttributes();
@@ -269,7 +277,7 @@ class Activity {
     telemetry.setActivityAttributes(attrs);
   }
 
-  resolveStatus(multiResponse: MultiResponseFlags): number {
+  resolveStatus(multiResponse: TransactionResultList): number {
     const activityStatus = multiResponse[multiResponse.length - 1];
     if (Array.isArray(activityStatus)) {
       return Number(activityStatus[1]);
@@ -371,13 +379,16 @@ class Activity {
     return null;
   }
 
-  async setStatus(amount: number, multi?: RedisMulti): Promise<void | any> {
+  async setStatus(
+    amount: number,
+    transaction?: ProviderTransaction,
+  ): Promise<void | any> {
     const { id: appId } = await this.engine.getVID();
     return await this.store.setStatus(
       amount,
       this.context.metadata.jid,
       appId,
-      multi,
+      transaction,
     );
   }
 
@@ -399,7 +410,7 @@ class Activity {
     state[`${this.metadata.aid}/output/metadata/dad`] = dad;
   }
 
-  async setState(multi?: RedisMulti): Promise<string> {
+  async setState(transaction?: ProviderTransaction): Promise<string> {
     const jobId = this.context.metadata.jid;
     this.bindJobMetadata();
     this.bindActivityMetadata();
@@ -424,7 +435,7 @@ class Activity {
       jobId,
       symbolNames,
       dIds,
-      multi,
+      transaction,
     );
   }
 
@@ -699,11 +710,11 @@ class Activity {
       });
     }
     if (adjacencyList.length && !this.isJobComplete(jobStatus)) {
-      const multi = this.store.getMulti();
+      const transaction = this.store.transact();
       for (const execSignal of adjacencyList) {
-        await this.engine.router?.publishMessage(null, execSignal, multi);
+        await this.engine.router?.publishMessage(null, execSignal, transaction);
       }
-      mIds = (await multi.exec()) as string[];
+      mIds = (await transaction.exec()) as string[];
     }
     return mIds;
   }

@@ -3,7 +3,7 @@ import Redis from 'ioredis';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { guid } from '../../../modules/utils';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import {
   StreamData,
   StreamDataResponse,

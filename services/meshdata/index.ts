@@ -1,4 +1,4 @@
-import { s } from '../../modules/utils';
+import { polyfill, s } from '../../modules/utils';
 import { MeshFlow } from '../meshflow';
 import { HotMesh } from '../hotmesh';
 import {
@@ -17,7 +17,6 @@ import {
   ExecInput,
   HookInput,
 } from '../../types/meshdata';
-import { RedisClass, RedisOptions } from '../../types/redis';
 import { StringAnyType, StringStringType } from '../../types/serializer';
 import { JobInterruptOptions, JobOutput } from '../../types/job';
 import { KeyType } from '../../types/hotmesh';
@@ -31,22 +30,25 @@ import {
 } from '../../types/quorum';
 import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
 import { MAX_DELAY } from '../../modules/enums';
+import { ProviderConfig } from '../../types';
+import { ProviderClass, ProviderOptions } from '../../types/provider';
 
 /**
  * The `MeshData` service wraps the `MeshFlow` service.
  * It serves to unify both data record concepts and
  * transactional workflow principles into a single
- * *Operational Data Layer*. Deployments with
- * the Redis FT.SEARCH module enabled can deliver
+ * *Operational Data Layer*. Deployments with a 'search'
+ * provider configured (e.g.,Redis FT.SEARCH) can deliver
  * both OLTP (transactions) and OLAP (analytics)
  * with no additional infrastructure.
  *
  * The following example depicts the full end-to-end
  * lifecycle of a `MeshData` app, including the
  * connection of a worker function, the execution of
- * a remote function, the retrieval of data from Redis,
+ * a remote function, the retrieval of data,
  * the creation of a search index, and the execution
  * of a full-text search query.
+ *
  * @example
  * ```typescript
  * import { MeshData, Types } from '@hotmeshio/hotmesh';
@@ -98,7 +100,7 @@ import { MAX_DELAY } from '../../modules/enums';
  *   },
  * });
  *
- * //5) Read data (by field name) directly from Redis
+ * //5) Read data by field name
  * const data = await meshData.get(
  *   'user',
  *   userID,
@@ -125,16 +127,19 @@ import { MAX_DELAY } from '../../modules/enums';
  */
 class MeshData {
   /**
+   * unused; allows wrapped functions to be stringified
+   * so their source can be shared on the network for
+   * remote analysis. this is useful for targeting which
+   * version of a function is being executed.
    * @private
    */
   connectionSignatures: StringStringType = {};
 
   /**
-   * The Redis connection options. NOTE: Redis and IORedis
-   * use different formats for their connection config.
+   * The provider configuration for the MeshData service.
    * @private
    * @example
-   * // Instantiate MeshData with `ioredis`
+   * // Example 1) Instantiate MeshData with `ioredis`
    * import Redis from 'ioredis';
    *
    * const meshData = new MeshData(Redis, {
@@ -144,21 +149,14 @@ class MeshData {
    *   db: 0,
    * });
    *
-   * // Instantiate MeshData with `redis`
+   * // Example 2) Instantiate MeshData with `redis`
    * import * as Redis from 'redis';
    *
-   * const meshData = new MeshData(Redis, { url: 'redis://:shhh123@localhost:6379' });
+   * const meshData = new MeshData(Redis, {
+   *   url: 'redis://:shhh123@localhost:6379'
+   * });
    */
-  redisOptions: RedisOptions;
-
-  /**
-   * The Redis connection class.
-   * @private
-   * @example
-   * import Redis from 'ioredis';
-   * import * as Redis from 'redis';
-   */
-  redisClass: RedisClass;
+  connection: Partial<ProviderConfig> = {};
 
   /**
    * Cached local instances (map) of HotMesh organized by namespace
@@ -167,7 +165,7 @@ class MeshData {
   instances: Map<string, Promise<HotMesh> | HotMesh> = new Map();
 
   /**
-   * Redis FT search configuration (indexed/searchable fields and types)
+   * Search backend configuration (indexed/searchable fields and types)
    */
   search: WorkflowSearchOptions;
 
@@ -267,11 +265,11 @@ class MeshData {
 
   /**
    *
-   * @param {RedisClass} redisClass - the Redis class/import (e.g, `ioredis`, `redis`)
-   * @param {StringAnyType} redisOptions - the Redis connection options. These are specific to the package (refer to their docs!). Each uses different property names and structures.
-   * @param {WorkflowSearchOptions} search - the Redis search options for JSON-based configuration of the Redis FT.Search module index
+   * @param {ProviderClass} providerClass - the class/import (e.g, `ioredis`, `redis`, `postgres`, etc)
+   * @param {ProviderOptions} providerOptions - the provider connection options. These are specific to the package (refer to their docs!). Each uses different property names and structures to connect.
+   * @param {WorkflowSearchOptions} search - the search options for JSON-based configuration of the backend search module (e.g., Redis FT.Search)
    * @example
-   * // Instantiate MeshData with `ioredis`
+   * // Example 1) Instantiate MeshData with `ioredis`
    * import Redis from 'ioredis';
    *
    * const meshData = new MeshData(Redis, {
@@ -281,18 +279,23 @@ class MeshData {
    *   db: 0,
    * });
    *
-   * // Instantiate MeshData with `redis`
+   * // Example 2) Instantiate MeshData with `redis`
    * import * as Redis from 'redis';
    *
-   * const meshData = new MeshData(Redis, { url: 'redis://:shhh123@localhost:6379' });
+   * const meshData = new MeshData(Redis, {
+   *  url: 'redis://:shhh123@localhost:6379'
+   * });
+   *
+   * // Instantiate MeshData with `postgres`
+   * //...
    */
   constructor(
-    redisClass: Partial<RedisClass>,
-    redisOptions: Partial<RedisOptions>,
+    providerClass: ProviderClass,
+    providerOptions: StringAnyType,
     search?: WorkflowSearchOptions,
   ) {
-    this.redisClass = redisClass as RedisClass;
-    this.redisOptions = redisOptions as RedisOptions;
+    this.connection.class = providerClass;
+    this.connection.options = providerOptions;
     if (search) {
       this.search = search;
     }
@@ -311,10 +314,9 @@ class MeshData {
    * @private
    */
   async getConnection() {
-    return await MeshFlow.Connection.connect({
-      class: this.redisClass,
-      options: this.redisOptions,
-    });
+    return await MeshFlow.Connection.connect(
+      polyfill.meshDataConfig(this) as ProviderConfig,
+    );
   }
 
   /**
@@ -323,10 +325,7 @@ class MeshData {
    */
   getClient() {
     return new MeshFlow.Client({
-      connection: {
-        class: this.redisClass,
-        options: this.redisOptions,
-      },
+      connection: polyfill.meshDataConfig(this) as ProviderConfig,
     });
   }
 
@@ -339,6 +338,8 @@ class MeshData {
 
   /**
    * @private
+   * todo: move to `utils` (might already be there);
+   * also might be better as specialized provider utils
    */
   arrayToHash(
     input: [number, ...Array<string | string[]>],
@@ -356,7 +357,7 @@ class MeshData {
           const fieldValue = fields[j + 1];
           hash[fieldKey] = fieldValue;
         }
-        //redis uses '$' as a special field for the key
+
         if (typeof hashId === 'string') {
           hash['$'] = hashId;
         }
@@ -370,7 +371,7 @@ class MeshData {
    * serialize using the HotMesh `toString` format
    * @private
    */
-  toString(value: any): string | undefined {
+  toString(value: unknown): string | undefined {
     switch (typeof value) {
       case 'string':
         break;
@@ -390,7 +391,7 @@ class MeshData {
         }
         break;
     }
-    return value;
+    return value as string;
   }
 
   /**
@@ -425,10 +426,7 @@ class MeshData {
       hotMesh = HotMesh.init({
         appId: namespace,
         engine: {
-          redis: {
-            class: this.redisClass,
-            options: this.redisOptions,
-          },
+          connection: polyfill.meshDataConfig(this) as ProviderConfig,
         },
       });
       this.instances.set(namespace, hotMesh);
@@ -439,7 +437,7 @@ class MeshData {
   }
 
   /**
-   * Returns the Redis HASH key given an `entity` name and workflow/job. The
+   * Returns the HASH key given an `entity` name and workflow/job. The
    * item identified by this key is a HASH record with multidimensional process
    * data interleaved with the function state data.
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
@@ -791,7 +789,7 @@ class MeshData {
    * // Signal a function with a payload
    * await meshData.signal('signal123', { message: 'hi!' });
    *
-   * // returns '123456732345-0' (redis stream message receipt)
+   * // returns '123456732345-0' (stream message receipt)
    */
   async signal(
     guid: string,
@@ -939,7 +937,6 @@ class MeshData {
         }
         if (optionsClone.ttl === 'infinity') {
           delete optionsClone.ttl;
-          //max expire seconds in Redis (68 years)
           seconds = MAX_DELAY;
         } else {
           seconds = s(optionsClone.ttl);
@@ -1161,8 +1158,7 @@ class MeshData {
   }
 
   /**
-   * Returns all fields in the HASH record from Redis (HGETALL). Record
-   * fields include the following:
+   * Returns all fields in the HASH record:
    *
    * 1) `:`:                 workflow status (a semaphore where `0` is complete)
    * 2) `_*`:                function state (name/value pairs are prefixed with `_`)
@@ -1305,10 +1301,8 @@ class MeshData {
   }
 
   /**
-   * For those Redis implementations without the FT module, this quasi-equivalent
-   * method is provided that uses SCAN along with a custom match
-   * string to view jobs. A cursor is likewise provided in support
-   * of rudimentary pagination.
+   * For those implementations without a search backend, this quasi-equivalent
+   * method is provided with a cursor for rudimentary pagination.
    * @param {FindJobsOptions} [options]
    * @returns {Promise<[string, string[]]>}
    * @example
@@ -1328,7 +1322,7 @@ class MeshData {
   }
 
   /**
-   * Executes the redis FT search query; optionally specify other commands
+   * Executes the search query; optionally specify other commands
    * @example '@_quantity:[89 89]'
    * @example '@_quantity:[89 89] @_name:"John"'
    * @example 'FT.search my-index @_quantity:[89 89]'
@@ -1351,12 +1345,12 @@ class MeshData {
   }
 
   /**
-   * Provides a JSON abstraction for the Redis FT.search command
+   * Provides a JSON abstraction for the backend search engine
    * (e.g, `count`, `query`, `return`, `limit`)
    * NOTE: If the type is TAG for an entity, `.`, `@`, and `-` must be escaped.
    *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
-   * @param {FindWhereOptions} options - find options (the query). A custom search schema may be provided to target any index on the Redis backend.
+   * @param {FindWhereOptions} options - find options (the query). A custom search schema may be provided.
    * @returns {Promise<SearchResults | number>} Returns a number if `count` is true, otherwise a SearchResults object.
    * @example
    * const results = await meshData.findWhere('greeting', {
@@ -1480,8 +1474,7 @@ class MeshData {
   }
 
   /**
-   * Creates a search index for the specified entity (FT.search). The index
-   * must be removed by calling `FT.DROP_INDEX` directly in Redis.
+   * Creates a search index for the specified search backend (e.g., FT.search).
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {CallOptions} [options={}] - call options
    * @param {WorkflowSearchOptions} [searchOptions] - search options
@@ -1511,7 +1504,7 @@ class MeshData {
 
   /**
    * Lists all search indexes in the operational data layer when the
-   * targeted Redis backend supports the FT module.
+   * targeted search backend is configured/enabled.
    * @returns {Promise<string[]>}
    * @example
    * // list all search indexes

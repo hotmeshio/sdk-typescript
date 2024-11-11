@@ -1,10 +1,7 @@
-import { identifyRedisType } from '../../modules/utils';
-import {
-  RedisClient,
-  RedisRedisClientType,
-  IORedisClientType,
-} from '../../types/redis';
+import { identifyProvider } from '../../modules/utils';
+import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
+import { ProviderClient } from '../../types/provider';
 
 import { IORedisSearchService } from './providers/redis/ioredis';
 import { RedisSearchService } from './providers/redis/redis';
@@ -13,14 +10,14 @@ import { SearchService } from './index';
 
 class SearchServiceFactory {
   static async init(
-    redisClient: RedisClient,
-    redisStoreClient: RedisClient | undefined,
+    redisClient: ProviderClient,
+    redisStoreClient: ProviderClient | undefined,
     namespace: string,
     appId: string,
     logger: ILogger,
-  ): Promise<SearchService<any>> {
-    let service: SearchService<any>;
-    if (identifyRedisType(redisClient) === 'redis') {
+  ): Promise<SearchService<ProviderClient>> {
+    let service: SearchService<ProviderClient>;
+    if (identifyProvider(redisClient) === 'redis') {
       service = new RedisSearchService(
         redisClient as RedisRedisClientType,
         redisStoreClient as RedisRedisClientType,

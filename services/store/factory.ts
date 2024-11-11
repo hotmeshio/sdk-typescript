@@ -1,25 +1,26 @@
-import { identifyRedisType } from '../../modules/utils';
-import {
-  RedisClient,
-  RedisRedisClientType,
-  IORedisClientType,
-} from '../../types/redis';
+import { identifyProvider } from '../../modules/utils';
+import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
 import { IORedisStoreService } from './providers/redis/ioredis';
 import { RedisStoreService } from './providers/redis/redis';
-import { StoreService } from './index';
 import { StoreInitializable } from './providers/store-initializable';
+
+import { StoreService } from './index';
 
 class StoreServiceFactory {
   static async init(
-    redisClient: RedisClient,
+    redisClient: ProviderClient,
     namespace: string,
     appId: string,
-    logger: ILogger
-  ): Promise<StoreService<any, any> & StoreInitializable> {
-    let service: StoreService<any, any> & StoreInitializable;
-    if (identifyRedisType(redisClient) === 'redis') {
+    logger: ILogger,
+  ): Promise<
+    StoreService<ProviderClient, ProviderTransaction> & StoreInitializable
+  > {
+    let service: StoreService<ProviderClient, ProviderTransaction> &
+      StoreInitializable;
+    if (identifyProvider(redisClient) === 'redis') {
       service = new RedisStoreService(redisClient as RedisRedisClientType);
     } else {
       service = new IORedisStoreService(redisClient as IORedisClientType);

@@ -11,7 +11,7 @@ import {
   formatISODate,
   getSubscriptionTopic,
   guid,
-  identifyRedisType,
+  identifyProvider,
   polyfill,
   restoreHierarchy,
   sleepFor,
@@ -30,9 +30,14 @@ import { ILogger } from '../logger';
 import { ReporterService } from '../reporter';
 import { Router } from '../router';
 import { SerializerService } from '../serializer';
+import { SearchService } from '../search';
+import { SearchServiceFactory } from '../search/factory';
 import { StoreService } from '../store';
+import { StoreServiceFactory } from '../store/factory';
 import { StreamService } from '../stream';
+import { StreamServiceFactory } from '../stream/factory';
 import { SubService } from '../sub';
+import { SubServiceFactory } from '../sub/factory';
 import { TaskService } from '../task';
 import { AppVID } from '../../types/app';
 import { ActivityMetadata, ActivityType, Consumes } from '../../types/activity';
@@ -55,12 +60,12 @@ import {
   HotMeshManifest,
   HotMeshSettings,
 } from '../../types/hotmesh';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import {
   JobMessage,
   JobMessageCallback,
   SubscriptionCallback,
 } from '../../types/quorum';
-import { RedisClient, RedisMulti } from '../../types/redis';
 import { StringAnyType, StringStringType } from '../../types/serializer';
 import {
   GetStatsOptions,
@@ -78,11 +83,6 @@ import {
   StreamStatus,
 } from '../../types/stream';
 import { WorkListTaskType } from '../../types/task';
-import { StreamServiceFactory } from '../stream/factory';
-import { SubServiceFactory } from '../sub/factory';
-import { StoreServiceFactory } from '../store/factory';
-import { SearchService } from '../search';
-import { SearchServiceFactory } from '../search/factory';
 
 class EngineService {
   namespace: string;
@@ -90,11 +90,11 @@ class EngineService {
   appId: string;
   guid: string;
   exporter: ExporterService | null;
-  router: Router | null;
-  search: SearchService<RedisClient> | null;
-  store: StoreService<RedisClient, RedisMulti> | null;
-  stream: StreamService<RedisClient, RedisMulti> | null;
-  subscribe: SubService<RedisClient, RedisMulti> | null;
+  search: SearchService<ProviderClient> | null;
+  store: StoreService<ProviderClient, ProviderTransaction> | null;
+  stream: StreamService<ProviderClient, ProviderTransaction> | null;
+  subscribe: SubService<ProviderClient, ProviderTransaction> | null;
+  router: Router<typeof this.stream> | null;
   taskService: TaskService | null;
   logger: ILogger;
   cacheMode: CacheMode = 'cache';
@@ -131,10 +131,15 @@ class EngineService {
       await instance.initSearchChannel(config.engine.store);
       await instance.initStoreChannel(config.engine.store);
       await instance.initSubChannel(config.engine.sub, config.engine.store);
-      await instance.initStreamChannel(config.engine.stream, config.engine.store);
+      await instance.initStreamChannel(
+        config.engine.stream,
+        config.engine.store,
+      );
 
       instance.router = await instance.initRouter(config);
-      const streamName = instance.store.mintKey(KeyType.STREAMS, { appId: instance.appId });
+      const streamName = instance.store.mintKey(KeyType.STREAMS, {
+        appId: instance.appId,
+      });
       instance.router.consumeMessages(
         streamName,
         'ENGINE',
@@ -158,18 +163,20 @@ class EngineService {
    */
   verifyEngineFields(config: HotMeshConfig) {
     if (
-      !identifyRedisType(config.engine.store) ||
-      !identifyRedisType(config.engine.stream) ||
-      !identifyRedisType(config.engine.sub)
+      !identifyProvider(config.engine.store) ||
+      !identifyProvider(config.engine.stream) ||
+      !identifyProvider(config.engine.sub)
     ) {
-      throw new Error('engine config must reference 3 redis client instances');
+      throw new Error(
+        'engine must include `store`, `stream`, and `sub` fields.',
+      );
     }
   }
 
   /**
    * @private
    */
-  async initSearchChannel(search: RedisClient, store?: RedisClient) {
+  async initSearchChannel(search: ProviderClient, store?: ProviderClient) {
     this.search = await SearchServiceFactory.init(
       search,
       store,
@@ -182,7 +189,7 @@ class EngineService {
   /**
    * @private
    */
-  async initStoreChannel(store: RedisClient) {
+  async initStoreChannel(store: ProviderClient) {
     this.store = await StoreServiceFactory.init(
       store,
       this.namespace,
@@ -194,7 +201,7 @@ class EngineService {
   /**
    * @private
    */
-  async initSubChannel(sub: RedisClient, store: RedisClient) {
+  async initSubChannel(sub: ProviderClient, store: ProviderClient) {
     this.subscribe = await SubServiceFactory.init(
       sub,
       store,
@@ -208,7 +215,7 @@ class EngineService {
   /**
    * @private
    */
-  async initStreamChannel(stream: RedisClient, store: RedisClient) {
+  async initStreamChannel(stream: ProviderClient, store: ProviderClient) {
     this.stream = await StreamServiceFactory.init(
       stream,
       store,
@@ -221,7 +228,9 @@ class EngineService {
   /**
    * @private
    */
-  async initRouter(config: HotMeshConfig): Promise<Router> {
+  async initRouter(
+    config: HotMeshConfig,
+  ): Promise<Router<StreamService<ProviderClient, ProviderTransaction>>> {
     const throttle = await this.store.getThrottleRate(':');
 
     return new Router(
@@ -236,7 +245,6 @@ class EngineService {
         readonly: config.engine.readonly,
       },
       this.stream,
-      this.store,
       this.logger,
     );
   }
@@ -330,7 +338,7 @@ class EngineService {
    */
   async throttle(delayInMillis: number) {
     try {
-      this.router.setThrottle(delayInMillis);
+      this.router?.setThrottle(delayInMillis);
     } catch (e) {
       this.logger.error('engine-throttle-error', { error: e });
     }
@@ -691,7 +699,7 @@ class EngineService {
       },
       data,
     };
-    return (await this.router.publishMessage(null, streamData)) as string;
+    return (await this.router?.publishMessage(null, streamData)) as string;
   }
   /**
    * @private
@@ -721,7 +729,7 @@ class EngineService {
       },
       data: { timestamp: Date.now() },
     };
-    await this.router.publishMessage(null, streamData);
+    await this.router?.publishMessage(null, streamData);
   }
   /**
    * @private
@@ -925,7 +933,7 @@ class EngineService {
    * @private
    */
   async add(streamData: StreamData | StreamDataResponse): Promise<string> {
-    return (await this.router.publishMessage(null, streamData)) as string;
+    return (await this.router?.publishMessage(null, streamData)) as string;
   }
 
   /**

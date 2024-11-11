@@ -1,37 +1,53 @@
-import { identifyRedisType } from '../../modules/utils';
-import {
-  RedisClient,
-  RedisRedisClientType,
-  IORedisClientType,
-} from '../../types/redis';
+import { identifyProvider } from '../../modules/utils';
+import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
+import { NatsClientType } from '../../types/nats';
 
 import { IORedisStreamService } from './providers/redis/ioredis';
 import { RedisStreamService } from './providers/redis/redis';
+import { StreamInitializable } from './providers/stream-initializable';
+import { NatsStreamService } from './providers/nats/nats';
 
 import { StreamService } from './index';
-import { StreamInitializable } from './providers/stream-initializable';
 
 class StreamServiceFactory {
   static async init(
-    redisClient: RedisClient,
-    redisStoreClient: RedisClient,
+    provider: ProviderClient,
+    storeProvider: ProviderClient,
     namespace: string,
     appId: string,
     logger: ILogger,
-  ): Promise<StreamService<any, any> & StreamInitializable<any, any>> {
-    let service: StreamService<any, any> & StreamInitializable<any, any>;
-    if (identifyRedisType(redisClient) === 'redis') {
+  ): Promise<
+    StreamService<ProviderClient, ProviderTransaction> & StreamInitializable
+  > {
+    let service: StreamService<ProviderClient, ProviderTransaction> &
+      StreamInitializable;
+    const providerType = identifyProvider(provider);
+    if (providerType === 'nats') {
+      let storeProvider: RedisRedisClientType | IORedisClientType;
+      if (identifyProvider(storeProvider) === 'redis') {
+        storeProvider = storeProvider as RedisRedisClientType;
+      } else {
+        //ioredis
+        storeProvider = storeProvider as IORedisClientType;
+      }
+      service = new NatsStreamService(
+        provider as NatsClientType,
+        storeProvider,
+      );
+    } else if (providerType === 'redis') {
       service = new RedisStreamService(
-        redisClient as RedisRedisClientType,
-        redisStoreClient as RedisRedisClientType,
+        provider as RedisRedisClientType,
+        storeProvider as RedisRedisClientType,
       );
     } else {
+      //ioredis
       service = new IORedisStreamService(
-        redisClient as IORedisClientType,
-        redisStoreClient as IORedisClientType,
+        provider as IORedisClientType,
+        storeProvider as IORedisClientType,
       );
-    }
+    } //etc
     await service.init(namespace, appId, logger);
     return service;
   }

@@ -26,18 +26,19 @@ import {
   WorkerOptions,
   WorkflowDataType,
 } from '../../types/meshflow';
-import { RedisClass, RedisOptions } from '../../types/redis';
 import {
   StreamData,
   StreamDataResponse,
   StreamStatus,
 } from '../../types/stream';
+import { ProviderConfig } from '../../types';
 
 import { Search } from './search';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 
 /**
- * The *Worker* service Registers worker functions and connects them to the mesh.
+ * The *Worker* service Registers worker functions and connects them to the mesh,
+ * using the target backend provider/s (Redis, Postgres, NATS, etc).
  *
  * @example
  * ```typescript
@@ -96,7 +97,7 @@ export class WorkerService {
       logLevel: options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
       engine: {
-        redis: { ...config?.connection },
+        connection: { ...config?.connection },
       },
     });
     WorkerService.instances.set(targetTopic, hotMeshClient);
@@ -248,10 +249,10 @@ export class WorkerService {
     config: WorkerConfig,
     activityTopic: string,
   ): Promise<HotMesh> {
-    const redisConfig = {
-      class: config.connection.class as RedisClass,
-      options: config.connection.options as RedisOptions,
-    };
+    const providerConfig = {
+      class: config.connection.class,
+      options: config.connection.options,
+    } as ProviderConfig;
     const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = hashOptions(config?.connection?.options);
     const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
@@ -259,11 +260,11 @@ export class WorkerService {
       guid: config.guid ? `${config.guid}XA` : undefined,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
-      engine: { redis: redisConfig },
+      engine: { connection: providerConfig },
       workers: [
         {
           topic: activityTopic,
-          redis: redisConfig,
+          connection: providerConfig,
           callback: this.wrapActivityFunctions().bind(this),
         },
       ],
@@ -350,9 +351,9 @@ export class WorkerService {
     workflowTopic: string,
     workflowFunction: Function,
   ): Promise<HotMesh> {
-    const redisConfig = {
-      class: config.connection.class as RedisClass,
-      options: config.connection.options as RedisOptions,
+    const providerConfig: ProviderConfig = {
+      class: config.connection.class,
+      options: config.connection.options,
     };
     const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = hashOptions(config?.connection?.options);
@@ -361,11 +362,11 @@ export class WorkerService {
       guid: config.guid,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
-      engine: { redis: redisConfig },
+      engine: { connection: providerConfig },
       workers: [
         {
           topic: workflowTopic,
-          redis: redisConfig,
+          connection: providerConfig,
           callback: this.wrapWorkflowFunction(
             workflowFunction,
             workflowTopic,

@@ -9,7 +9,7 @@ import {
   TransitionType,
   ExportFields,
 } from '../../types/exporter';
-import { RedisClient, RedisMulti } from '../../types/redis';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import {
   StringAnyType,
   StringStringType,
@@ -19,13 +19,13 @@ import {
 class ExporterService {
   appId: string;
   logger: ILogger;
-  store: StoreService<RedisClient, RedisMulti>;
+  store: StoreService<ProviderClient, ProviderTransaction>;
   symbols: Promise<Symbols> | Symbols;
   private static symbols: Map<string, Symbols> = new Map();
 
   constructor(
     appId: string,
-    store: StoreService<RedisClient, RedisMulti>,
+    store: StoreService<ProviderClient, ProviderTransaction>,
     logger: ILogger,
   ) {
     this.appId = appId;

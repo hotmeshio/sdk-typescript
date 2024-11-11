@@ -2,13 +2,13 @@ import { Pipe } from '../pipe';
 import { StoreService } from '../store';
 import { MappingStatements } from '../../types/map';
 import { HotMeshManifest } from '../../types/hotmesh';
-import { RedisClient, RedisMulti } from '../../types/redis';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
 class Validator {
   manifest: HotMeshManifest | null = null;
   activityIds: string[] = [];
   mappingStatements: MappingStatements = {};
-  store: StoreService<RedisClient, RedisMulti> | null = null;
+  store: StoreService<ProviderClient, ProviderTransaction> | null = null;
 
   static SYS_VARS = ['$app', '$self', '$graph', '$job'];
   static CONTEXT_VARS = [
@@ -26,7 +26,7 @@ class Validator {
   /**
    * validate the manifest file
    */
-  async validate(store: StoreService<RedisClient, RedisMulti>) {
+  async validate(store: StoreService<ProviderClient, ProviderTransaction>) {
     this.store = store;
     this.getMappingStatements();
     this.validateActivityIds();

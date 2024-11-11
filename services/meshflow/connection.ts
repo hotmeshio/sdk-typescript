@@ -1,4 +1,5 @@
-import { Connection, ConnectionConfig } from '../../types/meshflow';
+import { Connection } from '../../types/meshflow';
+import { ProviderConfig } from '../../types/provider';
 
 /**
  * The Connection service is used to declare the Redis class
@@ -15,7 +16,7 @@ export class ConnectionService {
   /**
    * Instance initializer
    */
-  static async connect(config: ConnectionConfig): Promise<Connection> {
+  static async connect(config: ProviderConfig): Promise<Connection> {
     return {
       class: config.class,
       options: { ...config.options },

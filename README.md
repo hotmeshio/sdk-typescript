@@ -24,7 +24,7 @@ You have a Redis instance? Good. You're ready to go.
 ## Learn
 [📄 Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 Sample Projects](https://github.com/hotmeshio/samples-typescript) | [🎥 Intro (3m)](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9) | [🎥 Transactional Workflow (9m)](https://www.loom.com/share/54ffd5266baf4ac6b287578abfd1d821?sid=0db2cef8-ef0d-4e02-a0b7-a1ee14f476ce)
 
-## MeshCall | Connect Everything
+## MeshCall | Connect Your Services
 [MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your services as a singular mesh, exposing functions as idempotent endpoints. Function responses are cacheable and functions can even run as idempotent cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
 
 <details style="padding: .5em">
@@ -702,7 +702,7 @@ This example demonstrates how to search for those workflows where a given condit
 </details> 
 
 ## Visualize | OpenTelemetry
-HotMesh's telemetry output provides unmatched insight into long-running, multi-service transactions. Add your Honeycomb credentials to any project using HotMesh and HotMesh will emit the full *OpenTelemetry* execution tree organized as a DAG.
+HotMesh's telemetry output provides unmatched insight into long-running, x-service transactions. Add your Honeycomb credentials to any project using HotMesh and HotMesh will emit the full *OpenTelemetry* execution tree organized as a DAG.
 
 <img src="./docs/img/visualize/opentelemetry.png" alt="Open Telemetry" style="width:600px;max-width:600px;">
 

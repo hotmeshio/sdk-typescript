@@ -225,7 +225,7 @@ export class SerializerService {
     return result;
   }
 
-  //stringify: convert a multi-dimensional document to a 2-d hash
+  //stringify: convert a n-dimensional document to a 2-d hash
   stringify(document: Record<string, any>): StringStringType {
     const result: StringStringType = {};
     for (const key in document) {
@@ -242,7 +242,7 @@ export class SerializerService {
     return result;
   }
 
-  //parse: convert a 2-d hash to a multi-dimensional document
+  //parse: convert a 2-d hash to a n-dimensional document
   parse(document: StringStringType): any {
     const result: any = {};
     for (const [key, value] of Object.entries(document)) {

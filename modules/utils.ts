@@ -4,14 +4,22 @@ import { createHash } from 'crypto';
 import { nanoid } from 'nanoid';
 import ms from 'ms';
 
+import { LoggerService } from '../services/logger';
 import { StoreService } from '../services/store';
 import { AppSubscriptions, AppTransitions, AppVID } from '../types/app';
-import { RedisClient, RedisMulti } from '../types/redis';
+import {
+  ProviderClient,
+  ProviderConfig,
+  ProviderTransaction,
+  Providers,
+} from '../types/provider';
 import { StringAnyType } from '../types/serializer';
-import { StreamCode, StreamStatus } from '../types/stream';
+import { StreamCode, StreamData, StreamStatus } from '../types/stream';
 import { SystemHealth } from '../types/quorum';
 
 import { HMSH_GUID_SIZE } from './enums';
+
+const logger = new LoggerService('hotmesh', 'utils');
 
 /**
  * @private
@@ -73,11 +81,13 @@ export function XSleepFor(ms: number): {
 /**
  * @private
  */
-export function identifyRedisType(
-  redisInstance: any,
-): 'redis' | 'ioredis' | null {
-  const prototype = Object.getPrototypeOf(redisInstance);
-  if (
+export function identifyProvider(provider: any): Providers | null {
+  const prototype = Object.getPrototypeOf(provider);
+  if (provider.constructor && provider.constructor.name === 'Client') {
+    return 'nats';
+  } else if (provider.constructor && provider.constructor.name === 'Pool') {
+    return 'postgres';
+  } else if (
     'defineCommand' in prototype ||
     Object.keys(prototype).includes('multi')
   ) {
@@ -85,22 +95,29 @@ export function identifyRedisType(
   } else if (Object.keys(prototype).includes('Multi')) {
     return 'redis';
   }
-  if (redisInstance.constructor) {
+
+  if (provider.constructor) {
     if (
-      redisInstance.constructor.name === 'Redis' ||
-      redisInstance.constructor.name === 'EventEmitter'
+      provider.constructor.name === 'Redis' ||
+      provider.constructor.name === 'EventEmitter'
     ) {
-      if ('hset' in redisInstance) {
+      if ('hset' in provider) {
         return 'ioredis';
       }
     } else if (
-      redisInstance.constructor.name === 'RedisClient' ||
-      redisInstance.constructor.name === 'Commander'
+      provider.constructor.name === 'ProviderClient' ||
+      provider.constructor.name === 'Commander'
     ) {
-      if ('HSET' in redisInstance) {
+      if ('HSET' in provider) {
         return 'redis';
       }
     }
+  }
+
+  if (Object.keys(provider).includes('Pipeline')) {
+    return 'ioredis';
+  } else if (Object.keys(provider).includes('createClient')) {
+    return 'redis';
   }
   return null;
 }
@@ -109,11 +126,34 @@ export function identifyRedisType(
  * @private
  */
 export const polyfill = {
+  /**
+   * `activity` is deprecated; `hook` is the replacement
+   */
   resolveActivityType(activityType: string): string {
-    if (activityType === 'activity') {
-      return 'hook';
-    }
-    return activityType;
+    return activityType === 'activity' ? 'hook' : activityType;
+  },
+
+  /**
+   * `redis` is deprecated; `connection` is the generic replacement
+   */
+  providerConfig(obj: any): any {
+    return obj?.connection ?? obj?.redis;
+  },
+
+  /**
+   * `redisClass and redisOptions` are deprecated; use `connection`
+   */
+  meshDataConfig(obj: {
+    connection?: Partial<ProviderConfig>;
+    redisClass?: any;
+    redisOptions?: StringAnyType;
+  }): Partial<ProviderConfig> {
+    return (
+      obj?.connection ?? {
+        class: obj?.redisClass,
+        options: obj?.redisOptions,
+      }
+    );
   },
 };
 
@@ -193,7 +233,7 @@ export function findSubscriptionForTrigger(
  */
 export async function getSubscriptionTopic(
   activityId: string,
-  store: StoreService<RedisClient, RedisMulti>,
+  store: StoreService<ProviderClient, ProviderTransaction>,
   appVID: AppVID,
 ): Promise<string | undefined> {
   const appTransitions = await store.getTransitions(appVID);
@@ -332,6 +372,25 @@ export function isValidCron(cronExpression: string): boolean {
  */
 export const s = (input: string): number => {
   return ms(input) / 1000;
+};
+
+/**
+ * @private
+ */
+export const parseStreamMessage = (message: string): StreamData => {
+  try {
+    return JSON.parse(message);
+  } catch (error) {
+    logger.error('Error parsing Stream message', { ...error });
+    throw error;
+  }
+};
+
+/**
+ * @private
+ */
+export const isStreamMessage = (result: any): boolean => {
+  return Array.isArray(result) && Array.isArray(result[0]);
 };
 
 /**

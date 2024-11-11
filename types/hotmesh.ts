@@ -2,9 +2,9 @@ import { ILogger } from '../services/logger';
 import { HotMesh as HotMeshService } from '../services/hotmesh';
 
 import { HookRules } from './hook';
-import { RedisClass, RedisClient, RedisOptions } from './redis';
 import { StreamData, StreamDataResponse } from './stream';
 import { LogLevel } from './logger';
+import { ProviderClient, ProviderConfig } from './provider';
 
 /**
  * the full set of entity types that are stored in the key/value store
@@ -50,29 +50,147 @@ type KeyStoreParams = {
 
 type HotMesh = typeof HotMeshService;
 
-type RedisConfig = {
-  class: Partial<RedisClass>;
-  options: Partial<RedisOptions>;
-};
-
 type HotMeshEngine = {
-  store?: RedisClient; //set by hotmesh using instanced `redis` class
-  stream?: RedisClient; //set by hotmesh using instanced `redis` class
-  sub?: RedisClient; //set by hotmesh using instanced `redis` class
-  redis?: RedisConfig;
-  reclaimDelay?: number; //milliseconds
+  /**
+   * set by hotmesh once the connnector service instances the provider
+   * @private
+   */
+  store?: ProviderClient;
+  /**
+   * set by hotmesh once the connnector service instances the provider
+   * @private
+   */
+  stream?: ProviderClient;
+  /**
+   * set by hotmesh once the connnector service instances the provider
+   * @private
+   */
+  sub?: ProviderClient;
+  /**
+   * set by hotmesh once the connnector service instances the provider
+   * @private
+   */
+  search?: ProviderClient;
+
+  /**
+   * redis connection options; replaced with 'connection'
+   * @deprecated
+   */
+  redis?: ProviderConfig;
+
+  /**
+   * short-form format for the connection options for the
+   * store, stream, sub, and search clients
+   */
+  connection?: ProviderConfig;
+
+  /**
+   * long-form format for the connection options for the
+   * store, stream, sub, and search clients
+   */
+  connections?: {
+    store: ProviderConfig;
+    stream: ProviderConfig;
+    sub: ProviderConfig;
+    search?: ProviderConfig; //inherits from store if not set
+  };
+
+  /**
+   * the number of milliseconds to wait before reclaiming a stream;
+   * depending upon the provider this may be an explicit retry event,
+   * consuming a message from the stream and re-queueing it (dlq, etc),
+   * or it may be a configurable delay before the provider exposes the
+   * message to the consumer again. It is up to the provider, but expressed
+   * in milliseconds here.
+   */
+  reclaimDelay?: number;
+
+  /**
+   * the number of times to reclaim a stream before giving up
+   * and moving the message to a dead-letter queue or other
+   * error handling mechanism
+   */
   reclaimCount?: number;
-  readonly?: boolean; //if true, the engine will not route stream messages
+
+  /**
+   * if true, the engine will not route stream messages
+   * to the worker
+   * @default false
+   */
+  readonly?: boolean;
 };
 
 type HotMeshWorker = {
+  /**
+   * the topic that the worker subscribes to
+   */
   topic: string;
-  store?: RedisClient; //set by hotmesh using instanced `redis` class
-  stream?: RedisClient; //set by hotmesh using instanced `redis` class
-  sub?: RedisClient; //set by hotmesh using instanced `redis` class
-  redis?: RedisConfig;
-  reclaimDelay?: number; //milliseconds
-  reclaimCount?: number; //max number of times to reclaim a stream
+
+  /**
+   * set by hotmesh once the connnector service instances the provider
+   * @private
+   */
+  store?: ProviderClient;
+  /**
+   * set by hotmesh once the connnector service instances the provider
+   * @private
+   */
+  stream?: ProviderClient;
+  /**
+   * set by hotmesh once the connnector service instances the provider
+   * @private
+   */
+  sub?: ProviderClient;
+  /**
+   * set by hotmesh once the connnector service instances the provider
+   * @private
+   */
+  search?: ProviderClient;
+
+  /**
+   * redis connection options; replaced with 'connection'
+   * @deprecated
+   */
+  redis?: ProviderConfig;
+
+  /**
+   * short-form format for the connection options for the
+   * store, stream, sub, and search clients
+   */
+  connection?: ProviderConfig;
+
+  /**
+   * long-form format for the connection options for the
+   * store, stream, sub, and search clients
+   */
+  connections?: {
+    store: ProviderConfig;
+    stream: ProviderConfig;
+    sub: ProviderConfig;
+    search?: ProviderConfig; //inherits from store if not set
+  };
+
+  /**
+   * the number of milliseconds to wait before reclaiming a stream;
+   * depending upon the provider this may be an explicit retry event,
+   * consuming a message from the stream and re-queueing it (dlq, etc),
+   * or it may be a configurable delay before the provider exposes the
+   * message to the consumer again. It is up to the provider, but expressed
+   * in milliseconds here.
+   */
+  reclaimDelay?: number;
+
+  /**
+   * the number of times to reclaim a stream before giving up
+   * and moving the message to a dead-letter queue or other
+   * error handling mechanism
+   */
+  reclaimCount?: number;
+
+  /**
+   * The callback function to execute when a message is dequeued
+   * from the target stream
+   */
   callback: (payload: StreamData) => Promise<StreamDataResponse>;
 };
 
@@ -169,12 +287,11 @@ type HotMeshApps = {
 export {
   HotMesh,
   HotMeshEngine,
-  RedisConfig,
   HotMeshWorker,
   HotMeshSettings,
-  HotMeshApp, //a single app in the db
-  HotMeshApps, //object array of all apps in the db
-  HotMeshConfig, //customer config
+  HotMeshApp,
+  HotMeshApps,
+  HotMeshConfig,
   HotMeshManifest,
   HotMeshGraph,
   KeyType,

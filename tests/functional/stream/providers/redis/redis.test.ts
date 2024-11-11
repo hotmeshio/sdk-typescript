@@ -2,24 +2,35 @@ import { HMNS } from '../../../../../modules/key';
 import { sleepFor } from '../../../../../modules/utils';
 import { LoggerService } from '../../../../../services/logger';
 import { RedisStreamService } from '../../../../../services/stream/providers/redis/redis';
-import { RedisConnection, RedisClientType } from '../../../../$setup/cache/redis';
+import {
+  RedisConnection,
+  RedisClientType,
+} from '../../../../$setup/cache/redis';
 
 describe('FUNCTIONAL | RedisStreamService', () => {
   let redisClient: RedisClientType;
   let redisStoreClient: RedisClientType;
   let redisStreamService: RedisStreamService;
+  const TEST_STREAM = 'testStream';
+  const TEST_GROUP = 'testGroup';
+  const TEST_CONSUMER = 'testConsumer';
+
+  const msg = (idx: number): string => {
+    return JSON.stringify({ id: idx, data: `message${idx}` });
+  };
 
   beforeEach(async () => {
     await redisClient.flushDb();
     redisStreamService = new RedisStreamService(redisClient, redisStoreClient);
-    const appConfig = { id: 'APP_ID', version: 'APP_VERSION' };
-    await redisStreamService.init(HMNS, appConfig.id, new LoggerService());
+    await redisStreamService.init(HMNS, 'APP_ID', new LoggerService());
   });
 
   beforeAll(async () => {
-    const redisConnection = await RedisConnection.getConnection('test-connection-1');
+    const redisConnection =
+      await RedisConnection.getConnection('test-connection-1');
     redisClient = await redisConnection.getClient();
-    const redisStoreConnection = await RedisConnection.getConnection('test-connection-2');
+    const redisStoreConnection =
+      await RedisConnection.getConnection('test-connection-2');
     redisStoreClient = await redisStoreConnection.getClient();
   });
 
@@ -27,265 +38,222 @@ describe('FUNCTIONAL | RedisStreamService', () => {
     await RedisConnection.disconnectAll();
   });
 
-  describe('xgroup', () => {
+  describe('Stream Operations', () => {
+    it('should create and delete a stream', async () => {
+      const created = await redisStreamService.createStream(TEST_STREAM);
+      expect(created).toBe(true);
+
+      const deleted = await redisStreamService.deleteStream(TEST_STREAM);
+      expect(deleted).toBe(true);
+    });
+
+    it('should get stream stats', async () => {
+      await redisStreamService.createStream(TEST_STREAM);
+      const messages = [msg(1), msg(2), msg(3)];
+      await redisStreamService.publishMessages(TEST_STREAM, messages);
+
+      const stats = await redisStreamService.getStreamStats(TEST_STREAM);
+      expect(stats.messageCount).toBe(3);
+    });
+
+    it('should get stream depth', async () => {
+      await redisStreamService.createStream(TEST_STREAM);
+      const messages = [msg(1), msg(2)];
+      await redisStreamService.publishMessages(TEST_STREAM, messages);
+
+      const depth = await redisStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBe(2);
+    });
+
+    it('should get stream depths', async () => {
+      await redisStreamService.createStream(`${TEST_STREAM}1`);
+      await redisStreamService.publishMessages(`${TEST_STREAM}1`, [
+        msg(1),
+        msg(2),
+      ]);
+      await redisStreamService.createStream(`${TEST_STREAM}2`);
+      await redisStreamService.publishMessages(`${TEST_STREAM}2`, [msg(3)]);
+
+      const depths = await redisStreamService.getStreamDepths([
+        { stream: `${TEST_STREAM}1` },
+        { stream: `${TEST_STREAM}2` },
+        { stream: `${TEST_STREAM}2` }, //system de-dupes
+      ]);
+      expect(depths[0].depth).toBe(2);
+      expect(depths[1].depth).toBe(1);
+      expect(depths[2].depth).toBe(1);
+    });
+  });
+
+  describe('Consumer Group Operations', () => {
     it('should create a consumer group', async () => {
-      const key = 'testKey';
-      const groupName = 'testGroup';
-      await redisStreamService.createConsumerGroup(
-        key,
-        groupName,
+      const created = await redisStreamService.createConsumerGroup(
+        TEST_STREAM,
+        TEST_GROUP,
       );
-      const groupInfo = await redisClient.sendCommand(['XINFO', 'GROUPS', key]);
+      expect(created).toBe(true);
+
+      const groupInfo = await redisClient.sendCommand([
+        'XINFO',
+        'GROUPS',
+        TEST_STREAM,
+      ]);
       expect(Array.isArray(groupInfo)).toBe(true);
-      const createdGroup = (groupInfo as [string, string][]).find(
-        ([, name]) => name === groupName,
+      const createdGroup = (groupInfo as ['name', string][]).find(
+        ([, name]) => name === TEST_GROUP,
       );
       expect(createdGroup).toBeDefined();
     });
-  });
 
-  describe('xadd', () => {
-    it('should add data to stream', async () => {
-      const key = 'testKey';
-      const msgId = '*';
-      const field = 'testField';
-      const value = 'testValue';
-      await redisStreamService.publishMessage(key, msgId, field, value);
-      const messages = (await redisClient.sendCommand([
-        'XRANGE',
-        key,
-        '-',
-        '+',
-      ])) as [string, string[]][];
-      const addedMessage = messages.find(
-        ([_messageId, fields]) =>
-          fields.includes(field) && fields.includes(value),
+    it('should delete a consumer group', async () => {
+      await redisStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
+      const deleted = await redisStreamService.deleteConsumerGroup(
+        TEST_STREAM,
+        TEST_GROUP,
       );
-      expect(addedMessage).toBeDefined();
-    });
-
-    it('should add data to stream using multi', async () => {
-      const key = 'testKey';
-      const msgId = '*';
-      const field = 'testField';
-      const value = 'testValue';
-      const multi = redisStreamService.getMulti();
-      await redisStreamService.publishMessage(key, msgId, field, value, multi);
-      await redisStreamService.publishMessage(key, msgId, field, value, multi);
-      await redisStreamService.getMessageDepth(key, multi);
-      const rslt = await multi.exec();
-      expect(rslt[2]).toBe(2);
-      const messages = (await redisClient.sendCommand([
-        'XRANGE',
-        key,
-        '-',
-        '+',
-      ])) as [string, string[]][];
-      const addedMessages = messages.find(
-        ([_messageId, fields]) =>
-          fields.includes(field) && fields.includes(value),
-      );
-      expect(addedMessages?.length).toBe(2);
+      expect(deleted).toBe(true);
     });
   });
 
-  describe('xreadgroup', () => {
-    it('should read data from group in a stream', async () => {
-      const key = 'testKey';
-      const groupName = 'testGroup';
-      const consumerName = 'testConsumer';
-      const msgId = '*';
-      const field = 'testField';
-      const value = 'testValue';
-      await redisStreamService.createConsumerGroup(
-        key,
-        groupName,
-      );
-      const messageId = await redisStreamService.publishMessage(key, msgId, field, value);
-      const messages = await redisStreamService.consumeMessages(
-        groupName,
-        consumerName,
-        1000,
-        key,
-      );
-      const readMessage = (messages as string[][][])[0][1].find(
-        ([readMessageId, _fields]) => readMessageId === messageId,
-      );
-      expect(readMessage).toBeDefined();
+  describe('Message Operations', () => {
+    beforeEach(async () => {
+      await redisStreamService.createStream(TEST_STREAM);
+      await redisStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
     });
-  });
 
-  describe('xack', () => {
-    it('should acknowledge message in a group', async () => {
-      const key = 'testKey';
-      const groupName = 'testGroup';
-      const msgId = '*';
-      const field = 'testField';
-      const value = 'testValue';
-      await redisStreamService.createConsumerGroup(
-        key,
-        groupName,
+    it('should publish messages to stream', async () => {
+      const messages = [msg(1), msg(2)];
+      const messageIds = await redisStreamService.publishMessages(
+        TEST_STREAM,
+        messages,
       );
-      const messageId = (await redisStreamService.publishMessage(
-        key,
-        msgId,
-        field,
-        value,
-      )) as string;
+      expect(messageIds).toHaveLength(2);
+      expect(typeof messageIds[0]).toBe('string');
+    });
+
+    it('should consume messages from stream', async () => {
+      const messages = [msg(1), msg(2)];
+      await redisStreamService.publishMessages(TEST_STREAM, messages);
+
+      const consumed = await redisStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { blockTimeout: 1000 },
+      );
+
+      expect(consumed).toHaveLength(2);
+      expect(consumed[0]).toHaveProperty('id');
+      expect(consumed[0]).toHaveProperty('data');
+      expect(typeof consumed[0].data).toBe('object');
+    });
+
+    it('should acknowledge and delete messages', async () => {
+      const messages = [msg(0)];
+      const [messageId] = await redisStreamService.publishMessages(
+        TEST_STREAM,
+        messages,
+      );
+
       await redisStreamService.consumeMessages(
-        groupName,
-        'testConsumer',
-        1000,
-        key,
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
       );
-      const ackCount = await redisStreamService.acknowledgeMessage(key, groupName, messageId);
-      expect(ackCount).toBe(1);
+
+      const processedCount = await redisStreamService.ackAndDelete(
+        TEST_STREAM,
+        TEST_GROUP,
+        [messageId],
+      );
+      expect(processedCount).toBe(1);
+
+      // Verify message is no longer pending
+      const pending = await redisStreamService.getPendingMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        1,
+        TEST_CONSUMER,
+      );
+      expect(pending).toHaveLength(0);
     });
   });
 
-  describe('xpending', () => {
-    it('should retrieve pending messages for a group', async () => {
-      const key = 'testKey';
-      const consumerName = 'testConsumer';
-      const groupName = 'testGroup';
-      const msgId = '*';
-      const field = 'testField';
-      const value = 'testValue';
-      await redisStreamService.createConsumerGroup(
-        key,
-        groupName,
-      );
-      const messageId = await redisStreamService.publishMessage(key, msgId, field, value);
-      await redisStreamService.consumeMessages(
-        groupName,
-        consumerName,
-        1000,
-        key,
-      );
-      const pendingMessages = (await redisStreamService.getPendingMessages(
-        key,
-        groupName,
-        1,
-        consumerName,
-      )) as unknown as [string][];
-      const isPending = pendingMessages.some(([id, , ,]) => id === messageId);
-      expect(isPending).toBe(true);
+  describe('Message Retry Operations', () => {
+    beforeEach(async () => {
+      await redisStreamService.createStream(TEST_STREAM);
+      await redisStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
     });
-  });
 
-  describe('xclaim', () => {
-    it('should claim a pending message in a group', async () => {
-      const key = 'testKey';
-      const initialConsumer = 'testConsumer1';
-      const claimantConsumer = 'testConsumer2';
-      const groupName = 'testGroup';
-      const msgId = '*';
-      const field = 'testField';
-      const value = 'testValue';
-      // First, create a group and add a message to the stream
-      await redisStreamService.createConsumerGroup(
-        key,
-        groupName,
-      );
-      const messageId = (await redisStreamService.publishMessage(
-        key,
-        msgId,
-        field,
-        value,
-      )) as string;
-      // Then, read the message from the group
+    it('should retry pending messages', async () => {
+      const message = [msg(0)];
+      await redisStreamService.publishMessages(TEST_STREAM, message);
+
+      // Consume but don't acknowledge
       await redisStreamService.consumeMessages(
-        groupName,
-        initialConsumer,
-        1000,
-        key,
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
       );
-      //count pending messages
-      await sleepFor(1000);
-      const pendingMessageCount = (await redisStreamService.getPendingMessages(
-        key,
-        groupName,
-        1,
-      )) as [string, string, number, any][];
-      //[[ '1688768134881-0', 'testConsumer1', 1017, 1 ]] //id, consumer, delay
-      expect(pendingMessageCount[0][1]).toBe(initialConsumer);
-      expect(pendingMessageCount[0][2]).toBeGreaterThan(1000);
-      expect(pendingMessageCount[0][3]).toBe(1);
-      // Retrieve pending messages for the initial consumer
-      let pendingMessages = (await redisStreamService.getPendingMessages(
-        key,
-        groupName,
-        1,
-        initialConsumer,
-      )) as [string, string, number, any][];
-      const toBeClaimedMessage = pendingMessages.find(
-        ([id, consumer, ,]) => id === messageId && consumer === initialConsumer,
+
+      // Wait for message to be idle
+      await sleepFor(1100);
+
+      const retriedMessages = await redisStreamService.retryMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        {
+          consumerName: 'retryConsumer',
+          minIdleTime: 1000,
+          limit: 10,
+        },
       );
-      expect(toBeClaimedMessage).toBeDefined();
-      // Claim the message by another consumer using sendCommand
-      const reclaimMessage = await redisStreamService.claimMessage(
-        key,
-        groupName,
-        claimantConsumer,
-        0,
-        messageId,
+
+      expect(retriedMessages).toHaveLength(1);
+      expect(Array.isArray(retriedMessages)).toBe(true);
+      expect('id' in retriedMessages[0].data).toBe(true); //this is the message id (msg(0))
+    });
+
+    it('should claim specific messages', async () => {
+      const message = [msg(0)];
+      const [messageId] = await redisStreamService.publishMessages(
+        TEST_STREAM,
+        message,
       );
-      const [messageField, messageValue] = reclaimMessage[0][1];
-      expect(messageField).toBe(field);
-      expect(messageValue).toBe(value);
-      //check for race (did another consumer claim this message?)
-      const failedReclaimAttempt = await redisStreamService.claimMessage(
-        key,
-        groupName,
-        claimantConsumer,
+
+      // Consume but don't acknowledge
+      await redisStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+      );
+
+      await sleepFor(1100);
+
+      const claimedMessage = await redisStreamService.claimMessage(
+        TEST_STREAM,
+        TEST_GROUP,
+        'newConsumer',
         1000,
         messageId,
       );
-      expect(failedReclaimAttempt.length).toBe(0);
-      // Retrieve pending messages for the claimant consumer
-      pendingMessages = (await redisStreamService.getPendingMessages(
-        key,
-        groupName,
-        1,
-        claimantConsumer,
-      )) as [string, string, number, any][];
-      const claimedMessage = pendingMessages.find(
-        ([id, consumer, ,]) =>
-          id === messageId && consumer === claimantConsumer,
-      );
-      expect(claimedMessage).toBeDefined();
+      expect('id' in claimedMessage.data).toBe(true);
     });
   });
 
-  describe('xdel', () => {
-    it('should delete a message from a stream', async () => {
-      const key = 'testKey';
-      const groupName = 'testGroup';
-      const msgId = '*';
-      const field = 'testField';
-      const value = 'testValue';
-      await redisStreamService.createConsumerGroup(
-        key,
-        groupName,
-      );
-      const messageId = (await redisStreamService.publishMessage(
-        key,
-        msgId,
-        field,
-        value,
-      )) as string;
-      const delCount = await redisStreamService.deleteMessage(key, messageId);
-      expect(delCount).toBe(1);
-      const messages = await redisStreamService.consumeMessages(
-        groupName,
-        'testConsumer',
-        '1000',
-        key,
-      );
-      const deletedMessage = (messages as string[][][])?.[0]?.[1]?.find(
-        ([readMessageId, _fields]) => readMessageId === messageId,
-      );
-      expect(deletedMessage).toBeUndefined();
+  describe('Provider Features', () => {
+    it('should return correct provider-specific features', () => {
+      const features = redisStreamService.getProviderSpecificFeatures();
+
+      expect(features).toEqual({
+        supportsBatching: true,
+        supportsDeadLetterQueue: false,
+        supportsOrdering: true,
+        supportsTrimming: true,
+        supportsRetry: true,
+        maxMessageSize: 512 * 1024 * 1024,
+        maxBatchSize: 1000,
+      });
     });
   });
 });

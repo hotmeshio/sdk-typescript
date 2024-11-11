@@ -1,8 +1,8 @@
 import { CollationError, InactiveJobError } from '../../modules/errors';
-import { RedisMulti } from '../../types/redis';
 import { CollationFaultType, CollationStage } from '../../types/collator';
 import { ActivityDuplex } from '../../types/activity';
 import { HotMeshGraph } from '../../types/hotmesh';
+import { ProviderTransaction } from '../../types/provider';
 import { Activity } from '../activities/activity';
 import { Cycle } from '../activities/cycle';
 
@@ -64,7 +64,7 @@ class CollatorService {
 
   static async notarizeEntry(
     activity: Activity,
-    multi?: RedisMulti,
+    transaction?: ProviderTransaction,
   ): Promise<number> {
     //decrement by -100_000_000_000_000
     const amount = await activity.store.collate(
@@ -72,7 +72,7 @@ class CollatorService {
       activity.metadata.aid,
       -100_000_000_000_000,
       this.getDimensionalAddress(activity),
-      multi,
+      transaction,
     );
     this.verifyInteger(amount, 1, 'enter');
     return amount;
@@ -80,7 +80,7 @@ class CollatorService {
 
   static async authorizeReentry(
     activity: Activity,
-    multi?: RedisMulti,
+    transaction?: ProviderTransaction,
   ): Promise<number> {
     //set second digit to 8, allowing for re-entry
     //decrement by -10_000_000_000_000
@@ -89,14 +89,14 @@ class CollatorService {
       activity.metadata.aid,
       -10_000_000_000_000,
       this.getDimensionalAddress(activity),
-      multi,
+      transaction,
     );
     return amount;
   }
 
   static async notarizeEarlyExit(
     activity: Activity,
-    multi?: RedisMulti,
+    transaction?: ProviderTransaction,
   ): Promise<number> {
     //decrement the 2nd and 3rd digits to fully deactivate (`cycle` activities use this command to fully exit after leg 1) (should result in `888000000000000`)
     return await activity.store.collate(
@@ -104,13 +104,13 @@ class CollatorService {
       activity.metadata.aid,
       -11_000_000_000_000,
       this.getDimensionalAddress(activity),
-      multi,
+      transaction,
     );
   }
 
   static async notarizeEarlyCompletion(
     activity: Activity,
-    multi?: RedisMulti,
+    transaction?: ProviderTransaction,
   ): Promise<number> {
     //initialize both `possible` (1m) and `actualized` (1) zero dimension, while decrementing the 2nd
     //3rd digit is optionally kept open if the activity might be used in a cycle
@@ -122,7 +122,7 @@ class CollatorService {
       activity.metadata.aid,
       1_000_001 - decrement,
       this.getDimensionalAddress(activity),
-      multi,
+      transaction,
     );
   }
 
@@ -132,14 +132,14 @@ class CollatorService {
   static async notarizeInception(
     activity: Activity,
     guid: string,
-    multi: RedisMulti,
+    transaction: ProviderTransaction,
   ): Promise<void> {
     if (guid) {
       await activity.store.collateSynthetic(
         activity.context.metadata.jid,
         guid,
         1_000_000,
-        multi,
+        transaction,
       );
     }
   }
@@ -175,10 +175,10 @@ class CollatorService {
   static async notarizeReentry(
     activity: Activity,
     guid: string,
-    multi?: RedisMulti,
+    transaction?: ProviderTransaction,
   ): Promise<number> {
     const jid = activity.context.metadata.jid;
-    const localMulti = multi || activity.store.getMulti();
+    const localMulti = transaction || activity.store.transact();
     //increment by 1_000_000 (indicates re-entry and is used to drive the 'dimensional address' for adjacent activities (minus 1))
     await activity.store.collate(
       jid,
@@ -202,7 +202,7 @@ class CollatorService {
 
   static async notarizeContinuation(
     activity: Activity,
-    multi?: RedisMulti,
+    transaction?: ProviderTransaction,
   ): Promise<number> {
     //keep open; actualize the leg2 dimension (+1)
     return await activity.store.collate(
@@ -210,13 +210,13 @@ class CollatorService {
       activity.metadata.aid,
       1,
       this.getDimensionalAddress(activity),
-      multi,
+      transaction,
     );
   }
 
   static async notarizeCompletion(
     activity: Activity,
-    multi?: RedisMulti,
+    transaction?: ProviderTransaction,
   ): Promise<number> {
     //1) ALWAYS actualize leg2 dimension (+1)
     //2) IF the activity is used in a cycle, don't close leg 2!
@@ -226,7 +226,7 @@ class CollatorService {
       activity.metadata.aid,
       1 - decrement,
       this.getDimensionalAddress(activity),
-      multi,
+      transaction,
     );
   }
 

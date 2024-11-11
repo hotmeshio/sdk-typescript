@@ -3,7 +3,7 @@ import Redis from 'ioredis';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { guid, sleepFor } from '../../../modules/utils';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { JobOutput } from '../../../types/job';
 import config from '../../$setup/config';
 

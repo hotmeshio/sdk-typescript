@@ -2,7 +2,6 @@ import { Redis, RedisOptions as RedisClientOptions } from 'ioredis';
 
 import config from '../config';
 import {
-  IORedisClassType,
   IORedisClientType,
   IORedisClientType as RedisClientType,
   IORedisMultiType as RedisMultiType,

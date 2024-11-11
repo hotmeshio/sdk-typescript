@@ -22,7 +22,7 @@ import {
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
 import config from '../../$setup/config';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import {
   JobOutput,
   StringAnyType,

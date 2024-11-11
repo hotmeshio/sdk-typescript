@@ -2,7 +2,7 @@ import Redis from 'ioredis';
 
 import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
-import { RedisConnection } from '../../../services/connector/clients/ioredis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { ClientService } from '../../../services/meshflow/client';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HMNS, KeyService, KeyType } from '../../../modules/key';

@@ -3,7 +3,10 @@ import { LoggerService } from '../../../../../services/logger';
 import { RedisStoreService } from '../../../../../services/store/providers/redis/redis';
 import { RedisSubService } from '../../../../../services/sub/providers/redis/redis';
 import { SubscriptionCallback } from '../../../../../types/quorum';
-import { RedisConnection, RedisClientType } from '../../../../$setup/cache/redis';
+import {
+  RedisConnection,
+  RedisClientType,
+} from '../../../../$setup/cache/redis';
 import { sleepFor } from '../../../../../modules/utils';
 
 describe('FUNCTIONAL | RedisSubService', () => {

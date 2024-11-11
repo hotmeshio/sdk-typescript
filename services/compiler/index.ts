@@ -7,21 +7,25 @@ import yaml from 'js-yaml';
 import { ILogger } from '../logger';
 import { StoreService } from '../store';
 import { HotMeshManifest } from '../../types/hotmesh';
-import { RedisClient, RedisMulti } from '../../types/redis';
+import { ProviderClient, ProviderTransaction } from '../../types/provider';
+import { StreamService } from '../stream';
 
 import { Deployer } from './deployer';
 import { Validator } from './validator';
-import { StreamService } from '../stream';
 
 /**
  * The compiler service converts a graph into a executable program.
  */
 class CompilerService {
-  store: StoreService<RedisClient, RedisMulti> | null;
-  stream: StreamService<RedisClient, RedisMulti> | null;
+  store: StoreService<ProviderClient, ProviderTransaction> | null;
+  stream: StreamService<ProviderClient, ProviderTransaction> | null;
   logger: ILogger;
 
-  constructor(store: StoreService<RedisClient, RedisMulti>, stream: StreamService<RedisClient, RedisMulti>, logger: ILogger) {
+  constructor(
+    store: StoreService<ProviderClient, ProviderTransaction>,
+    stream: StreamService<ProviderClient, ProviderTransaction>,
+    logger: ILogger,
+  ) {
     this.store = store;
     this.stream = stream;
     this.logger = logger;

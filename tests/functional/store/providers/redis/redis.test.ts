@@ -3,7 +3,10 @@ import { getSymKey, sleepFor } from '../../../../../modules/utils';
 import { LoggerService } from '../../../../../services/logger';
 import { MDATA_SYMBOLS } from '../../../../../services/serializer';
 import { RedisStoreService } from '../../../../../services/store/providers/redis/redis';
-import { RedisConnection, RedisClientType } from '../../../../$setup/cache/redis';
+import {
+  RedisConnection,
+  RedisClientType,
+} from '../../../../$setup/cache/redis';
 import { ActivityType, Consumes } from '../../../../../types/activity';
 import { HookSignal } from '../../../../../types/hook';
 import {
