@@ -1,3 +1,4 @@
+// /app/services/connector/providers/postgres.ts
 import { AbstractConnection } from '..';
 import {
   PostgresClientOptions,
@@ -10,22 +11,22 @@ class PostgresConnection extends AbstractConnection<
   PostgresClientOptions
 > {
   defaultOptions: PostgresClientOptions = {
-    host: 'localhost',
+    host: 'postgres',
     port: 5432,
     user: 'postgres',
-    password: 'hotmesh',
-    database: 'postgres',
+    password: 'password',
+    database: 'hotmesh',
     max: 20,
-    idleTimeoutMillis: 30000,
+    idleTimeoutMillis: 30_000,
   };
 
   async createConnection(
-    Pool: PostgresClassType,
+    clientConstructor: any,
     options: PostgresClientOptions,
   ): Promise<PostgresClientType> {
-    const connection = new Pool(options);
-    // Sanity check
+    const connection = new clientConstructor(options);
     try {
+      await connection.connect();
       await connection.query('SELECT 1');
       return connection;
     } catch (error) {
@@ -41,8 +42,12 @@ class PostgresConnection extends AbstractConnection<
     return this.connection;
   }
 
-  closeConnection(connection: PostgresClientType): Promise<void> {
-    return connection.end();
+  async closeConnection(connection: PostgresClientType): Promise<void> {
+    if (!connection) {
+      console.warn('No active PostgreSQL connection to close');
+      return;
+    }
+    await connection.end();
   }
 }
 
