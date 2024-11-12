@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "description": "Unbreakable Workflows",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -8,7 +8,7 @@
     "type": "git",
     "url": "https://github.com/hotmeshio/sdk-typescript.git"
   },
-  "homepage": "https://github.com/hotmeshio/sdk-typescript#readme",
+  "homepage": "https://hotmeshio.github.io/sdk-typescript/",
   "publishConfig": {
     "access": "public"
   },
@@ -63,7 +63,7 @@
     "test:store:redis": "NODE_ENV=test jest ./tests/functional/store/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:stream:ioredis": "NODE_ENV=test jest ./tests/functional/stream/providers/redis/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:stream:redis": "NODE_ENV=test jest ./tests/functional/stream/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:stream:postgres": "NODE_ENV=test jest ./tests/functional/stream/providers/postgres.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:stream:postgres": "NODE_ENV=test jest ./tests/functional/stream/providers/postgres/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:stream:nats": "NODE_ENV=test jest ./tests/functional/stream/providers/nats/nats.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:ioredis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:redis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",

@@ -1,8 +1,5 @@
 import { ProviderClient, ProviderTransaction } from './provider';
 
-// NOTE: Manually defines NATS types to avoid importing 'nats' package
-// TODO: Generate file using 'nats' package/interface definitions
-
 /** Connection Options for NATS */
 export interface NatsConnectionOptions {
   servers?: string | string[];
@@ -32,7 +29,9 @@ export type NatsClientOptions = NatsStreamOptions;
 /** Interface representing a NATS Connection */
 export interface NatsConnection extends ProviderClient {
   jetstream(options?: NatsJetStreamOptions): NatsJetStreamClient;
-  jetstreamManager(options?: NatsJetStreamOptions): Promise<NatsJetStreamManager>;
+  jetstreamManager(
+    options?: NatsJetStreamOptions,
+  ): Promise<NatsJetStreamManager>;
   close(): Promise<void>;
 }
 
@@ -40,11 +39,17 @@ export interface NatsConnection extends ProviderClient {
 export type NatsClientType = NatsConnection;
 
 /** Type representing the NATS Connection Function */
-export type NatsClassType = (options: NatsClientOptions) => Promise<NatsConnection>;
+export type NatsClassType = (
+  options: NatsClientOptions,
+) => Promise<NatsConnection>;
 
 /** Interface for JetStream Client */
 export interface NatsJetStreamClient {
-  publish(subject: string, data: Uint8Array, options?: NatsPublishOptions): Promise<NatsPubAck>;
+  publish(
+    subject: string,
+    data: Uint8Array,
+    options?: NatsPublishOptions,
+  ): Promise<NatsPubAck>;
   consumers: any; // Simplify as needed
   jetstreamManager(): Promise<NatsJetStreamManager>;
   // Additional methods as needed
@@ -66,7 +71,7 @@ export interface NatsStreamManager {
   info(stream: string): Promise<NatsStreamInfo>;
   list(): AsyncIterable<NatsStreamInfo>;
   deleteMessage(stream: string, seq: number): Promise<boolean>;
-  update(stream: string, config: NatsStreamConfig ): Promise<void>;
+  update(stream: string, config: NatsStreamConfig): Promise<void>;
 }
 
 /** Interface for Consumer Manager */

@@ -1,19 +1,50 @@
-import { Pool, PoolConfig, PoolClient, QueryResult, QueryConfig } from 'pg';
+// /app/types/postgres.ts
+export interface PostgresClientOptions {
+  host?: string;
+  port?: number;
+  user?: string;
+  password?: string;
+  database?: string;
+  max?: number;
+  idleTimeoutMillis?: number;
+  // Add any other options you might need
+}
 
-export interface PostgresStreamOptions extends PoolConfig {
+export type PostgresClassType = {
+  new (options: PostgresClientOptions): PostgresClientType;
+  connect: (options: PostgresClientOptions) => Promise<PostgresClientType>;
+};
+
+export interface PostgresClientType {
+  query: (text: string, values?: any[]) => Promise<PostgresQueryResultType>;
+  end: () => Promise<void>;
+  // Include other methods if necessary
+}
+
+export interface PostgresPoolClientType {
+  query: (text: string, values?: any[]) => Promise<PostgresQueryResultType>;
+  release: () => void;
+  // Include other methods if necessary
+}
+
+export interface PostgresQueryResultType {
+  rows: any[];
+  rowCount: number;
+  // Include other properties if necessary
+}
+
+export interface PostgresQueryConfigType {
+  text: string;
+  values?: any[];
+}
+
+export interface PostgresStreamOptions extends PostgresClientOptions {
   schema?: string;
   maxRetries?: number;
   retryDelay?: number;
   streamTablePrefix?: string;
   consumerTablePrefix?: string;
 }
-
-export type PostgresClientOptions = PoolConfig;
-export type PostgresClientType = Pool;
-export type PostgresClassType = typeof Pool;
-export type PostgresPoolClientType = PoolClient;
-export type PostgresQueryResultType = QueryResult;
-export type PostgresQueryConfigType = QueryConfig;
 
 export interface PostgresStreamMessage {
   id: string;
@@ -41,7 +72,7 @@ export interface PostgresPendingMessage {
 }
 
 export interface PostgresTransaction {
-  client: PoolClient;
+  client: PostgresPoolClientType;
   queryBuffer: {
     text: string;
     values: any[];

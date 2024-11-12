@@ -7,12 +7,14 @@ import { MeshData } from './services/meshdata';
 import { MeshOS } from './services/meshos';
 import * as Errors from './modules/errors';
 import * as Utils from './modules/utils';
+import { ConnectorService as Connector } from './services/connector/factory';
 
 const { Client, Connection, Search, Worker, workflow } = MeshFlow;
 
 export {
   Client,
   Connection,
+  Connector,
   Errors,
   HotMesh,
   HotMeshConfig,

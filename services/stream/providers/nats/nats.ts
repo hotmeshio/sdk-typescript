@@ -163,13 +163,11 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
       );
       const messages: StreamMessage[] = [];
 
-      // Construct FetchOptions with batch size and timeout
       const fetchOptions = {
-        batch: options?.batchSize || 1,
+        max_messages: options?.batchSize || 1,
         expires: options?.blockTimeout || HMSH_BLOCK_TIME_MS,
       };
 
-      // Fetch a specified batch of messages using the FetchOptions object
       const fetchedMessages = await consumer.fetch(fetchOptions);
 
       for await (const msg of fetchedMessages) {
@@ -177,10 +175,6 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
           id: msg.seq.toString(),
           data: parseStreamMessage(msg.string()),
         });
-
-        if (options?.autoAck) {
-          await msg.ack();
-        }
       }
 
       return messages;

@@ -10,7 +10,7 @@ import { guid } from '../../modules/utils';
 import { Widget } from './src/widget';
 import { schema } from './src/schema';
 
-describe('MeshOS`', () => {
+describe('MeshOS', () => {
   const options = {
     socket: {
       host: config.REDIS_HOST,
