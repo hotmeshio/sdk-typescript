@@ -3,6 +3,7 @@ import {
   ProviderNativeClient,
   ProviderOptions,
 } from '../../types/provider';
+import { ILogger, LoggerService } from '../logger';
 
 /**
  * Abstract class for creating connections to different backend providers.
@@ -16,6 +17,7 @@ import {
  * 5) Update ./modules/utils.ts (identifyProvider) with logic to resolve the provider by inspecting the class/import
  */
 abstract class AbstractConnection<PClass, POptions> {
+  static logger: ILogger = new LoggerService('hotmesh', 'meshos');
   protected connection: any | null = null;
   protected static instances: Map<
     string,

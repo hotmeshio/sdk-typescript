@@ -30,6 +30,8 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
         port: 5432,
       })
     ).getClient();
+  
+    await postgresClient.query('DROP TABLE IF EXISTS stream_hmsh_mytestapp');
   });
 
   beforeEach(async () => {

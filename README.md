@@ -1,7 +1,7 @@
 # HotMesh
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-**HotMesh** offers "Temporal Your Way"—providing the power of orchestration platforms like Temporal.io in a flexible, decentralized manner. Replace everything with robust **Queues** and **Routers**...even the app server.
+**HotMesh** offers the power of orchestration platforms like Temporal.io in a flexible, decentralized manner. Replace everything with robust **Queues** and **Routers**...even the app server.
 
 *Note: This is a beta release and currently focuses on TypeScript/Redis.*
 
@@ -18,8 +18,6 @@
 ```sh
 npm install @hotmeshio/hotmesh
 ```
-
-You have a Redis instance? Good. You're ready to go.
 
 ## Learn
 [📄 Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 Sample Projects](https://github.com/hotmeshio/samples-typescript) | [🎥 Intro (3m)](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9) | [🎥 Transactional Workflow (9m)](https://www.loom.com/share/54ffd5266baf4ac6b287578abfd1d821?sid=0db2cef8-ef0d-4e02-a0b7-a1ee14f476ce)
@@ -44,7 +42,7 @@ You have a Redis instance? Good. You're ready to go.
     export const runMyCron = async (id: string, interval = '0 0 * * *'): Promise<boolean> => {
       return await MeshCall.cron({
         topic: 'my.cron.function',
-        redis: {
+        connection: {
           class: Redis,
           options: { url: 'redis://:key_admin@redis:6379' }
         },
@@ -78,7 +76,7 @@ You have a Redis instance? Good. You're ready to go.
 
     MeshCall.interrupt({
       topic: 'my.cron.function',
-      redis: {
+      connection: {
         class: Redis,
         options: { url: 'redis://:key_admin@redis:6379' }
       },
@@ -103,7 +101,7 @@ You have a Redis instance? Good. You're ready to go.
     export const connectMyFunction = async () => {
       return await MeshCall.connect({
         topic: 'my.demo.function',
-        redis: {
+        connection: {
           class: Redis,
           options: { url: 'redis://:key_admin@redis:6379' }
         },
@@ -132,7 +130,7 @@ You have a Redis instance? Good. You're ready to go.
     const result = await MeshCall.exec({
       topic: 'my.demo.function',
       args: ['something'],
-      redis: {
+      connection: {
         class: Redis,
         options: { url: 'redis://:key_admin@redis:6379' }
       },
@@ -155,7 +153,7 @@ You have a Redis instance? Good. You're ready to go.
     const result = await MeshCall.exec({
       topic: 'my.demo.function',
       args: ['anything'],
-      redis: {
+      connection: {
         class: Redis,
         options: { url: 'redis://:key_admin@redis:6379' }
       },
@@ -171,7 +169,7 @@ You have a Redis instance? Good. You're ready to go.
 
     await MeshCall.flush({
       topic: 'my.demo.function',
-      redis: {
+      connection: {
         class: Redis,
         options: { url: 'redis://:key_admin@redis:6379' }
       },
@@ -704,20 +702,16 @@ This example demonstrates how to search for those workflows where a given condit
 ## Visualize | OpenTelemetry
 HotMesh's telemetry output provides unmatched insight into long-running, x-service transactions. Add your Honeycomb credentials to any project using HotMesh and HotMesh will emit the full *OpenTelemetry* execution tree organized as a DAG.
 
-<img src="./docs/img/visualize/opentelemetry.png" alt="Open Telemetry" style="width:600px;max-width:600px;">
-
 ## Visualize | HotMesh Dashboard
 The HotMesh dashboard provides a detailed overview of all running workflows. An LLM is included to simplify querying and analyzing workflow data for those deployments that include the Redis `FT.SEARCH` module.
-
-<img src="./docs/img/visualize/hotmesh_dashboard.png" alt="HotMesh Dashboard" style="width:600px;max-width:600px;">
 
 ## Visualize | RedisInsight
 View commands, streams, data, CPU, load, etc using the RedisInsight data browser.
 
-<img src="./docs/img/visualize/redisinsight.png" alt="Redis Insight" style="width:600px;max-width:600px;">
-
 ## Samples
-Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo for *tutorials* and instructions on deploying the *HotMesh Dashboard*.
+Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo for *tutorials* and instructions on deploying the *HotMesh Dashboard* for visualizing workflows and managing network health.
+
+Refer to the [hotmeshio/temporal-patterns-typescript](https://github.com/hotmeshio/temporal-patterns-typescript) Git repo for examples of common Temporal.io patterns implemented using HotMesh.
 
 ## Advanced
-For more advanced topics, including details on the underlying modeling and design system (HotMesh) refer to the [Advanced README](https://github.com/hotmeshio/sdk-typescript/tree/main/docs/advanced.md).
+The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).

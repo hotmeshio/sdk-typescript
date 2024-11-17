@@ -37,7 +37,11 @@ import {
   StatsType,
 } from '../../../../types/stats';
 import { Transitions } from '../../../../types/transition';
-import { formatISODate, getSymKey, sleepFor } from '../../../../modules/utils';
+import {
+  formatISODate,
+  getSymKey,
+  sleepFor,
+} from '../../../../modules/utils';
 import { JobInterruptOptions } from '../../../../types/job';
 import {
   HMSH_SCOUT_INTERVAL_SECONDS,
@@ -104,20 +108,6 @@ abstract class RedisStoreBase<
       score,
       value,
     );
-  }
-
-  async zRangeByScoreWithScores(
-    key: string,
-    score: number | string,
-    value: string | number,
-  ): Promise<string | null> {
-    const result = await this.storeClient[
-      this.commands.zrangebyscore_withscores
-    ](key, score, value, 'WITHSCORES');
-    if (result?.length > 0) {
-      return result[0];
-    }
-    return null;
   }
 
   async zRangeByScore(
@@ -277,7 +267,7 @@ abstract class RedisStoreBase<
         activityId: rangeKey,
         appId: this.appId,
       });
-      transaction[this.commands.hgetall](symbolKey);
+      (transaction as any)[this.commands.hgetall](symbolKey);
     }
     const results = (await transaction.exec()) as
       | Array<[null, Symbols]>
@@ -477,7 +467,7 @@ abstract class RedisStoreBase<
     if (stats.general.length) {
       const generalStatsKey = this.mintKey(KeyType.JOB_STATS_GENERAL, params);
       for (const { target, value } of stats.general) {
-        privateMulti[this.commands.hincrbyfloat](
+        (privateMulti as any)[this.commands.hincrbyfloat](
           generalStatsKey,
           target,
           value as number,
@@ -487,7 +477,7 @@ abstract class RedisStoreBase<
     for (const { target, value } of stats.index) {
       const indexParams = { ...params, facet: target };
       const indexStatsKey = this.mintKey(KeyType.JOB_STATS_INDEX, indexParams);
-      privateMulti[this.commands.rpush](indexStatsKey, value.toString());
+      (privateMulti as any)[this.commands.rpush](indexStatsKey, value.toString());
     }
     for (const { target, value } of stats.median) {
       const medianParams = { ...params, facet: target };
@@ -510,7 +500,7 @@ abstract class RedisStoreBase<
   async getJobStats(jobKeys: string[]): Promise<JobStatsRange> {
     const transaction = this.transact();
     for (const jobKey of jobKeys) {
-      transaction[this.commands.hgetall](jobKey);
+      (transaction as any)[this.commands.hgetall](jobKey);
     }
     const results = await transaction.exec();
     const output: { [key: string]: JobStats } = {};
@@ -536,7 +526,7 @@ abstract class RedisStoreBase<
   ): Promise<IdsData> {
     const transaction = this.transact();
     for (const idsKey of indexKeys) {
-      transaction[this.commands.lrange](idsKey, idRange[0], idRange[1]); //0,-1 returns all ids
+      (transaction as any)[this.commands.lrange](idsKey, idRange[0], idRange[1]); //0,-1 returns all ids
     }
     const results = await transaction.exec();
     const output: IdsData = {};
@@ -985,7 +975,7 @@ abstract class RedisStoreBase<
     const transaction = this.transact();
     const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
     for (const key of keys) {
-      transaction[this.commands.zadd](
+      (transaction as any)[this.commands.zadd](
         zsetKey,
         { score: Date.now().toString(), value: key } as any,
         { NX: true },
@@ -1319,8 +1309,8 @@ abstract class RedisStoreBase<
     } else {
       //if no topic, update all
       const transaction = this.transact();
-      transaction[this.commands.del](key);
-      transaction[this.commands.hset](key, { ':': rate });
+      (transaction as any)[this.commands.del](key);
+      (transaction as any)[this.commands.hset](key, { ':': rate });
       await transaction.exec();
     }
   }

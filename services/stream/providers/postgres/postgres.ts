@@ -184,7 +184,6 @@ class PostgresStreamService extends StreamService<
     const client = this.streamClient;
     const tableName = this.getTableName();
     try {
-      await client.query('BEGIN');
       if (streamName === '*') {
         await client.query(`DELETE FROM ${tableName}`);
       } else {
@@ -192,10 +191,8 @@ class PostgresStreamService extends StreamService<
           streamName,
         ]);
       }
-      await client.query('COMMIT');
       return true;
     } catch (error) {
-      await client.query('ROLLBACK');
       this.logger.error(`Error deleting stream ${streamName}`, { error });
       throw error;
     }
@@ -216,15 +213,12 @@ class PostgresStreamService extends StreamService<
     const client = this.streamClient;
     const tableName = this.getTableName();
     try {
-      await client.query('BEGIN');
       await client.query(
         `DELETE FROM ${tableName} WHERE stream_name = $1 AND group_name = $2`,
         [streamName, groupName],
       );
-      await client.query('COMMIT');
       return true;
     } catch (error) {
-      await client.query('ROLLBACK');
       this.logger.error(
         `Error deleting consumer group ${groupName} for stream ${streamName}`,
         { error },
@@ -233,50 +227,67 @@ class PostgresStreamService extends StreamService<
     }
   }
 
+  /**
+   * `publishMessages` can be roped into a transaction by the `store`
+   * service. If so, it will add the SQL and params to the
+   * transaction. [Process Overview]: The engine keeps a reference
+   * to the `store` and `stream` providers; it asks the `store` to
+   * create a transaction and then starts adding store commands to the
+   * transaction. The engine then calls the router to publish a
+   * message using the `stream` provider (which the router keeps
+   * a reference to), and provides the transaction object.
+   * The `stream` provider then calls this method to generate
+   * the SQL and params for the transaction (but, of course, the sql
+   * is not executed until the engine calls the `exec` method on
+   * the transaction object provided by `store`).
+   * 
+   * NOTE: this strategy keeps `stream` and `store` operations separate but 
+   * allows calls to the stream to be roped into a single SQL transaction.
+   */
   async publishMessages(
     streamName: string,
     messages: string[],
     options?: PublishMessageConfig,
   ): Promise<string[] | ProviderTransaction> {
-    const client = options?.transaction || this.streamClient;
-    const tableName = this.getTableName();
-    try {
-      if (!options?.transaction) {
-        await client.query('BEGIN');
-      }
-      const ids: string[] = [];
-
-      const groupName = streamName.endsWith(':') ? 'ENGINE' : 'WORKER';
-
-      const insertValues = messages
-        .map((_, idx) => `($1, $2, $${idx + 3})`)
-        .join(', ');
-
-      const params = [streamName, groupName, ...messages];
-
-      const res = await client.query(
-        `INSERT INTO ${tableName} (stream_name, group_name, message) VALUES ${insertValues} RETURNING id`,
-        params,
+    const { sql, params } = this._publishMessages(streamName, messages);
+    if (options?.transaction && typeof options.transaction.addCommand === 'function') {
+      //call addCommand and return the transaction object
+      options.transaction.addCommand(sql, params, 'array', (rows: { id: number}[]) =>
+        rows.map((row) => row.id.toString()),
       );
-
-      for (const row of res.rows) {
-        ids.push(row.id.toString());
+      return options.transaction as ProviderTransaction;
+    } else {
+      try {
+        const ids: string[] = [];
+        const res = await this.streamClient.query(sql, params);
+        for (const row of res.rows) {
+          ids.push(row.id.toString());
+        }
+        return ids;
+      } catch (error) {
+        this.logger.error(`Error publishing messages to ${streamName}`, {
+          error,
+        });
+        throw error;
       }
-
-      if (!options?.transaction) {
-        await client.query('COMMIT');
-      }
-      return ids;
-    } catch (error) {
-      if (!options?.transaction) {
-        await client.query('ROLLBACK');
-      }
-      this.logger.error(`Error publishing messages to ${streamName}`, {
-        error,
-      });
-      throw error;
     }
   }
+
+  _publishMessages(
+    streamName: string,
+    messages: string[],
+  ): { sql: string; params: any[] } {
+    const tableName = this.getTableName();
+    const groupName = streamName.endsWith(':') ? 'ENGINE' : 'WORKER';
+    const insertValues = messages
+      .map((_, idx) => `($1, $2, $${idx + 3})`)
+      .join(', ');
+  
+    return {
+      sql: `INSERT INTO ${tableName} (stream_name, group_name, message) VALUES ${insertValues} RETURNING id`,
+      params: [streamName, groupName, ...messages],
+    };
+  }  
 
   async consumeMessages(
     streamName: string,
@@ -361,7 +372,6 @@ class PostgresStreamService extends StreamService<
     const client = this.streamClient;
     const tableName = this.getTableName();
     try {
-      await client.query('BEGIN');
       const ids = messageIds.map((id) => parseInt(id));
 
       await client.query(
@@ -370,10 +380,8 @@ class PostgresStreamService extends StreamService<
         [streamName, ids, groupName],
       );
 
-      await client.query('COMMIT');
       return messageIds.length;
     } catch (error) {
-      await client.query('ROLLBACK');
       this.logger.error(`Error deleting messages from ${streamName}`, {
         error,
       });
@@ -458,7 +466,6 @@ class PostgresStreamService extends StreamService<
     const client = this.streamClient;
     const tableName = this.getTableName();
     try {
-      await client.query('BEGIN');
       let deleted = 0;
 
       if (options.maxLen !== undefined) {
@@ -484,10 +491,8 @@ class PostgresStreamService extends StreamService<
         deleted += res.rowCount;
       }
 
-      await client.query('COMMIT');
       return deleted;
     } catch (error) {
-      await client.query('ROLLBACK');
       this.logger.error(`Error trimming stream ${streamName}`, { error });
       throw error;
     }

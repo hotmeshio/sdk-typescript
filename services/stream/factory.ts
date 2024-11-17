@@ -10,6 +10,8 @@ import { StreamInitializable } from './providers/stream-initializable';
 import { NatsStreamService } from './providers/nats/nats';
 
 import { StreamService } from './index';
+import { PostgresStreamService } from './providers/postgres/postgres';
+import { PostgresClientType } from '../../types';
 
 class StreamServiceFactory {
   static async init(
@@ -36,18 +38,22 @@ class StreamServiceFactory {
         provider as NatsClientType,
         storeProvider,
       );
+    } else if (providerType === 'postgres') {
+      service = new PostgresStreamService(
+        provider as (PostgresClientType & ProviderClient),
+        storeProvider as IORedisClientType,
+      );
     } else if (providerType === 'redis') {
       service = new RedisStreamService(
         provider as RedisRedisClientType,
         storeProvider as RedisRedisClientType,
       );
-    } else {
-      //ioredis
+    } else if (providerType === 'ioredis') {
       service = new IORedisStreamService(
         provider as IORedisClientType,
         storeProvider as IORedisClientType,
       );
-    } //etc
+    } //etc register other providers here
     await service.init(namespace, appId, logger);
     return service;
   }

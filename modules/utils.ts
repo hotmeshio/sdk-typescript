@@ -83,10 +83,11 @@ export function XSleepFor(ms: number): {
  */
 export function identifyProvider(provider: any): Providers | null {
   const prototype = Object.getPrototypeOf(provider);
-  if (provider.constructor && provider.constructor.name === 'Client') {
-    return 'nats';
-  } else if (provider.constructor && provider.constructor.name === 'Pool') {
+
+  if (provider.Query?.prototype || Object.keys(provider).includes('database')) {
     return 'postgres';
+  } else if (provider.constructor && provider.constructor.name === 'Client') {
+    return 'nats';
   } else if (
     'defineCommand' in prototype ||
     Object.keys(prototype).includes('multi')
@@ -114,12 +115,17 @@ export function identifyProvider(provider: any): Providers | null {
     }
   }
 
-  if (Object.keys(provider).includes('Pipeline')) {
-    return 'ioredis';
+  let type: Providers | null = null;
+  if (Object.keys(provider).includes('connection')) {
+    type = 'postgres';
+  } else if (Object.keys(provider).includes('Pipeline')) {
+    type = 'ioredis';
   } else if (Object.keys(provider).includes('createClient')) {
-    return 'redis';
+    type = 'redis';
+  } else if (Object.keys(provider).includes('jetstream')) {
+    type = 'nats';
   }
-  return null;
+  return type;
 }
 
 /**

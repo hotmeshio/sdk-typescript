@@ -7,7 +7,7 @@ import {
   IORedisClientType as RedisClientType,
 } from '../../../../../types/redis';
 
-describe('RedisConnection', () => {
+describe('IORedisConnection', () => {
   let redisConnection: RedisConnection;
   let redisClient: RedisClientType;
 

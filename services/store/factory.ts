@@ -8,10 +8,11 @@ import { RedisStoreService } from './providers/redis/redis';
 import { StoreInitializable } from './providers/store-initializable';
 
 import { StoreService } from './index';
+import { PostgresStoreService } from './providers/postgres/postgres';
 
 class StoreServiceFactory {
   static async init(
-    redisClient: ProviderClient,
+    providerClient: ProviderClient,
     namespace: string,
     appId: string,
     logger: ILogger,
@@ -20,11 +21,13 @@ class StoreServiceFactory {
   > {
     let service: StoreService<ProviderClient, ProviderTransaction> &
       StoreInitializable;
-    if (identifyProvider(redisClient) === 'redis') {
-      service = new RedisStoreService(redisClient as RedisRedisClientType);
-    } else {
-      service = new IORedisStoreService(redisClient as IORedisClientType);
-    }
+    if (identifyProvider(providerClient) === 'redis') {
+      service = new RedisStoreService(providerClient as RedisRedisClientType);
+    } else if (identifyProvider(providerClient) === 'ioredis') {
+      service = new IORedisStoreService(providerClient as IORedisClientType);
+    } else if (identifyProvider(providerClient) === 'postgres') {
+      service = new PostgresStoreService(providerClient);
+    } //etc
     await service.init(namespace, appId, logger);
     return service;
   }

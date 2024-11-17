@@ -69,7 +69,7 @@ class QuorumService {
 
       //note: `quorum` shares/re-uses the engine's `store`/`sub` Redis clients
       await instance.initStoreChannel(config.engine.store);
-      await instance.initSubChannel(config.engine.sub, config.engine.store);
+      await instance.initSubChannel(config.engine.sub, config.engine.pub);
       //general quorum subscription
       await instance.subscribe.subscribe(
         KeyType.QUORUM,

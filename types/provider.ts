@@ -27,11 +27,10 @@ export type Providers = 'redis' | 'nats' | 'postgres' | 'ioredis';
  * execute as a single transaction.
  */
 export interface ProviderTransaction {
-  //outside callers can execute the transaction, regardless of provider by calling this method
   exec(): Promise<any>;
 
-  // All other transaction methods are provider specific
-  [key: string]: any;
+  // Allows callable properties while avoiding conflicts with ProviderTransaction instances
+  [key: string]: ((...args: any[]) => Promise<any>) | undefined | any;
 }
 
 /**
@@ -69,3 +68,75 @@ export type ProviderConfig = {
   class: any;
   options: StringAnyType;
 };
+
+
+export interface SetOptions {
+  nx?: boolean;
+  ex?: number; // Expiry time in seconds
+}
+
+export interface HSetOptions {
+  nx?: boolean;
+  ex?: number; // Expiry time in seconds
+}
+
+export interface ZAddOptions {
+  nx?: boolean;
+}
+
+export interface HScanResult {
+  cursor: string;
+  items: Record<string, string>;
+}
+
+export interface KVSQLProviderTransaction extends ProviderTransaction {
+  [key: string]: any;
+  exec(): Promise<any[]>;
+  set(key: string, value: string, options?: SetOptions): ProviderTransaction;
+  get(key: string): ProviderTransaction;
+  del(key: string): ProviderTransaction;
+  expire(key: string, seconds: number): ProviderTransaction;
+  hset(
+    key: string,
+    fields: Record<string, string>,
+    options?: HSetOptions
+  ): ProviderTransaction;
+  hget(key: string, field: string): ProviderTransaction;
+  hdel(key: string, fields: string[]): ProviderTransaction;
+  hmget(key: string, fields: string[]): ProviderTransaction;
+  hgetall(key: string): ProviderTransaction;
+  hincrbyfloat(
+    key: string,
+    field: string,
+    value: number
+  ): ProviderTransaction;
+  hscan(key: string, cursor: string, count?: number): ProviderTransaction;
+  lrange(key: string, start: number, end: number): ProviderTransaction;
+  rpush(key: string, value: string): ProviderTransaction;
+  lpush(key: string, value: string): ProviderTransaction;
+  lpop(key: string): ProviderTransaction;
+  lmove(
+    source: string,
+    destination: string,
+    srcPosition: 'LEFT' | 'RIGHT',
+    destPosition: 'LEFT' | 'RIGHT'
+  ): ProviderTransaction;
+  zadd(
+    key: string,
+    score: number,
+    member: string,
+    options?: ZAddOptions
+  ): ProviderTransaction;
+  zrange(key: string, start: number, stop: number): ProviderTransaction;
+  zrangebyscore(key: string, min: number, max: number): ProviderTransaction;
+  zrangebyscore_withscores(
+    key: string,
+    min: number,
+    max: number
+  ): ProviderTransaction;
+  zrem(key: string, member: string): ProviderTransaction;
+  zrank(key: string, member: string): ProviderTransaction;
+  scan(cursor: number, count?: number): ProviderTransaction;
+  rename(oldKey: string, newKey: string): ProviderTransaction;
+  // Add other methods as needed
+}

@@ -1,4 +1,3 @@
-// /app/services/connector/providers/postgres.ts
 import { AbstractConnection } from '..';
 import {
   PostgresClientOptions,
@@ -30,8 +29,12 @@ class PostgresConnection extends AbstractConnection<
       await connection.query('SELECT 1');
       return connection;
     } catch (error) {
-      console.error(`Failed to connect to PostgreSQL: ${error.message}`);
-      throw new Error(`Failed to connect to PostgreSQL: ${error.message}`);
+      PostgresConnection.logger.error(`postgres-provider-connection-failed`, {
+        host: options.host ?? 'unknown',
+        database: options.database ?? 'unknown',
+        port: options.port ?? 'unknown',
+      });
+      throw new Error(`postgres-provider-connection-failed: ${error.message}`);
     }
   }
 

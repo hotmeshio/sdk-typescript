@@ -43,30 +43,41 @@ export class ConnectorService {
   static async initClients(
     target: HotMeshEngine | HotMeshWorker,
   ): Promise<void> {
-    const connections = target.connections;
+    let connections = target.connections;
 
-    if (connections) {
-      // Expanded form
-      if (connections.store) {
-        await ConnectorService.initClient(connections.store, target, 'store');
-      }
-      if (connections.stream) {
-        await ConnectorService.initClient(connections.stream, target, 'stream');
-      }
-      if (connections.sub) {
-        await ConnectorService.initClient(connections.sub, target, 'sub');
-      }
-      // TODO: add search after refactoring
-    } else {
-      // Collapsed form
+    if(!connections) {
       const ProviderConfig = polyfill.providerConfig(target);
-      if (ProviderConfig) {
-        await ConnectorService.initClient(ProviderConfig, target, 'store');
-        await ConnectorService.initClient(ProviderConfig, target, 'stream');
-        await ConnectorService.initClient(ProviderConfig, target, 'sub');
-        // TODO: add search after refactoring
+      connections = target.connections = {
+        store: { ...ProviderConfig },
+        stream: { ...ProviderConfig },
+        sub: { ...ProviderConfig },
       }
     }
+    // Expanded form
+    if (connections.store) {
+      await ConnectorService.initClient(connections.store, target, 'store');
+    }
+    if (connections.stream) {
+      await ConnectorService.initClient(connections.stream, target, 'stream');
+    }
+    if (connections.sub) {
+      await ConnectorService.initClient(connections.sub, target, 'sub');
+      // use store for publishing events if same as subscription
+      if (connections.sub.class === connections.store.class) {
+        connections.pub = {
+          class: connections.store.class,
+          options: { ...connections.store.options }
+        };
+        target.pub = target.store;
+      } else {
+        connections.pub = {
+          class: connections.sub.class,
+          options: { ...connections.sub.options }
+        };
+        await ConnectorService.initClient(connections.pub, target, 'pub');
+      }
+    }
+    // TODO: add search after refactoring
   }
 
   /**

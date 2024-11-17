@@ -1,7 +1,10 @@
+import { Client as Postgres } from 'pg';
 import * as Redis from 'redis';
 
 import config from '../../$setup/config';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HotMesh, HotMeshConfig } from '../../../index';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { RedisConnection } from '../../../services/connector/providers/redis';
 import {
   StreamData,
@@ -9,12 +12,15 @@ import {
   StreamStatus,
 } from '../../../types/stream';
 import { guid } from '../../../modules/utils';
-import { HMSH_LOGLEVEL } from '../../../modules/enums';
+
+import { ProviderNativeClient } from '../../../types/provider';
 import { RedisRedisClassType } from '../../../types/redis';
 
-describe('FUNCTIONAL | Sequence', () => {
+describe('FUNCTIONAL | Sequence | Postgres', () => {
   const appConfig = { id: 'tree' };
-  const options = {
+  let hotMesh: HotMesh;
+  let postgresClient: ProviderNativeClient;
+  const redis_options = {
     socket: {
       host: config.REDIS_HOST,
       port: config.REDIS_PORT,
@@ -23,14 +29,31 @@ describe('FUNCTIONAL | Sequence', () => {
     password: config.REDIS_PASSWORD,
     database: config.REDIS_DATABASE,
   };
-  let hotMesh: HotMesh;
+  const postgres_options = {
+    user: config.POSTGRES_USER,
+    host: config.POSTGRES_HOST,
+    database: config.POSTGRES_DB,
+    password: config.POSTGRES_PASSWORD,
+    port: config.POSTGRES_PORT,
+  };
 
   beforeAll(async () => {
-    //init Redis and flush db
+    // Initialize Postgres and drop tables (and data) from prior tests
+    postgresClient = (await PostgresConnection.connect(
+      guid(),
+      Postgres,
+      postgres_options,
+    )).getClient();
+    await postgresClient.query('DROP TABLE IF EXISTS kvsql_hashes');
+    await postgresClient.query('DROP TABLE IF EXISTS kvsql_strings');
+    await postgresClient.query('DROP TABLE IF EXISTS kvsql_sorted_sets');
+    await postgresClient.query('DROP TABLE IF EXISTS kvsql_lists');
+
+    //init Redis and flush db (remove data from prior tests)
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis as unknown as RedisRedisClassType,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushDb();
 
@@ -39,13 +62,21 @@ describe('FUNCTIONAL | Sequence', () => {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options },
+        connections: {
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        }
       },
       workers: [
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
-          redis: { class: Redis, options },
+          connections: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {
