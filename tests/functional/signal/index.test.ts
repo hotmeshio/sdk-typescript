@@ -32,7 +32,7 @@ describe('FUNCTIONAL | Signal', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options },
+        connection: { class: Redis, options },
       },
     };
 

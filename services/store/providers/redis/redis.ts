@@ -256,20 +256,6 @@ class RedisStoreService
     } as any);
   }
 
-  async zRangeByScoreWithScores(
-    key: string,
-    score: number | string,
-    value: string | number,
-  ): Promise<string | null> {
-    const result = await this.storeClient[
-      this.commands.zrangebyscore_withscores
-    ](key, score, value);
-    if (result?.length > 0) {
-      return result[0];
-    }
-    return null;
-  }
-
   async zRangeByScore(
     key: string,
     score: number | string,

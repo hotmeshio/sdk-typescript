@@ -4,7 +4,7 @@ import { SerializerService as Serializer } from '../serializer';
 import { Consumes } from '../../types/activity';
 import { AppVID } from '../../types/app';
 import { HookRule, HookSignal } from '../../types/hook';
-import { HotMeshSettings } from '../../types/hotmesh';
+import { HotMeshApps, HotMeshSettings } from '../../types/hotmesh';
 import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import { ThrottleOptions } from '../../types/quorum';
 import {
@@ -34,6 +34,7 @@ abstract class StoreService<
   }
 
   abstract transact(): TransactionProvider;
+  abstract init(namespace: string, appId: string, logger: ILogger): Promise<HotMeshApps>;
 
   //domain-level methods
   abstract mintKey(type: KeyType, params: KeyStoreParams): string;

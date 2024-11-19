@@ -1,29 +1,62 @@
+import { Client as Postgres } from 'pg';
 import Redis from 'ioredis';
 
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { guid } from '../../../modules/utils';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import {
+  RedisConnection,
+} from '../../../services/connector/providers/ioredis';
+import {
+  PostgresConnection,
+} from '../../../services/connector/providers/postgres';
 import { StreamData, StreamDataResponse } from '../../../types/stream';
 import config from '../../$setup/config';
+import { ProviderNativeClient } from '../../../types/provider';
 
-describe('FUNCTIONAL | Activity Cycles', () => {
-  const options = {
+describe('FUNCTIONAL | Activity Cycles | Postgres', () => {
+  const appConfig = { id: 'cycle' };
+  let counter = 0;
+  let hotMesh: HotMesh;
+  let postgresClient: ProviderNativeClient;
+  const redis_options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
     password: config.REDIS_PASSWORD,
     db: config.REDIS_DATABASE,
   };
-  const appConfig = { id: 'cycle' };
-  let hotMesh: HotMesh;
-  let counter = 0;
+  const postgres_options = {
+    user: config.POSTGRES_USER,
+    host: config.POSTGRES_HOST,
+    database: config.POSTGRES_DB,
+    password: config.POSTGRES_PASSWORD,
+    port: config.POSTGRES_PORT,
+  };
 
   beforeAll(async () => {
+    // Initialize Postgres and drop tables (and data) from prior tests
+    postgresClient = (await PostgresConnection.connect(
+      guid(),
+      Postgres,
+      postgres_options,
+    )).getClient();
+
+    // Query the list of tables in the public schema and drop
+    const result = await postgresClient.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public';
+    `) as { rows: { table_name: string }[] };
+    let tables = result.rows.map(row => row.table_name);
+    for (const table of tables) {
+      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
+    }
+
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushdb();
 
@@ -33,7 +66,11 @@ describe('FUNCTIONAL | Activity Cycles', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options },
+        connections: {
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        },
       },
 
       workers: [
@@ -42,7 +79,11 @@ describe('FUNCTIONAL | Activity Cycles', () => {
         //this worker runs as part of flow v1
         {
           topic: 'cycle.count',
-          redis: { class: Redis, options },
+          connections: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {
@@ -61,7 +102,11 @@ describe('FUNCTIONAL | Activity Cycles', () => {
         //this worker runs as part of flow v2
         {
           topic: 'cycle.err',
-          redis: { class: Redis, options },
+          connections: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {

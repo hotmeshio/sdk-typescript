@@ -68,6 +68,12 @@ type HotMeshEngine = {
   sub?: ProviderClient;
   /**
    * set by hotmesh once the connnector service instances the provider
+   * AND if the provider requires a separate channel for publishing
+   * @private
+   */
+  pub?: ProviderClient;
+  /**
+   * set by hotmesh once the connnector service instances the provider
    * @private
    */
   search?: ProviderClient;
@@ -92,6 +98,7 @@ type HotMeshEngine = {
     store: ProviderConfig;
     stream: ProviderConfig;
     sub: ProviderConfig;
+    pub?: ProviderConfig; //system injects if necessary (if store channel cannot be used for pub)
     search?: ProviderConfig; //inherits from store if not set
   };
 
@@ -125,6 +132,13 @@ type HotMeshWorker = {
    * the topic that the worker subscribes to
    */
   topic: string;
+
+  /**
+   * set by hotmesh once the connnector service instances the provider
+   * AND if the provider requires a separate channel for publishing
+   * @private
+   */
+  pub?: ProviderClient;
 
   /**
    * set by hotmesh once the connnector service instances the provider
@@ -167,6 +181,7 @@ type HotMeshWorker = {
     store: ProviderConfig;
     stream: ProviderConfig;
     sub: ProviderConfig;
+    pub?: ProviderConfig; //if store channel cannot be used for pub
     search?: ProviderConfig; //inherits from store if not set
   };
 

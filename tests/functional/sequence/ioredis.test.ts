@@ -1,8 +1,8 @@
-import * as Redis from 'redis';
+import Redis from 'ioredis';
 
 import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/providers/redis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import {
   StreamData,
   StreamDataResponse,
@@ -12,16 +12,13 @@ import { guid } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { RedisRedisClassType } from '../../../types/redis';
 
-describe('FUNCTIONAL | Sequence', () => {
+describe('FUNCTIONAL | Sequence | IORedis', () => {
   const appConfig = { id: 'tree' };
   const options = {
-    socket: {
-      host: config.REDIS_HOST,
-      port: config.REDIS_PORT,
-      tls: false,
-    },
+    host: config.REDIS_HOST,
+    port: config.REDIS_PORT,
     password: config.REDIS_PASSWORD,
-    database: config.REDIS_DATABASE,
+    db: config.REDIS_DATABASE,
   };
   let hotMesh: HotMesh;
 
@@ -32,20 +29,20 @@ describe('FUNCTIONAL | Sequence', () => {
       Redis as unknown as RedisRedisClassType,
       options,
     );
-    redisConnection.getClient().flushDb();
+    redisConnection.getClient().flushdb();
 
     //init/activate HotMesh (test both `engine` and `worker` roles)
     const config: HotMeshConfig = {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options },
+        connection: { class: Redis, options },
       },
       workers: [
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {

@@ -38,13 +38,13 @@ describe('FUNCTIONAL | EMIT', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options },
+        connection: { class: Redis, options },
       },
 
       workers: [
         {
           topic: 'emit.test.worker',
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {

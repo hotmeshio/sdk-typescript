@@ -13,7 +13,7 @@ describe('FUNCTIONAL | IORedisConnection', () => {
     expect(await redisConnection.getClient()).not.toBeNull();
   });
 
-  it('should disconnect from Redis', async () => {
+  it('should disconnect from the provider client', async () => {
     const redisConnection =
       await RedisConnection.getConnection('test-connection');
     await redisConnection.disconnect();
@@ -31,7 +31,7 @@ describe('FUNCTIONAL | IORedisConnection', () => {
     expect(RedisConnection['instances'].size).toBe(0);
   });
 
-  it('should set and get a value from Redis', async () => {
+  it('should set and get a value from the provider client', async () => {
     const redisConnection =
       await RedisConnection.getConnection('test-connection');
     const redisClient = await redisConnection.getClient();

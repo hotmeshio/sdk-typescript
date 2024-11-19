@@ -73,7 +73,7 @@ class WorkerService {
         service.logger = logger;
 
         await service.initStoreChannel(service, worker.store);
-        await service.initSubChannel(service, worker.sub, worker.store);
+        await service.initSubChannel(service, worker.sub, worker.pub);
         await service.subscribe.subscribe(
           KeyType.QUORUM,
           service.subscriptionHandler(),

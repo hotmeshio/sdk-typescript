@@ -422,14 +422,26 @@ class ReporterService {
   }
 
   isGeneralMetric(metric: string): boolean {
-    return metric === 'sum' || metric === 'avg' || metric === 'count';
+    return ReporterService.isGeneralMetric(metric);
   }
 
   isMedianMetric(metric: string): boolean {
-    return metric === 'mdn';
+    return ReporterService.isMedianMetric(metric);
   }
 
   isIndexMetric(metric: string): boolean {
+    return ReporterService.isIndexMetric(metric);
+  }
+
+  static isGeneralMetric(metric: string): boolean {
+    return metric === 'sum' || metric === 'avg' || metric === 'count';
+  }
+
+  static isMedianMetric(metric: string): boolean {
+    return metric === 'mdn';
+  }
+
+  static isIndexMetric(metric: string): boolean {
     return metric === 'index';
   }
 

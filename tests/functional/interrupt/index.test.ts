@@ -30,7 +30,7 @@ describe('FUNCTIONAL | Interrupt', () => {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options },
+        connection: { class: Redis, options },
       },
     };
     hotMesh = await HotMesh.init(config);

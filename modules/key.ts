@@ -21,7 +21,7 @@ import { KeyStoreParams, KeyType } from '../types/hotmesh';
  * hmsh:<appid>:x: ->                                 {xstream} when an engine is sent or reads a buffered task (engines read from their custom topic)
  * hmsh:<appid>:x:<topic> ->                          {xstream} when a worker is sent or reads a buffered task (workers read from their custom topic)
  * hmsh:<appid>:hooks ->                              {hash}    hook patterns/rules; set at compile time
- * hmsh:<appid>:signals ->                            {hash}    dynamic hook signals (hget/hdel) when resolving (always self-clean); added/removed at runtime
+ * hmsh:<appid>:signals ->                            {string}  dynamic hook signals (hget/hdel); expirable
  * hmsh:<appid>:sym:keys: ->                          {hash}    list of symbol ranges and :cursor assigned at version deploy time for job keys
  * hmsh:<appid>:sym:keys:<activityid|$subscribes> ->  {hash}    list of symbols based upon schema enums (initially) and adaptively optimized (later) during runtime; if '$subscribes' is used as the activityid, it is a top-level `job` symbol set (for job keys)
  * hmsh:<appid>:sym:vals: ->                          {hash}    list of symbols for job values across all app versions
@@ -29,18 +29,17 @@ import { KeyStoreParams, KeyType } from '../types/hotmesh';
 
 const HMNS = 'hmsh';
 
-const KEYSEP = ':'; //default delimiter for keys
-const VALSEP = '::'; //default delimiter for vals
-const WEBSEP = '::'; //default delimiter for webhook vals
-const TYPSEP = '::'; //delimiter for ZSET task typing (how should a list be used?)
+const KEYSEP = ':'; // default delimiter for keys
+const VALSEP = '::'; // default delimiter for vals
+const WEBSEP = '::'; // default delimiter for webhook vals
+const TYPSEP = '::'; // delimiter for ZSET task typing (how should a list be used?)
 
 class KeyService {
   /**
-   * returns a key that can be used to access a value in the key/value store
+   * Returns a key that can be used to access a value in the key/value store
    * appropriate for the given key type; the keys have an implicit hierarchy
    * and are used to organize data in the store in a tree-like structure
-   * via the use of colons as separators. The top-level entity is the hmsh manifest.
-   * This file will reveal the full scope of what is on the server (apps, versions, etc)
+   * via the use of colons as separators.
    * @param namespace
    * @param keyType
    * @param params
@@ -81,21 +80,87 @@ class KeyService {
       case KeyType.SUBSCRIPTION_PATTERNS:
         return `${namespace}:${params.appId}:v:${params.appVersion}:transitions`;
       case KeyType.HOOKS:
-        //`hooks` provide the pattern to resolve a value
         return `${namespace}:${params.appId}:hooks`;
       case KeyType.SIGNALS:
-        //`signals` provide the registry of resolved values that link back to paused jobs
         return `${namespace}:${params.appId}:signals`;
       case KeyType.SYMKEYS:
-        //`symbol keys` provide the registry of replacement values for job keys
         return `${namespace}:${params.appId}:sym:keys:${params.activityId || ''}`;
       case KeyType.SYMVALS:
-        //`symbol vals` provide the registry of replacement values for job vals
         return `${namespace}:${params.appId}:sym:vals:`;
       case KeyType.STREAMS:
         return `${namespace}:${params.appId || ''}:x:${params.topic || ''}`;
       default:
         throw new Error('Invalid key type.');
+    }
+  }
+
+  /**
+   * Extracts the parts of a given key string, safely handling cases where
+   * the 'id' portion may contain additional colons.
+   * @param key - The key to parse.
+   * @returns An object with the parsed key parts.
+   */
+  static parseKey(key: string): Record<string, string | undefined> {
+    const [namespace, appId, entity, ...rest] = key.split(KEYSEP);
+    const id = rest.join(KEYSEP) || ''; // Join remaining parts to reconstruct the id
+
+    return {
+      namespace,
+      app: entity === 'a' ? appId : undefined,
+      entity,
+      id,
+    };
+  }
+
+  /**
+   * Reconstructs a key string from its parts.
+   * @param parts - An object with the key parts.
+   * @returns The reconstructed key string.
+   */
+  static reconstituteKey(parts: Record<string, string | undefined>): string {
+    const { namespace, app, entity, id } = parts;
+    return `${namespace}${KEYSEP}${app}${KEYSEP}${entity}${KEYSEP}${id || ''}`;
+  }
+
+  /**
+   * Resolves an entity type abbreviation to a table-friendly name.
+   * @param abbreviation - The abbreviated entity type.
+   * @returns The long-form entity name.
+   */
+  static resolveEntityType(abbreviation: string, id = ''): string {
+    switch (abbreviation) {
+      case 'a': return 'applications';
+      case 'r': return 'throttles';
+      case 'w': return id === '' ? 'task_priorities' : 'roles';
+      case 't': return id === '' ? 'task_schedules' : 'task_lists';
+      case 'q': return 'events';
+      case 'j': return 'jobs';
+      case 's': return 'stats';
+      case 'v': return 'versions';
+      case 'x': return id === '' ? 'streams' : 'stream_topics';
+      case 'hooks': return 'signal_patterns';
+      case 'signals': return 'signal_registry';
+      case 'sym': return 'symbols';
+      default: return 'unknown_entity';
+    }
+  }
+
+  static resolveAbbreviation(entity: string): string {
+    switch (entity) {
+      case 'applications': return 'a';
+      case 'throttles': return 'r';
+      case 'roles': return 'w';
+      case 'task_schedules': return 't';
+      case 'task_lists': return 't';
+      case 'events': return 'q';
+      case 'jobs': return 'j';
+      case 'stats': return 's';
+      case 'versions': return 'v';
+      case 'streams': return 'x';
+      case 'signal_patterns': return 'hooks';
+      case 'signal_registry': return 'signals';
+      case 'symbols': return 'sym';
+      default: return 'unknown_entity';
     }
   }
 }

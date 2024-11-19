@@ -37,13 +37,13 @@ describe('FUNCTIONAL | PENDING', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options },
+        connection: { class: Redis, options },
       },
 
       workers: [
         {
           topic: 'pending.test.worker',
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {

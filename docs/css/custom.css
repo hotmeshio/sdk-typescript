@@ -6,3 +6,30 @@
 pre {
   border-radius: 4px;
 }
+
+.tsd-page-toolbar {
+  background-color: #ffffff;
+  height: 5em;
+}
+#tsd-search .title {
+  color: #000000;
+  line-height: 2em;
+  font-size: 2.45em;
+  font-weight: 500;
+  margin-left: 0;
+  position: relative; /* Ensure position context for pseudo-element */
+}
+
+#tsd-search .title::before {
+  content: "";
+  display: inline-block;
+  width: 1.25em; /* Adjust width as needed */
+  height: 1.25em; /* Adjust height as needed */
+  background-image: url("https://hotmesh.io/img/logo_144_r.png");
+  background-size: contain;
+  background-repeat: no-repeat;
+  margin-right: 0; /* Space between logo and text */
+  position: relative; /* Ensure position context for pseudo-element */
+  top: .2em; /* Move up; adjust as needed */
+  left: -0.4em; /* Move left; adjust as needed */
+}
