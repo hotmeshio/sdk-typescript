@@ -287,13 +287,13 @@ describe('FUNCTIONAL | MESHFLOW', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options },
+        connection: { class: Redis, options },
       },
 
       workers: [
         {
           topic: workflowTopic,
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
 
           callback: async (data: StreamData): Promise<StreamDataResponse> => {
             let sleepData: number | null = null;
@@ -425,7 +425,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
 
         {
           topic: activityTopic,
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
 
           callback: async (data: StreamData): Promise<StreamDataResponse> => {
             try {

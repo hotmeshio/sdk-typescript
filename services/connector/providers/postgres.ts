@@ -47,7 +47,7 @@ class PostgresConnection extends AbstractConnection<
 
   async closeConnection(connection: PostgresClientType): Promise<void> {
     if (!connection) {
-      console.warn('No active PostgreSQL connection to close');
+      PostgresConnection.logger.warn(`postgres-not-connected-cannot-close`);
       return;
     }
     await connection.end();

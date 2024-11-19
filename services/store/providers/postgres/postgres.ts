@@ -38,7 +38,11 @@ import {
   StatsType,
 } from '../../../../types/stats';
 import { Transitions } from '../../../../types/transition';
-import { formatISODate, getSymKey, sleepFor } from '../../../../modules/utils';
+import {
+  formatISODate,
+  getSymKey,
+  sleepFor,
+} from '../../../../modules/utils';
 import { JobInterruptOptions } from '../../../../types/job';
 import {
   HMSH_SCOUT_INTERVAL_SECONDS,
@@ -70,7 +74,11 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     //In general, this.storeClient will behave like Redis, but will 
     //  use the 'pg' package and will read/write to a Postgres database.
     this.pgClient = storeClient as unknown as PostgresClientType;
-    this.storeClient = new KVSQL(storeClient as unknown as PostgresClientType) as unknown as ProviderClient;
+    this.storeClient = new KVSQL(
+      storeClient as unknown as PostgresClientType,
+      this.namespace,
+      this.appId,
+    ) as unknown as ProviderClient;
   }
 
   async init(
@@ -78,12 +86,14 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     appId: string,
     logger: ILogger,
   ): Promise<HotMeshApps> {
-    this.namespace = namespace;
-    this.appId = appId;
+    //bind appId and namespace to storeClient once initialized
+    // (it uses these values to construct keys for the store)
+    this.storeClient.namespace = this.namespace = namespace;
+    this.storeClient.appId = this.appId = appId;
     this.logger = logger;
 
     //ensure tables exist
-    await this.deploy();
+    await this.deploy(appId);
 
     const settings = await this.getSettings(true);
     this.cache = new Cache(appId, settings);
@@ -92,35 +102,39 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     return this.cache.getApps();
   }
 
-  async deploy(): Promise<void> {
+  /**
+   * Deploys the necessary tables with the specified naming strategy.
+   * @param appName - The name of the application.
+   */
+  async deploy(appName: string): Promise<void> {
     const client = this.pgClient;
-  
+
     try {
       // Acquire advisory lock
-      const lockId = this.getAdvisoryLockId();
+      const lockId = this.getAdvisoryLockId(appName);
       const lockResult = await client.query(
         'SELECT pg_try_advisory_lock($1) AS locked',
         [lockId],
       );
-  
+
       if (lockResult.rows[0].locked) {
         // Begin transaction
         await client.query('BEGIN');
-  
+
         // Check and create tables
-        const tablesExist = await this.checkIfTablesExist(client);
+        const tablesExist = await this.checkIfTablesExist(client, appName);
         if (!tablesExist) {
-          await this.createTables(client);
+          await this.createTables(client, appName);
         }
-  
+
         // Commit transaction
         await client.query('COMMIT');
-  
+
         // Release the lock
         await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
       } else {
         // Wait for the deploy process to complete
-        await this.waitForTablesCreation(client, lockId);
+        await this.waitForTablesCreation(client, lockId, appName);
       }
     } catch (error) {
       this.logger.error('Error deploying tables', { error });
@@ -128,10 +142,10 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     }
   }
 
-  getAdvisoryLockId(): number {
-    return this.hashStringToInt(this.appId);
+  getAdvisoryLockId(appName: string): number {
+    return this.hashStringToInt(appName);
   }
-  
+
   hashStringToInt(str: string): number {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -141,18 +155,22 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     return Math.abs(hash);
   }
 
-  async waitForTablesCreation(client: PostgresClientType, lockId: number): Promise<void> {
+  async waitForTablesCreation(
+    client: PostgresClientType,
+    lockId: number,
+    appName: string,
+  ): Promise<void> {
     let retries = 0;
-    const maxRetries = 20; // Wait up to 2 seconds
+    const maxRetries = 20;
     while (retries < maxRetries) {
-      await sleepFor(100); // Wait 100 ms
+      await sleepFor(150);
       const lockCheck = await client.query(
         "SELECT NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint) AS unlocked",
         [lockId],
       );
       if (lockCheck.rows[0].unlocked) {
         // Lock has been released, tables should exist now
-        const tablesExist = await this.checkIfTablesExist(client);
+        const tablesExist = await this.checkIfTablesExist(client, appName);
         if (tablesExist) {
           return;
         }
@@ -162,79 +180,200 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     throw new Error('Timeout waiting for table creation');
   }
 
-  async checkIfTablesExist(client: PostgresClientType): Promise<boolean> {
-    const tableNames = [
-      'kvsql_strings',
-      'kvsql_hashes',
-      'kvsql_lists',
-      'kvsql_sorted_sets',
-    ];
-  
+  async checkIfTablesExist(
+    client: PostgresClientType,
+    appName: string,
+  ): Promise<boolean> {
+    const tableNames = this.getTableNames(appName);
+
     const checkTablePromises = tableNames.map((tableName) =>
       client.query(
         `SELECT to_regclass('public.${tableName}') AS table`,
       ),
     );
-  
+
     const results = await Promise.all(checkTablePromises);
     return results.every((res) => res.rows[0].table !== null);
-  }  
-  async createTables(client: PostgresClientType): Promise<void> {
+  }
+
+  async createTables(
+    client: PostgresClientType,
+    appName: string,
+  ): Promise<void> {
     // Begin transaction
     await client.query('BEGIN');
-  
-    // Create tables
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS kvsql_strings (
-        key TEXT PRIMARY KEY,
-        value TEXT,
-        expiry TIMESTAMP WITH TIME ZONE
-      );
-    `);
-  
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS kvsql_hashes (
-        key TEXT NOT NULL,
-        field TEXT NOT NULL,
-        value TEXT,
-        expiry TIMESTAMP WITH TIME ZONE,
-        PRIMARY KEY (key, field)
-      );
-    `);
-  
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS kvsql_lists (
-        key TEXT NOT NULL,
-        "index" BIGINT NOT NULL,
-        value TEXT,
-        expiry TIMESTAMP WITH TIME ZONE,
-        PRIMARY KEY (key, "index")
-      );
-    `);
-    
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_kvsql_lists_key_expiry ON kvsql_lists (key, expiry);
-    `);    
-  
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS kvsql_sorted_sets (
-        key TEXT NOT NULL,
-        member TEXT NOT NULL,
-        score DOUBLE PRECISION NOT NULL,
-        expiry TIMESTAMP WITH TIME ZONE,
-        PRIMARY KEY (key, member)
-      );
-    `);
 
-    await client.query(`
-      CREATE INDEX idx_kvsql_sorted_sets_key_score_member
-      ON kvsql_sorted_sets (key, score, member);
-    `);
+    const tableDefinitions = this.getTableDefinitions(
+      this.storeClient.safeName(appName),
+    );
+
+    for (const tableDef of tableDefinitions) {
+      switch (tableDef.type) {
+        case 'string':
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+              key TEXT PRIMARY KEY,
+              value TEXT,
+              expiry TIMESTAMP WITH TIME ZONE
+            );
+          `);
+          break;
+
+        case 'hash':
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+              key TEXT NOT NULL,
+              field TEXT NOT NULL,
+              value TEXT,
+              expiry TIMESTAMP WITH TIME ZONE,
+              PRIMARY KEY (key, field)
+            );
+          `);
+          break;
+
+        case 'list':
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+              key TEXT NOT NULL,
+              index BIGINT NOT NULL,
+              value TEXT,
+              expiry TIMESTAMP WITH TIME ZONE,
+              PRIMARY KEY (key, index)
+            );
+          `);
+          await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expiry ON ${tableDef.name} (key, expiry);
+          `);
+          break;
+
+        case 'sorted_set':
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+              key TEXT NOT NULL,
+              member TEXT NOT NULL,
+              score DOUBLE PRECISION NOT NULL,
+              expiry TIMESTAMP WITH TIME ZONE,
+              PRIMARY KEY (key, member)
+            );
+          `);
+          await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_score_member
+            ON ${tableDef.name} (key, score, member);
+          `);
+          break;
+
+        default:
+          this.logger.warn(`Unknown table type for ${tableDef.name}`);
+          break;
+      }
+    }
 
     // Commit transaction
     await client.query('COMMIT');
   }
-  
+
+  getTableNames(appName: string): string[] {
+    const tableNames = [];
+
+    // Applications table (only hotmesh prefix)
+    tableNames.push('hotmesh_applications', 'hotmesh_connections');
+
+    // Other tables with appName
+    const tablesWithAppName = [
+      'throttles',
+      'roles',
+      'task_priorities',
+      'task_schedules',
+      'task_lists',
+      'events',
+      'jobs',
+      'stats_counted',
+      'stats_indexed',
+      'stats_ordered',
+      'versions',
+      'signal_patterns',
+      'signal_registry',
+      'symbols',
+    ];
+
+    tablesWithAppName.forEach((table) => {
+      tableNames.push(`hotmesh_${this.storeClient.safeName(appName)}_${table}`);
+    });
+
+    return tableNames;
+  }
+
+  getTableDefinitions(appName: string): Array<{ name: string; type: string }> {
+    const tableDefinitions = [
+      {
+        name: 'hotmesh_applications',
+        type: 'hash',
+      },
+      {
+        name: `hotmesh_connections`,
+        type: 'hash',
+      },
+      {
+        name: `hotmesh_${appName}_throttles`,
+        type: 'hash',
+      },
+      {
+        name: `hotmesh_${appName}_roles`,
+        type: 'string',
+      },
+      {
+        name: `hotmesh_${appName}_task_schedules`,
+        type: 'sorted_set',
+      },
+      {
+        name: `hotmesh_${appName}_task_priorities`,
+        type: 'sorted_set',
+      },
+      {
+        name: `hotmesh_${appName}_task_lists`,
+        type: 'list',
+      },
+      {
+        name: `hotmesh_${appName}_events`,
+        type: 'hash',
+      },
+      {
+        name: `hotmesh_${appName}_jobs`,
+        type: 'hash',
+      },
+      {
+        name: `hotmesh_${appName}_stats_counted`,
+        type: 'hash',
+      },
+      {
+        name: `hotmesh_${appName}_stats_ordered`,
+        type: 'sorted_set',
+      },
+      {
+        name: `hotmesh_${appName}_stats_indexed`,
+        type: 'list',
+      },
+      {
+        name: `hotmesh_${appName}_versions`,
+        type: 'hash',
+      },
+      {
+        name: `hotmesh_${appName}_signal_patterns`,
+        type: 'hash',
+      },
+      {
+        name: `hotmesh_${appName}_symbols`,
+        type: 'hash',
+      },
+      {
+        name: `hotmesh_${appName}_signal_registry`,
+        type: 'string',
+      },
+    ];
+
+    return tableDefinitions;
+  }
+
   isSuccessful(result: any): boolean {
     return result > 0 || result === 'OK' || result === true;
   }
@@ -363,6 +502,8 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       target,
       '?:?',
     );
+
+
 
     if (response) {
       //if the key didn't exist, set the inclusive range and seed metadata fields

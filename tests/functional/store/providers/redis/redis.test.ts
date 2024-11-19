@@ -591,7 +591,7 @@ describe('FUNCTIONAL | RedisStoreService', () => {
       redisStoreService.cache.invalidate();
     });
 
-    it('should remove the work item and processed item from Redis', async () => {
+    it('should remove the work item and processed item from the provider client', async () => {
       const workItemKey = 'work-item-1';
       const key = 'item-1';
       const processedKey = 'processed-item-1';

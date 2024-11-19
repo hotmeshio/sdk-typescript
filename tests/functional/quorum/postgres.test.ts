@@ -1,42 +1,74 @@
 import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
 import config from '../../$setup/config';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { MathHandler } from '../../../services/pipe/functions/math';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import {
+  RedisConnection,
+} from '../../../services/connector/providers/ioredis';
+import {
+  PostgresConnection,
+} from '../../../services/connector/providers/postgres';
+import { QuorumService } from '../../../services/quorum';
 import {
   StreamData,
   StreamDataResponse,
   StreamStatus,
 } from '../../../types/stream';
 import {
-  PongMessage,
   QuorumMessage,
   RollCallMessage,
   ThrottleMessage,
   ThrottleOptions,
 } from '../../../types/quorum';
-import { QuorumService } from '../../../services/quorum';
-import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import { ProviderNativeClient } from '../../../types/provider';
 
 describe('FUNCTIONAL | Quorum', () => {
   const appConfig = { id: 'calc', version: '1' };
-  const options = {
+  let hotMesh: HotMesh;
+  let postgresClient: ProviderNativeClient;
+  const redis_options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
     password: config.REDIS_PASSWORD,
     db: config.REDIS_DATABASE,
   };
-  let hotMesh: HotMesh;
+  const postgres_options = {
+    user: config.POSTGRES_USER,
+    host: config.POSTGRES_HOST,
+    database: config.POSTGRES_DB,
+    password: config.POSTGRES_PASSWORD,
+    port: config.POSTGRES_PORT,
+  };
 
   beforeAll(async () => {
+    // Initialize Postgres and drop tables (and data) from prior tests
+    postgresClient = (await PostgresConnection.connect(
+      guid(),
+      Postgres,
+      postgres_options,
+    )).getClient();
+
+    // Query the list of tables in the public schema and drop
+    const result = await postgresClient.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public';
+    `) as { rows: { table_name: string }[] };
+    let tables = result.rows.map(row => row.table_name);
+    for (const table of tables) {
+      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
+    }
+
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushdb();
 
@@ -46,12 +78,20 @@ describe('FUNCTIONAL | Quorum', () => {
       namespace: HMNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options },
+        connections: {
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        },
       },
       workers: [
         {
           topic: 'calculation.execute',
-          redis: { class: Redis, options },
+          connections: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {
@@ -135,14 +175,14 @@ describe('FUNCTIONAL | Quorum', () => {
     it('sends a topic `throttle` message via the SDK and persists', async () => {
       const throttleOpts: ThrottleOptions = {
         topic: 'calculation.execute',
-        throttle: 1000,
+        throttle: 2000,
       };
       hotMesh.throttle(throttleOpts);
       await sleepFor(1000);
       const savedRate = await hotMesh.engine?.store?.getThrottleRate(
         'calculation.execute',
       );
-      expect(savedRate).toBe(1000);
+      expect(savedRate).toBe(2000);
     });
 
     it('sends a global `throttle` message via the SDK and persists', async () => {
@@ -164,7 +204,7 @@ describe('FUNCTIONAL | Quorum', () => {
         'calculation.execute',
       );
       expect(topicRate).toBe(5000);
-    });
+    }, 12_000);
 
     it('publishes a `throttle` message targeting an engine (guid)', async () => {
       const callback = (topic: string, message: QuorumMessage) => {

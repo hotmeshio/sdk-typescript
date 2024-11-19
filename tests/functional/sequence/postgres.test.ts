@@ -44,10 +44,17 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
       Postgres,
       postgres_options,
     )).getClient();
-    await postgresClient.query('DROP TABLE IF EXISTS kvsql_hashes');
-    await postgresClient.query('DROP TABLE IF EXISTS kvsql_strings');
-    await postgresClient.query('DROP TABLE IF EXISTS kvsql_sorted_sets');
-    await postgresClient.query('DROP TABLE IF EXISTS kvsql_lists');
+
+    // Query the list of tables in the public schema and drop
+    const result = await postgresClient.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public';
+    `) as { rows: { table_name: string }[] };
+    let tables = result.rows.map(row => row.table_name);
+    for (const table of tables) {
+      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
+    }
 
     //init Redis and flush db (remove data from prior tests)
     const redisConnection = await RedisConnection.connect(

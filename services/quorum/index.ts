@@ -297,8 +297,11 @@ class QuorumService {
     const stream_depths = await this.engine.stream.getStreamDepths(
       this.profiles as { stream: string }[],
     );
+
     this.profiles.forEach(async (profile: QuorumProfile, index: number) => {
-      profile.stream_depth = stream_depths[index].depth;
+      //if nothing in the table, the depth will be 0
+      //todo: separate table for every worker stream?
+      profile.stream_depth = stream_depths?.[index]?.depth ?? 0;
     });
     return this.profiles;
   }

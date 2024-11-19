@@ -115,11 +115,7 @@ class PostgresStreamService extends StreamService<
   }
 
   getTableName(): string {
-    // Use namespace and appId to generate table name
-    return `stream_${this.namespace.replace(
-      /[^a-zA-Z0-9_]/g,
-      '_',
-    )}_${this.appId.replace(/[^a-zA-Z0-9_]/g, '_')}`;
+    return `hotmesh_${this.appId.replace(/[^a-zA-Z0-9_]/g, '_')}_streams`;
   }
 
   async createTables(client: PostgresClientType): Promise<void> {
@@ -306,7 +302,6 @@ class PostgresStreamService extends StreamService<
       const batchSize = options?.batchSize || 1;
       const reservationTimeout = options?.reservationTimeout || 30;
 
-      // Simplify the WHERE clause to avoid OR conditions
       const res = await client.query(
         `WITH selected_messages AS (
           SELECT id, message
@@ -432,6 +427,7 @@ class PostgresStreamService extends StreamService<
   ): Promise<{ stream: string; depth: number }[]> {
     const client = this.streamClient;
     const tableName = this.getTableName();
+    console.log('streamNames', streamNames);
     try {
       const streams = streamNames.map((s) => s.stream);
 
@@ -442,7 +438,7 @@ class PostgresStreamService extends StreamService<
          GROUP BY stream_name`,
         [streams],
       );
-
+console.log('res', res);
       const result = res.rows.map((row: any) => ({
         stream: row.stream_name,
         depth: parseInt(row.count, 10),

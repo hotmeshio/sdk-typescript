@@ -35,13 +35,13 @@ describe('FUNCTIONAL | Parallel', () => {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options },
+        connection: { class: Redis, options },
       },
       workers: [
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {

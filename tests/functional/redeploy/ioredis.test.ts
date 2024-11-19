@@ -1,17 +1,19 @@
 import Redis from 'ioredis';
 
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import config from '../../$setup/config';
 import { guid } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import {
+  RedisConnection,
+} from '../../../services/connector/providers/ioredis';
 import {
   StreamData,
   StreamDataResponse,
   StreamStatus,
 } from '../../../types/stream';
-import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
-describe('FUNCTIONAL | Redeploy', () => {
+describe('FUNCTIONAL | Redeploy | IORedis', () => {
   const appConfig = { id: 'tree' };
   const options = {
     host: config.REDIS_HOST,
@@ -35,13 +37,13 @@ describe('FUNCTIONAL | Redeploy', () => {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: { class: Redis, options },
+        connection: { class: Redis, options },
       },
       workers: [
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {
@@ -239,12 +241,12 @@ describe('FUNCTIONAL | Redeploy', () => {
         appId: 'abc',
         logLevel: HMSH_LOGLEVEL,
         engine: {
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
         },
         workers: [
           {
             topic: 'work.do',
-            redis: { class: Redis, options },
+            connection: { class: Redis, options },
             callback: async (data: StreamData) => {
               return {
                 metadata: { ...data.metadata },
@@ -254,7 +256,7 @@ describe('FUNCTIONAL | Redeploy', () => {
           },
           {
             topic: 'work.do.more',
-            redis: { class: Redis, options },
+            connection: { class: Redis, options },
             callback: async (data: StreamData) => {
               return {
                 metadata: { ...data.metadata },

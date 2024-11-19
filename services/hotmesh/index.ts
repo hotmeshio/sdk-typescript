@@ -51,15 +51,16 @@ import { MAX_DELAY } from '../../modules/enums';
  *
  * @example
  * ```typescript
- * import Redis from 'ioredis';
+ * import { Redis } from 'ioredis';
  * import { HotMesh } from '@hotmeshio/hotmesh';
+ * //...
  *
  * const hotMesh = await HotMesh.init({
  *   appId: 'abc',
  *   engine: {
- *     redis: {
+ *     connection: {
  *       class: Redis,
- *       options: { host, port, password, db }
+ *       options: { host: 'localhost', port: 6379 }
  *     }
  *   }
  * });
@@ -129,15 +130,23 @@ class HotMesh {
   }
 
   /**
-   * Instance initializer
+   * Instance initializer. Note the expanded `connections` object
+   * with specific target backends. Redis Pub/Sub is used for
+   * event pub/sub to coordinate the quorum and workers. And 
+   * Postgres is used for the store and stream connections, which
+   * are used for managing job state. Workers are configured
+   * similarly to the engine, but as an array with
+   * multiple worker objects.
+   * 
    * @example
    * ```typescript
    * const config: HotMeshConfig = {
    *   appId: 'myapp',
    *   engine: {
-   *     redis: {
-   *       class: Redis,
-   *       options: { host: 'localhost', port: 6379 }
+   *     connections: {
+   *      store: { class: Postgres, options: { host: 'postgres', port: 5432 } },
+   *      stream: { class: Postgres, options: { host: 'postgres', port: 5432 } },
+   *      sub: { class: Redis, options: { host: 'redis', port: 6379 } },
    *     },
    *   },
    *   workers [...]

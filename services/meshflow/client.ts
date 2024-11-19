@@ -103,7 +103,7 @@ export class ClientService {
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        redis: {
+        connection: {
           class: this.connection.class,
           options: this.connection.options,
         },

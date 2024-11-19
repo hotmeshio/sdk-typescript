@@ -33,7 +33,7 @@ describe('IORedisConnection', () => {
     expect(redisClient).toBeDefined();
   });
 
-  it('should set and get value from Redis', async () => {
+  it('should set and get value from the provider client', async () => {
     await redisClient.set('testKey', 'ioredis testValue');
     const value = await redisClient.get('testKey');
     expect(value).toBe('ioredis testValue');

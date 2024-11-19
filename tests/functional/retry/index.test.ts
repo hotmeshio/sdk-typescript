@@ -88,13 +88,13 @@ describe('FUNCTIONAL | Retry', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        redis: { class: Redis, options },
+        connection: { class: Redis, options },
       },
 
       workers: [
         {
           topic: 'calculation.execute',
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
           callback,
         },
       ],

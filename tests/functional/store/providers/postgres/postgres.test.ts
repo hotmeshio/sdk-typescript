@@ -19,10 +19,11 @@ import { PostgresClientType } from '../../../../../types/postgres';
 import { ProviderNativeClient, ProviderClient } from '../../../../../types/provider';
 
 describe('FUNCTIONAL | PostgresStoreService', () => {
-  const appConfig = { id: 'test-app', version: '1' };
-  const cacheConfig = { appId: 'test-app', appVersion: '1' };
+  const appConfig = { id: 'mystoreapp', version: '1' };
+  const cacheConfig = { appId: 'mystoreapp', appVersion: '1' };
   let postgresClient: ProviderNativeClient;
   let postgresStoreService: PostgresStoreService;
+  let tables: string[] = [];
 
   beforeAll(async () => {
     // Initialize PostgreSQL connection
@@ -36,34 +37,52 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       })
     ).getClient();
 
-    await postgresClient.query('DROP TABLE IF EXISTS kvsql_hashes');
-    await postgresClient.query('DROP TABLE IF EXISTS kvsql_strings');
-    await postgresClient.query('DROP TABLE IF EXISTS kvsql_sorted_sets');
-    await postgresClient.query('DROP TABLE IF EXISTS kvsql_lists');
-  });
+    // Query the list of tables in the public schema dynamically
+    const result = await postgresClient.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public';
+    `);
 
-  beforeEach(async () => {
-    const tables = ['kvsql_hashes', 'kvsql_strings', 'kvsql_sorted_sets', 'kvsql_lists'];
+    tables = result.rows.map(row => row.table_name);
 
+    // Drop each table if it exists
     for (const table of tables) {
-      const res = await postgresClient.query(
-        `SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' AND table_name = $1
-        );`,
-        [table]
-      );
-  
-      if (res.rows[0].exists) {
-        await postgresClient.query(`DELETE FROM ${table}`);
-      }
+      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
     }
-
+    
     postgresStoreService = new PostgresStoreService(
       postgresClient as PostgresClientType & ProviderClient,
     );
-    await postgresStoreService.init(HMNS, appConfig.id, new LoggerService());
+    await postgresStoreService.init(
+      HMNS,
+      appConfig.id,
+      new LoggerService()
+    );
   });
+
+  beforeEach(async () => {
+    await postgresClient.query('BEGIN');
+    try {
+      for (const table of tables) {
+        const res = await postgresClient.query(
+          `SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' AND table_name = $1
+          );`,
+          [table]
+        );
+        if (res.rows[0].exists) {
+          await postgresClient.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
+        }
+      }
+      await postgresClient.query('COMMIT');
+    } catch (error) {
+      await postgresClient.query('ROLLBACK');
+      throw error;
+    }
+  });
+   
 
   afterEach(async () => {
   });
@@ -240,24 +259,24 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
   describe('exec', () => {
     it('should execute an arbitrary command', async () => {
       const setResponse = await postgresStoreService.storeClient.set(
-        'exec:test:val',
+        `hmsh:${appConfig.id}:w:time`,
         '25',
       );
 
       expect(setResponse).toEqual(true);
       const getResponse = await postgresStoreService.storeClient.get(
-        'exec:test:val'
+        `hmsh:${appConfig.id}:w:time`
       );
       expect(getResponse).toEqual('25');
 
       const resp = await postgresStoreService.storeClient.hset(
-        'exec:test:hset',
+        `hmsh:${appConfig.id}:j:myjob`,
         { a: '25', b: '50'}
       );
       expect(resp).toEqual(2);
 
       const delResp = await postgresStoreService.storeClient.hdel(
-        'exec:test:hset',
+        `hmsh:${appConfig.id}:j:myjob`,
         ['a', 'b'],
       );
       expect(delResp).toEqual(2);
@@ -349,7 +368,7 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
   describe('setStats', () => {
     it('should set and get job stats correctly', async () => {
       const jobKey = 'job-key';
-      const jobId = 'job-id';
+      const jobId = `hmsh:${appConfig.id}:j:job-id`;
       const dateTime = '202304170000';
       const stats: StatsType = {
         general: [{ metric: 'count', target: 'target1', value: 1 }],
@@ -579,6 +598,11 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       postgresStoreService.cache.invalidate();
     });
 
+    it('should return null if no work items are available', async () => {
+      const workItemKey = await postgresStoreService.getActiveTaskQueue();
+      expect(workItemKey).toBeNull();
+    });
+
     it('should return the work item with the lowest score', async () => {
       const workItems = [
         { key: 'work-item-1', score: 1000 },
@@ -609,11 +633,6 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       const workItemKey = await postgresStoreService.getActiveTaskQueue();
       expect(workItemKey).toEqual(cachedKey);
     });
-
-    it('should return null if no work items are available', async () => {
-      const workItemKey = await postgresStoreService.getActiveTaskQueue();
-      expect(workItemKey).toBeNull();
-    });
   });
 
   describe('deleteProcessedTaskQueue', () => {
@@ -621,10 +640,10 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       postgresStoreService.cache.invalidate();
     });
 
-    it('should remove the work item and processed item from Redis', async () => {
-      const workItemKey = 'work-item-1';
+    it('should remove the work item and processed item', async () => {
+      const workItemKey = `hmsh:${appConfig.id}:w:working`; //'w:*' resolves to a 'string' key type
       const key = 'item-1';
-      const processedKey = 'processed-item-1';
+      const processedKey = `hmsh:${appConfig.id}:w:processes`;
       const zsetKey = postgresStoreService.mintKey(KeyType.WORK_ITEMS, {
         appId: appConfig.id,
       });
@@ -634,7 +653,7 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         workItemKey,
         { NX: 'NX' },
       );
-      await postgresStoreService.storeClient.set(processedKey, 'processed data');
+      await postgresStoreService.storeClient.set(processedKey, 'processed data'); //set the string
       await postgresStoreService.deleteProcessedTaskQueue(
         workItemKey,
         key,
@@ -671,8 +690,8 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
   });
 
   describe('processTaskQueue', () => {
-    const sourceKey = 'source-list';
-    const destinationKey = 'destination-list';
+    const sourceKey = `hmsh:${appConfig.id}:t:source-list`;
+    const destinationKey = `hmsh:${appConfig.id}:t:destination-list`;
     const item1 = 'item-1';
     const item2 = 'item-2';
 

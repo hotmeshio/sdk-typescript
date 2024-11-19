@@ -10,6 +10,7 @@ import {
   SetOptions,
   ZAddOptions
 } from '../../../../types/provider';
+import { HMNS, KeyService } from '../../../../modules/key';
 
 /**
  * Utility function to format SQL commands with parameters.
@@ -46,6 +47,7 @@ function formatSqlCommand(sql: string, params: any[]): string {
   // Use pg-format to safely interpolate parameters into the SQL command
   return format(formattedSql, ...formatParams);
 }
+
 
 class Multi implements KVSQLProviderTransaction {
   [key: string]: any;
@@ -325,9 +327,13 @@ class Multi implements KVSQLProviderTransaction {
 
 export class KVSQL {
   pgClient: PostgresClientType;
+  namespace: string;
+  appId: string;
 
-  constructor(pgClient: PostgresClientType) {
+  constructor(pgClient: PostgresClientType, namespace: string, appId: string) {
     this.pgClient = pgClient;
+    this.namespace = namespace;
+    this.appId = appId;
   }
 
   getMulti(): ProviderTransaction {
@@ -347,6 +353,87 @@ export class KVSQL {
     return '';
   }
 
+  /**
+   * Resolves the table name when provided a key
+   */
+  tableForKey(key: string, stats_type?: 'hash' | 'sorted_set' | 'list'): string {
+    if (key === HMNS) {
+      return 'hotmesh_connections';
+    }
+    const [_, appName, abbrev, ...rest] = key.split(':');
+    if (appName === 'a') {
+      return 'hotmesh_applications';
+    }
+    const id = rest?.length ? rest.join(':') : '';
+    const entity = KeyService.resolveEntityType(abbrev, id);
+    if (this.safeName(this.appId) !== this.safeName(appName)) {
+      throw new Error(`App ID mismatch: ${this.appId} !== ${appName}`);
+    }
+    if (entity === 'stats') {
+      if (stats_type === 'sorted_set') {
+        return `hotmesh_${this.safeName(appName)}_stats_ordered`;
+      } else if (stats_type === 'list') {
+        return `hotmesh_${this.safeName(appName)}_stats_indexed`;
+      } else if (stats_type === 'hash') {
+        return `hotmesh_${this.safeName(appName)}_stats_counted`;
+      } else {
+        throw new Error(`Unknown stats type [${stats_type}] for key [${key}]`);
+      }
+    }
+    if (entity === 'unknown_entity') {
+      throw new Error(`Unknown entity type abbreviation: ${abbrev}`);
+    } else if (entity === 'applications') {
+      return 'hotmesh_applications';
+    } else {
+      return `hotmesh_${this.safeName(appName)}_${entity}`;
+    }
+  }
+
+  /**
+   * NOTE: implement key optimizations once tables are working!
+   */
+  reconstituteKey(entityType: string, id: string): string {
+    //resolve the abbreviation and then reconstruct the key
+    const entity = KeyService.resolveAbbreviation(entityType);
+    return KeyService.reconstituteKey({
+      namespace: this.namespace,
+      app: this.appId,
+      entity,
+      id,
+    });
+  }
+
+  safeName(input: string, prefix = ''): string {
+    if (!input) {
+      return 'connections';
+    }
+    // Step 1: Trim whitespace and convert to lowercase
+    let tableName = input.trim().toLowerCase();
+  
+    // Step 2: Replace any non-alphanumeric characters with underscores
+    tableName = tableName.replace(/[^a-z0-9]+/g, '_');
+  
+    // Step 3: Add prefix if provided
+    if (prefix) {
+      tableName = `${prefix}_${tableName}`;
+    }
+  
+    // Step 4: Truncate to PostgreSQL's maximum table name length (63 characters)
+    if (tableName.length > 63) {
+      tableName = tableName.slice(0, 63);
+    }
+  
+    // Step 5: Remove any trailing underscores from truncation or invalid replacement
+    tableName = tableName.replace(/_+$/g, '');
+  
+    // Step 6: Ensure table name is not empty; fall back to a default name if needed
+    if (!tableName) {
+      tableName = 'connections';
+    }
+  
+    return tableName;
+  }
+
   // String Commands
 
   async get(key: string, multi?: ProviderTransaction): Promise<string | null> {
@@ -361,8 +448,9 @@ export class KVSQL {
   }
 
   _get(key: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key);
     const sql = `
-      SELECT value FROM kvsql_strings
+      SELECT value FROM ${tableName}
       WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
       LIMIT 1
     `;
@@ -413,6 +501,7 @@ export class KVSQL {
     value: string,
     options?: SetOptions
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key);
     let sql = '';
     const params = [key, value];
     let expiryClause = '';
@@ -423,14 +512,14 @@ export class KVSQL {
 
     if (options?.nx) {
       sql = `
-        INSERT INTO kvsql_strings (key, value${expiryClause ? ', expiry' : ''})
+        INSERT INTO ${tableName} (key, value${expiryClause ? ', expiry' : ''})
         VALUES ($1, $2${expiryClause ? ', NOW() + INTERVAL \'' + options.ex + ' seconds\'' : ''})
         ON CONFLICT DO NOTHING
         RETURNING true as success
       `;
     } else {
       sql = `
-        INSERT INTO kvsql_strings (key, value${expiryClause ? ', expiry' : ''})
+        INSERT INTO ${tableName} (key, value${expiryClause ? ', expiry' : ''})
         VALUES ($1, $2${expiryClause ? ', NOW() + INTERVAL \'' + options.ex + ' seconds\'' : ''})
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value${expiryClause}
         RETURNING true as success
@@ -441,8 +530,7 @@ export class KVSQL {
   }
 
   async del(key: string, multi?: ProviderTransaction): Promise<number> {
-    let tableName = key.indexOf(':j:') > 0 ? 'kvsql_hashes' : 'kvsql_strings';
-    const { sql, params } = this._del(key, tableName);
+    const { sql, params } = this._del(key);
     if (multi) {
       (multi as Multi).addCommand(sql, params, 'number');
       return Promise.resolve(0);
@@ -452,7 +540,8 @@ export class KVSQL {
     }
   }
 
-  _del(key: string, tableName = 'kvsql_strings'): { sql: string; params: any[] } {
+  _del(key: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key);
     const sql = `
       WITH deleted AS (
         DELETE FROM ${tableName} WHERE key = $1
@@ -480,9 +569,10 @@ export class KVSQL {
   }
 
   _expire(key: string, seconds: number): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key);
     const expiryTime = new Date(Date.now() + seconds * 1000);
     const sql = `
-      UPDATE kvsql_strings
+      UPDATE ${tableName}
       SET expiry = $2
       WHERE key = $1
       RETURNING true as success
@@ -528,6 +618,7 @@ export class KVSQL {
   ): { sql: string; params: any[] } {
     let sql = '';
     const params = [key];
+    const tableName = this.tableForKey(key, 'hash');
   
     // Create SQL dynamically to handle multiple fields and values
     const fieldEntries = Object.entries(fields);
@@ -541,14 +632,14 @@ export class KVSQL {
   
     if (options?.nx) {
       sql = `
-        INSERT INTO kvsql_hashes (key, field, value)
+        INSERT INTO ${tableName} (key, field, value)
         VALUES ${placeholders}
         ON CONFLICT DO NOTHING
         RETURNING 1 as count
       `;
     } else {
       sql = `
-        INSERT INTO kvsql_hashes (key, field, value)
+        INSERT INTO ${tableName} (key, field, value)
         VALUES ${placeholders}
         ON CONFLICT (key, field) DO UPDATE SET value = EXCLUDED.value
         RETURNING 1 as count
@@ -574,8 +665,9 @@ export class KVSQL {
   }
 
   _hget(key: string, field: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'hash');
     const sql = `
-      SELECT value FROM kvsql_hashes
+      SELECT value FROM ${tableName}
       WHERE key = $1 AND field = $2 AND (expiry IS NULL OR expiry > NOW())
       LIMIT 1
     `;
@@ -603,11 +695,12 @@ export class KVSQL {
   }
   
   _hdel(key: string, fields: string[]): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'hash');
     // Create placeholders for each field
     const fieldPlaceholders = fields.map((_, i) => `$${i + 2}`).join(', ');
     const sql = `
       WITH deleted AS (
-        DELETE FROM kvsql_hashes
+        DELETE FROM ${tableName}
         WHERE key = $1 AND field IN (${fieldPlaceholders})
         RETURNING 1
       )
@@ -642,8 +735,9 @@ export class KVSQL {
   }
 
   _hmget(key: string, fields: string[]): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'hash');
     const sql = `
-      SELECT field, value FROM kvsql_hashes
+      SELECT field, value FROM ${tableName}
       WHERE key = $1 AND field = ANY($2::text[])
     `;
     const params = [key, fields];
@@ -675,8 +769,9 @@ export class KVSQL {
   }
 
   _hgetall(key: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'hash');
     const sql = `
-      SELECT field, value FROM kvsql_hashes
+      SELECT field, value FROM ${tableName}
       WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
     `;
     const params = [key];
@@ -706,10 +801,11 @@ export class KVSQL {
     field: string,
     increment: number
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'hash');
     const sql = `
-      INSERT INTO kvsql_hashes (key, field, value)
+      INSERT INTO ${tableName} (key, field, value)
       VALUES ($1, $2, ($3)::text)
-      ON CONFLICT (key, field) DO UPDATE SET value = (kvsql_hashes.value::double precision + $3::double precision)::text
+      ON CONFLICT (key, field) DO UPDATE SET value = (${tableName}.value::double precision + $3::double precision)::text
       RETURNING value
     `;
     const params = [key, field, increment];
@@ -751,9 +847,10 @@ export class KVSQL {
     count: number,
     pattern?: string
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'hash');
     const params = [key];
     let sql = `
-      SELECT field, value FROM kvsql_hashes
+      SELECT field, value FROM ${tableName}
       WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
     `;
     let paramIndex = 2;
@@ -796,12 +893,13 @@ export class KVSQL {
     start: number,
     end: number
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'list');
     const sql = `
       WITH numbered AS (
         SELECT value,
                ROW_NUMBER() OVER (ORDER BY "index" ASC) - 1 AS rn,
                COUNT(*) OVER() - 1 AS max_index
-        FROM kvsql_lists
+        FROM ${tableName}
         WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
       ),
       indices AS (
@@ -835,12 +933,13 @@ export class KVSQL {
   }
   
   _rpush(key: string, value: string | string[]): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'list');
     const values = Array.isArray(value) ? value : [value];
-    const placeholders = values.map((_, i) => `($1, (SELECT COALESCE(MAX("index"), 0) + ${i + 1} FROM kvsql_lists WHERE key = $1), $${i + 2})`).join(', ');
+    const placeholders = values.map((_, i) => `($1, (SELECT COALESCE(MAX("index"), 0) + ${i + 1} FROM ${tableName} WHERE key = $1), $${i + 2})`).join(', ');
   
     const sql = `
       WITH inserted AS (
-        INSERT INTO kvsql_lists (key, "index", value)
+        INSERT INTO ${tableName} (key, "index", value)
         VALUES ${placeholders}
         RETURNING 1
       )
@@ -866,12 +965,13 @@ export class KVSQL {
   }
 
   _lpush(key: string, value: string | string[]): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'list');
     const values = Array.isArray(value) ? value : [value];
-    const placeholders = values.map((_, i) => `($1, (SELECT COALESCE(MIN("index"), 0) - ${i + 1} FROM kvsql_lists WHERE key = $1), $${i + 2})`).join(', ');
+    const placeholders = values.map((_, i) => `($1, (SELECT COALESCE(MIN("index"), 0) - ${i + 1} FROM ${tableName} WHERE key = $1), $${i + 2})`).join(', ');
   
     const sql = `
       WITH inserted AS (
-        INSERT INTO kvsql_lists (key, "index", value)
+        INSERT INTO ${tableName} (key, "index", value)
         VALUES ${placeholders}
         RETURNING 1
       )
@@ -896,10 +996,11 @@ export class KVSQL {
   }
 
   _lpop(key: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'list');
     const sql = `
-      DELETE FROM kvsql_lists
+      DELETE FROM ${tableName}
       WHERE key = $1 AND "index" = (
-        SELECT MIN("index") FROM kvsql_lists WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
+        SELECT MIN("index") FROM ${tableName} WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
       )
       RETURNING value
     `;
@@ -943,17 +1044,18 @@ export class KVSQL {
     srcPosition: "LEFT" | "RIGHT",
     destPosition: "LEFT" | "RIGHT"
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(source, 'list');
     const srcOrder = srcPosition === "LEFT" ? "ASC" : "DESC";
     const destIndexAdjustment =
       destPosition === "LEFT"
-        ? `(SELECT COALESCE(MIN("index"), 0) - 1 FROM kvsql_lists WHERE key = $2)`
-        : `(SELECT COALESCE(MAX("index"), 0) + 1 FROM kvsql_lists WHERE key = $2)`;
+        ? `(SELECT COALESCE(MIN("index"), 0) - 1 FROM ${tableName} WHERE key = $2)`
+        : `(SELECT COALESCE(MAX("index"), 0) + 1 FROM ${tableName} WHERE key = $2)`;
   
     const sql = `
       WITH moved AS (
-        DELETE FROM kvsql_lists
+        DELETE FROM ${tableName}
         WHERE ctid IN (
-          SELECT ctid FROM kvsql_lists
+          SELECT ctid FROM ${tableName}
           WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
           ORDER BY "index" ${srcOrder}
           LIMIT 1
@@ -961,7 +1063,7 @@ export class KVSQL {
         RETURNING value
       ),
       inserted AS (
-        INSERT INTO kvsql_lists (key, "index", value)
+        INSERT INTO ${tableName} (key, "index", value)
         SELECT $2, ${destIndexAdjustment}, value FROM moved
         RETURNING value
       )
@@ -996,19 +1098,20 @@ export class KVSQL {
     member: string,
     options?: ZAddOptions
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'sorted_set');
     let sql = "";
     const params = [key, member, score];
 
     if (options?.nx) {
       sql = `
-        INSERT INTO kvsql_sorted_sets (key, member, score)
+        INSERT INTO ${tableName} (key, member, score)
         VALUES ($1, $2, $3)
         ON CONFLICT DO NOTHING
         RETURNING 1 as count
       `;
     } else {
       sql = `
-        INSERT INTO kvsql_sorted_sets (key, member, score)
+        INSERT INTO ${tableName} (key, member, score)
         VALUES ($1, $2, $3)
         ON CONFLICT (key, member) DO UPDATE SET score = $3
         RETURNING 1 as count
@@ -1053,16 +1156,17 @@ export class KVSQL {
     stop: number,
     facet?: 'WITHSCORES',
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'sorted_set');
     const selectColumns = facet === 'WITHSCORES' ? 'member, score' : 'member';
     const sql = `
       WITH total_entries AS (
-        SELECT COUNT(*) - 1 AS max_index FROM kvsql_sorted_sets
+        SELECT COUNT(*) - 1 AS max_index FROM ${tableName}
         WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
       ), ordered_entries AS (
         SELECT ${selectColumns},
                ROW_NUMBER() OVER (ORDER BY score ASC, member ASC) - 1 AS rn,
                (SELECT max_index FROM total_entries) AS max_index
-        FROM kvsql_sorted_sets
+        FROM ${tableName}
         WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
       ), indices AS (
         SELECT
@@ -1103,9 +1207,10 @@ export class KVSQL {
     key: string,
     member: string,
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'sorted_set');
     const sql = `
       SELECT score
-      FROM kvsql_sorted_sets
+      FROM ${tableName}
       WHERE key = $1 AND member = $2
         AND (expiry IS NULL OR expiry > NOW())
       LIMIT 1
@@ -1137,8 +1242,9 @@ export class KVSQL {
     min: number,
     max: number
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'sorted_set');
     const sql = `
-      SELECT member FROM kvsql_sorted_sets
+      SELECT member FROM ${tableName}
       WHERE key = $1 AND score BETWEEN $2 AND $3 AND (expiry IS NULL OR expiry > NOW())
       ORDER BY score ASC, member ASC
     `;
@@ -1169,8 +1275,9 @@ export class KVSQL {
     min: number,
     max: number
   ): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'sorted_set');
     const sql = `
-      SELECT member, score FROM kvsql_sorted_sets
+      SELECT member, score FROM ${tableName}
       WHERE key = $1 AND score BETWEEN $2 AND $3 AND (expiry IS NULL OR expiry > NOW())
       ORDER BY score ASC, member ASC
     `;
@@ -1194,9 +1301,10 @@ export class KVSQL {
   }
 
   _zrem(key: string, member: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'sorted_set');
     const sql = `
       WITH deleted AS (
-        DELETE FROM kvsql_sorted_sets
+        DELETE FROM ${tableName}
         WHERE key = $1 AND member = $2
         RETURNING 1
       )
@@ -1226,12 +1334,13 @@ export class KVSQL {
   }
 
   _zrank(key: string, member: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key, 'sorted_set');
     const sql = `
       WITH member_score AS (
-        SELECT score FROM kvsql_sorted_sets
+        SELECT score FROM ${tableName}
         WHERE key = $1 AND member = $2 AND (expiry IS NULL OR expiry > NOW())
       )
-      SELECT COUNT(*) AS rank FROM kvsql_sorted_sets ms, member_score
+      SELECT COUNT(*) AS rank FROM ${tableName} ms, member_score
       WHERE ms.key = $1 AND (expiry IS NULL OR expiry > NOW())
       AND (ms.score < member_score.score OR (ms.score = member_score.score AND ms.member < $2))
     `;
@@ -1264,8 +1373,9 @@ export class KVSQL {
   
   // Updated _scan method
   _scan(cursor: number, count: number, pattern?: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(`_:${this.appId}:j:_`);
     let sql = `
-      SELECT key FROM kvsql_hashes
+      SELECT key FROM ${tableName}
       WHERE (expiry IS NULL OR expiry > NOW())
     `;
     const params = [];
@@ -1308,7 +1418,8 @@ export class KVSQL {
     }
   }
 
-  _rename(oldKey: string, newKey: string, tableName = 'kvsql_strings'): { sql: string; params: any[] } {
+  _rename(oldKey: string, newKey: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(oldKey, 'list');
     const sql = `
       UPDATE ${tableName} SET key = $2 WHERE key = $1;
     `;
@@ -1323,14 +1434,11 @@ export class KVSQL {
   }
   
   _exists(key: string): { sql: string; params: any[] } {
+    const tableName = this.tableForKey(key);
     const sql = `
-      SELECT 'kvsql_sorted_sets' AS table_name FROM kvsql_sorted_sets WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
-      UNION ALL
-      SELECT 'kvsql_strings' AS table_name FROM kvsql_strings WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
-      UNION ALL
-      SELECT 'kvsql_lists' AS table_name FROM kvsql_lists WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
-      UNION ALL
-      SELECT 'kvsql_hashes' AS table_name FROM kvsql_hashes WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
+      SELECT FROM ${tableName}
+      WHERE key = $1
+        AND (expiry IS NULL OR expiry > NOW())
       LIMIT 1;
     `;
     const params = [key];

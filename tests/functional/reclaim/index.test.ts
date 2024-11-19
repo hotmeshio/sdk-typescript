@@ -71,13 +71,13 @@ describe('FUNCTIONAL | Reclaim', () => {
         namespace: HMNS,
         logLevel: HMSH_LOGLEVEL,
         engine: {
-          redis: { class: Redis, options },
+          connection: { class: Redis, options },
           reclaimDelay: 1_500, //default 5_000
         },
         workers: [
           {
             topic: 'calculation.execute',
-            redis: { class: Redis, options },
+            connection: { class: Redis, options },
             reclaimDelay: 1_500, //default 60_000
             callback,
           },
