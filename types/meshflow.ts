@@ -1,7 +1,7 @@
 import { WorkflowHandleService } from '../services/meshflow/handle';
 
 import { LogLevel } from './logger';
-import { ProviderConfig } from './provider';
+import { ProviderConfig, ProvidersConfig } from './provider';
 import { StringAnyType, StringStringType } from './serializer';
 import { StreamData, StreamError } from './stream';
 
@@ -435,7 +435,7 @@ type WorkflowDataType = {
   expire?: number;
 };
 
-type Connection = ProviderConfig;
+type Connection = ProviderConfig | ProvidersConfig;
 
 type ClientConfig = {
   connection: Connection;

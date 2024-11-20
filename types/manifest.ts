@@ -1,12 +1,21 @@
 import { MeshOS } from '../services/meshos';
+import { WorkflowSearchSchema } from './meshflow';
 
-import * as Types from './index';
+import * as Types from './provider';
+import { ProviderConfig } from './provider';
 
 export type DB = {
   name: string;
   label: string;
   search: boolean;
-  connection: Types.ProviderConfig;
+  connection?: Types.ProviderConfig;
+  connections?: {
+    store: ProviderConfig;
+    stream: ProviderConfig;
+    sub: ProviderConfig;
+    pub?: ProviderConfig; //system injects if necessary (if store channel cannot be used for pub)
+    search?: ProviderConfig; //inherits from store if not set
+  };
 };
 
 export type SubClassInstance<T extends typeof MeshOS> = T extends abstract new (
@@ -25,7 +34,7 @@ export type SubclassType<T extends MeshOS = MeshOS> = new (...args: any[]) => T;
 export type Entity = {
   name: string;
   label: string;
-  schema: Types.WorkflowSearchSchema;
+  schema: WorkflowSearchSchema;
   class: SubclassType;
 };
 

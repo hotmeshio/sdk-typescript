@@ -8,6 +8,7 @@ import { guid, sleepFor } from '../../../modules/utils';
 import { MeshFlowMaxedError } from '../../../modules/errors';
 
 import { example, state as STATE } from './src/workflows';
+import { ProviderConfig } from '../../../types/provider';
 
 const { Connection, Client, Worker } = MeshFlow;
 
@@ -42,7 +43,7 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
         const connection = await Connection.connect({
           class: Redis,
           options,
-        });
+        }) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });

@@ -218,7 +218,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
             );
           `);
           break;
-
+    
         case 'hash':
           await client.query(`
             CREATE TABLE IF NOT EXISTS ${tableDef.name} (
@@ -228,6 +228,53 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
               expiry TIMESTAMP WITH TIME ZONE,
               PRIMARY KEY (key, field)
             );
+          `);
+          break;
+
+        case 'jobhash':
+          // Create the enumerated type if it doesn't exist
+          await client.query(`
+            DO $$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'type_enum') THEN
+                CREATE TYPE type_enum AS ENUM ('jmark', 'hmark', 'status', 'jdata', 'adata', 'udata', 'other');
+              END IF;
+            END$$;
+          `);
+        
+          // Create the parent table with hash partitioning
+          await client.query(`
+            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+              key TEXT NOT NULL,
+              field TEXT NOT NULL,
+              value TEXT,
+              type type_enum,
+              expiry TIMESTAMP WITH TIME ZONE,
+              PRIMARY KEY (key, field)
+            ) PARTITION BY HASH (key);
+          `);
+        
+          // Dynamically create 8 partitions
+          for (let i = 0; i < 8; i++) {
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${tableDef.name}_part_${i} PARTITION OF ${tableDef.name}
+              FOR VALUES WITH (modulus 8, remainder ${i});
+            `);
+          }
+        
+          // Add indexes for optimized queries
+          await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_type 
+            ON ${tableDef.name} (key, type);
+          `);
+          await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_type 
+            ON ${tableDef.name} (type);
+          `);
+          await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_x_type_jmark 
+            ON ${tableDef.name} (key, type)
+            WHERE key = 'x' AND type = 'jmark';
           `);
           break;
 
@@ -242,10 +289,11 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
             );
           `);
           await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expiry ON ${tableDef.name} (key, expiry);
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expiry 
+            ON ${tableDef.name} (key, expiry);
           `);
           break;
-
+    
         case 'sorted_set':
           await client.query(`
             CREATE TABLE IF NOT EXISTS ${tableDef.name} (
@@ -257,16 +305,17 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
             );
           `);
           await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_score_member
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_score_member 
             ON ${tableDef.name} (key, score, member);
           `);
           break;
-
+    
         default:
           this.logger.warn(`Unknown table type for ${tableDef.name}`);
           break;
       }
     }
+    
 
     // Commit transaction
     await client.query('COMMIT');
@@ -339,7 +388,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       },
       {
         name: `hotmesh_${appName}_jobs`,
-        type: 'hash',
+        type: 'jobhash', //adds partitioning, indexes, and enum type
       },
       {
         name: `hotmesh_${appName}_stats_counted`,
@@ -1547,34 +1596,53 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     jobId: string,
     fieldMatchPattern = '*',
     limit = 1000,
-    batchSize = 1000,
-    cursor = '0',
-  ): Promise<[string, StringStringType]> {
+    batchSize = 1000, //unused in SQL provider
+    cursor = '0'
+  ): Promise<[string, Record<string, string>]> {
     const matchingFields: Record<string, string> = {};
     const jobKey = this.mintKey(KeyType.JOB_STATE, {
       appId: this.appId,
       jobId,
     });
-    let len = 0;
-    do {
-      const { cursor: newCursor, items } = await this.kvsql().hscan(
-        jobKey,
-        cursor,
-        batchSize,
-        fieldMatchPattern === '*' ? undefined : fieldMatchPattern
-      );
-      cursor = newCursor;
+
+    let enumType: string;
+    let dimension: string;
+    if (fieldMatchPattern.includes(',')) {
+      const dimReg = /\d[^-]+-/gi;
+      const dimensions = fieldMatchPattern.match(dimReg);
+      dimension = ',' + (dimensions?.[0] ?? '');
+      enumType = 'hmark';
+    } else {
+      enumType = 'jmark';
+    }
   
-      for (const field in items) {
-        len++;
-        matchingFields[field] = items[field];
+    const offset = parseInt(cursor, 10) || 0; // Convert cursor to numeric offset
+    const tableName = this.kvsql().tableForKey(jobKey, 'hash');
+    const params: any[] = [jobKey, enumType, limit, offset];
+
+    const sql = `
+      SELECT field, value
+      FROM ${tableName}
+      WHERE key = $1 AND type = $2
+      LIMIT $3 OFFSET $4
+    `;
+  
+    // Execute and map
+    const res = await this.pgClient.query(sql, params);
+    if (enumType === 'hmark') {
+      for (const row of res.rows) {
+        if (row.field.includes(dimension)) {
+          matchingFields[row.field] = row.value;
+        }
       }
-      if (cursor === '0' || len >= limit) {
-        break;
+    } else {
+      for (const row of res.rows) {
+        matchingFields[row.field] = row.value;
       }
-    } while (true);
-    return [cursor, matchingFields];
-  }
+    }
+    const nextCursor = res.rows.length < limit ? '0' : String(offset + res.rows.length);
+    return [nextCursor, matchingFields];
+  }  
 
   async setThrottleRate(options: ThrottleOptions): Promise<void> {
     const key = this.mintKey(KeyType.THROTTLE_RATE, { appId: this.appId });
