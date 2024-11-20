@@ -313,31 +313,31 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         await postgresStoreService.storeClient.hset(
           hashKey,
           {
-            b1: '1',
-            a1: '1',
-            a2: '2',
-            a3: '3',
-            a4: '4',
-            a5: '5',
-            a6: '6',
-            a7: '7',
-            a8: '8',
-            a9: '9',
+            '-b1,0,0-1': '1',
+            '-b1,1,0-1': '1',
+            '-a1': '1',
+            '-a2': '2',
+            '-a3': '3',
+            '-a4': '4',
+            '-a5': '5',
+            '-a6': '6',
+            '-a7': '7',
+            'a8': '8',
           }
         );        
       }
       const [_cursor, result] = await postgresStoreService.findJobFields(
         'test',
-        'a*',
-        8,
-        2,
+        '-*[ehklptydr]-*', //anything without a comma
+        7, //limit to 7 results
+        2, //unused
       );
-      expect(Object.keys(result).length).toBeGreaterThanOrEqual(8);
+      expect(Object.keys(result).length).toBeGreaterThanOrEqual(7);
       const [_cursor2, result2] = await postgresStoreService.findJobFields(
         'test',
-        'b*',
-        20,
-        10,
+        '-*0,0-*',
+        20, //limit to 20 results (only 1 should match and be returned)
+        10, //unused
       );
       expect(Object.keys(result2).length).toEqual(1);
     });

@@ -5,7 +5,7 @@ import { deterministicRandom, guid, sleepFor } from '../../../modules/utils';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/redis';
-import { RedisRedisClassType } from '../../../types';
+import { ProviderConfig, RedisRedisClassType } from '../../../types';
 
 import * as workflows from './src/workflows';
 
@@ -44,7 +44,7 @@ describe('MESHFLOW | basic | `MeshFlow Foundational`', () => {
         const connection = await Connection.connect({
           class: Redis,
           options,
-        });
+        }) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });

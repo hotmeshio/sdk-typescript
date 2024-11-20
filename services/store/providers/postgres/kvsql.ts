@@ -1,7 +1,7 @@
 import format from 'pg-format';
 
 import { KeyStoreParams } from '../../../../types/hotmesh';
-import { PostgresClientType } from '../../../../types/postgres';
+import { PostgresClientType, PostgresJobEnumType } from '../../../../types/postgres';
 import {
   HScanResult,
   HSetOptions,
@@ -610,7 +610,27 @@ export class KVSQL {
       return res.rowCount;
     }
   }
-  
+
+  /**
+   * Derives the enumerated `type` value based on the field name when
+   * setting a field in a jobs table (a 'jobshash' table type).
+   */
+  deriveType(fieldName: string): PostgresJobEnumType {
+    if (fieldName === ':') {
+      return 'status';
+    } else if (fieldName.startsWith('_')) {
+      return 'udata';
+    } else if (fieldName.startsWith('-')) {
+      return fieldName.includes(',') ? 'hmark' : 'jmark';
+    } else if (fieldName.length === 3) {
+      return 'jdata';
+    } else if (fieldName.includes(',')) {
+      return 'adata';
+    } else {
+      return 'other';
+    }
+  }
+
   _hset(
     key: string,
     fields: Record<string, string>,
@@ -619,27 +639,33 @@ export class KVSQL {
     let sql = '';
     const params = [key];
     const tableName = this.tableForKey(key, 'hash');
+    const isJobsTable = tableName.endsWith('_jobs');
   
     // Create SQL dynamically to handle multiple fields and values
     const fieldEntries = Object.entries(fields);
     fieldEntries.forEach(([field, value], index) => {
       params.push(field, value);
+      if (isJobsTable) {
+        params.push(this.deriveType(field)); // Add derived type
+      }
     });
   
     const placeholders = fieldEntries
-      .map((_, i) => `($1, $${2 + i * 2}, $${3 + i * 2})`)
+      .map((_, i) => isJobsTable
+        ? `($1, $${2 + i * 3}, $${3 + i * 3}, $${4 + i * 3})` // For jobs table
+        : `($1, $${2 + i * 2}, $${3 + i * 2})`) // For regular table
       .join(', ');
   
     if (options?.nx) {
       sql = `
-        INSERT INTO ${tableName} (key, field, value)
+        INSERT INTO ${tableName} (key, field, value${isJobsTable ? ', type' : ''})
         VALUES ${placeholders}
         ON CONFLICT DO NOTHING
         RETURNING 1 as count
       `;
     } else {
       sql = `
-        INSERT INTO ${tableName} (key, field, value)
+        INSERT INTO ${tableName} (key, field, value${isJobsTable ? ', type' : ''})
         VALUES ${placeholders}
         ON CONFLICT (key, field) DO UPDATE SET value = EXCLUDED.value
         RETURNING 1 as count
@@ -795,20 +821,36 @@ export class KVSQL {
       return parseFloat(res.rows[0].value);
     }
   }
-
   _hincrbyfloat(
     key: string,
     field: string,
     increment: number
   ): { sql: string; params: any[] } {
     const tableName = this.tableForKey(key, 'hash');
-    const sql = `
-      INSERT INTO ${tableName} (key, field, value)
-      VALUES ($1, $2, ($3)::text)
-      ON CONFLICT (key, field) DO UPDATE SET value = (${tableName}.value::double precision + $3::double precision)::text
-      RETURNING value
-    `;
-    const params = [key, field, increment];
+    const isJobsTable = tableName.endsWith('_jobs');
+    let sql: string;
+    const params: any[] = [key, field, increment];
+  
+    if (isJobsTable) {
+      // Derive the `type` value for jobs table
+      const type = this.deriveType(field);
+      params.push(type); // Add derived type to params
+  
+      sql = `
+        INSERT INTO ${tableName} (key, field, value, type)
+        VALUES ($1, $2, ($3)::text, $4)
+        ON CONFLICT (key, field) DO UPDATE SET value = (${tableName}.value::double precision + $3::double precision)::text
+        RETURNING value
+      `;
+    } else {
+      sql = `
+        INSERT INTO ${tableName} (key, field, value)
+        VALUES ($1, $2, ($3)::text)
+        ON CONFLICT (key, field) DO UPDATE SET value = (${tableName}.value::double precision + $3::double precision)::text
+        RETURNING value
+      `;
+    }
+  
     return { sql, params };
   }  
 

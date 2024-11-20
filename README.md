@@ -1,17 +1,15 @@
 # HotMesh
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-**HotMesh** offers the power of orchestration platforms like Temporal.io in a flexible, decentralized manner. Replace everything with robust **Queues** and **Routers**...even the app server.
-
-*Note: This is a beta release and currently focuses on TypeScript/Redis.*
+**HotMesh** offers the power of Temporal.io as a decentralized serverless swarm. It's a drop-in replacement that runs on Postgres or Redis (Your choice!). And there's no need for a central server. Just install the package and start orchestrating your microservices.
 
 ## Features
 
-- **Temporal Your Way**: Orchestrate your microservices using message queues and routers, without the need for a central server.
-- **Pluggable Middleware**: Mix and match technologies through a standard interface. Currently supporting **Redis/ValKey/Dragonfly/KVRocks**, with **Postgres**, **ElasticSearch**, and **NATS** coming next.
-- **Decentralized Orchestration**: Build a resilient architecture with decentralized queues and routers.
-- **Linear Scalability**: Scale your application by scaling the database.
-- **Real-Time Analytics**: Gain insights into your workflows with real-time analytics.
+- **Temporal Your Way**: Orchestrate your microservices without the need for a central server. Just point to your Postgres or Redis instance.
+- **Pluggable Middleware**: Mix and match technologies through a standard interface. Currently supporting **Redis/ValKey/Dragonfly/KVRocks** and **Postgres**.
+- **Decentralized Orchestration**: Centralized data with decentralized execution.
+- **Linear Scalability**: Scale your database to scale your application.
+- **Real-Time Analytics**: Gain process insights with real-time analytics.
 
 ## Install
 

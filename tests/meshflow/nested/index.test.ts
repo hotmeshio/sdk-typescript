@@ -9,6 +9,7 @@ import { APP_VERSION } from '../../../services/meshflow/schemas/factory';
 
 import * as childWorkflows from './child/workflows';
 import * as parentWorkflows from './parent/workflows';
+import { ProviderConfig } from '../../../types/provider';
 
 const { Connection, Client, Worker } = MeshFlow;
 
@@ -42,7 +43,7 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
         const connection = await Connection.connect({
           class: Redis,
           options,
-        });
+        }) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });

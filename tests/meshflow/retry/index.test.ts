@@ -7,6 +7,7 @@ import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
 
 import * as workflows from './src/workflows';
+import { ProviderConfig } from '../../../types/provider';
 
 const { Connection, Client, Worker } = MeshFlow;
 
@@ -41,7 +42,7 @@ describe('MESHFLOW | sleep | `Workflow Promise.all proxyActivities`', () => {
         const connection = await Connection.connect({
           class: Redis,
           options,
-        });
+        }) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });

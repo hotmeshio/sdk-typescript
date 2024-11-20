@@ -21,6 +21,7 @@ import { formatISODate, guid, hashOptions, s } from '../../modules/utils';
 import { HotMesh } from '../hotmesh';
 import {
   ActivityWorkflowDataType,
+  Connection,
   Registry,
   WorkerConfig,
   WorkerOptions,
@@ -87,23 +88,40 @@ export class WorkerService {
     options?: WorkerOptions,
   ) => {
     const targetNamespace = config?.namespace ?? APP_ID;
-    const optionsHash = hashOptions(config?.connection?.options);
+    const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
 
     if (WorkerService.instances.has(targetTopic)) {
       return await WorkerService.instances.get(targetTopic);
     }
+    const connectionType = 'options' in config?.connection ? 'connection' : 'connections';
     const hotMeshClient = HotMesh.init({
       logLevel: options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
       engine: {
-        connection: { ...config?.connection },
+        [connectionType]: { ...config?.connection },
       },
     });
     WorkerService.instances.set(targetTopic, hotMeshClient);
     await WorkerService.activateWorkflow(await hotMeshClient);
     return hotMeshClient;
   };
+
+  static hashOptions(connection: Connection): string {
+    if ('options' in connection) {
+      //shorthand format
+      return hashOptions(connection.options);
+    } else {
+      //longhand format (sub, store, stream, pub, search)
+      const response = [];
+      for (let p in connection) {
+        if (!response.includes(connection[p])) {
+          response.push(hashOptions(connection[p]));
+        }
+      }
+      return response.join('');
+    }
+  }
 
   /**
    * @private
@@ -249,22 +267,20 @@ export class WorkerService {
     config: WorkerConfig,
     activityTopic: string,
   ): Promise<HotMesh> {
-    const providerConfig = {
-      class: config.connection.class,
-      options: config.connection.options,
-    } as ProviderConfig;
+    const providerConfig = config.connection;
     const targetNamespace = config?.namespace ?? APP_ID;
-    const optionsHash = hashOptions(config?.connection?.options);
+    const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
+    const connectionType = 'options' in providerConfig ? 'connection' : 'connections';
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid ? `${config.guid}XA` : undefined,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
-      engine: { connection: providerConfig },
+      engine: { [connectionType]: providerConfig },
       workers: [
         {
           topic: activityTopic,
-          connection: providerConfig,
+          [connectionType]: providerConfig,
           callback: this.wrapActivityFunctions().bind(this),
         },
       ],
@@ -351,22 +367,20 @@ export class WorkerService {
     workflowTopic: string,
     workflowFunction: Function,
   ): Promise<HotMesh> {
-    const providerConfig: ProviderConfig = {
-      class: config.connection.class,
-      options: config.connection.options,
-    };
+    const providerConfig = config.connection;
     const targetNamespace = config?.namespace ?? APP_ID;
-    const optionsHash = hashOptions(config?.connection?.options);
+    const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
+    const connectionType = 'options' in providerConfig ? 'connection' : 'connections';
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
-      engine: { connection: providerConfig },
+      engine: { [connectionType]: providerConfig },
       workers: [
         {
           topic: workflowTopic,
-          connection: providerConfig,
+          [connectionType]: providerConfig,
           callback: this.wrapWorkflowFunction(
             workflowFunction,
             workflowTopic,

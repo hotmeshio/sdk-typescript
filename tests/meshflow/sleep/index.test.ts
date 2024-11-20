@@ -5,7 +5,7 @@ import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
-import { StreamError } from '../../../types';
+import { ProviderConfig, StreamError } from '../../../types';
 import { HMSH_CODE_INTERRUPT } from '../../../modules/enums';
 
 import * as workflows from './src/workflows';
@@ -44,7 +44,7 @@ describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor`', () => {
         const connection = await Connection.connect({
           class: Redis,
           options,
-        });
+        }) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });

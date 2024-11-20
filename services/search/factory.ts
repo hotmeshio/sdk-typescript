@@ -1,31 +1,37 @@
 import { identifyProvider } from '../../modules/utils';
-import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 import { ILogger } from '../logger';
-import { ProviderClient } from '../../types/provider';
-
-import { IORedisSearchService } from './providers/redis/ioredis';
-import { RedisSearchService } from './providers/redis/redis';
 
 import { SearchService } from './index';
+import { PostgresSearchService } from './providers/postgres/postgres';
+import { IORedisSearchService } from './providers/redis/ioredis';
+import { RedisSearchService } from './providers/redis/redis';
+import { PostgresClientType } from '../../types/postgres';
+import { ProviderClient } from '../../types/provider';
+import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 
 class SearchServiceFactory {
   static async init(
-    redisClient: ProviderClient,
-    redisStoreClient: ProviderClient | undefined,
+    providerClient: ProviderClient,
+    storeProviderClient: ProviderClient | undefined,
     namespace: string,
     appId: string,
     logger: ILogger,
   ): Promise<SearchService<ProviderClient>> {
     let service: SearchService<ProviderClient>;
-    if (identifyProvider(redisClient) === 'redis') {
+    if (identifyProvider(providerClient) === 'postgres') {
+      service = new PostgresSearchService(
+        providerClient as PostgresClientType & ProviderClient,
+        storeProviderClient as PostgresClientType & ProviderClient,
+      );
+    } else if (identifyProvider(providerClient) === 'redis') {
       service = new RedisSearchService(
-        redisClient as RedisRedisClientType,
-        redisStoreClient as RedisRedisClientType,
+        providerClient as RedisRedisClientType,
+        storeProviderClient as RedisRedisClientType,
       );
     } else {
       service = new IORedisSearchService(
-        redisClient as IORedisClientType,
-        redisStoreClient as IORedisClientType,
+        providerClient as IORedisClientType,
+        storeProviderClient as IORedisClientType,
       );
     }
     await service.init(namespace, appId, logger);

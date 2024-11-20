@@ -2,6 +2,7 @@ import { MeshData } from '../meshdata/index';
 import { arrayToHash, guid } from '../../modules/utils';
 import * as Types from '../../types';
 import { LoggerService } from '../logger';
+import { ProvidersConfig } from '../../types/provider';
 
 /**
  * MeshOS is an abstract base class for schema-driven entity management within the Mesh network.
@@ -156,10 +157,11 @@ abstract class MeshOS {
     namespace: string,
     namespaceType: string,
     config: Types.ProviderConfig,
+    connections: ProvidersConfig,
   ) {
     this.namespace = namespace; // e.g., 's'
     this.namespaceType = namespaceType; // e.g., 'fuzzy' (friendly name in case namespace is abbreviated)
-    this.meshData = this.initializeMeshData(providerClass, config);
+    this.meshData = this.initializeMeshData(providerClass, config, connections);
   }
 
   // Abstract methods to be implemented by child classes
@@ -174,7 +176,11 @@ abstract class MeshOS {
   private initializeMeshData(
     providerClass: Types.ProviderClass,
     providerConfig: Types.ProviderConfig,
+    connections: ProvidersConfig,
   ): MeshData {
+    if (connections) {
+      return new MeshData(providerClass, providerConfig, this.getSearchOptions(), connections);
+    }
     return new MeshData(providerClass, providerConfig, this.getSearchOptions());
   }
 
@@ -565,6 +571,7 @@ abstract class MeshOS {
               ns,
               namespace.type,
               profile.db.connection.options,
+              profile.db.connections,
             );
             await instance.init(profile.db.search);
           }

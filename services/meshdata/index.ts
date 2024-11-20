@@ -31,7 +31,7 @@ import {
 import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
 import { MAX_DELAY } from '../../modules/enums';
 import { ProviderConfig } from '../../types';
-import { ProviderClass, ProviderOptions } from '../../types/provider';
+import { ProviderClass, ProviderOptions, ProvidersConfig } from '../../types/provider';
 
 /**
  * The `MeshData` service wraps the `MeshFlow` service.
@@ -170,6 +170,11 @@ class MeshData {
   search: WorkflowSearchOptions;
 
   /**
+   * Connection configurations for multiple providers
+   */
+  connections: ProvidersConfig;
+
+  /**
    * Provides a set of static extensions that can be invoked by
    * your linked workflow functions during their execution.
    * @example
@@ -293,7 +298,9 @@ class MeshData {
     providerClass: ProviderClass,
     providerOptions: StringAnyType,
     search?: WorkflowSearchOptions,
+    connections?: ProvidersConfig,
   ) {
+    this.connections = connections;
     this.connection.class = providerClass;
     this.connection.options = providerOptions;
     if (search) {
@@ -314,7 +321,7 @@ class MeshData {
    * @private
    */
   async getConnection() {
-    return await MeshFlow.Connection.connect(
+    return this.connections ?? await MeshFlow.Connection.connect(
       polyfill.meshDataConfig(this) as ProviderConfig,
     );
   }

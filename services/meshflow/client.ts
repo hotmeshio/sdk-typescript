@@ -89,7 +89,9 @@ export class ClientService {
   ) => {
     //namespace isolation requires the connection options to be hashed
     //as multiple intersecting databases can be used by the same service
-    const optionsHash = hashOptions(this.connection.options);
+    //hashing options allows for reuse of the same connection without risk of
+    //overwriting data in another namespace.
+    const optionsHash = this.hashOptions();
     const targetNS = namespace ?? APP_ID;
     const connectionNS = `${optionsHash}.${targetNS}`;
     if (ClientService.instances.has(connectionNS)) {
@@ -99,14 +101,12 @@ export class ClientService {
     }
 
     //create and cache an instance
+    const connectionType = 'options' in this.connection ? 'connection' : 'connections';
     const hotMeshClient = HotMesh.init({
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connection: {
-          class: this.connection.class,
-          options: this.connection.options,
-        },
+        [connectionType]: this.connection,
       },
     });
     ClientService.instances.set(connectionNS, hotMeshClient);
@@ -140,6 +140,22 @@ export class ClientService {
     }
   };
 
+  hashOptions(): string {
+    if ('options' in this.connection) {
+      //shorthand format
+      return hashOptions(this.connection.options);
+    } else {
+      //longhand format (sub, store, stream, pub, search)
+      const response = [];
+      for (let p in this.connection) {
+        if (!response.includes(this.connection[p])) {
+          response.push(hashOptions(this.connection[p]));
+        }
+      }
+      return response.join('');
+    }
+  }
+
   /**
    * It is possible for a client to invoke a workflow without first
    * creating the stream. This method will verify that the stream
@@ -151,7 +167,7 @@ export class ClientService {
     workflowTopic: string,
     namespace?: string,
   ) => {
-    const optionsHash = hashOptions(this.connection.options);
+    const optionsHash = this.hashOptions();
     const targetNS = namespace ?? APP_ID;
     const targetTopic = `${optionsHash}.${targetNS}.${workflowTopic}`;
     if (!ClientService.topics.includes(targetTopic)) {
@@ -335,11 +351,14 @@ export class ClientService {
     },
 
     /**
-     * Provides direct access to the Redis backend when making
-     * FT.SEARCH queries. Taskqueues and workflow names are
+     * Provides direct access to the SEARCH backend when making
+     * queries. Taskqueues and workflow names are
      * used to identify the point of presence to use. `...args` is
-     * the tokenized FT.SEARCH query as it would be entered in
-     * the terminal.
+     * the tokenized query. When querying Redis/FTSEARCH, the trailing
+     * ...args might be `'@_custom1:meshflow'`. For postgres,
+     * the trailing ...args would be: `'_custom', 'meshflow'`. In each case,
+     * the query looks for all job data where the field `_custom` is
+     * equal to `meshflow`.
      *
      * @example
      * ```typescript

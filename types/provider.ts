@@ -69,6 +69,13 @@ export type ProviderConfig = {
   options: StringAnyType;
 };
 
+export type ProvidersConfig  = {
+  sub: ProviderConfig;
+  store: ProviderConfig;
+  stream: ProviderConfig;
+  pub?: ProviderConfig;
+  search?: ProviderConfig;
+}
 
 export interface SetOptions {
   nx?: boolean;
