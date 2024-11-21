@@ -290,7 +290,7 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         jobId: '',
       });
       for (let i = 0; i < 10; i++) {
-        await postgresStoreService.storeClient.hset(`${hashKey}${i}`, { a: '25' });
+        await postgresStoreService.storeClient.hset(`${hashKey}${i}`, { abc: '25', def: '50', ghi: '75' });
       }
       const [cursor, result] = await postgresStoreService.findJobs('*', 15, 15);
       expect(result.length).toEqual(10);

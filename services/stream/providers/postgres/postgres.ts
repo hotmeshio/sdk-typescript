@@ -427,7 +427,6 @@ class PostgresStreamService extends StreamService<
   ): Promise<{ stream: string; depth: number }[]> {
     const client = this.streamClient;
     const tableName = this.getTableName();
-    console.log('streamNames', streamNames);
     try {
       const streams = streamNames.map((s) => s.stream);
 
@@ -438,7 +437,7 @@ class PostgresStreamService extends StreamService<
          GROUP BY stream_name`,
         [streams],
       );
-console.log('res', res);
+
       const result = res.rows.map((row: any) => ({
         stream: row.stream_name,
         depth: parseInt(row.count, 10),
