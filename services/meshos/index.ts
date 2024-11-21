@@ -590,7 +590,7 @@ abstract class MeshOS {
   ): Types.EntityInstanceTypes | undefined {
     if (!database || !MeshOS.profiles[database]) {
       const activeProfiles = Object.keys(MeshOS.profiles).filter(
-        (key) => MeshOS.profiles[key]?.db?.connection,
+        (key) => MeshOS.profiles[key]?.db,
       );
       throw new Error(
         `The database query parameter [${database}] was not found. Use one of: ${activeProfiles.join(', ')}`,
@@ -640,7 +640,7 @@ abstract class MeshOS {
   ): Record<string, Types.WorkflowSearchSchema> {
     if (!database || !MeshOS.profiles[database]) {
       const activeProfiles = Object.keys(MeshOS.profiles).filter(
-        (key) => MeshOS.profiles[key]?.db?.connection,
+        (key) => MeshOS.profiles[key]?.db,
       );
       throw new Error(
         `The database query parameter [${database}] was not found. Use one of: ${activeProfiles.join(', ')}`,
@@ -664,7 +664,7 @@ abstract class MeshOS {
     const result: any = {};
     for (const key in p) {
       const profile = p[key];
-      if (!profile.db.connection) {
+      if (!profile.db) {
         continue;
       } else {
         result[key] = {
