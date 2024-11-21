@@ -1,7 +1,7 @@
 # HotMesh
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-**HotMesh** offers the power of Temporal.io as a decentralized serverless swarm. It's a drop-in replacement that runs on Postgres or Redis (Your choice!). And there's no need for a central server. Just install the package and start orchestrating your microservices.
+**HotMesh** offers the power of Temporal.io as a serverless swarm. It's backed by Postgres or Redis (*your choice*), and there's no need for a central server! Just install the package and start orchestrating your microservices.
 
 ## Features
 
