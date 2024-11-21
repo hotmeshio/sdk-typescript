@@ -12,6 +12,7 @@ import {
   ProviderConfig,
   ProviderTransaction,
   Providers,
+  ProvidersConfig,
 } from '../types/provider';
 import { StringAnyType } from '../types/serializer';
 import { StreamCode, StreamData, StreamStatus } from '../types/stream';
@@ -151,9 +152,13 @@ export const polyfill = {
    */
   meshDataConfig(obj: {
     connection?: Partial<ProviderConfig>;
+    connections?: Partial<ProvidersConfig>;
     redisClass?: any;
     redisOptions?: StringAnyType;
-  }): Partial<ProviderConfig> {
+  }): Partial<ProviderConfig> | Partial<ProvidersConfig> {
+    if (obj?.connections) {
+      return obj.connections;
+    }
     return (
       obj?.connection ?? {
         class: obj?.redisClass,

@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "description": "Unbreakable Workflows",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -72,7 +72,7 @@
     "test:sub:redis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshdata": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshdata/index.test.ts --forceExit --verbose",
-    "test:meshos": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/index.test.ts --forceExit --verbose --detectOpenHandles",
+    "test:meshos": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/*.test.ts --forceExit --verbose --detectOpenHandles",
     "test:meshcall": "NODE_ENV=test jest ./tests/meshcall/index.test.ts --forceExit --verbose --detectOpenHandles",
     "test:unit": "NODE_ENV=test jest ./tests/unit/*/*/index.test.ts --detectOpenHandles --forceExit --verbose"
   },
