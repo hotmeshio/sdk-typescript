@@ -1412,12 +1412,15 @@ export class KVSQL {
       return { cursor: newCursor, keys };
     }
   }
-  
-  // Updated _scan method
-  _scan(cursor: number, count: number, pattern?: string): { sql: string; params: any[] } {
+
+  _scan(
+    cursor: number,
+    count: number,
+    pattern?: string,
+  ): { sql: string; params: any[] } {
     const tableName = this.tableForKey(`_:${this.appId}:j:_`);
     let sql = `
-      SELECT key FROM ${tableName}
+      SELECT DISTINCT key FROM ${tableName}
       WHERE (expiry IS NULL OR expiry > NOW())
     `;
     const params = [];
@@ -1437,7 +1440,7 @@ export class KVSQL {
   
     return { sql, params };
   }
-
+  
   async rename(
     oldKey: string,
     newKey: string,
