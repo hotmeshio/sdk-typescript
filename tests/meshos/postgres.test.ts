@@ -130,6 +130,9 @@ describe('MeshOS | Postgres', () => {
         active: 'y' | 'n';
       };
       expect(response2.active).toBe('n');
+
+      const json = MeshOS.toJSON();
+      expect (json).toBeDefined();
     }, 15_000);
   });
 });
