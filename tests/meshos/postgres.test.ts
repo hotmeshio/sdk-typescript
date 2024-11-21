@@ -1,4 +1,5 @@
 import * as Redis from 'redis';
+import { Client as Postgres } from 'pg';
 
 import config from '../$setup/config';
 import { HotMesh } from '../../services/hotmesh';
@@ -9,9 +10,12 @@ import { guid } from '../../modules/utils';
 
 import { Widget } from './src/widget';
 import { schema } from './src/schema';
+import { PostgresConnection } from '../../services/connector/providers/postgres';
+import { ProviderNativeClient } from '../../types/provider';
 
-describe('MeshOS', () => {
-  const options = {
+describe('MeshOS | Postgres', () => {
+  let postgresClient: ProviderNativeClient;
+  const redis_options = {
     socket: {
       host: config.REDIS_HOST,
       port: config.REDIS_PORT,
@@ -20,13 +24,38 @@ describe('MeshOS', () => {
     password: config.REDIS_PASSWORD,
     database: config.REDIS_DATABASE,
   };
+  const postgres_options = {
+    user: config.POSTGRES_USER,
+    host: config.POSTGRES_HOST,
+    database: config.POSTGRES_DB,
+    password: config.POSTGRES_PASSWORD,
+    port: config.POSTGRES_PORT,
+  };
 
   beforeAll(async () => {
+    // Initialize Postgres and drop tables (and data) from prior tests
+    postgresClient = (await PostgresConnection.connect(
+      guid(),
+      Postgres,
+      postgres_options,
+    )).getClient();
+
+    // Query the list of tables in the public schema and drop
+    const result = await postgresClient.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public';
+    `) as { rows: { table_name: string }[] };
+    let tables = result.rows.map(row => row.table_name);
+    for (const table of tables) {
+      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
+    }
+
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       HotMesh.guid(),
       Redis as unknown as HotMeshTypes.RedisRedisClassType,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushDb();
   }, 5_000);
@@ -40,18 +69,17 @@ describe('MeshOS', () => {
   }, 30_000);
 
   describe('connect', () => {
-    it('should connect a function and auto-deploy HotMesh to Redis', async () => {
+    it('should connect a function and auto-deploy HotMesh to Postgres', async () => {
       //registration methods (register the participants in the mesh)
 
-      MeshOS.registerDatabase('redis', {
-        name: 'redis',
-        label: 'Redis',
+      MeshOS.registerDatabase('postgres', {
+        name: 'postgres',
+        label: 'Postgres',
         search: true, //searchable
-        connection: {
-          class: Redis,
-          options: {
-            url: `redis${config.REDIS_USE_TLS ? 's' : ''}://${config.REDIS_USERNAME ?? ''}:${config.REDIS_PASSWORD}@${config.REDIS_HOST}:${config.REDIS_PORT}`,
-          },
+        connections: {
+          store: { class: Postgres, options: postgres_options },
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
         },
       });
 
@@ -71,8 +99,8 @@ describe('MeshOS', () => {
       });
 
       // many to many
-      MeshOS.registerProfile('redis', {
-        db: MeshOS.databases.redis,
+      MeshOS.registerProfile('postgres', {
+        db: MeshOS.databases.postgres,
         namespaces: {
           meshostest: MeshOS.namespaces.meshostest,
         },
@@ -87,7 +115,7 @@ describe('MeshOS', () => {
 
       //locate an entity instance (singleton instance of the widget class in the specific database/namespace)
       //the mesh initialization script allows for an entity to exist anywhere, so it must be specifically targeted
-      const entity = MeshOS.findEntity('redis', 'meshostest', 'widget');
+      const entity = MeshOS.findEntity('postgres', 'meshostest', 'widget');
       expect(entity).toBeDefined();
 
       //create a widget (both a workflow and data record)

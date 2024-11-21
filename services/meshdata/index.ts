@@ -424,16 +424,19 @@ class MeshData {
   /**
    * Returns a HotMesh client
    * @param {string} [namespace='meshflow'] - the namespace for the client
+   * @returns {Promise<HotMesh>}
    */
   async getHotMesh(namespace = 'meshflow'): Promise<HotMesh> {
     //try to reuse an existing client
     let hotMesh: HotMesh | Promise<HotMesh> | undefined =
       await this.instances.get(namespace);
     if (!hotMesh) {
+      //expanded config always takes precedence over concise config
+      const connectionType = this.connections ? 'connections' : 'connection';
       hotMesh = HotMesh.init({
         appId: namespace,
         engine: {
-          connection: polyfill.meshDataConfig(this) as ProviderConfig,
+          [connectionType]: polyfill.meshDataConfig(this) as ProviderConfig,
         },
       });
       this.instances.set(namespace, hotMesh);

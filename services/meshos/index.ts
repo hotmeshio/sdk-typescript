@@ -542,7 +542,7 @@ abstract class MeshOS {
   static async init(p = MeshOS.profiles): Promise<void> {
     for (const key in p) {
       const profile = p[key];
-      if (profile.db?.connection?.options) {
+      if (profile.db?.connection || profile.db?.connections) {
         this.logger.info(`meshos-initializing`, {
           db: profile.db.name,
           key,
@@ -567,10 +567,10 @@ abstract class MeshOS {
             });
 
             const instance = pinstances[entity.name] = new entity.class(
-              profile.db.connection.class,
+              profile.db.connection?.class,
               ns,
               namespace.type,
-              profile.db.connection.options,
+              profile.db.connection?.options,
               profile.db.connections,
             );
             await instance.init(profile.db.search);
