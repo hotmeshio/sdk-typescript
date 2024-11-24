@@ -1,33 +1,39 @@
 import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
-import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid, s, sleepFor } from '../../../modules/utils';
 import { APP_VERSION } from '../../../services/meshflow/schemas/factory';
-import { ProviderConfig } from '../../../types/provider';
+import { ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
+import {
+  dropTables,
+  ioredis_options as redis_options,
+  postgres_options,
+} from '../../$setup/postgres';
 
 import * as childWorkflows from './child/workflows';
 import * as parentWorkflows from './parent/workflows';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | nested | `workflow.execChild`', () => {
+describe('MESHFLOW | nested | Postgres', () => {
   let handle: WorkflowHandleService;
-  const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
+  let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
+    await dropTables(postgresClient);
+
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushdb();
   });
@@ -41,11 +47,12 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
         const connection = (await Connection.connect({
-          class: Redis,
-          options,
-        })) as ProviderConfig;
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        })) as ProvidersConfig;
         expect(connection).toBeDefined();
-        expect(connection.options).toBeDefined();
+        expect(connection.sub).toBeDefined();
       });
     });
   });
@@ -54,7 +61,11 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
     describe('start', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
         try {
-          const client = new Client({ connection: { class: Redis, options } });
+          const client = new Client({ connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          }});
           const h = client.workflow.start({
             args: ['PARENT', false], //setting to false optimizes workflow by suppressing the reentrant branch
             taskQueue: 'parent-world',
@@ -78,7 +89,7 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
         } catch (e) {
           console.error(e);
         }
-      });
+      }, 15_000);
     });
   });
 
@@ -86,7 +97,11 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
     describe('create', () => {
       it('should create and run the PARENT workflow worker', async () => {
         const worker = await Worker.create({
-          connection: { class: Redis, options },
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           taskQueue: 'parent-world',
           workflow: parentWorkflows.parentExample,
         });
@@ -96,13 +111,17 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
 
       it('should create and run the CHILD workflow worker', async () => {
         const worker = await Worker.create({
-          connection: { class: Redis, options },
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           taskQueue: 'child-world',
           workflow: childWorkflows.childExample,
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 15_000);
     });
   });
 
@@ -122,7 +141,12 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
   describe('MeshFlow Control Plane', () => {
     describe('deployAndActivate', () => {
       it('should deploy the distributed executable', async () => {
-        const client = new Client({ connection: { class: Redis, options } });
+        const client = new Client({ connection: {
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        }});
+
         //deploy next version
         await client.deployAndActivate(
           'meshflow',

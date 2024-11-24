@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
 import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
@@ -6,28 +7,34 @@ import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { MeshFlowFatalError } from '../../../modules/errors';
 import { guid, sleepFor } from '../../../modules/utils';
-import { ProviderConfig } from '../../../types/provider';
+import { ProviderConfig, ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
+import {
+  dropTables,
+  ioredis_options as redis_options,
+  postgres_options,
+} from '../../$setup/postgres';
 
 import * as workflows from './src/workflows';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | fatal | `Workflow Promise.all proxyActivities`', () => {
+describe('MESHFLOW | fatal | Postgres', () => {
   const NAME = 'hot-mess';
   let handle: WorkflowHandleService;
-  const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
+  let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
+    await dropTables(postgresClient);
+
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushdb();
   });
@@ -41,11 +48,12 @@ describe('MESHFLOW | fatal | `Workflow Promise.all proxyActivities`', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
         const connection = (await Connection.connect({
-          class: Redis,
-          options,
-        })) as ProviderConfig;
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        })) as ProvidersConfig;
         expect(connection).toBeDefined();
-        expect(connection.options).toBeDefined();
+        expect(connection.sub).toBeDefined();
       });
     });
   });
@@ -53,7 +61,11 @@ describe('MESHFLOW | fatal | `Workflow Promise.all proxyActivities`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options } });
+        const client = new Client({ connection: {
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        }});
         handle = await client.workflow.start({
           args: [{ name: NAME }],
           taskQueue: 'fatal-world',
@@ -62,7 +74,7 @@ describe('MESHFLOW | fatal | `Workflow Promise.all proxyActivities`', () => {
           expire: 120, //ensures the failed workflows aren't scrubbed too soon (so they can be reviewed (but unnecessary for the test to succeed))
         });
         expect(handle.workflowId).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
@@ -71,15 +83,16 @@ describe('MESHFLOW | fatal | `Workflow Promise.all proxyActivities`', () => {
       it('should create and run a worker', async () => {
         const worker = await Worker.create({
           connection: {
-            class: Redis,
-            options,
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
           },
           taskQueue: 'fatal-world',
           workflow: workflows.default.example,
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 

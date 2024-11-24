@@ -149,7 +149,7 @@ npm install @hotmeshio/hotmesh
   <summary style="font-size:1.25em;">Call and <b>cache</b> a function <small>[more]</small></summary>
 
   ### Cache a Function
-  Redis is great for unburdening stressed services. This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies an `id` and `ttl`.
+  This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies an `id` and `ttl`.
 
 1. Make the call from another service (or even the same service). Include an `id` and `ttl` to cache the result for the specified duration.
 
@@ -259,7 +259,7 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
     }
     ```
 
-4. Finally, create a **worker** and link the workflow function. Workers listen for tasks on their assigned Redis stream and invoke the workflow function each time they receive an event.
+4. Finally, create a **worker** and link the workflow function. Workers listen for tasks on their assigned task queue and invoke the workflow function each time they receive an event.
 
     ```typescript
     //worker.ts
@@ -551,7 +551,7 @@ This example demonstrates how to define a schema and deploy an index for a 'user
     };
     ```
 
-2. Create the Redis index upon server startup. This one initializes the 'user' index in Redis, using the schema defined in the previous step. It's OK to call `createSearchIndex` multiple times; it will only create the index if it doesn't already exist.
+2. Create the index upon server startup. This one initializes the 'user' index, using the schema defined in the previous step. It's OK to call `createSearchIndex` multiple times; it will only create the index if it doesn't already exist.
 
     ```typescript
     //server.ts

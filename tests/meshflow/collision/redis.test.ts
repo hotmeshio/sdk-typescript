@@ -11,7 +11,7 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | collision | `Naming Conflict Fatal Error`', () => {
+describe('MESHFLOW | collision | Redis', () => {
   const CONFLICTING_NAME = 'collision-child';
   let handle: WorkflowHandleService;
   const options = {

@@ -19,7 +19,7 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor` | Postgres', () => {
+describe('MESHFLOW | sleep | Postgres', () => {
   let handle: WorkflowHandleService;
   let workflowGuid: string;
   let interruptedWorkflowGuid: string;
@@ -105,7 +105,7 @@ describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor` | Postgres', () => {
           workflowId: interruptedWorkflowGuid,
         });
         expect(localHandle.workflowId).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 

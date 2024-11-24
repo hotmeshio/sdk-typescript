@@ -4,17 +4,17 @@ import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import { MeshFlowFatalError } from '../../../modules/errors';
 import { guid, sleepFor } from '../../../modules/utils';
-import { MeshFlowMaxedError } from '../../../modules/errors';
 import { ProviderConfig } from '../../../types/provider';
 
-import { example, state as STATE } from './src/workflows';
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
+describe('MESHFLOW | fatal | IORedis', () => {
+  const NAME = 'hot-mess';
   let handle: WorkflowHandleService;
-  const toThrowCount = 3;
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -55,17 +55,11 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({ connection: { class: Redis, options } });
         handle = await client.workflow.start({
-          args: [toThrowCount],
-          taskQueue: 'unknown-world',
+          args: [{ name: NAME }],
+          taskQueue: 'fatal-world',
           workflowName: 'example',
           workflowId: guid(),
-          expire: 120,
-          config: {
-            //speed up the default retry strategy (so the test completes in time)
-            maximumAttempts: toThrowCount + 1,
-            backoffCoefficient: 1,
-            maximumInterval: '1s',
-          },
+          expire: 120, //ensures the failed workflows aren't scrubbed too soon (so they can be reviewed (but unnecessary for the test to succeed))
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -80,8 +74,8 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
             class: Redis,
             options,
           },
-          taskQueue: 'unknown-world',
-          workflow: example,
+          taskQueue: 'fatal-world',
+          workflow: workflows.default.example,
         });
         await worker.run();
         expect(worker).toBeDefined();
@@ -91,48 +85,16 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
 
   describe('WorkflowHandle', () => {
     describe('result', () => {
-      it('should return successfully after retrying a workflow-generated error', async () => {
-        const result = await handle.result();
-        expect(result).toBe(toThrowCount);
-      }, 15_000);
-    });
-  });
-
-  describe('End to End', () => {
-    it('should connect a client, start a workflow, and throw max retries exceeded', async () => {
-      //reset counter that increments with each workflow run
-      STATE.count = 0;
-
-      //instance a client and start the workflow
-      const client = new Client({ connection: { class: Redis, options } });
-      const handle = await client.workflow.start({
-        args: [toThrowCount],
-        taskQueue: 'unknown-world',
-        workflowName: 'example',
-        workflowId: guid(),
-        expire: 120,
-        config: {
-          //if allowed max is 1 less than errors, 597 should be thrown (max exceeded)
-          maximumAttempts: toThrowCount - 1,
-          backoffCoefficient: 1,
-          maximumInterval: '1s',
-        },
+      it('should throw the fatal error with `code` and `message`', async () => {
+        try {
+          //the activity will throw `598 [MeshFlowFatalError]; the workflow will rethrow;`
+          await handle.result();
+          throw new Error('This should not be thrown');
+        } catch (err) {
+          expect(err.message).toEqual(`stop-retrying-please-${NAME}`);
+          expect(err.code).toEqual(new MeshFlowFatalError('').code);
+        }
       });
-      expect(handle.workflowId).toBeDefined();
-
-      try {
-        await handle.result();
-        throw new Error('This should not be thrown');
-      } catch (error) {
-        //the workflow throws this error
-        expect(error.message).toEqual('recurring-test-error');
-
-        //...but the final error response will be a MeshFlowMaxedError after the workflow gives up
-        expect(error.code).toEqual(new MeshFlowMaxedError('').code);
-
-        //expect a stack trace
-        expect(error.stack).toBeDefined();
-      }
-    }, 15_000);
+    });
   });
 });

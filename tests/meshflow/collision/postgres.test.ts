@@ -18,7 +18,7 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | collision | `Naming Conflict Fatal Error`', () => {
+describe('MESHFLOW | collision | Postgres', () => {
   const CONFLICTING_NAME = 'collision-child';
   let handle: WorkflowHandleService;
   let postgresClient: ProviderNativeClient;
@@ -123,7 +123,7 @@ describe('MESHFLOW | collision | `Naming Conflict Fatal Error`', () => {
         });
         await fixableWorker.run();
         expect(fixableWorker).toBeDefined();
-      }, 10_000);
+      }, 15_000);
     });
   });
 

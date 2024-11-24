@@ -12,7 +12,7 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor` | IORedis', () => {
+describe('MESHFLOW | sleep | IORedis', () => {
   let handle: WorkflowHandleService;
   let workflowGuid: string;
   let interruptedWorkflowGuid: string;
