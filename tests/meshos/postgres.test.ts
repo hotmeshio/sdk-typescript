@@ -7,11 +7,12 @@ import { MeshOS } from '../../services/meshos';
 import { RedisConnection } from '../../services/connector/providers/redis';
 import * as HotMeshTypes from '../../types';
 import { guid } from '../../modules/utils';
-
-import { Widget } from './src/widget';
-import { schema } from './src/schema';
 import { PostgresConnection } from '../../services/connector/providers/postgres';
 import { ProviderNativeClient } from '../../types/provider';
+import { dropTables } from '../$setup/postgres';
+
+import { schema } from './src/schema';
+import { Widget } from './src/widget';
 
 describe('MeshOS | Postgres', () => {
   let postgresClient: ProviderNativeClient;
@@ -34,22 +35,11 @@ describe('MeshOS | Postgres', () => {
 
   beforeAll(async () => {
     // Initialize Postgres and drop tables (and data) from prior tests
-    postgresClient = (await PostgresConnection.connect(
-      guid(),
-      Postgres,
-      postgres_options,
-    )).getClient();
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
 
-    // Query the list of tables in the public schema and drop
-    const result = await postgresClient.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public';
-    `) as { rows: { table_name: string }[] };
-    let tables = result.rows.map(row => row.table_name);
-    for (const table of tables) {
-      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
-    }
+    await dropTables(postgresClient);
 
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
@@ -132,7 +122,7 @@ describe('MeshOS | Postgres', () => {
       expect(response2.active).toBe('n');
 
       const json = MeshOS.toJSON();
-      expect (json).toBeDefined();
+      expect(json).toBeDefined();
     }, 15_000);
   });
 });

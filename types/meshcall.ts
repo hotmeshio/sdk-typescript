@@ -1,4 +1,4 @@
-import { ProviderConfig } from './provider';
+import { ProviderConfig, ProvidersConfig } from './provider';
 import { LogLevel } from './logger';
 
 interface MeshCallExecOptions {
@@ -40,7 +40,7 @@ interface MeshCallConnectParams {
   /**
    * Provider configuration
    */
-  connection?: ProviderConfig;
+  connection?: ProviderConfig | ProvidersConfig;
   /**
    * The linked worker function that will be called; optional if read only
    */
@@ -68,7 +68,7 @@ interface MeshCallExecParams {
   /**
    * Provider configuration
    */
-  connection?: ProviderConfig;
+  connection?: ProviderConfig | ProvidersConfig;
   /**
    * Execution options like caching ttl
    */
@@ -103,7 +103,7 @@ interface MeshCallFlushParams {
   /**
    * Provider configuration
    */
-  connection?: ProviderConfig;
+  connection?: ProviderConfig | ProvidersConfig;
   /**
    * Options for the flush
    */
@@ -166,7 +166,7 @@ interface MeshCallCronParams {
   /**
    * Provider configuration
    */
-  connection?: ProviderConfig;
+  connection?: ProviderConfig | ProvidersConfig;
   /**
    * Arguments to pass to the cron job; arguments will be passed to the callback
    * each time it runs
@@ -215,7 +215,7 @@ interface MeshCallInterruptParams {
   /**
    * Provider configuration
    */
-  connection?: ProviderConfig;
+  connection?: ProviderConfig | ProvidersConfig;
   /**
    * Options for interrupting the cron
    */

@@ -40,6 +40,7 @@ import {
   StreamStatus,
 } from '../../types/stream';
 import { MAX_DELAY } from '../../modules/enums';
+import { PostgresConnection } from '../connector/providers/postgres';
 
 /**
  * This example shows the full lifecycle of a HotMesh engine instance,
@@ -132,12 +133,12 @@ class HotMesh {
   /**
    * Instance initializer. Note the expanded `connections` object
    * with specific target backends. Redis Pub/Sub is used for
-   * event pub/sub to coordinate the quorum and workers. And 
+   * event pub/sub to coordinate the quorum and workers. And
    * Postgres is used for the store and stream connections, which
    * are used for managing job state. Workers are configured
    * similarly to the engine, but as an array with
    * multiple worker objects.
-   * 
+   *
    * @example
    * ```typescript
    * const config: HotMeshConfig = {
@@ -557,6 +558,7 @@ class HotMesh {
       await Router.stopConsuming();
       await RedisConnection.disconnectAll();
       await IORedisConnection.disconnectAll();
+      await PostgresConnection.disconnectAll();
     }
   }
 

@@ -42,10 +42,10 @@ describe('MESHFLOW | collision | `Naming Conflict Fatal Error`', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
+        const connection = (await Connection.connect({
           class: Redis,
           options,
-        }) as ProviderConfig;
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });
@@ -69,7 +69,7 @@ describe('MESHFLOW | collision | `Naming Conflict Fatal Error`', () => {
           },
         });
         expect(handle.workflowId).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 

@@ -34,7 +34,11 @@ abstract class StoreService<
   }
 
   abstract transact(): TransactionProvider;
-  abstract init(namespace: string, appId: string, logger: ILogger): Promise<HotMeshApps>;
+  abstract init(
+    namespace: string,
+    appId: string,
+    logger: ILogger,
+  ): Promise<HotMeshApps>;
 
   //domain-level methods
   abstract mintKey(type: KeyType, params: KeyStoreParams): string;

@@ -38,11 +38,7 @@ import {
   StatsType,
 } from '../../../../types/stats';
 import { Transitions } from '../../../../types/transition';
-import {
-  formatISODate,
-  getSymKey,
-  sleepFor,
-} from '../../../../modules/utils';
+import { formatISODate, getSymKey, sleepFor } from '../../../../modules/utils';
 import { JobInterruptOptions } from '../../../../types/job';
 import {
   HMSH_SCOUT_INTERVAL_SECONDS,
@@ -54,12 +50,17 @@ import { WorkListTaskType } from '../../../../types/task';
 import { ThrottleOptions } from '../../../../types/quorum';
 import { Cache } from '../../cache';
 import { StoreService } from '../..';
-import { KVSQL } from './kvsql';
 import { PostgresClientType } from '../../../../types';
 
-class PostgresStoreService extends StoreService<ProviderClient, ProviderTransaction> {
+import { KVSQL } from './kvsql';
+import { KVTables } from './kvtables';
 
+class PostgresStoreService extends StoreService<
+  ProviderClient,
+  ProviderTransaction
+> {
   pgClient: PostgresClientType;
+  kvTables: ReturnType<typeof KVTables>;
 
   transact(): ProviderTransaction {
     return this.storeClient.transact();
@@ -71,7 +72,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     //  the PostgresStore wraps the 'pg' client in a class that implements
     //  the Redis client interface. This allows the same methods to be called
     //  that were used when authoring the Redis client store provider.
-    //In general, this.storeClient will behave like Redis, but will 
+    //In general, this.storeClient will behave like Redis, but will
     //  use the 'pg' package and will read/write to a Postgres database.
     this.pgClient = storeClient as unknown as PostgresClientType;
     this.storeClient = new KVSQL(
@@ -79,6 +80,8 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       this.namespace,
       this.appId,
     ) as unknown as ProviderClient;
+    //kvTables will provision tables and indexes in the Postgres db as necessary
+    this.kvTables = KVTables(this);
   }
 
   async init(
@@ -92,335 +95,15 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     this.storeClient.appId = this.appId = appId;
     this.logger = logger;
 
-    //ensure tables exist
-    await this.deploy(appId);
+    //confirm db tables exist
+    await this.kvTables.deploy(appId);
 
+    //note: getSettings will contact db to confirm r/w access
     const settings = await this.getSettings(true);
     this.cache = new Cache(appId, settings);
     this.serializer = new Serializer();
     await this.getApp(appId);
     return this.cache.getApps();
-  }
-
-  /**
-   * Deploys the necessary tables with the specified naming strategy.
-   * @param appName - The name of the application.
-   */
-  async deploy(appName: string): Promise<void> {
-    const client = this.pgClient;
-
-    try {
-      // Acquire advisory lock
-      const lockId = this.getAdvisoryLockId(appName);
-      const lockResult = await client.query(
-        'SELECT pg_try_advisory_lock($1) AS locked',
-        [lockId],
-      );
-
-      if (lockResult.rows[0].locked) {
-        // Begin transaction
-        await client.query('BEGIN');
-
-        // Check and create tables
-        const tablesExist = await this.checkIfTablesExist(client, appName);
-        if (!tablesExist) {
-          await this.createTables(client, appName);
-        }
-
-        // Commit transaction
-        await client.query('COMMIT');
-
-        // Release the lock
-        await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
-      } else {
-        // Wait for the deploy process to complete
-        await this.waitForTablesCreation(client, lockId, appName);
-      }
-    } catch (error) {
-      this.logger.error('Error deploying tables', { error });
-      throw error;
-    }
-  }
-
-  getAdvisoryLockId(appName: string): number {
-    return this.hashStringToInt(appName);
-  }
-
-  hashStringToInt(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0; // Convert to 32-bit integer
-    }
-    return Math.abs(hash);
-  }
-
-  async waitForTablesCreation(
-    client: PostgresClientType,
-    lockId: number,
-    appName: string,
-  ): Promise<void> {
-    let retries = 0;
-    const maxRetries = 20;
-    while (retries < maxRetries) {
-      await sleepFor(150);
-      const lockCheck = await client.query(
-        "SELECT NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint) AS unlocked",
-        [lockId],
-      );
-      if (lockCheck.rows[0].unlocked) {
-        // Lock has been released, tables should exist now
-        const tablesExist = await this.checkIfTablesExist(client, appName);
-        if (tablesExist) {
-          return;
-        }
-      }
-      retries++;
-    }
-    throw new Error('Timeout waiting for table creation');
-  }
-
-  async checkIfTablesExist(
-    client: PostgresClientType,
-    appName: string,
-  ): Promise<boolean> {
-    const tableNames = this.getTableNames(appName);
-
-    const checkTablePromises = tableNames.map((tableName) =>
-      client.query(
-        `SELECT to_regclass('public.${tableName}') AS table`,
-      ),
-    );
-
-    const results = await Promise.all(checkTablePromises);
-    return results.every((res) => res.rows[0].table !== null);
-  }
-
-  async createTables(
-    client: PostgresClientType,
-    appName: string,
-  ): Promise<void> {
-    // Begin transaction
-    await client.query('BEGIN');
-
-    const tableDefinitions = this.getTableDefinitions(
-      this.storeClient.safeName(appName),
-    );
-
-    for (const tableDef of tableDefinitions) {
-      switch (tableDef.type) {
-        case 'string':
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
-              key TEXT PRIMARY KEY,
-              value TEXT,
-              expiry TIMESTAMP WITH TIME ZONE
-            );
-          `);
-          break;
-    
-        case 'hash':
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
-              key TEXT NOT NULL,
-              field TEXT NOT NULL,
-              value TEXT,
-              expiry TIMESTAMP WITH TIME ZONE,
-              PRIMARY KEY (key, field)
-            );
-          `);
-          break;
-
-        case 'jobhash':
-          // Create the enumerated type if it doesn't exist
-          await client.query(`
-            DO $$
-            BEGIN
-              IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'type_enum') THEN
-                CREATE TYPE type_enum AS ENUM ('jmark', 'hmark', 'status', 'jdata', 'adata', 'udata', 'other');
-              END IF;
-            END$$;
-          `);
-        
-          // Create the parent table with hash partitioning
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
-              key TEXT NOT NULL,
-              field TEXT NOT NULL,
-              value TEXT,
-              type type_enum,
-              expiry TIMESTAMP WITH TIME ZONE,
-              PRIMARY KEY (key, field)
-            ) PARTITION BY HASH (key);
-          `);
-        
-          // Dynamically create 8 partitions
-          for (let i = 0; i < 8; i++) {
-            await client.query(`
-              CREATE TABLE IF NOT EXISTS ${tableDef.name}_part_${i} PARTITION OF ${tableDef.name}
-              FOR VALUES WITH (modulus 8, remainder ${i});
-            `);
-          }
-        
-          // Add indexes for optimized queries
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_type 
-            ON ${tableDef.name} (key, type);
-          `);
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_type 
-            ON ${tableDef.name} (type);
-          `);
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_x_type_jmark 
-            ON ${tableDef.name} (key, type)
-            WHERE key = 'x' AND type = 'jmark';
-          `);
-          break;
-
-        case 'list':
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
-              key TEXT NOT NULL,
-              index BIGINT NOT NULL,
-              value TEXT,
-              expiry TIMESTAMP WITH TIME ZONE,
-              PRIMARY KEY (key, index)
-            );
-          `);
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expiry 
-            ON ${tableDef.name} (key, expiry);
-          `);
-          break;
-    
-        case 'sorted_set':
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
-              key TEXT NOT NULL,
-              member TEXT NOT NULL,
-              score DOUBLE PRECISION NOT NULL,
-              expiry TIMESTAMP WITH TIME ZONE,
-              PRIMARY KEY (key, member)
-            );
-          `);
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_score_member 
-            ON ${tableDef.name} (key, score, member);
-          `);
-          break;
-    
-        default:
-          this.logger.warn(`Unknown table type for ${tableDef.name}`);
-          break;
-      }
-    }
-    
-
-    // Commit transaction
-    await client.query('COMMIT');
-  }
-
-  getTableNames(appName: string): string[] {
-    const tableNames = [];
-
-    // Applications table (only hotmesh prefix)
-    tableNames.push('hotmesh_applications', 'hotmesh_connections');
-
-    // Other tables with appName
-    const tablesWithAppName = [
-      'throttles',
-      'roles',
-      'task_priorities',
-      'task_schedules',
-      'task_lists',
-      'events',
-      'jobs',
-      'stats_counted',
-      'stats_indexed',
-      'stats_ordered',
-      'versions',
-      'signal_patterns',
-      'signal_registry',
-      'symbols',
-    ];
-
-    tablesWithAppName.forEach((table) => {
-      tableNames.push(`hotmesh_${this.storeClient.safeName(appName)}_${table}`);
-    });
-
-    return tableNames;
-  }
-
-  getTableDefinitions(appName: string): Array<{ name: string; type: string }> {
-    const tableDefinitions = [
-      {
-        name: 'hotmesh_applications',
-        type: 'hash',
-      },
-      {
-        name: `hotmesh_connections`,
-        type: 'hash',
-      },
-      {
-        name: `hotmesh_${appName}_throttles`,
-        type: 'hash',
-      },
-      {
-        name: `hotmesh_${appName}_roles`,
-        type: 'string',
-      },
-      {
-        name: `hotmesh_${appName}_task_schedules`,
-        type: 'sorted_set',
-      },
-      {
-        name: `hotmesh_${appName}_task_priorities`,
-        type: 'sorted_set',
-      },
-      {
-        name: `hotmesh_${appName}_task_lists`,
-        type: 'list',
-      },
-      {
-        name: `hotmesh_${appName}_events`,
-        type: 'hash',
-      },
-      {
-        name: `hotmesh_${appName}_jobs`,
-        type: 'jobhash', //adds partitioning, indexes, and enum type
-      },
-      {
-        name: `hotmesh_${appName}_stats_counted`,
-        type: 'hash',
-      },
-      {
-        name: `hotmesh_${appName}_stats_ordered`,
-        type: 'sorted_set',
-      },
-      {
-        name: `hotmesh_${appName}_stats_indexed`,
-        type: 'list',
-      },
-      {
-        name: `hotmesh_${appName}_versions`,
-        type: 'hash',
-      },
-      {
-        name: `hotmesh_${appName}_signal_patterns`,
-        type: 'hash',
-      },
-      {
-        name: `hotmesh_${appName}_symbols`,
-        type: 'hash',
-      },
-      {
-        name: `hotmesh_${appName}_signal_registry`,
-        type: 'string',
-      },
-    ];
-
-    return tableDefinitions;
   }
 
   isSuccessful(result: any): boolean {
@@ -546,13 +229,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       appId: this.appId,
     });
     //reserve the slot in a `pending` state (range will be established in the next step)
-    const response = await this.kvsql().hsetnx(
-      rangeKey,
-      target,
-      '?:?',
-    );
-
-
+    const response = await this.kvsql().hsetnx(rangeKey, target, '?:?');
 
     if (response) {
       //if the key didn't exist, set the inclusive range and seed metadata fields
@@ -570,10 +247,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       return [lowerLimit + MDATA_SYMBOLS.SLOTS, upperLimit - 1, {} as Symbols];
     } else {
       //if the key already existed, get the lower limit and add the number of symbols
-      const range = await this.kvsql().hget(
-        rangeKey,
-        target,
-      );
+      const range = await this.kvsql().hget(rangeKey, target);
       const [lowerLimitString] = range.split(':');
       if (lowerLimitString === '?') {
         await sleepFor(tryCount * 1000);
@@ -586,8 +260,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
         }
       } else {
         const lowerLimit = parseInt(lowerLimitString, 10);
-        const symbols =
-          await this.kvsql().hgetall(symbolKey);
+        const symbols = await this.kvsql().hgetall(symbolKey);
         const symbolCount = Object.keys(symbols).length;
         const actualLowerLimit = lowerLimit + MDATA_SYMBOLS.SLOTS + symbolCount;
         const upperLimit = Number(lowerLimit + size - 1);
@@ -880,8 +553,6 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     const output: IdsData = {};
     for (const [index, result] of results.entries()) {
       const key = indexKeys[index];
-
-      //todo: resolve this discrepancy between redis/ioredis
       const idsList: string[] = result[1] || result;
 
       if (idsList && idsList.length > 0) {
@@ -939,10 +610,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     } else {
       delete hashData[':'];
     }
-    await this.kvsql(transaction).hset(
-      hashKey,
-      hashData,
-    );
+    await this.kvsql(transaction).hset(hashKey, hashData);
     return jobId;
   }
 
@@ -959,10 +627,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       }
       return `_${field}`;
     });
-    const jobDataArray = await this.kvsql().hmget(
-      key,
-      _fields,
-    );
+    const jobDataArray = await this.kvsql().hmget(key, _fields);
     const jobData: StringAnyType = {};
     fields.forEach((field, index) => {
       if (field.startsWith('"')) {
@@ -984,11 +649,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     const symKeys = await this.getSymbolKeys(symbolNames);
     this.serializer.resetSymbols(symKeys, {}, dIds);
     const fields = this.serializer.abbreviate(consumes, symbolNames, [':']);
-
-    const jobDataArray = await this.kvsql().hmget(
-      key,
-      fields,
-    );
+    const jobDataArray = await this.kvsql().hmget(key, fields);
     const jobData: StringAnyType = {};
     let atLeast1 = false; //if status field (':') isn't present assume 404
     fields.forEach((field, index) => {
@@ -1049,11 +710,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     const payload = { [collationKey]: amount.toString() };
     const hashData = this.serializer.package(payload, symbolNames);
     const targetId = Object.keys(hashData)[0];
-    return await this.kvsql(transaction).hincrbyfloat(
-      jobKey,
-      targetId,
-      amount,
-    );
+    return await this.kvsql(transaction).hincrbyfloat(jobKey, targetId, amount);
   }
 
   /**
@@ -1072,11 +729,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       appId: this.appId,
       jobId,
     });
-    return await this.kvsql(transaction).hincrbyfloat(
-      jobKey,
-      guid,
-      amount,
-    );
+    return await this.kvsql(transaction).hincrbyfloat(jobKey, guid, amount);
   }
 
   async setStateNX(
@@ -1161,10 +814,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     Object.entries(_subscriptions).forEach(([key, value]) => {
       _subscriptions[key] = JSON.stringify(value);
     });
-    const status = await this.kvsql().hset(
-      key,
-      _subscriptions,
-    );
+    const status = await this.kvsql().hset(key, _subscriptions);
     this.cache.setSubscriptions(
       appVersion.id,
       appVersion.version,
@@ -1186,8 +836,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
         appVersion: appVersion.version,
       };
       const key = this.mintKey(KeyType.SUBSCRIPTIONS, params);
-      subscriptions =
-        await this.kvsql().hgetall(key) || {};
+      subscriptions = await this.kvsql().hgetall(key) || {};
       Object.entries(subscriptions).forEach(([key, value]) => {
         subscriptions[key] = JSON.parse(value as string);
       });
@@ -1222,10 +871,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       _subscriptions[key] = JSON.stringify(value);
     });
     if (Object.keys(_subscriptions).length !== 0) {
-      const response = await this.kvsql().hset(
-        key,
-        _subscriptions,
-      );
+      const response = await this.kvsql().hset(key, _subscriptions);
       this.cache.setTransitions(appVersion.id, appVersion.version, transitions);
       return response;
     }
@@ -1302,9 +948,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     resolved: string,
   ): Promise<string | undefined> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-    const response = await this.kvsql().get(
-      `${key}:${topic}:${resolved}`,
-    );
+    const response = await this.kvsql().get(`${key}:${topic}:${resolved}`);
     return response ? response.toString() : undefined;
   }
 
@@ -1313,9 +957,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     resolved: string,
   ): Promise<number | undefined> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-    const response = await this.kvsql().del(
-      `${key}:${topic}:${resolved}`,
-    );
+    const response = await this.kvsql().del(`${key}:${topic}:${resolved}`);
     return response ? Number(response) : undefined;
   }
 
@@ -1323,12 +965,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     const transaction = this.kvsql(this.transact());
     const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
     for (const key of keys) {
-      transaction.zadd(
-        zsetKey,
-        Date.now(),
-        key,
-        { nx: true },
-      );
+      transaction.zadd(zsetKey, Date.now(), key, { nx: true });
     }
     await transaction.exec();
   }
@@ -1337,11 +974,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     let workItemKey = this.cache.getActiveTaskQueue(this.appId) || null;
     if (!workItemKey) {
       const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
-      const result = await this.kvsql().zrange(
-        zsetKey,
-        0,
-        0,
-      );
+      const result = await this.kvsql().zrange(zsetKey, 0, 0);
       workItemKey = result.length > 0 ? result[0] : null;
       if (workItemKey) {
         this.cache.setWorkItem(this.appId, workItemKey);
@@ -1357,18 +990,13 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     scrub = false,
   ): Promise<void> {
     const zsetKey = this.mintKey(KeyType.WORK_ITEMS, { appId: this.appId });
-    const didRemove = await this.kvsql().zrem(
-      zsetKey,
-      workItemKey,
-    );
+    const didRemove = await this.kvsql().zrem(zsetKey, workItemKey);
+
     if (didRemove) {
       if (scrub) {
         //indexes can be designed to be self-cleaning; `engine.hookAll` exposes this option
-        this.kvsql().expire(processedKey, 0);
-        this.kvsql().expire(
-          key.split(':').slice(0, 5).join(':'),
-          0,
-        );
+        this.kvsql().del(processedKey);
+        this.kvsql().del(key.split(':').slice(0, 5).join(':'));
       } else {
         await this.kvsql().rename(processedKey, key);
       }
@@ -1380,12 +1008,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     sourceKey: string,
     destinationKey: string,
   ): Promise<any> {
-    return await this.kvsql().lmove(
-      sourceKey,
-      destinationKey,
-      'LEFT',
-      'RIGHT',
-    );
+    return await this.kvsql().lmove(sourceKey, destinationKey, 'LEFT', 'RIGHT');
   }
 
   async expireJob(
@@ -1398,10 +1021,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
         appId: this.appId,
         jobId,
       });
-      await this.kvsql(transaction).expire(
-        jobKey,
-        inSeconds,
-      );
+      await this.kvsql(transaction).expire(jobKey, inSeconds);
     }
   }
 
@@ -1432,10 +1052,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     });
     //register the task in the LIST
     const timeEvent = [type, activityId, gId, dad, jobId].join(VALSEP);
-    const len = await this.kvsql(transaction).rpush(
-      listKey,
-      timeEvent,
-    );
+    const len = await this.kvsql(transaction).rpush(listKey, timeEvent);
     //register the LIST in the ZSET
     if (transaction || len === 1) {
       const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
@@ -1524,11 +1141,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
         appId: this.appId,
         jobId,
       });
-      const result = await this.kvsql().hincrbyfloat(
-        jobKey,
-        ':',
-        amount,
-      );
+      const result = await this.kvsql().hincrbyfloat(jobKey, ':', amount);
       if (result <= amount) {
         //verify active state; job already interrupted
         throw new Error(`Job ${jobId} already completed`);
@@ -1536,7 +1149,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       //persist the error unless specifically told not to
       if (options.throw !== false) {
         const errKey = `metadata/err`; //job errors are stored at the path `metadata/err`
-        const symbolNames = [`$${topic}`]; //the symbol for `metadata/err` is in redis and stored using the job topic
+        const symbolNames = [`$${topic}`]; //the symbol for `metadata/err` is in the backend
         const symKeys = await this.getSymbolKeys(symbolNames);
         const symVals = await this.getSymbolValues();
         this.serializer.resetSymbols(symKeys, symVals, {});
@@ -1578,7 +1191,6 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     batchSize = 1000,
     cursor = '0',
   ): Promise<[string, string[]]> {
-
     const matchKey = this.mintKey(KeyType.JOB_STATE, {
       appId: this.appId,
       jobId: queryString,
@@ -1597,7 +1209,7 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     fieldMatchPattern = '*',
     limit = 1000,
     batchSize = 1000, //unused in SQL provider
-    cursor = '0'
+    cursor = '0',
   ): Promise<[string, Record<string, string>]> {
     const matchingFields: Record<string, string> = {};
     const jobKey = this.mintKey(KeyType.JOB_STATE, {
@@ -1615,18 +1227,18 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
     } else {
       enumType = 'jmark';
     }
-  
+
     const offset = parseInt(cursor, 10) || 0; // Convert cursor to numeric offset
     const tableName = this.kvsql().tableForKey(jobKey, 'hash');
     const params: any[] = [jobKey, enumType, limit, offset];
 
     const sql = `
       SELECT field, value
-      FROM ${tableName}
-      WHERE key = $1 AND type = $2
+      FROM ${tableName}_attributes
+      WHERE job_id = $1 AND type = $2
       LIMIT $3 OFFSET $4
     `;
-  
+
     // Execute and map
     const res = await this.pgClient.query(sql, params);
     if (enumType === 'hmark') {
@@ -1640,9 +1252,10 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
         matchingFields[row.field] = row.value;
       }
     }
-    const nextCursor = res.rows.length < limit ? '0' : String(offset + res.rows.length);
+    const nextCursor =
+      res.rows.length < limit ? '0' : String(offset + res.rows.length);
     return [nextCursor, matchingFields];
-  }  
+  }
 
   async setThrottleRate(options: ThrottleOptions): Promise<void> {
     const key = this.mintKey(KeyType.THROTTLE_RATE, { appId: this.appId });
@@ -1658,7 +1271,8 @@ class PostgresStoreService extends StoreService<ProviderClient, ProviderTransact
       });
     } else {
       //if no topic, update all
-      const transaction = this.transact() as unknown as KVSQLProviderTransaction;
+      const transaction =
+        this.transact() as unknown as KVSQLProviderTransaction;
       transaction.del(key);
       transaction.hset(key, { ':': rate });
       await transaction.exec();

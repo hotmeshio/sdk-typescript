@@ -4,8 +4,8 @@ import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
-import { guid, s, sleepFor } from '../../../modules/utils';
-import { APP_VERSION } from '../../../services/meshflow/schemas/factory';
+import { guid, sleepFor } from '../../../modules/utils';
+import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { ProviderConfig } from '../../../types/provider';
 
 import * as childWorkflows from './child/workflows';
@@ -13,7 +13,7 @@ import * as parentWorkflows from './parent/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | nested | `workflow.execChild`', () => {
+describe('MESHFLOW | interrupt | `workflow.interrupt`', () => {
   let handle: WorkflowHandleService;
   const options = {
     host: config.REDIS_HOST,
@@ -53,52 +53,42 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
-        try {
-          const client = new Client({ connection: { class: Redis, options } });
-          const h = client.workflow.start({
-            args: ['PARENT', false], //setting to false optimizes workflow by suppressing the reentrant branch
-            taskQueue: 'parent-world',
-            workflowName: 'parentExample',
-            workflowId: guid(),
-            signalIn: false, //setting to false optimizes workflow by suppressing the reentrant branch
-            expire: s('1m'),
-          });
-          //start another workflow to simulate startup collisions
-          let handle2: WorkflowHandleService;
-          const localH = client.workflow.start({
-            args: ['PARENT', false],
-            taskQueue: 'parent-world',
-            workflowName: 'parentExample',
-            workflowId: guid(),
-            signalIn: false,
-            expire: s('90s'),
-          });
-          [handle, handle2] = await Promise.all([h, localH]);
-          expect(handle.workflowId).toBeDefined();
-        } catch (e) {
-          console.error(e);
-        }
+        const client = new Client({ connection: { class: Redis, options } });
+        handle = await client.workflow.start({
+          args: ['PARENT'],
+          taskQueue: 'parent-world',
+          workflowName: 'parentExample',
+          workflowId: guid(),
+          expire: 600,
+        });
+        expect(handle.workflowId).toBeDefined();
       });
     });
   });
 
   describe('Worker', () => {
     describe('create', () => {
-      it('should create and run the PARENT workflow worker', async () => {
-        const worker = await Worker.create({
-          connection: { class: Redis, options },
-          taskQueue: 'parent-world',
-          workflow: parentWorkflows.parentExample,
-        });
-        await worker.run();
-        expect(worker).toBeDefined();
-      });
-
       it('should create and run the CHILD workflow worker', async () => {
         const worker = await Worker.create({
           connection: { class: Redis, options },
           taskQueue: 'child-world',
           workflow: childWorkflows.childExample,
+          options: {
+            logLevel: HMSH_LOGLEVEL,
+          },
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+
+      it('should create and run the PARENT workflow worker', async () => {
+        const worker = await Worker.create({
+          connection: { class: Redis, options },
+          taskQueue: 'parent-world',
+          workflow: parentWorkflows.parentExample,
+          options: {
+            logLevel: HMSH_LOGLEVEL,
+          },
         });
         await worker.run();
         expect(worker).toBeDefined();
@@ -106,29 +96,34 @@ describe('MESHFLOW | nested | `workflow.execChild`', () => {
     });
   });
 
+  //add long test, spawn a timout that will throw a 410, await the handle
+  //verify the error code is 410
+
   describe('WorkflowHandle', () => {
     describe('result', () => {
-      it('should return the PARENT workflow execution result', async () => {
+      it('should run a PARENT that starts and then interrupts a CHILD workflow', async () => {
         const expectedOutput = {
-          activityOutput: 'parentActivity, PARENT!',
-          childWorkflowOutput: 'childActivity, PARENT to CHILD!',
+          childWorkflowOutput: 'interrupt childActivity, PARENT to CHILD!',
+          cancelledWorkflowId: 'jimbo2',
         };
-        const result = await handle.result();
+        const result = (await handle.result()) as {
+          cancelledWorkflowId: string;
+        };
         expect(result).toEqual(expectedOutput);
-      }, 15_000);
-    });
-  });
-
-  describe('MeshFlow Control Plane', () => {
-    describe('deployAndActivate', () => {
-      it('should deploy the distributed executable', async () => {
         const client = new Client({ connection: { class: Redis, options } });
-        //deploy next version
-        await client.deployAndActivate(
-          'meshflow',
-          (Number(APP_VERSION) + 1).toString(),
+        //get a handle to the interrupted workflow
+        handle = await client.workflow.getHandle(
+          'child-world', //task queue
+          'childExample', //workflow
+          result.cancelledWorkflowId,
         );
-      }, 25_000);
+        const state = await handle.state(true);
+        //job state (js) is @ -1billion when interrupted (depending upon semaphore state when decremented)
+        expect(state.metadata.js).toBeLessThan(-1_000_000);
+        const rslt = await handle.result({ state: true });
+        //result is undefined, since it was interrupted; there is no return;
+        expect(rslt).toBeUndefined();
+      }, 15_000);
     });
   });
 });

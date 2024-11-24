@@ -8,18 +8,7 @@ import * as HotMeshTypes from '../../types';
 
 import * as activities from './activities';
 
-describe('MeshData`', () => {
-  //redis connection options
-  // const options = {
-  //   socket: {
-  //     host: config.REDIS_HOST,
-  //     port: config.REDIS_PORT,
-  //     tls: false,
-  //   },
-  //   password: config.REDIS_PASSWORD,
-  //   database: config.REDIS_DATABASE,
-  // };
-  //ioredis connection options
+describe('MeshData | IORedis', () => {
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,

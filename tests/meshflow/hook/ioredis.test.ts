@@ -6,14 +6,14 @@ import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { ClientService } from '../../../services/meshflow/client';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HMNS, KeyService, KeyType } from '../../../modules/key';
+import { ProviderConfig } from '../../../types/provider';
 
 import * as childWorkflows from './child/workflows';
 import * as workflows from './src/workflows';
-import { ProviderConfig } from '../../../types/provider';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
+describe('MESHFLOW | hook & search | IORedis', () => {
   const namespace = 'staging';
   const prefix = 'bye-world-';
   let client: ClientService;
@@ -42,10 +42,10 @@ describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
+        const connection = (await Connection.connect({
           class: Redis,
           options,
-        }) as ProviderConfig;
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });

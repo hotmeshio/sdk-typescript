@@ -6,9 +6,9 @@ import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import { IORedisStoreService } from './providers/redis/ioredis';
 import { RedisStoreService } from './providers/redis/redis';
 import { StoreInitializable } from './providers/store-initializable';
+import { PostgresStoreService } from './providers/postgres/postgres';
 
 import { StoreService } from './index';
-import { PostgresStoreService } from './providers/postgres/postgres';
 
 class StoreServiceFactory {
   static async init(

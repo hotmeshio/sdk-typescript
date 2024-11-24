@@ -10,7 +10,14 @@ export interface PostgresClientOptions {
   // Add any other options you might need
 }
 
-export type PostgresJobEnumType = 'status' | 'jdata' | 'adata' | 'udata' | 'jmark' | 'hmark' | 'other';
+export type PostgresJobEnumType =
+  | 'status'
+  | 'jdata'
+  | 'adata'
+  | 'udata'
+  | 'jmark'
+  | 'hmark'
+  | 'other';
 
 export type PostgresClassType = {
   new (options: PostgresClientOptions): PostgresClientType;

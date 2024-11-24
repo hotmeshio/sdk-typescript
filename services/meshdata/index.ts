@@ -1,4 +1,4 @@
-import { polyfill, s } from '../../modules/utils';
+import { polyfill, s, sleepFor } from '../../modules/utils';
 import { MeshFlow } from '../meshflow';
 import { HotMesh } from '../hotmesh';
 import {
@@ -31,7 +31,11 @@ import {
 import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
 import { MAX_DELAY } from '../../modules/enums';
 import { ProviderConfig } from '../../types';
-import { ProviderClass, ProviderOptions, ProvidersConfig } from '../../types/provider';
+import {
+  ProviderClass,
+  ProviderOptions,
+  ProvidersConfig,
+} from '../../types/provider';
 
 /**
  * The `MeshData` service wraps the `MeshFlow` service.
@@ -321,8 +325,11 @@ class MeshData {
    * @private
    */
   async getConnection() {
-    return this.connections ?? await MeshFlow.Connection.connect(
-      polyfill.meshDataConfig(this) as ProviderConfig,
+    return (
+      this.connections ??
+      await MeshFlow.Connection.connect(
+        polyfill.meshDataConfig(this) as ProviderConfig,
+      )
     );
   }
 
@@ -728,13 +735,15 @@ class MeshData {
   ): Promise<string | void> {
     const workflowId = MeshData.mintGuid(entity, id);
     //resolve the system signal (this forces the main wrapper function to end)
+    console.log('signaling workflow to flush', workflowId);
     await this.getClient().workflow.signal(
       `flush-${workflowId}`,
       {},
       namespace,
     );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await sleepFor(1000);
     //other activities may still be running; call `interrupt` to stop all threads
+    console.log('interrupting workflow to flush', workflowId);
     await this.interrupt(
       entity,
       id,
@@ -780,7 +789,14 @@ class MeshData {
         namespace,
       );
       const hotMesh = handle.hotMesh;
+      console.log(
+        'singaling hotmesh to interrupt',
+        hotMesh.appId,
+        workflowId,
+        options,
+      );
       await hotMesh.interrupt(`${hotMesh.appId}.execute`, workflowId, options);
+      console.log('hot mesh interrupted', hotMesh.appId, workflowId);
     } catch (e) {
       //no-op; interrup throws an error
     }

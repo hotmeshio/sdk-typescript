@@ -236,8 +236,8 @@ class PostgresStreamService extends StreamService<
    * the SQL and params for the transaction (but, of course, the sql
    * is not executed until the engine calls the `exec` method on
    * the transaction object provided by `store`).
-   * 
-   * NOTE: this strategy keeps `stream` and `store` operations separate but 
+   *
+   * NOTE: this strategy keeps `stream` and `store` operations separate but
    * allows calls to the stream to be roped into a single SQL transaction.
    */
   async publishMessages(
@@ -246,10 +246,16 @@ class PostgresStreamService extends StreamService<
     options?: PublishMessageConfig,
   ): Promise<string[] | ProviderTransaction> {
     const { sql, params } = this._publishMessages(streamName, messages);
-    if (options?.transaction && typeof options.transaction.addCommand === 'function') {
+    if (
+      options?.transaction &&
+      typeof options.transaction.addCommand === 'function'
+    ) {
       //call addCommand and return the transaction object
-      options.transaction.addCommand(sql, params, 'array', (rows: { id: number}[]) =>
-        rows.map((row) => row.id.toString()),
+      options.transaction.addCommand(
+        sql,
+        params,
+        'array',
+        (rows: { id: number }[]) => rows.map((row) => row.id.toString()),
       );
       return options.transaction as ProviderTransaction;
     } else {
@@ -278,12 +284,12 @@ class PostgresStreamService extends StreamService<
     const insertValues = messages
       .map((_, idx) => `($1, $2, $${idx + 3})`)
       .join(', ');
-  
+
     return {
       sql: `INSERT INTO ${tableName} (stream_name, group_name, message) VALUES ${insertValues} RETURNING id`,
       params: [streamName, groupName, ...messages],
     };
-  }  
+  }
 
   async consumeMessages(
     streamName: string,

@@ -11,7 +11,7 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | hello | `Random Hello-World` | Redis', () => {
+describe('MESHFLOW | basic | `MeshFlow Foundational` | Redis', () => {
   let handle: WorkflowHandleService;
   const options = {
     socket: {
@@ -55,15 +55,12 @@ describe('MESHFLOW | hello | `Random Hello-World` | Redis', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({ connection: { class: Redis, options } });
-        //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
           args: ['HotMesh'],
-          taskQueue: 'hello-world',
+          taskQueue: 'basic-world',
           workflowName: 'example',
           workflowId: 'workflow-' + guid(),
-          expire: 180,
-          //NOTE: default is true; set to false to optimize any workflow that doesn't use hooks
-          signalIn: false,
+          expire: 600,
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -72,14 +69,27 @@ describe('MESHFLOW | hello | `Random Hello-World` | Redis', () => {
 
   describe('Worker', () => {
     describe('create', () => {
-      it('should create and run a worker', async () => {
+      const connection = {
+        class: Redis,
+        options,
+      };
+      const taskQueue = 'basic-world';
+
+      it('should create and run a parent worker', async () => {
         const worker = await Worker.create({
-          connection: {
-            class: Redis,
-            options,
-          },
-          taskQueue: 'hello-world',
+          connection,
+          taskQueue,
           workflow: workflows.example,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+
+      it('should create and run a child worker', async () => {
+        const worker = await Worker.create({
+          connection,
+          taskQueue,
+          workflow: workflows.childExample,
         });
         await worker.run();
         expect(worker).toBeDefined();
@@ -90,12 +100,30 @@ describe('MESHFLOW | hello | `Random Hello-World` | Redis', () => {
   describe('WorkflowHandle', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
+        const signalId = 'abcdefg';
+        //the test workflow calls   MeshFlow.workflow.sleepFor('2s')
+        //...sleep to make sure the workfow is fully paused
+        await sleepFor(15_000);
+        //the test workflow uses  MeshFlow.workflow.waitFor(signalId)
+        //...signal it and then await the result
+        const signalPayload = {
+          id: signalId,
+          data: { hello: 'world', id: signalId },
+        };
+        await handle.signal(signalId, signalPayload);
         const result = await handle.result();
-        //note: testing the deterministic random number generator
         const r1 = deterministicRandom(1);
-        const r2 = deterministicRandom(3);
-        expect(result).toEqual(`${r1} Hello, HotMesh! ${r2}`);
-      });
+        const r2 = deterministicRandom(4);
+        expect(result).toEqual({
+          jobId: 'MyWorkflowId123',
+          payload: { data: { hello: 'world', id: 'abcdefg' }, id: 'abcdefg' },
+          proxyGreeting: { complex: 'Basic, HotMesh!' },
+          proxyGreeting3: { complex: 'Basic, HotMesh3!' },
+          proxyGreeting4: { complex: 'Basic, HotMesh4!' },
+          random1: r1,
+          random2: r2,
+        });
+      }, 30_000);
     });
   });
 });

@@ -144,7 +144,7 @@ export const polyfill = {
    * `redis` is deprecated; `connection` is the generic replacement
    */
   providerConfig(obj: any): any {
-    return obj?.connection ?? obj?.redis;
+    return obj?.connection ?? obj?.redis ?? obj?.connections;
   },
 
   /**

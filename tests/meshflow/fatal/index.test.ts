@@ -6,9 +6,9 @@ import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { MeshFlowFatalError } from '../../../modules/errors';
 import { guid, sleepFor } from '../../../modules/utils';
+import { ProviderConfig } from '../../../types/provider';
 
 import * as workflows from './src/workflows';
-import { ProviderConfig } from '../../../types/provider';
 
 const { Connection, Client, Worker } = MeshFlow;
 
@@ -40,10 +40,10 @@ describe('MESHFLOW | fatal | `Workflow Promise.all proxyActivities`', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
+        const connection = (await Connection.connect({
           class: Redis,
           options,
-        })  as ProviderConfig;
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });

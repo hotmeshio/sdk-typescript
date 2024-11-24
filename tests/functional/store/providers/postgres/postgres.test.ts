@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 
-import config from '../../../../$setup/config'
+import config from '../../../../$setup/config';
 import { KeyType, HMNS, VALSEP } from '../../../../../modules/key';
 import { getSymKey, sleepFor } from '../../../../../modules/utils';
 import { PostgresConnection } from '../../../../../services/connector/providers/postgres';
@@ -16,7 +16,11 @@ import {
 } from '../../../../../types/serializer';
 import { StatsType } from '../../../../../types/stats';
 import { PostgresClientType } from '../../../../../types/postgres';
-import { ProviderNativeClient, ProviderClient } from '../../../../../types/provider';
+import {
+  ProviderNativeClient,
+  ProviderClient,
+} from '../../../../../types/provider';
+import { dropTables, truncateTables } from '../../../../$setup/postgres';
 
 describe('FUNCTIONAL | PostgresStoreService', () => {
   const appConfig = { id: 'mystoreapp', version: '1' };
@@ -37,55 +41,22 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       })
     ).getClient();
 
-    // Query the list of tables in the public schema dynamically
-    const result = await postgresClient.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public';
-    `);
+    //drop all tables, so we start with a fresh DB
+    tables = await dropTables(postgresClient);
 
-    tables = result.rows.map(row => row.table_name);
-
-    // Drop each table if it exists
-    for (const table of tables) {
-      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
-    }
-    
+    // Initialize PostgresStoreService
     postgresStoreService = new PostgresStoreService(
       postgresClient as PostgresClientType & ProviderClient,
     );
-    await postgresStoreService.init(
-      HMNS,
-      appConfig.id,
-      new LoggerService()
-    );
+    await postgresStoreService.init(HMNS, appConfig.id, new LoggerService());
   });
 
   beforeEach(async () => {
-    await postgresClient.query('BEGIN');
-    try {
-      for (const table of tables) {
-        const res = await postgresClient.query(
-          `SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' AND table_name = $1
-          );`,
-          [table]
-        );
-        if (res.rows[0].exists) {
-          await postgresClient.query(`TRUNCATE ${table} RESTART IDENTITY CASCADE`);
-        }
-      }
-      await postgresClient.query('COMMIT');
-    } catch (error) {
-      await postgresClient.query('ROLLBACK');
-      throw error;
-    }
+    //remove all data from every table (or select only those need refreshing between tests)
+    await truncateTables(postgresClient, tables);
   });
-   
 
-  afterEach(async () => {
-  });
+  afterEach(async () => {});
 
   afterAll(async () => {
     await postgresClient.end();
@@ -109,17 +80,21 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       const size = 286;
 
       // First case: No existing key
-      let [lowerLimit, upperLimit] = await postgresStoreService.reserveSymbolRange(
-        activityId,
-        size,
-        'ACTIVITY',
-      );
+      let [lowerLimit, upperLimit] =
+        await postgresStoreService.reserveSymbolRange(
+          activityId,
+          size,
+          'ACTIVITY',
+        );
       expect(lowerLimit).toEqual(26); //0 + reserved metadata slots (first available slot)
       const rangeKey = postgresStoreService.mintKey(KeyType.SYMKEYS, {
         appId: appConfig.id,
       });
 
-      const range = await postgresStoreService.storeClient.hget(rangeKey, activityId);
+      const range = await postgresStoreService.storeClient.hget(
+        rangeKey,
+        activityId,
+      );
       expect(range).toEqual(
         `${lowerLimit - MDATA_SYMBOLS.SLOTS}:${lowerLimit - MDATA_SYMBOLS.SLOTS + size - 1}`,
       );
@@ -139,7 +114,7 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
           'ACTIVITY',
         );
 
-        expect(lowerLimit).toEqual(
+      expect(lowerLimit).toEqual(
         MDATA_SYMBOLS.SLOTS + MDATA_SYMBOLS.ACTIVITY.KEYS.length + 2,
       ); //lower limit starts at first usable slot
       expect(upperLimit).toEqual(size - 1); // [0 + ]286 - 1 = 285
@@ -196,7 +171,6 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       };
       await postgresStoreService.addSymbols(activityId, symbols);
 
-      
       //2) add symbol sets for the parent job/topic ($job.topic)
       const response2 = await postgresStoreService.reserveSymbolRange(
         topic,
@@ -221,11 +195,22 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         'data/name': new Date(),
         'data/age': 55,
         'metadata/jid': jobId,
-        'metadata/js': jobStatus,
+        'metadata/js': jobStatus, //results in status be clobbered/set to 1
       };
       const dIds: StringStringType = {
         a1: ',0,0',
       };
+      //set status before setting state, so job gets implicitly created
+      const status = await postgresStoreService.setStateNX(jobId, appConfig.id);
+      expect(status).toEqual(true);
+
+      const status2 = await postgresStoreService.setStateNX(
+        jobId,
+        appConfig.id,
+      );
+      expect(status2).toEqual(false);
+
+      //now OK to set the state
       const result = await postgresStoreService.setState(
         jobState,
         jobStatus,
@@ -245,7 +230,11 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         ],
         [topic]: ['data/name', 'data/age', 'metadata/jid'],
       };
-      const response = await postgresStoreService.getState(jobId, consumes, dIds);
+      const response = await postgresStoreService.getState(
+        jobId,
+        consumes,
+        dIds,
+      );
       if (response) {
         const [resolvedJobState, resolvedJobStatus] = response;
         expect(resolvedJobState).toEqual(jobState);
@@ -265,13 +254,20 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
 
       expect(setResponse).toEqual(true);
       const getResponse = await postgresStoreService.storeClient.get(
-        `hmsh:${appConfig.id}:w:time`
+        `hmsh:${appConfig.id}:w:time`,
       );
       expect(getResponse).toEqual('25');
 
+      const resp1 = await postgresStoreService.storeClient.hsetnx(
+        `hmsh:${appConfig.id}:j:myjob`,
+        ':',
+        '1',
+      );
+      expect(resp1).toEqual(1);
+
       const resp = await postgresStoreService.storeClient.hset(
         `hmsh:${appConfig.id}:j:myjob`,
-        { a: '25', b: '50'}
+        { a: '25', b: '50' },
       );
       expect(resp).toEqual(2);
 
@@ -280,6 +276,19 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         ['a', 'b'],
       );
       expect(delResp).toEqual(2);
+
+      const delResp2 = await postgresStoreService.storeClient.del(
+        `hmsh:${appConfig.id}:j:myjob`,
+      );
+      expect(delResp2).toEqual(1);
+      //who knows? test data doesn't seem to get erased by forEach?
+      const delResp3 = await postgresStoreService.storeClient.del(
+        `hmsh:${appConfig.id}:j:jid`,
+      );
+      const delResp5 = await postgresStoreService.storeClient.del(
+        `hmsh:${appConfig.id}:w:time`,
+      );
+      expect(delResp5).toEqual(1);
     });
   });
 
@@ -290,9 +299,20 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         jobId: '',
       });
       for (let i = 0; i < 10; i++) {
-        await postgresStoreService.storeClient.hset(`${hashKey}${i}`, { abc: '25', def: '50', ghi: '75' });
+        //always create the job then apply the state
+        await postgresStoreService.storeClient.hsetnx(
+          `${hashKey}${i}`,
+          ':',
+          '1',
+        );
+        await postgresStoreService.storeClient.hset(`${hashKey}${i}`, {
+          abc: '25',
+          def: '50',
+          ghi: '75',
+        });
       }
       const [cursor, result] = await postgresStoreService.findJobs('*', 15, 15);
+
       expect(result.length).toEqual(10);
       const [cursor2, result2] = await postgresStoreService.findJobs(
         'xxx',
@@ -309,22 +329,20 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         appId: appConfig.id,
         jobId: 'test',
       });
+      await postgresStoreService.storeClient.hsetnx(hashKey, ':', '1');
       for (let i = 0; i < 10; i++) {
-        await postgresStoreService.storeClient.hset(
-          hashKey,
-          {
-            '-b1,0,0-1': '1',
-            '-b1,1,0-1': '1',
-            '-a1': '1',
-            '-a2': '2',
-            '-a3': '3',
-            '-a4': '4',
-            '-a5': '5',
-            '-a6': '6',
-            '-a7': '7',
-            'a8': '8',
-          }
-        );        
+        await postgresStoreService.storeClient.hset(hashKey, {
+          '-b1,0,0-1': '1',
+          '-b1,1,0-1': '1',
+          '-a1': '1',
+          '-a2': '2',
+          '-a3': '3',
+          '-a4': '4',
+          '-a5': '5',
+          '-a6': '6',
+          '-a7': '7',
+          a8: '8',
+        });
       }
       const [_cursor, result] = await postgresStoreService.findJobFields(
         'test',
@@ -346,7 +364,10 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
   describe('setStateNX', () => {
     it('should set the job data in the store with NX behavior', async () => {
       const jobId = 'job-1';
-      const response = await postgresStoreService.setStateNX(jobId, appConfig.id);
+      const response = await postgresStoreService.setStateNX(
+        jobId,
+        appConfig.id,
+      );
       expect(response).toEqual(true);
       const secondResponse = await postgresStoreService.setStateNX(
         jobId,
@@ -389,19 +410,27 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         KeyType.JOB_STATS_GENERAL,
         { ...cacheConfig, jobId, jobKey, dateTime },
       );
-      const generalStats = await postgresStoreService.storeClient.hgetall(generalStatsKey);
+      const generalStats =
+        await postgresStoreService.storeClient.hgetall(generalStatsKey);
       expect(generalStats[stats.general[0].target]).toEqual(
         stats.general[0].value.toString(),
       );
 
-      const indexStatsKey = postgresStoreService.mintKey(KeyType.JOB_STATS_INDEX, {
-        ...cacheConfig,
-        jobId,
-        jobKey,
-        dateTime,
-        facet: stats.index[0].target,
-      });
-      const indexStats = await postgresStoreService.storeClient.lrange(indexStatsKey, 0, -1);
+      const indexStatsKey = postgresStoreService.mintKey(
+        KeyType.JOB_STATS_INDEX,
+        {
+          ...cacheConfig,
+          jobId,
+          jobKey,
+          dateTime,
+          facet: stats.index[0].target,
+        },
+      );
+      const indexStats = await postgresStoreService.storeClient.lrange(
+        indexStatsKey,
+        0,
+        -1,
+      );
       expect(indexStats[0]).toEqual(stats.index[0].value.toString());
 
       const medianStatsKey = postgresStoreService.mintKey(
@@ -424,7 +453,9 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       expect(medianStats[1]).toEqual(stats.median[0].value.toString());
 
       //expect getStats to cast the value to a number, so it is an exact match even though a string in redis
-      const jobStats = await postgresStoreService.getJobStats([generalStatsKey]);
+      const jobStats = await postgresStoreService.getJobStats([
+        generalStatsKey,
+      ]);
       expect(jobStats[generalStatsKey][stats.general[0].target]).toEqual(
         stats.general[0].value,
       );
@@ -466,7 +497,11 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         timeValue: awakenTime,
       });
 
-      const jobList = await postgresStoreService.storeClient.lrange(listKey, 0, -1);
+      const jobList = await postgresStoreService.storeClient.lrange(
+        listKey,
+        0,
+        -1,
+      );
       expect(jobList?.[0]).toEqual(
         `${type}${VALSEP}${activityId}${VALSEP}${gId1}${VALSEP}${dad1}${VALSEP}${jobId1}`,
       );
@@ -488,7 +523,11 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       expect(nextGID).toEqual(gId1);
       expect(nextActivityId).toEqual(activityId);
       // Check that jobId1 was removed from the list
-      const updatedJobList = await postgresStoreService.storeClient.lrange(listKey, 0, -1);
+      const updatedJobList = await postgresStoreService.storeClient.lrange(
+        listKey,
+        0,
+        -1,
+      );
       expect(updatedJobList.length).toEqual(1);
       expect(updatedJobList[0]).toEqual(
         `${type}${VALSEP}${activityId}${VALSEP}${gId2}${VALSEP}${dad2}${VALSEP}${jobId2}`,
@@ -575,8 +614,14 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         appId: appConfig.id,
       });
       for (const key of keys) {
-        const score = await postgresStoreService.storeClient.zscore(zsetKey, key);
+        const score = await postgresStoreService.storeClient.zscore(
+          zsetKey,
+          key,
+        );
         expect(score).not.toBeNull();
+      }
+      for (const key of keys) {
+        await postgresStoreService.storeClient.zrem(zsetKey, key);
       }
     });
 
@@ -586,10 +631,19 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       const zsetKey = postgresStoreService.mintKey(KeyType.WORK_ITEMS, {
         appId: appConfig.id,
       });
-      await postgresStoreService.storeClient.zadd(zsetKey, existingScore.toString(), existingKey);
+      await postgresStoreService.storeClient.zadd(
+        zsetKey,
+        existingScore.toString(),
+        existingKey,
+      );
       await postgresStoreService.addTaskQueues([existingKey]);
-      const newScore = await postgresStoreService.storeClient.zscore(zsetKey, existingKey);
+      const newScore = await postgresStoreService.storeClient.zscore(
+        zsetKey,
+        existingKey,
+      );
       expect(newScore).toEqual(existingScore);
+      //deleteWorkItem
+      await postgresStoreService.storeClient.zrem(zsetKey, existingKey);
     });
   });
 
@@ -647,13 +701,13 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       const zsetKey = postgresStoreService.mintKey(KeyType.WORK_ITEMS, {
         appId: appConfig.id,
       });
-      await postgresStoreService.storeClient.zadd(
-        zsetKey,
-        1000,
-        workItemKey,
-        { NX: 'NX' },
-      );
-      await postgresStoreService.storeClient.set(processedKey, 'processed data'); //set the string
+      await postgresStoreService.storeClient.zadd(zsetKey, 1000, workItemKey, {
+        NX: 'NX',
+      });
+      await postgresStoreService.storeClient.set(
+        processedKey,
+        'processed data',
+      ); //set the string
       await postgresStoreService.deleteProcessedTaskQueue(
         workItemKey,
         key,
@@ -676,11 +730,15 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       const workItemKey = 'work-item-cached';
       const key = 'item-cached';
       const processedKey = 'processed-item-cached';
+      await postgresStoreService.storeClient.set(
+        `hmsh:${appConfig.id}:w:${processedKey}`,
+        '25',
+      );
       postgresStoreService.cache.setWorkItem(appConfig.id, workItemKey);
       await postgresStoreService.deleteProcessedTaskQueue(
         workItemKey,
-        key,
-        processedKey,
+        `hmsh:${appConfig.id}:w:${key}`,
+        `hmsh:${appConfig.id}:w:${processedKey}`,
       );
       const cachedWorkItem = postgresStoreService.cache.getActiveTaskQueue(
         appConfig.id,
@@ -724,7 +782,11 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         destinationKey,
       );
       expect(val1).toEqual(item1);
-      sourceList = await postgresStoreService.storeClient.lrange(sourceKey, 0, -1);
+      sourceList = await postgresStoreService.storeClient.lrange(
+        sourceKey,
+        0,
+        -1,
+      );
       destinationList = await postgresStoreService.storeClient.lrange(
         destinationKey,
         0,

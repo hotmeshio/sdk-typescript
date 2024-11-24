@@ -1,15 +1,21 @@
 # HotMesh
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-**HotMesh** offers the power of Temporal.io as a serverless swarm. It's backed by Postgres or Redis (*your choice*), and there's no need for a central server! Just install the package and start orchestrating your microservices.
+**HotMesh** offers the power of Temporal.io, but without a central app server. Just point to your database (**Postgres** or **Redis**).
+
+
+<br/>
 
 ## Features
 
-- **Temporal Your Way**: Orchestrate your microservices without the need for a central server. Just point to your Postgres or Redis instance.
-- **Pluggable Middleware**: Mix and match technologies through a standard interface. Currently supporting **Redis/ValKey/Dragonfly/KVRocks** and **Postgres**.
-- **Decentralized Orchestration**: Centralized data with decentralized execution.
+- **Serverless Orchestration**: Orchestrate your microservices without the need for a central app server.
+- **Bring Your Own Database**: Mix and match technologies through a standard interface.
+- **Decentralized Execution**: Centralized persistence (memory) with decentralized execution (cpu).
 - **Linear Scalability**: Scale your database to scale your application.
-- **Real-Time Analytics**: Gain process insights with real-time analytics.
+- **Analytics**: Gain process insights with real-time analytics.
+
+
+<br/>
 
 ## Install
 
@@ -20,8 +26,11 @@ npm install @hotmeshio/hotmesh
 ## Learn
 [📄 Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 Sample Projects](https://github.com/hotmeshio/samples-typescript) | [🎥 Intro (3m)](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9) | [🎥 Transactional Workflow (9m)](https://www.loom.com/share/54ffd5266baf4ac6b287578abfd1d821?sid=0db2cef8-ef0d-4e02-a0b7-a1ee14f476ce)
 
-## MeshCall | Connect Your Services
-[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your services as a singular mesh, exposing functions as idempotent endpoints. Function responses are cacheable and functions can even run as idempotent cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
+
+<br/>
+
+## MeshCall | Fast, Simple, Inter-Service Calls
+[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects any function to the mesh.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Run an idempotent cron job <small>[more]</small></summary>
@@ -176,8 +185,11 @@ npm install @hotmeshio/hotmesh
     ```
 </details>
 
+
+<br/>
+
 ## MeshFlow | Transactional Workflow
-[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a drop-in replacement for [Temporal.io](https://temporal.io). If you need to orchestrate your functions as durable workflows, MeshFlow combines the popular Temporal SDK with Redis' *in-memory execution speed*.
+[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a drop-in replacement for [Temporal.io](https://temporal.io). MeshFlow emulates the Temporal SDK using a serverless mesh.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Orchestrate unpredictable activities <small>[more]</small></summary>
@@ -511,12 +523,10 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
     ```
 </details>
 
+<br/>
+
 ## MeshData | Transactional Analytics
-[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) extends the **MeshFlow** service, combining data record concepts and transactional workflow principles into a single *Operational Data Layer*. 
-
-Deployments with the Redis `FT.SEARCH` module enabled can use the **MeshData** module to merge [OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing) and [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) operations into a hybrid transactional/analytics ([HTAP](https://en.wikipedia.org/wiki/Hybrid_transactional/analytical_processing)) system.
-
-*For those Redis deployments without the `FT.SEARCH` module, it's still useful to define a workflow schema. The MeshData class provides convenience methods for reading and writing hash field data to a workflow record (e.g., `get`, `del`, and `incr`).*
+[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) extends the **MeshFlow** service, surfacing transactional workflows as searchable data records.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Create a search index <small>[more]</small></summary>
@@ -697,19 +707,29 @@ This example demonstrates how to search for those workflows where a given condit
     ```
 </details> 
 
+<br/>
+
 ## Visualize | OpenTelemetry
 HotMesh's telemetry output provides unmatched insight into long-running, x-service transactions. Add your Honeycomb credentials to any project using HotMesh and HotMesh will emit the full *OpenTelemetry* execution tree organized as a DAG.
+
+<br/>
 
 ## Visualize | HotMesh Dashboard
 The HotMesh dashboard provides a detailed overview of all running workflows. An LLM is included to simplify querying and analyzing workflow data for those deployments that include the Redis `FT.SEARCH` module.
 
+<br/>
+
 ## Visualize | RedisInsight
 View commands, streams, data, CPU, load, etc using the RedisInsight data browser.
+
+<br/>
 
 ## Samples
 Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo for *tutorials* and instructions on deploying the *HotMesh Dashboard* for visualizing workflows and managing network health.
 
 Refer to the [hotmeshio/temporal-patterns-typescript](https://github.com/hotmeshio/temporal-patterns-typescript) Git repo for examples of common Temporal.io patterns implemented using HotMesh.
+
+<br/>
 
 ## Advanced
 The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).

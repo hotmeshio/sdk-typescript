@@ -1,34 +1,41 @@
 import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
-import config from '../../$setup/config';
+import { HMSH_CODE_INTERRUPT } from '../../../modules/enums';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { guid, sleepFor } from '../../../modules/utils';
-import { ProviderConfig, StreamError } from '../../../types';
-import { HMSH_CODE_INTERRUPT } from '../../../modules/enums';
+import { StreamError } from '../../../types';
+import { ProvidersConfig, ProviderNativeClient } from '../../../types/provider';
+import {
+  dropTables,
+  ioredis_options as redis_options,
+  postgres_options,
+} from '../../$setup/postgres';
 
 import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor`', () => {
+describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor` | Postgres', () => {
   let handle: WorkflowHandleService;
   let workflowGuid: string;
   let interruptedWorkflowGuid: string;
-  const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
+  let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
+    await dropTables(postgresClient);
+
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushdb();
   });
@@ -41,12 +48,13 @@ describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor`', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
-          class: Redis,
-          options,
-        }) as ProviderConfig;
+        const connection = (await Connection.connect({
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        })) as ProvidersConfig;
         expect(connection).toBeDefined();
-        expect(connection.options).toBeDefined();
+        expect(connection.sub).toBeDefined();
       });
     });
   });
@@ -56,15 +64,16 @@ describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor`', () => {
       it('should create and run a worker', async () => {
         const worker = await Worker.create({
           connection: {
-            class: Redis,
-            options,
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
           },
           taskQueue: 'hello-world',
           workflow: workflows.example,
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
@@ -73,7 +82,13 @@ describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor`', () => {
       workflowGuid = guid();
       interruptedWorkflowGuid = guid();
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options } });
+        const client = new Client({
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+        });
 
         handle = await client.workflow.start({
           args: ['ColdMush'],
@@ -97,7 +112,13 @@ describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor`', () => {
   describe('WorkflowHandle', () => {
     describe('result', () => {
       it('should interrupt a workflow execution and throw a `410` error', async () => {
-        const client = new Client({ connection: { class: Redis, options } });
+        const client = new Client({
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+        });
         const localHandle = await client.workflow.getHandle(
           'hello-world',
           workflows.example.name,
@@ -119,7 +140,13 @@ describe('MESHFLOW | sleep | `MeshFlow.workflow.sleepFor`', () => {
       });
 
       it('should return the workflow execution result', async () => {
-        const client = new Client({ connection: { class: Redis, options } });
+        const client = new Client({
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+        });
         const localHandle = await client.workflow.getHandle(
           'hello-world',
           workflows.example.name,

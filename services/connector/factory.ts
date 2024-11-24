@@ -45,13 +45,13 @@ export class ConnectorService {
   ): Promise<void> {
     let connections = target.connections;
 
-    if(!connections) {
+    if (!connections) {
       const ProviderConfig = polyfill.providerConfig(target);
       connections = target.connections = {
         store: { ...ProviderConfig },
         stream: { ...ProviderConfig },
         sub: { ...ProviderConfig },
-      }
+      };
     }
     // Expanded form
     if (connections.store) {
@@ -66,13 +66,13 @@ export class ConnectorService {
       if (connections.sub.class === connections.store.class) {
         connections.pub = {
           class: connections.store.class,
-          options: { ...connections.store.options }
+          options: { ...connections.store.options },
         };
         target.pub = target.store;
       } else {
         connections.pub = {
           class: connections.sub.class,
-          options: { ...connections.sub.options }
+          options: { ...connections.sub.options },
         };
         await ConnectorService.initClient(connections.pub, target, 'pub');
       }

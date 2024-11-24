@@ -153,7 +153,7 @@ export {
   ConnectionInput,
   ExecInput,
 } from './meshdata';
-export  {
+export {
   PostgresClassType,
   PostgresClientOptions,
   PostgresClientType,
@@ -165,7 +165,7 @@ export  {
   PostgresStreamMessage,
   PostgresStreamOptions,
   PostgresTransaction,
-} from './postgres'
+} from './postgres';
 export {
   ActivateMessage,
   CronMessage,
@@ -223,7 +223,7 @@ export {
   NatsStreamOptions,
   NatsStreamState,
   NatsTransaction,
-} from './nats'
+} from './nats';
 export {
   RedisClass,
   RedisRedisClientType,

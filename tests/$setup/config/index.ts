@@ -6,14 +6,14 @@ const baseConfig = {
   REDIS_PORT: 6379,
   REDIS_HOST: 'redis',
   REDIS_PASSWORD: 'key_admin',
-  
+
   // PostgreSQL Configuration
   POSTGRES_PORT: 5432,
   POSTGRES_HOST: 'postgres',
   POSTGRES_USER: 'postgres',
   POSTGRES_PASSWORD: 'password',
   POSTGRES_DB: 'hotmesh',
-  
+
   // NATS Configuration
   NATS_SERVERS: ['nats:4222'],
 };

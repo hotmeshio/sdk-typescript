@@ -1,7 +1,11 @@
 import { Client } from 'pg';
+
 import config from '../../../../$setup/config';
 import { PostgresConnection } from '../../../../../services/connector/providers/postgres';
-import { PostgresClientOptions, PostgresClientType } from '../../../../../types/postgres';
+import {
+  PostgresClientOptions,
+  PostgresClientType,
+} from '../../../../../types/postgres';
 
 describe('PostgresConnection', () => {
   let postgresConnection: PostgresConnection;
@@ -18,7 +22,11 @@ describe('PostgresConnection', () => {
   };
 
   beforeAll(async () => {
-    postgresConnection = await PostgresConnection.connect('testId', Client, options);
+    postgresConnection = await PostgresConnection.connect(
+      'testId',
+      Client,
+      options,
+    );
     postgresClient = postgresConnection.getClient();
   });
 
@@ -38,19 +46,21 @@ describe('PostgresConnection', () => {
   it('should throw an error if getClient is called without a connection', async () => {
     await postgresConnection.disconnect();
     expect(() => postgresConnection.getClient()).toThrow(
-      'Postgres client is not connected'
+      'Postgres client is not connected',
     );
   });
 
   it('should handle connection errors gracefully', async () => {
     const invalidOptions = { ...options, port: 1234 };
     await expect(
-      PostgresConnection.connect('testId', Client, invalidOptions)
+      PostgresConnection.connect('testId', Client, invalidOptions),
     ).rejects.toThrow('postgres-provider-connection-failed');
   });
 
   it('should handle closing non-existent connection without error', async () => {
     const connection = new PostgresConnection();
-    await expect(connection.closeConnection(postgresClient)).resolves.not.toThrow();
+    await expect(
+      connection.closeConnection(postgresClient),
+    ).resolves.not.toThrow();
   });
 });

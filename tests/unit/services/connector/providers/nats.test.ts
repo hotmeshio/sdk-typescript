@@ -1,5 +1,6 @@
 // /app/tests/unit/services/connector/providers/nats.test.ts
 import { connect } from 'nats';
+
 import config from '../../../../$setup/config';
 import { NatsConnection } from '../../../../../services/connector/providers/nats';
 import { NatsClientType } from '../../../../../types/nats';
@@ -31,7 +32,7 @@ describe('NatsConnection', () => {
   it('should throw error when getting client without connection', async () => {
     const newConnection = new NatsConnection();
     expect(() => newConnection.getClient()).toThrow(
-      'nats-provider-connection-failed'
+      'nats-provider-connection-failed',
     );
   });
 
@@ -45,7 +46,7 @@ describe('NatsConnection', () => {
     );
     await tempConnection.disconnect();
     expect(() => tempConnection.getClient()).toThrow(
-      'nats-provider-connection-failed'
+      'nats-provider-connection-failed',
     );
   });
 });

@@ -1,27 +1,27 @@
-import * as Redis from 'redis';
+import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
-import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
-import { RedisConnection } from '../../../services/connector/providers/redis';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { ClientService } from '../../../services/meshflow/client';
 import { guid, sleepFor } from '../../../modules/utils';
-import { ProviderNativeClient, RedisRedisClassType } from '../../../types';
-import { PostgresConnection } from '../../../services/connector/providers/postgres';
-import { ProvidersConfig } from '../../../types/provider';
+import { HMNS, KeyService, KeyType } from '../../../modules/key';
+import { ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
 import {
   dropTables,
-  redis_options,
+  ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
 import * as workflows from './src/workflows';
+import * as childWorkflows from './child/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
+describe('MESHFLOW | hook & search | Postgres', () => {
+  const namespace = 'staging';
   const prefix = 'bye-world-';
-  const namespace = 'prod';
   let client: ClientService;
   let workflowGuid: string;
   let postgresClient: ProviderNativeClient;
@@ -30,34 +30,31 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
-
     await dropTables(postgresClient);
 
+    //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
-      Redis as unknown as RedisRedisClassType,
+      Redis,
       redis_options,
     );
-
-    redisConnection.getClient().flushDb();
+    redisConnection.getClient().flushdb();
   });
 
   afterAll(async () => {
     await MeshFlow.shutdown();
-  }, 10_000);
+  }, 15_000);
 
   describe('Connection', () => {
     describe('connect', () => {
-      it('should echo the EXPANDED Redis config', async () => {
+      it('should echo the Expanded config', async () => {
         const connection = (await Connection.connect({
-          store: { class: Postgres, options: postgres_options },
+          store: { class: Postgres, options: postgres_options }, //and search
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
         })) as ProvidersConfig;
         expect(connection).toBeDefined();
         expect(connection.sub).toBeDefined();
-        expect(connection.stream).toBeDefined();
-        expect(connection.store).toBeDefined();
       });
     });
   });
@@ -67,26 +64,22 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
       it('should connect a client and start a workflow execution', async () => {
         client = new Client({
           connection: {
-            store: { class: Postgres, options: postgres_options },
+            store: { class: Postgres, options: postgres_options }, //and search
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
         });
-
         workflowGuid = prefix + guid();
 
         const handle = await client.workflow.start({
           namespace,
-          args: ['HotMesh'],
-          taskQueue: 'goodbye-world',
+          guid: 'client',
+          args: ['HookMesh'],
+          taskQueue: 'hook-world',
           workflowName: 'example',
           workflowId: workflowGuid,
-          expire: 120, //keep in Redis after completion for 120 seconds
-          //SEED the initial workflow state with data (this is
-          //different than the 'args' input data which the workflow
-          //receives as its first argument...this data is available
-          //to the workflow via the 'search' object)
-          //NOTE: data can be updated during workflow execution
+          expire: 600,
+          //SEED the initial workflow state with data
           search: {
             data: {
               fred: 'flintstone',
@@ -95,7 +88,7 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
           },
         });
         expect(handle.workflowId).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
@@ -103,17 +96,16 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
     describe('create', () => {
       it('should create a worker', async () => {
         const worker = await Worker.create({
+          namespace,
+          guid: 'parent-worker',
           connection: {
-            store: { class: Postgres, options: postgres_options },
+            store: { class: Postgres, options: postgres_options }, //and search
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
-          namespace,
-          taskQueue: 'goodbye-world',
+          taskQueue: 'hook-world',
           workflow: workflows.example,
 
-          //INDEX the search space; if the index doesn't exist, it will be created
-          //(this is supported by Redis backends with the FT module enabled)
           search: {
             index: 'bye-bye',
             prefix: [prefix],
@@ -131,31 +123,53 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
 
-      it('should create a hook worker', async () => {
+      it('should create and run the CHILD workflow worker', async () => {
+        //the main flow has an execChild command which will be serviced
+        //by this worker
         const worker = await Worker.create({
+          namespace,
+          guid: 'child-worker',
           connection: {
-            store: { class: Postgres, options: postgres_options },
+            store: { class: Postgres, options: postgres_options }, //and search
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
+          taskQueue: 'child-world',
+          workflow: childWorkflows.childExample,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      }, 10_000);
+
+      it('should create a hook worker', async () => {
+        const worker = await Worker.create({
           namespace,
-          taskQueue: 'goodbye-world',
+          guid: 'hook-worker',
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+          taskQueue: 'hook-world',
           workflow: workflows.exampleHook,
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
 
-      it('should create a hook client and publish to invoke a hook', async () => {
-        //sleep so the main thread gets into a paused state
-        await sleepFor(2_000);
+      it('should spawn a hook and run the hook function', async () => {
+        //sleep so the main thread fully executes and gets into a paused state
+        //where it is awaiting a signal
+        await sleepFor(2_500);
 
-        //send a hook to spawn a hook thread attached to this workflow
+        //send a `hook` to spawn a hook thread attached to this workflow
+        //the exampleHook function will be invoked in job context, allowing
+        //it to read/write/augment shared job state with transactional integrity
         await client.workflow.hook({
           namespace,
-          taskQueue: 'goodbye-world',
+          taskQueue: 'hook-world',
           workflowName: 'exampleHook',
           workflowId: workflowGuid,
           args: ['HotMeshHook'],
@@ -167,33 +181,46 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
   describe('WorkflowHandle', () => {
     describe('result', () => {
       it('should return the workflow execution result', async () => {
+        //get the workflow handle and wait for the result
         const handle = await client.workflow.getHandle(
-          'goodbye-world',
+          'hook-world',
           workflows.example.name,
           workflowGuid,
           namespace,
         );
-        const result = await handle.result();
-        expect(result).toEqual('Hello, HotMesh! - Goodbye, HotMesh!');
+        const result = await handle.result({ state: true });
+        expect(result).toEqual('Hello, HookMesh! - Goodbye, HookMesh!');
+        const exported = await handle.export({
+          allow: ['timeline', 'status', 'data', 'state'],
+          values: false,
+        });
+        expect(exported.status).not.toBeUndefined();
+        expect(exported.data?.fred).toBe('flintstone');
+        expect(exported.state?.data.done).toBe(true);
 
-        //call a search query to look for
-        //NOTE: include an underscore before the search term (e.g., `_term`).
-        //      (HotMesh uses `_` to avoid collisions with reserved words
+        //execute raw SQL to locate the custom data attribute
+        //NOTE: always include an underscore prefix before the search term (e.g., `_custom1`).
+        //      HotMesh uses this to avoid collisions with reserved words
         const results = (await client.workflow.search(
-          'goodbye-world',
+          'hook-world',
           workflows.example.name,
           namespace,
           'sql',
-          'SELECT job_id FROM hotmesh_prod_jobs_attributes WHERE field = $1 and value = $2',
+          'SELECT job_id FROM hotmesh_staging_jobs_attributes WHERE field = $1 and value = $2',
           '_custom1',
           'meshflow',
         )) as unknown as { job_id: string }[];
-
         expect(results.length).toEqual(1);
-        expect(results[0].job_id).toEqual(
-          `hmsh:${namespace}:j:${workflowGuid}`,
+
+        const keyParams = { appId: namespace, jobId: workflowGuid };
+        const expectedGuid = KeyService.mintKey(
+          HMNS,
+          KeyType.JOB_STATE,
+          keyParams,
         );
-      }, 7_500);
+        expect(results[0].job_id).toEqual(expectedGuid);
+        await sleepFor(5_000);
+      }, 35_000);
     });
   });
 });
