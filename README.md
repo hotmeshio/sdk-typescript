@@ -714,17 +714,12 @@ HotMesh's telemetry output provides unmatched insight into long-running, x-servi
 
 <br/>
 
-## Visualize | HotMesh Dashboard
-The HotMesh dashboard provides a detailed overview of all running workflows. An LLM is included to simplify querying and analyzing workflow data for those deployments that include the Redis `FT.SEARCH` module.
+## Visualize | HotMesh
+The **HotMesh Dashboard** provides a detailed overview of all running workflows. An LLM is included to simplify querying and analyzing workflow data. An example Web server with REST APIs and the **Dashboard Web App** is included in the[samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo.
 
 <br/>
 
-## Visualize | RedisInsight
-View commands, streams, data, CPU, load, etc using the RedisInsight data browser.
-
-<br/>
-
-## Samples
+## Examples
 Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo for *tutorials* and instructions on deploying the *HotMesh Dashboard* for visualizing workflows and managing network health.
 
 Refer to the [hotmeshio/temporal-patterns-typescript](https://github.com/hotmeshio/temporal-patterns-typescript) Git repo for examples of common Temporal.io patterns implemented using HotMesh.
