@@ -709,13 +709,10 @@ This example demonstrates how to search for those workflows where a given condit
 
 <br/>
 
-## Visualize | OpenTelemetry
-HotMesh's telemetry output provides unmatched insight into long-running, cross-service transactions. Add an OpenTelemetry sink to any service where HotMesh is deployed and HotMesh will emit the full *OpenTelemetry* execution tree organized as a DAG.
+## Metrics and Monitoring
+HotMesh's **OpenTelemetry** output provides unmatched insight into long-running, cross-service transactions. Add an OpenTelemetry sink to any service where HotMesh is deployed and HotMesh will emit the full **OpenTelemetry** execution tree organized as a single, unified DAG.
 
-<br/>
-
-## Visualize | HotMesh
-The **HotMesh Dashboard** provides a detailed overview of all running workflows. An LLM is included to simplify querying and analyzing workflow data. An example Web server with REST APIs and the **Dashboard Web App** is included in the[samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo.
+The **HotMesh Dashboard** provides a detailed overview of all running workflows. It includes an LLM to simplify querying and analyzing workflow data. An example Web server with REST APIs and the Dashboard (a WebApp) is included in the [samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo.
 
 <br/>
 
