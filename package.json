@@ -77,11 +77,12 @@
     "test:unit": "NODE_ENV=test jest ./tests/unit/*/*/index.test.ts --detectOpenHandles --forceExit --verbose"
   },
   "keywords": [
-    "workflow",
-    "durable workflow",
-    "operational data",
-    "service mesh",
+    "Serverless Orchestration",
+    "Durable Workflow",
+    "Operational Data",
+    "Service Mesh",
     "HotMesh",
+    "Postgres",
     "Redis",
     "OLAP",
     "OLTP",
