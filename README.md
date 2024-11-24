@@ -710,7 +710,7 @@ This example demonstrates how to search for those workflows where a given condit
 <br/>
 
 ## Visualize | OpenTelemetry
-HotMesh's telemetry output provides unmatched insight into long-running, x-service transactions. Add your Honeycomb credentials to any project using HotMesh and HotMesh will emit the full *OpenTelemetry* execution tree organized as a DAG.
+HotMesh's telemetry output provides unmatched insight into long-running, cross-service transactions. Add an OpenTelemetry sink to any service where HotMesh is deployed and HotMesh will emit the full *OpenTelemetry* execution tree organized as a DAG.
 
 <br/>
 
