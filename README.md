@@ -1,7 +1,7 @@
 # HotMesh
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-**HotMesh** offers the power of Temporal.io, but without a central app server. Just point to your database (**Postgres** or **Redis**).
+**HotMesh** offers the power of Temporal.io in a fully serverless architecture.
 
 
 <br/>
@@ -9,8 +9,8 @@
 ## Features
 
 - **Serverless Orchestration**: Orchestrate your microservices without the need for a central app server.
-- **Bring Your Own Database**: Mix and match technologies through a standard interface.
-- **Decentralized Execution**: Centralized persistence (memory) with decentralized execution (cpu).
+- **Bring Your Own Database**: Mix and match technologies through a standard interface (**Postgres**, **Redis**, **NATS**, etc).
+- **Decentralized Execution**: Centralized persistence with decentralized execution.
 - **Linear Scalability**: Scale your database to scale your application.
 - **Analytics**: Gain process insights with real-time analytics.
 
