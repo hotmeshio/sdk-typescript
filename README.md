@@ -189,7 +189,7 @@ npm install @hotmeshio/hotmesh
 <br/>
 
 ## MeshFlow | Transactional Workflow
-[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a drop-in replacement for [Temporal.io](https://temporal.io). MeshFlow emulates the Temporal SDK using a serverless mesh.
+[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a drop-in, serverless replacement for [Temporal.io](https://temporal.io).
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Orchestrate unpredictable activities <small>[more]</small></summary>
@@ -216,10 +216,10 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
 
     ```typescript
     //workflows.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { workflow } from '@hotmeshio/hotmesh';
     import * as activities from './activities';
 
-    const { greet, saludar } = MeshFlow.workflow
+    const { greet, saludar } = workflow
       .proxyActivities<typeof activities>({
         activities
       });
@@ -236,11 +236,11 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
 
     ```typescript
     //client.ts
-    import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
+    import { Client, HotMesh } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
 
     async function run(): Promise<string> {
-      const client = new MeshFlow.Client({
+      const client = new Client({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 }
@@ -263,12 +263,12 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
 
     ```typescript
     //worker.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { worker } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
     import * as workflows from './workflows';
 
     async function run() {
-      const worker = await MeshFlow.Worker.create({
+      const worker = await Worker.create({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 },
@@ -292,10 +292,10 @@ Pause a function and only awaken when a matching signal is received from the out
 
     ```typescript
     //waitForWorkflow.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { workflow } from '@hotmeshio/hotmesh';
 
     export async function waitForExample(): Promise<{hello: string}> {
-      return await MeshFlow.workflow.waitFor<{hello: string}>('my-sig-nal');
+      return await workflow.waitFor<{hello: string}>('my-sig-nal');
       //continue processing, use the payload, etc...
     }
     ```
@@ -304,11 +304,11 @@ Pause a function and only awaken when a matching signal is received from the out
 
     ```typescript
     //client.ts
-    import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
+    import { Client, HotMesh } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
 
     async function run(): Promise<string> {
-      const client = new MeshFlow.Client({
+      const client = new Client({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 }
@@ -330,12 +330,12 @@ Pause a function and only awaken when a matching signal is received from the out
 
     ```typescript
     //worker.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Worker } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
     import * as workflows from './waitForWorkflow';
 
     async function run() {
-      const worker = await MeshFlow.Worker.create({
+      const worker = await Worker.create({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 },
@@ -351,10 +351,10 @@ Pause a function and only awaken when a matching signal is received from the out
 4. Send a signal to awaken the paused function; await the function result.
 
     ```typescript
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Client } from '@hotmeshio/hotmesh';
     import * as Redis from Redis;
 
-    const client = new MeshFlow.Client({
+    const client = new Client({
       connection: {
         class: Redis,
         options: { host: 'redis', port: 6379 }
@@ -385,12 +385,12 @@ Use a standard `Promise` to collate and cache multiple signals. HotMesh will onl
 
     ```typescript
     //waitForWorkflows.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { workflow } from '@hotmeshio/hotmesh';
 
     export async function waitForExample(): Promise<[boolean, number]> {
       const [s1, s2] = await Promise.all([
-        Meshflow.workflow.waitFor<boolean>('my-sig-nal-1'),
-        Meshflow.workflow.waitFor<number>('my-sig-nal-2')
+        workflow.waitFor<boolean>('my-sig-nal-1'),
+        workflow.waitFor<number>('my-sig-nal-2')
       ]);
       //do something with the signal payloads (s1, s2)
       return [s1, s2];
@@ -400,10 +400,10 @@ Use a standard `Promise` to collate and cache multiple signals. HotMesh will onl
 2. Send **two** signals to awaken the paused function.
 
     ```typescript
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Client } from '@hotmeshio/hotmesh';
     import * as Redis from Redis;
 
-    const client = new MeshFlow.Client({
+    const client = new Client({
       connection: {
         class: Redis,
         options: { host: 'redis', port: 6379 }
@@ -437,10 +437,10 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 
     ```typescript
     //recurringWorkflow.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { workflow } from '@hotmeshio/hotmesh';
     import * as activities from './activities';
 
-    const { statusDiagnostic } = MeshFlow.workflow
+    const { statusDiagnostic } = workflow
       .proxyActivities<typeof activities>({
         activities
       });
@@ -448,7 +448,7 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
     export async function recurringExample(someValue: number): Promise<void> {
       do {
         await statusDiagnostic(someValue);
-      } while (await MeshFlow.workflow.sleepFor('1 week'));
+      } while (await workflow.sleepFor('1 week'));
     }
     ```
 
@@ -456,11 +456,11 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 
     ```typescript
     //client.ts
-    import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
+    import { Client, HotMesh } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
 
     async function run(): Promise<string> {
-      const client = new MeshFlow.Client({
+      const client = new Client({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 }
@@ -482,12 +482,12 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 
     ```typescript
     //worker.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Worker } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
     import * as workflows from './recurringWorkflow';
 
     async function run() {
-      const worker = await MeshFlow.Worker.create({
+      const worker = await Worker.create({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 },
@@ -503,10 +503,10 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 4. Cancel the recurring workflow (`myRecurring123`) by calling `interrupt`.
 
     ```typescript
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Client } from '@hotmeshio/hotmesh';
     import * as Redis from Redis;
 
-    const client = new MeshFlow.Client({
+    const client = new Client({
       connection: {
         class: Redis,
         options: { host: 'redis', port: 6379 }
