@@ -226,7 +226,7 @@ export const hashModule = (context: KVSQL) => ({
   async hdel(
     key: string,
     fields: string[],
-    multi?: ProviderTransaction,
+    multi?: unknown,
   ): Promise<number> {
     // Ensure fields is an array
     if (!Array.isArray(fields)) {
@@ -234,7 +234,7 @@ export const hashModule = (context: KVSQL) => ({
     }
     const { sql, params } = this._hdel(key, fields);
     if (multi) {
-      (multi as Multi).addCommand(sql, params, 'number');
+      (multi as unknown as Multi).addCommand(sql, params, 'number');
       return Promise.resolve(0);
     } else {
       const res = await context.pgClient.query(sql, params);

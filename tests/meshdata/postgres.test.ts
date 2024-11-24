@@ -14,6 +14,7 @@ import { dropTables } from '../$setup/postgres';
 import * as activities from './activities';
 
 describe('MeshData | Postgres', () => {
+  const idemKey = HotMesh.guid();
   let postgresClient: ProviderNativeClient;
   const redis_options = {
     host: config.REDIS_HOST,
@@ -143,9 +144,12 @@ describe('MeshData | Postgres', () => {
   const sleeper = async (email: string) => {
     for (let i = 1; i < 4; i++) {
       await sendNewsLetter(email, i);
-      await MeshData.workflow.sleepFor('1 second');
+      //await MeshData.workflow.sleepFor('1 second');
     }
   };
+
+  //NOTE TO SELF: EXPIRE needs to be fixed: have indirection with key/job_id
+  //jimbo123 is being reused in the test, so it's not being flushed!!!!
 
   //once connected by meshData, this function will become a 'hook'
   //hook functions are reentrant processes and use the job
@@ -276,7 +280,7 @@ describe('MeshData | Postgres', () => {
         { block: ['transitions'], values: false },
         'staging',
       );
-      console.log(JSON.stringify(exported, null, 2));
+
       expect(exported.transitions).toBeUndefined();
       expect(exported.timeline).toBeDefined();
 
@@ -288,7 +292,6 @@ describe('MeshData | Postgres', () => {
           await meshData.info('howdy', 'jimbo123', {
             namespace: 'staging',
           });
-          console.log('still there!!!');
         } while (true);
       } catch (error) {
         expect(error.message).toBe(`howdy-jimbo123 Not Found`);
@@ -339,7 +342,7 @@ describe('MeshData | Postgres', () => {
       //call directly (NodeJS will govern the exchange)
       const direct = await localGreet(email, name);
       expect(brokered).toEqual(direct);
-    }, 10_000);
+    }, 15_000);
 
     it('should return RAW fields (HGETALL)', async () => {
       const email = 'jdoe@hotmesh.com';
@@ -375,81 +378,81 @@ describe('MeshData | Postgres', () => {
       expect(some.newsletter).toEqual('yes');
       expect(some.barney).toBeUndefined();
     });
-  });
 
-  //   it('should SET named `state` fields', async () => {
-  //     const numAdded = await meshData.set('greeting', 'jdoe', {
-  //       //set 2 new fields and overwrite 1 existing field
-  //       search: {
-  //         data: {
-  //           wilma: 'flintstone',
-  //           bce: '-1000000',
-  //           email: 'wstone@hotmesh.com',
-  //         },
-  //       },
-  //     });
-  //     expect(numAdded).toEqual(2);
-  //   });
+    it('should SET named `state` fields', async () => {
+      const numAdded = await meshData.set('greeting', 'jdoe', {
+        //set 2 new fields and overwrite 1 existing field
+        search: {
+          data: {
+            wilma: 'flintstone',
+            bce: '-1000000',
+            email: 'wstone@hotmesh.com',
+          },
+        },
+      });
+      //postgres always returns the full count (update + insert)
+      expect(numAdded).toEqual(3);
+    });
 
-  //   it('should INCR named `state` field', async () => {
-  //     const newAmount = await meshData.incr('greeting', 'jdoe', 'bce', 1);
-  //     expect(newAmount).toEqual(-999999);
-  //   });
+    it('should INCR named `state` field', async () => {
+      const newAmount = await meshData.incr('greeting', 'jdoe', 'bce', 1);
+      expect(newAmount).toEqual(-999999);
+    });
 
-  //   it('should DEL named `state` fields', async () => {
-  //     const numDeleted = await meshData.del('greeting', 'jdoe', {
-  //       //delete 2 fields (and ignore 1 non-existent field: emails)
-  //       fields: ['wilma', 'bce', 'emails'],
-  //     });
-  //     expect(numDeleted).toEqual(2);
-  //   });
+    it('should DEL named `state` fields', async () => {
+      const numDeleted = await meshData.del('greeting', 'jdoe', {
+        //delete 2 fields (and ignore 1 non-existent field: emails)
+        fields: ['wilma', 'bce', 'emails'],
+      });
+      expect(numDeleted).toEqual(2);
+    });
 
-  //   it('should exec a long-running function that calls a proxy', async () => {
-  //     const email = 'fdoe@hotmesh.com';
-  //     const name = { first: 'Fred', last: 'Doe' };
+    it('should exec a long-running function that calls a proxy', async () => {
+      const email = 'fdoe@hotmesh.com';
+      const name = { first: 'Fred', last: 'Doe' };
 
-  //     //call with MeshData (Redis will govern the exchange)
-  //     const brokered = await meshData.exec<Promise<string>>({
-  //       entity: 'greeting',
-  //       args: [email, name],
-  //       options: { ttl: '1 second', id: 'abc123' },
-  //     });
+      //call with MeshData (Redis will govern the exchange)
+      const brokered = await meshData.exec<Promise<string>>({
+        entity: 'greeting',
+        args: [email, name],
+        options: { ttl: '1 second', id: 'abc123' },
+      });
 
-  //     //call directly (NodeJS will govern the exchange)
-  //     const direct = await localGreet(email, name);
-  //     expect(brokered).toEqual(direct);
-  //   }, 10_000);
+      //call directly (NodeJS will govern the exchange)
+      const direct = await localGreet(email, name);
+      expect(brokered).toEqual(direct);
+    }, 10_000);
 
-  //   it('should exec a persistent function (ttl:infinity) that calls a proxy and hook', async () => {
-  //     const email = 'floe.doe@hotmesh.com';
-  //     const name = { first: 'Floe', last: 'Doe' };
+    it('should exec a persistent function (ttl:infinity) that calls a proxy and hook', async () => {
+      const email = 'floe.doe@hotmesh.com';
+      const name = { first: 'Floe', last: 'Doe' };
 
-  //     //call with MeshData (Redis will govern the exchange)
-  //     const brokered = await meshData.exec<Promise<string>>({
-  //       entity: 'greeting',
-  //       args: [email, name],
-  //       options: { ttl: 'infinity', id: 'abc456' },
-  //     });
+      //call with MeshData (Redis will govern the exchange)
+      const brokered = await meshData.exec<Promise<string>>({
+        entity: 'greeting',
+        args: [email, name],
+        options: { ttl: 'infinity', id: 'abc456' },
+      });
 
-  //     //call directly (NodeJS will govern the exchange)
-  //     const direct = await localGreet(email, name);
-  //     expect(brokered).toEqual(direct);
-  //   }, 10_000);
+      //call directly (NodeJS will govern the exchange)
+      const direct = await localGreet(email, name);
+      expect(brokered).toEqual(direct);
+    }, 10_000);
 
-  //   it('should flush a persistent function (ttl:infinity)', async () => {
-  //     //flush causes the main thread to exit (it waits for the flush signal)
-  //     await meshData.flush('greeting', 'abc456');
-  //     //sleep long enough for running hooks in the test to awaken from sleep
-  //     await new Promise((resolve) => setTimeout(resolve, 1_000));
-  //     let pluckResponse: HotMeshTypes.JobOutput;
-  //     try {
-  //       pluckResponse = await meshData.info('greeting', 'abc456');
-  //     } catch (error) {
-  //       expect(error.message).toBe(`greeting-abc456 Not Found`);
-  //       return;
-  //     }
-  //     expect(pluckResponse.data.done).toEqual(true);
-  //   }, 15_000);
+    it('should flush a persistent function (ttl:infinity)', async () => {
+      //flush causes the main thread to exit (it waits for the flush signal)
+      await meshData.flush('greeting', 'abc456');
+      //sleep long enough for running hooks in the test to awaken from sleep
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      let pluckResponse: HotMeshTypes.JobOutput;
+      try {
+        pluckResponse = await meshData.info('greeting', 'abc456');
+      } catch (error) {
+        expect(error.message).toBe(`greeting-abc456 Not Found`);
+        return;
+      }
+      expect(pluckResponse.data.done).toEqual(true);
+    }, 15_000);
 
   //   it('should retry if it fails', async () => {
   //     const email = 'jim.doe@hotmesh.com';
@@ -489,7 +492,7 @@ describe('MeshData | Postgres', () => {
   //     const pluckResponse = await meshData.info('greeting', idemKey);
   //     expect(pluckResponse.data.done).toEqual(true);
   //   });
-  // });
+  });
 
   // describe('rollCall', () => {
   //   it('should rollCall multiple namespaces', async () => {

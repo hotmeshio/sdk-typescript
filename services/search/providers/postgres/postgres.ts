@@ -104,10 +104,10 @@ class PostgresSearchService extends SearchService<
 
   async deleteFields(key: string, fields: string[]): Promise<number> {
     try {
-      const result = await this.searchClient.hdel(key, ...fields);
+      const result = await this.searchClient.hdel(key, fields);
       return Number(result);
     } catch (error) {
-      this.logger.error(`postgres-delete-fields-error`, {
+      this.logger.error(`postgres-search-delete-fields-error`, {
         key,
         fields,
         ...error,
