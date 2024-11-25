@@ -83,29 +83,35 @@ export const stringModule = (context: any) => ({
     let sql = '';
     const params = [key, value];
     let expiryClause = '';
-
+  
     if (options?.ex) {
       expiryClause = ", expiry = NOW() + INTERVAL '" + options.ex + " seconds'";
     }
-
+  
     if (options?.nx) {
+      // INSERT only if no valid ownership exists
       sql = `
         INSERT INTO ${tableName} (key, value${expiryClause ? ', expiry' : ''})
         VALUES ($1, $2${expiryClause ? ", NOW() + INTERVAL '" + options.ex + " seconds'" : ''})
-        ON CONFLICT DO NOTHING
+        ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value${expiryClause ? ', expiry = EXCLUDED.expiry' : ''}
+        WHERE ${tableName}.expiry IS NULL OR ${tableName}.expiry <= NOW()
         RETURNING true as success
       `;
     } else {
+      // INSERT or UPDATE, reclaiming expired ownership if necessary
       sql = `
         INSERT INTO ${tableName} (key, value${expiryClause ? ', expiry' : ''})
         VALUES ($1, $2${expiryClause ? ", NOW() + INTERVAL '" + options.ex + " seconds'" : ''})
-        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value${expiryClause}
+        ON CONFLICT (key) DO UPDATE
+        SET value = EXCLUDED.value${expiryClause ? ', expiry = EXCLUDED.expiry' : ''}
+        WHERE ${tableName}.expiry IS NULL OR ${tableName}.expiry <= NOW()
         RETURNING true as success
       `;
     }
-
+  
     return { sql, params };
-  },
+  },  
 
   async del(key: string, multi?: ProviderTransaction): Promise<number> {
     const { sql, params } = this._del(key);

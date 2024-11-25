@@ -525,7 +525,7 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 <br/>
 
 ## MeshData | Transactional Analytics
-[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) extends the **MeshFlow** service, surfacing transactional workflows as searchable data records.
+[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) adds analytics to your workflows.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Create a search index <small>[more]</small></summary>

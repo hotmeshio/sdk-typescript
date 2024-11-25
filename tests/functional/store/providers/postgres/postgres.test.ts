@@ -607,9 +607,18 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       const reservedRole2 = await postgresStoreService.storeClient.get(key);
       expect(reservedRole2).not.toBeNull();
 
+      //verify read is empty after expiration
       await sleepFor(2000);
       const reservedRole3 = await postgresStoreService.storeClient.get(key);
       expect(reservedRole3).toBeNull();
+
+      //verify writes are now allowed
+      const result4 = await postgresStoreService.reserveScoutRole(role, 5);
+      expect(result4).toEqual(true);
+
+      //read once more to verify read is allowed
+      const reservedRole4 = await postgresStoreService.storeClient.get(key);
+      expect(reservedRole4).not.toBeNull();
     });
   });
 
