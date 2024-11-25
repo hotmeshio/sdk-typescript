@@ -120,10 +120,9 @@ export const stringModule = (context: any) => ({
 
   _del(key: string): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key);
-    const isJobsTable = tableName.endsWith('_jobs');
     const sql = `
       WITH deleted AS (
-        DELETE FROM ${tableName} WHERE ${isJobsTable ? 'id' : 'key'} = $1
+        DELETE FROM ${tableName} WHERE key = $1
         RETURNING 1
       )
       SELECT COUNT(*) as count FROM deleted

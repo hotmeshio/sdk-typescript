@@ -90,9 +90,9 @@ export const hashModule = (context: KVSQL) => ({
     const fieldEntries = Object.entries(fields);
     const isStatusOnly =
       fieldEntries.length === 1 && fieldEntries[0][0] === ':';
-
+  
     let targetTable = tableName; // Default table name
-
+  
     if (isJobsTable) {
       if (isStatusOnly) {
         // Target the jobs table directly when setting only the status field
@@ -102,60 +102,76 @@ export const hashModule = (context: KVSQL) => ({
         targetTable = `${tableName}_attributes`;
       }
     }
-
+  
     const params = [];
-    const placeholders = fieldEntries
-      .map(([field, value], index) => {
-        if (isJobsTable && isStatusOnly) {
-          // For status field in jobs table
-          params.push(Number(value));
-          return `($1, $${index * 2 + 2})`;
-        } else if (isJobsTable) {
-          // For attributes subordinated to jobs table
-          params.push(field, value, this._deriveType(field));
-          return `($1, $${index * 3 + 2}, $${index * 3 + 3}, $${index * 3 + 4})`;
-        } else {
-          // For non-jobs tables
-          params.push(field, value);
-          return `($1, $${index * 2 + 2}, $${index * 2 + 3})`;
-        }
-      })
-      .join(', ');
-
-    // Build the SQL query based on the target table
     let sql = '';
+  
     if (isJobsTable && isStatusOnly) {
-      // Update the status field in the jobs table
-      const conflictAction = options?.nx
-        ? 'ON CONFLICT DO NOTHING'
-        : `ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status`;
-
-      sql = `
-        INSERT INTO ${targetTable} (id, status)
-        VALUES ${placeholders}
-        ${conflictAction}
-        RETURNING 1 as count
-      `;
-      params.unshift(key); // Add key as the first parameter
+      if (options?.nx) {
+        // Use WHERE NOT EXISTS to enforce nx
+        sql = `
+          INSERT INTO ${targetTable} (id, key, status)
+          SELECT gen_random_uuid(), $1, $2
+          WHERE NOT EXISTS (
+            SELECT 1 FROM ${targetTable}
+            WHERE key = $1 AND is_live
+          )
+          RETURNING 1 as count
+        `;
+        params.push(key, fields[':']);
+      } else {
+        // Update existing job or insert new one
+        sql = `
+          INSERT INTO ${targetTable} (id, key, status)
+          VALUES (gen_random_uuid(), $1, $2)
+          ON CONFLICT (key) WHERE is_live DO UPDATE SET status = EXCLUDED.status
+          RETURNING 1 as count
+        `;
+        params.push(key, fields[':']);
+      }
     } else if (isJobsTable) {
-      // Insert into the attributes table for jobs
       const conflictAction = options?.nx
         ? 'ON CONFLICT DO NOTHING'
         : `ON CONFLICT (job_id, field) DO UPDATE SET value = EXCLUDED.value`;
-
+    
+        const placeholders = fieldEntries
+        .map(([field, value], index) => {
+          const baseIndex = index * 3 + 2; // Adjusted baseIndex
+          params.push(field, value, this._deriveType(field));
+          return `($${baseIndex}, $${baseIndex + 1}, $${baseIndex + 2}::type_enum)`;
+        })
+        .join(', ');
+    
       sql = `
         INSERT INTO ${targetTable} (job_id, field, value, type)
-        VALUES ${placeholders}
+        SELECT 
+          job.id,
+          vals.field,
+          vals.value,
+          vals.type
+        FROM (
+          SELECT id FROM ${tableName} WHERE key = $1 AND is_live
+        ) AS job
+        CROSS JOIN (
+          VALUES ${placeholders}
+        ) AS vals(field, value, type)
         ${conflictAction}
         RETURNING 1 as count
       `;
-      params.unshift(key); // Add key as the first parameter
+      params.unshift(key); // Add key as first parameter
     } else {
       // For non-jobs tables
       const conflictAction = options?.nx
         ? 'ON CONFLICT DO NOTHING'
         : `ON CONFLICT (key, field) DO UPDATE SET value = EXCLUDED.value`;
-
+  
+      const placeholders = fieldEntries
+        .map(([field, value], index) => {
+          params.push(field, value);
+          return `($1, $${index * 2 + 2}, $${index * 2 + 3})`;
+        })
+        .join(', ');
+  
       sql = `
         INSERT INTO ${targetTable} (key, field, value)
         VALUES ${placeholders}
@@ -164,7 +180,7 @@ export const hashModule = (context: KVSQL) => ({
       `;
       params.unshift(key); // Add key as the first parameter
     }
-
+  
     return { sql, params };
   },
 
@@ -190,29 +206,29 @@ export const hashModule = (context: KVSQL) => ({
     const tableName = context.tableForKey(key, 'hash');
     const isJobsTable = tableName.endsWith('_jobs');
     const isStatusField = field === ':';
-
+  
     if (isJobsTable && isStatusField) {
       // Fetch status from jobs table
-      const sql = context.appendJobExpiryClause(
-        `
-          SELECT status::text AS value
-          FROM ${tableName}
-          WHERE id = $1
-        `,
-        tableName,
-      );
+      const sql = `
+        SELECT status::text AS value
+        FROM ${tableName}
+        WHERE key = $1 AND is_live
+      `;
       return { sql, params: [key] };
     } else if (isJobsTable) {
       // Fetch a specific field from the attributes table for a job
       const sql = `
         SELECT value
         FROM ${tableName}_attributes
-        WHERE job_id = (SELECT id FROM ${tableName} WHERE id = $1)
+        WHERE job_id = (
+          SELECT id FROM ${tableName}
+          WHERE key = $1 AND is_live
+        )
           AND field = $2
       `;
       return { sql, params: [key, field] };
     } else {
-      // Fetch a specific field from a non-job table
+      // Non-jobs tables
       const baseQuery = `
         SELECT value
         FROM ${tableName}
@@ -246,19 +262,36 @@ export const hashModule = (context: KVSQL) => ({
     const tableName = context.tableForKey(key, 'hash');
     const isJobsTable = tableName.endsWith('_jobs');
     const targetTable = isJobsTable ? `${tableName}_attributes` : tableName;
-
-    // Create placeholders for each field
+  
     const fieldPlaceholders = fields.map((_, i) => `$${i + 2}`).join(', ');
-    const sql = `
-      WITH deleted AS (
-        DELETE FROM ${targetTable}
-        WHERE ${isJobsTable ? 'job_id' : 'key'} = $1 AND field IN (${fieldPlaceholders})
-        RETURNING 1
-      )
-      SELECT COUNT(*) as count FROM deleted
-    `;
     const params = [key, ...fields];
-    return { sql, params };
+  
+    if (isJobsTable) {
+      const sql = `
+        WITH valid_job AS (
+          SELECT id
+          FROM ${tableName}
+          WHERE key = $1 AND is_live
+        ),
+        deleted AS (
+          DELETE FROM ${targetTable}
+          WHERE job_id IN (SELECT id FROM valid_job) AND field IN (${fieldPlaceholders})
+          RETURNING 1
+        )
+        SELECT COUNT(*) as count FROM deleted
+      `;
+      return { sql, params };
+    } else {
+      const sql = `
+        WITH deleted AS (
+          DELETE FROM ${targetTable}
+          WHERE key = $1 AND field IN (${fieldPlaceholders})
+          RETURNING 1
+        )
+        SELECT COUNT(*) as count FROM deleted
+      `;
+      return { sql, params };
+    }
   },
 
   async hmget(
@@ -302,7 +335,7 @@ export const hashModule = (context: KVSQL) => ({
         return processRows(res.rows);
       } catch (err) {
         console.error('hmget error', err, sql, params);
-        throw err; // Ensure errors are propagated
+        throw err;
       }
     }
   },
@@ -310,69 +343,40 @@ export const hashModule = (context: KVSQL) => ({
   _hmget(key: string, fields: string[]): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
     const isJobsTable = tableName.endsWith('_jobs');
-    const isStatusOnlyQuery = context.isStatusOnly(fields);
-
+  
     if (isJobsTable) {
-      if (isStatusOnlyQuery) {
-        // Fetch status only from jobs table
-        const sql = context.appendJobExpiryClause(
-          `
-          SELECT status::text AS value
+      const sql = `
+        WITH valid_job AS (
+          SELECT id, status
           FROM ${tableName}
-          WHERE id = $1
-            AND (expired_at IS NULL OR expired_at > NOW())
-          `,
-          tableName,
-        );
-        return { sql, params: [key] };
-      } else if (fields.includes(':')) {
-        // Fetch status and specific fields from attributes table
-        const sql = `
-          WITH valid_job AS (
-            SELECT id
-            FROM ${tableName}
-            WHERE id = $1
-              AND (expired_at IS NULL OR expired_at > NOW())
-          ),
-          job_status AS (
-            SELECT 'status' AS field, status::text AS value
-            FROM ${tableName}
-            WHERE id = $1
-              AND id IN (SELECT id FROM valid_job)
-          ),
-          attribute_data AS (
-            SELECT field, value
-            FROM ${tableName}_attributes
-            WHERE job_id = $1
-              AND job_id IN (SELECT id FROM valid_job)
-              AND field = ANY($2::text[])
-          )
-          SELECT * FROM job_status
+          WHERE key = $1 
+          AND (expired_at IS NULL OR expired_at > NOW())
+          LIMIT 1
+        ),
+        job_fields AS (
+          -- Always include the status field directly from jobs table
+          SELECT 
+            'status' AS field,
+            status::text AS value
+          FROM valid_job
+          
           UNION ALL
-          SELECT * FROM attribute_data
-        `;
-        return { sql, params: [key, fields] };
-      } else {
-        // Fetch specific fields from attributes, ensuring the job itself is not expired
-        const sql = `
-          WITH valid_job AS (
-            SELECT id
-            FROM ${tableName}
-            WHERE id = $1
-              AND (expired_at IS NULL OR expired_at > NOW())
-          ),
-          attribute_data AS (
-            SELECT field, value
-            FROM ${tableName}_attributes
-            WHERE job_id IN (SELECT id FROM valid_job)
-              AND field = ANY($2::text[])
-          )
-          SELECT * FROM attribute_data
-        `;
-        return { sql, params: [key, fields] };
-      }
+          
+          -- Get attribute fields with proper type handling
+          SELECT 
+            a.field,
+            a.value
+          FROM ${tableName}_attributes a
+          JOIN valid_job j ON j.id = a.job_id
+          WHERE a.field = ANY($2::text[])
+        )
+        SELECT field, value
+        FROM job_fields
+        ORDER BY field
+      `;
+      return { sql, params: [key, fields] };
     } else {
-      // Non-job tables: Fetch fields directly from attributes table (expiry applies)
+      // Non-job tables logic remains the same
       const baseQuery = `
         SELECT field, value
         FROM ${tableName}
@@ -422,27 +426,23 @@ export const hashModule = (context: KVSQL) => ({
   _hgetall(key: string): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
     const isJobsTable = tableName.endsWith('_jobs');
-
+  
     if (isJobsTable) {
-      // Ensure attributes are returned only if the job is not expired
       const sql = `
         WITH valid_job AS (
           SELECT id
           FROM ${tableName}
-          WHERE id = $1
-            AND (expired_at IS NULL OR expired_at > NOW())
+          WHERE key = $1 AND is_live
         ),
         job_data AS (
           SELECT 'status' AS field, status::text AS value
           FROM ${tableName}
-          WHERE id = $1
-            AND id IN (SELECT id FROM valid_job)
+          WHERE key = $1 AND is_live
         ),
         attribute_data AS (
           SELECT field, value
           FROM ${tableName}_attributes
-          WHERE job_id = $1
-            AND job_id IN (SELECT id FROM valid_job)
+          WHERE job_id IN (SELECT id FROM valid_job)
         )
         SELECT * FROM job_data
         UNION ALL
@@ -450,7 +450,7 @@ export const hashModule = (context: KVSQL) => ({
       `;
       return { sql, params: [key] };
     } else {
-      // Query for other hash table formats, ensure proper expiry handling
+      // Non-job tables
       const sql = context.appendExpiryClause(
         `
           SELECT field, value
@@ -491,31 +491,32 @@ export const hashModule = (context: KVSQL) => ({
     const isStatusField = field === ':';
 
     if (isJobsTable && isStatusField) {
-      // Increment the status in the `jobs` table
       const sql = `
         UPDATE ${tableName}
         SET status = status + $2
-        WHERE id = $1
-        AND (${tableName}.expired_at IS NULL OR ${tableName}.expired_at > NOW())
+        WHERE key = $1 AND is_live
         RETURNING status::text AS value
       `;
       return { sql, params: [key, increment] };
     } else if (isJobsTable) {
-      // Increment a field in the `job_attributes` EAV table
+      // Update the condition here
       const sql = `
+        WITH valid_job AS (
+          SELECT id
+          FROM ${tableName}
+          WHERE key = $1 AND is_live
+        )
         INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-        SELECT $1, $2, ($3::double precision)::text, $4
-        FROM ${tableName}
-        WHERE id = $1 AND (expired_at IS NULL OR expired_at > NOW())
+        SELECT id, $2, ($3::double precision)::text, $4
+        FROM valid_job
         ON CONFLICT (job_id, field) DO UPDATE
         SET
           value = ((COALESCE(${tableName}_attributes.value, '0')::double precision) + $3::double precision)::text,
           type = EXCLUDED.type
         RETURNING value;
-    `;
+      `;
       return { sql, params: [key, field, increment, this._deriveType(field)] };
     } else {
-      // Increment a field in a generic EAV `attributes` table
       const sql = `
         INSERT INTO ${tableName} (key, field, value)
         VALUES ($1, $2, ($3)::text)
@@ -607,7 +608,7 @@ export const hashModule = (context: KVSQL) => ({
     const sql = `
       UPDATE ${tableName}
       SET expired_at = $2
-      WHERE id = $1
+      WHERE key = $1 AND is_live
       RETURNING true as success
     `;
     const params = [key, expiryTime];
@@ -641,27 +642,26 @@ export const hashModule = (context: KVSQL) => ({
     count: number,
     pattern?: string,
   ): { sql: string; params: any[] } {
-    //scan for jobs (j)
     const tableName = context.tableForKey(`_:${context.appId}:j:_`);
     let sql = `
-      SELECT id FROM ${tableName}
+      SELECT key FROM ${tableName}
       WHERE (expired_at IS NULL OR expired_at > NOW())
     `;
     const params = [];
-
+  
     if (pattern) {
-      sql += ' AND id LIKE $1';
+      sql += ' AND key LIKE $1';
       params.push(pattern.replace(/\*/g, '%'));
     }
-
+  
     sql += `
-      ORDER BY id
+      ORDER BY key
       OFFSET $${params.length + 1} LIMIT $${params.length + 2}
     `;
-
+  
     params.push(cursor.toString());
     params.push(count.toString());
-
+  
     return { sql, params };
   },
 });

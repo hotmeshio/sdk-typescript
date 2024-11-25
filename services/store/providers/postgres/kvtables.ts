@@ -132,7 +132,7 @@ export const KVTables = (context: PostgresStoreService) => ({
           break;
 
         case 'jobhash':
-          // Create the enumerated type if it doesn't exist
+          // Create the enum type// Create the enum type
           await client.query(`
             DO $$
             BEGIN
@@ -142,75 +142,131 @@ export const KVTables = (context: PostgresStoreService) => ({
             END$$;
           `);
 
-          // Create the jobs table
+          // Create the main jobs table with partitioning on id
           await client.query(`
             CREATE TABLE IF NOT EXISTS ${tableDef.name} (
-              id TEXT PRIMARY KEY,                     -- Unique job identifier (string)
-              entity TEXT,                             -- Entity type (e.g., 'user', 'book', etc.)
-              status INTEGER NOT NULL,                 -- Status semaphore for job state
-              created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), -- Auto-generated timestamp
-              updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), -- Tracks last update
-              expired_at TIMESTAMP WITH TIME ZONE      -- Expiry timestamp for cleanup
+              id UUID DEFAULT gen_random_uuid(),
+              key TEXT NOT NULL,
+              entity TEXT,
+              status INTEGER NOT NULL,
+              created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+              updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+              expired_at TIMESTAMP WITH TIME ZONE,
+              is_live BOOLEAN DEFAULT TRUE,
+              PRIMARY KEY (id)  -- Primary key on id which is also our partitioning key
             ) PARTITION BY HASH (id);
           `);
 
-          // Create partitions for the jobs table
-          for (let i = 0; i < 8; i++) {
-            await client.query(`
-              CREATE TABLE IF NOT EXISTS ${tableDef.name}_part_${i} PARTITION OF ${tableDef.name}
-              FOR VALUES WITH (modulus 8, remainder ${i});
-            `);
-          }
-
-          // Add indexes to the jobs table
+          // Create partitions using a DO block
           await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_entity_status
+            DO $$
+            BEGIN
+              FOR i IN 0..7 LOOP
+                EXECUTE format(
+                  'CREATE TABLE IF NOT EXISTS ${tableDef.name}_part_%s PARTITION OF ${tableDef.name} 
+                  FOR VALUES WITH (modulus 8, remainder %s)',
+                  i, i
+                );
+              END LOOP;
+            END$$;
+          `);
+
+          // Create optimized indexes
+          await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expired_at 
+            ON ${tableDef.name} (key, expired_at) INCLUDE (is_live);
+          `);
+
+          await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_entity_status 
             ON ${tableDef.name} (entity, status);
           `);
+
           await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_expired_at
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_expired_at 
             ON ${tableDef.name} (expired_at);
           `);
+
+          // Create function to update is_live flag
           await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_id_expired_at
-            ON ${tableDef.name} (id, expired_at);
+            CREATE OR REPLACE FUNCTION update_is_live()
+            RETURNS TRIGGER AS $$
+            BEGIN
+              NEW.is_live := NEW.expired_at IS NULL OR NEW.expired_at > NOW();
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
           `);
 
-          // Create the attributes table
+          // Create trigger for is_live updates
+          await client.query(`
+            CREATE TRIGGER trg_update_is_live
+            BEFORE INSERT OR UPDATE ON ${tableDef.name}
+            FOR EACH ROW EXECUTE PROCEDURE update_is_live();
+          `);
+
+          // Create function to enforce uniqueness of live jobs
+          await client.query(`
+            CREATE OR REPLACE FUNCTION enforce_live_job_uniqueness()
+            RETURNS TRIGGER AS $$
+            BEGIN
+              IF (NEW.expired_at IS NULL OR NEW.expired_at > NOW()) THEN
+                PERFORM pg_advisory_xact_lock(hashtextextended(NEW.key, 0));
+                IF EXISTS (
+                  SELECT 1 FROM ${tableDef.name}
+                  WHERE key = NEW.key 
+                  AND (expired_at IS NULL OR expired_at > NOW())
+                  AND id <> NEW.id
+                ) THEN
+                  RAISE EXCEPTION 'A live job with key % already exists.', NEW.key;
+                END IF;
+              END IF;
+              RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+          `);
+
+          // Create trigger for uniqueness enforcement
+          await client.query(`
+            CREATE TRIGGER trg_enforce_live_job_uniqueness
+            BEFORE INSERT OR UPDATE ON ${tableDef.name}
+            FOR EACH ROW EXECUTE PROCEDURE enforce_live_job_uniqueness();
+          `);
+
+          // Create the attributes table with partitioning
           await client.query(`
             CREATE TABLE IF NOT EXISTS ${tableDef.name}_attributes (
-              job_id TEXT NOT NULL,                    -- Foreign key referencing 'id' in '_jobs'
-              field TEXT NOT NULL,                     -- Attribute name
-              value TEXT,                              -- Attribute value
-              type type_enum NOT NULL,                 -- Attribute type (e.g., 'udata', 'jdata')
-              PRIMARY KEY (job_id, field),             -- Composite primary key
+              job_id UUID NOT NULL,
+              field TEXT NOT NULL,
+              value TEXT,
+              type type_enum NOT NULL,
+              PRIMARY KEY (job_id, field),
               FOREIGN KEY (job_id) REFERENCES ${tableDef.name} (id) ON DELETE CASCADE
             ) PARTITION BY HASH (job_id);
           `);
 
-          // Create partitions for the attributes table
-          for (let i = 0; i < 8; i++) {
-            await client.query(`
-              CREATE TABLE IF NOT EXISTS ${tableDef.name}_attributes_part_${i} PARTITION OF ${tableDef.name}_attributes
-              FOR VALUES WITH (modulus 8, remainder ${i});
-            `);
-          }
-
-          // Add indexes to the attributes table
+          // Create partitions for attributes table
           await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_job_field_type
-            ON ${tableDef.name}_attributes (job_id, field, type);
+            DO $$
+            BEGIN
+              FOR i IN 0..7 LOOP
+                EXECUTE format(
+                  'CREATE TABLE IF NOT EXISTS ${tableDef.name}_attributes_part_%s PARTITION OF ${tableDef.name}_attributes 
+                  FOR VALUES WITH (modulus 8, remainder %s)',
+                  i, i
+                );
+              END LOOP;
+            END$$;
           `);
+
+          // Create indexes for attributes table
           await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_type_field
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_type_field 
             ON ${tableDef.name}_attributes (type, field);
           `);
+
           await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_job_field
-            ON ${tableDef.name}_attributes (job_id, field);
-          `);
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_field
+            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_field 
             ON ${tableDef.name}_attributes (field);
           `);
           break;

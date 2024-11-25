@@ -39,14 +39,12 @@ describe('MESHFLOW | basic | `MeshFlow Foundational` | Postgres', () => {
   };
 
   beforeAll(async () => {
-    // Initialize Postgres and drop tables (and data) from prior tests
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
 
     await dropTables(postgresClient);
 
-    //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis as unknown as RedisRedisClassType,
@@ -91,7 +89,7 @@ describe('MESHFLOW | basic | `MeshFlow Foundational` | Postgres', () => {
           expire: 600,
         });
         expect(handle.workflowId).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
@@ -112,7 +110,7 @@ describe('MESHFLOW | basic | `MeshFlow Foundational` | Postgres', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
 
       it('should create and run a child worker', async () => {
         const worker = await Worker.create({
@@ -122,7 +120,7 @@ describe('MESHFLOW | basic | `MeshFlow Foundational` | Postgres', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 

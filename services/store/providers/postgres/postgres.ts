@@ -1208,7 +1208,7 @@ class PostgresStoreService extends StoreService<
     jobId: string,
     fieldMatchPattern = '*',
     limit = 1000,
-    batchSize = 1000, //unused in SQL provider
+    batchSize = 1000, // Unused in SQL provider
     cursor = '0',
   ): Promise<[string, Record<string, string>]> {
     const matchingFields: Record<string, string> = {};
@@ -1216,9 +1216,9 @@ class PostgresStoreService extends StoreService<
       appId: this.appId,
       jobId,
     });
-
+  
     let enumType: string;
-    let dimension: string;
+    let dimension: string | null = null;
     if (fieldMatchPattern.includes(',')) {
       const dimReg = /\d[^-]+-/gi;
       const dimensions = fieldMatchPattern.match(dimReg);
@@ -1227,35 +1227,68 @@ class PostgresStoreService extends StoreService<
     } else {
       enumType = 'jmark';
     }
-
+  
     const offset = parseInt(cursor, 10) || 0; // Convert cursor to numeric offset
     const tableName = this.kvsql().tableForKey(jobKey, 'hash');
-    const params: any[] = [jobKey, enumType, limit, offset];
-
-    const sql = `
-      SELECT field, value
-      FROM ${tableName}_attributes
-      WHERE job_id = $1 AND type = $2
-      LIMIT $3 OFFSET $4
+  
+    // Initialize parameters array and parameter index
+    const params: any[] = [jobKey];
+    let paramIndex = params.length + 1; // Starts from 2 since $1 is jobKey
+  
+    // Build the valid_job CTE to get the job's UUID id
+    const validJobSql = `
+      SELECT id
+      FROM ${tableName}
+      WHERE key = $1
+      AND (expired_at IS NULL OR expired_at > NOW())
+      LIMIT 1
     `;
-
-    // Execute and map
-    const res = await this.pgClient.query(sql, params);
-    if (enumType === 'hmark') {
-      for (const row of res.rows) {
-        if (row.field.includes(dimension)) {
-          matchingFields[row.field] = row.value;
-        }
-      }
-    } else {
-      for (const row of res.rows) {
-        matchingFields[row.field] = row.value;
-      }
+  
+    // Build conditions for the WHERE clause
+    const conditions = [];
+  
+    // Add enumType condition
+    conditions.push(`a.type = $${paramIndex}`);
+    params.push(enumType);
+    paramIndex++;
+  
+    // Add dimension condition if applicable
+    if (dimension) {
+      conditions.push(`a.field LIKE $${paramIndex}`);
+      params.push(`%${dimension}%`);
+      paramIndex++;
     }
+  
+    // Add limit and offset parameters
+    const limitParamIndex = paramIndex;
+    const offsetParamIndex = paramIndex + 1;
+    params.push(limit, offset);
+    paramIndex += 2;
+  
+    // Construct the final SQL query
+    const sql = `
+      WITH valid_job AS (
+        ${validJobSql}
+      )
+      SELECT a.field, a.value
+      FROM ${tableName}_attributes a
+      JOIN valid_job j ON a.job_id = j.id
+      WHERE ${conditions.join(' AND ')}
+      LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
+    `;
+  
+    // Execute the query and map the results
+    const res = await this.pgClient.query(sql, params);
+    for (const row of res.rows) {
+      matchingFields[row.field] = row.value;
+    }
+  
+    // Determine the next cursor
     const nextCursor =
       res.rows.length < limit ? '0' : String(offset + res.rows.length);
+  
     return [nextCursor, matchingFields];
-  }
+  }  
 
   async setThrottleRate(options: ThrottleOptions): Promise<void> {
     const key = this.mintKey(KeyType.THROTTLE_RATE, { appId: this.appId });

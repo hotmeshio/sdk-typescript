@@ -8,11 +8,11 @@
 
 ## Features
 
-- **Serverless Orchestration**: Orchestrate your microservices without the need for a central app server.
-- **Bring Your Own Database**: Mix and match technologies through a standard interface (**Postgres**, **Redis**, **NATS**, etc).
+- **Serverless Orchestration**: Orchestrate your microservices without adding infrastructure.
+- **BYODB**: Bring your own database, and avoid lockin. Choose *Postgres* or *Redis*.
 - **Decentralized Execution**: Centralized persistence with decentralized execution.
 - **Linear Scalability**: Scale your database to scale your application.
-- **Analytics**: Gain process insights with real-time analytics.
+- **Process Analytics**: Gain process insights with real-time analytics.
 
 
 <br/>
@@ -24,7 +24,7 @@ npm install @hotmeshio/hotmesh
 ```
 
 ## Learn
-[📄 Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 Sample Projects](https://github.com/hotmeshio/samples-typescript) | [🎥 Intro (3m)](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9) | [🎥 Transactional Workflow (9m)](https://www.loom.com/share/54ffd5266baf4ac6b287578abfd1d821?sid=0db2cef8-ef0d-4e02-a0b7-a1ee14f476ce)
+[🏠 Home](https://hotmesh.io/) | [📄 SDK Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 General Examples](https://github.com/hotmeshio/samples-typescript) | [💼 Temporal Examples](https://github.com/hotmeshio/temporal-patterns-typescript)
 
 
 <br/>

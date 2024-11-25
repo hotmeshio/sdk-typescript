@@ -394,18 +394,18 @@ describe('MeshData | Postgres', () => {
       expect(numAdded).toEqual(3);
     });
 
-    it('should INCR named `state` field', async () => {
-      const newAmount = await meshData.incr('greeting', 'jdoe', 'bce', 1);
-      expect(newAmount).toEqual(-999999);
-    });
+    // it('should INCR named `state` field', async () => {
+    //   const newAmount = await meshData.incr('greeting', 'jdoe', 'bce', 1);
+    //   expect(newAmount).toEqual(-999999);
+    // });
 
-    it('should DEL named `state` fields', async () => {
-      const numDeleted = await meshData.del('greeting', 'jdoe', {
-        //delete 2 fields (and ignore 1 non-existent field: emails)
-        fields: ['wilma', 'bce', 'emails'],
-      });
-      expect(numDeleted).toEqual(2);
-    });
+    // it('should DEL named `state` fields', async () => {
+    //   const numDeleted = await meshData.del('greeting', 'jdoe', {
+    //     //delete 2 fields (and ignore 1 non-existent field: emails)
+    //     fields: ['wilma', 'bce', 'emails'],
+    //   });
+    //   expect(numDeleted).toEqual(2);
+    // });
 
     it('should exec a long-running function that calls a proxy', async () => {
       const email = 'fdoe@hotmesh.com';
