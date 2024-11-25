@@ -179,7 +179,12 @@ abstract class MeshOS {
     connections: ProvidersConfig,
   ): MeshData {
     if (connections) {
-      return new MeshData(providerClass, providerConfig, this.getSearchOptions(), connections);
+      return new MeshData(
+        providerClass,
+        providerConfig,
+        this.getSearchOptions(),
+        connections,
+      );
     }
     return new MeshData(providerClass, providerConfig, this.getSearchOptions());
   }

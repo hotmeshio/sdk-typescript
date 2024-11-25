@@ -1,15 +1,17 @@
 import { SearchService } from '../../index';
 import { ILogger } from '../../../logger';
 import { PostgresClientType } from '../../../../types/postgres';
-import { ProviderClient, ProviderTransaction } from '../../../../types/provider';
+import {
+  ProviderClient,
+  ProviderTransaction,
+} from '../../../../types/provider';
 import { KVSQL } from '../../../store/providers/postgres/kvsql';
 
 class PostgresSearchService extends SearchService<
   PostgresClientType & ProviderClient
->  {
-
+> {
   pgClient: PostgresClientType;
-  
+
   transact(): ProviderTransaction {
     return this.storeClient.transact();
   }
@@ -19,7 +21,7 @@ class PostgresSearchService extends SearchService<
     storeClient?: PostgresClientType & ProviderClient,
   ) {
     super(searchClient, storeClient);
-    this.pgClient = searchClient;  //raw pg client (to send raw sql)
+    this.pgClient = searchClient; //raw pg client (to send raw sql)
     this.searchClient = new KVSQL( //wrapped pg client (to send as redis commands)
       searchClient as unknown as PostgresClientType,
       this.namespace,
@@ -66,7 +68,11 @@ class PostgresSearchService extends SearchService<
     try {
       return await this.searchClient.hget(key, field);
     } catch (error) {
-      this.logger.error(`postgres-search-get-field-error`, { key, field, ...error });
+      this.logger.error(`postgres-search-get-field-error`, {
+        key,
+        field,
+        ...error,
+      });
       throw error;
     }
   }
@@ -75,7 +81,11 @@ class PostgresSearchService extends SearchService<
     try {
       return await this.searchClient.hmget(key, [...fields]);
     } catch (error) {
-      this.logger.error(`postgres-search-get-fields-error`, { key, fields, ...error });
+      this.logger.error(`postgres-search-get-fields-error`, {
+        key,
+        fields,
+        ...error,
+      });
       throw error;
     }
   }
@@ -84,17 +94,24 @@ class PostgresSearchService extends SearchService<
     try {
       return await this.searchClient.hgetall(key);
     } catch (error) {
-      this.logger.error(`postgres-search-get-all-fields-error`, { key, ...error });
+      this.logger.error(`postgres-search-get-all-fields-error`, {
+        key,
+        ...error,
+      });
       throw error;
     }
   }
 
   async deleteFields(key: string, fields: string[]): Promise<number> {
     try {
-      const result = await this.searchClient.hdel(key, ...fields);
+      const result = await this.searchClient.hdel(key, fields);
       return Number(result);
     } catch (error) {
-      this.logger.error(`postgres-delete-fields-error`, { key, fields, ...error });
+      this.logger.error(`postgres-search-delete-fields-error`, {
+        key,
+        fields,
+        ...error,
+      });
       throw error;
     }
   }
@@ -112,7 +129,11 @@ class PostgresSearchService extends SearchService<
       );
       return Number(result);
     } catch (error) {
-      this.logger.error(`postgres-increment-field-error`, { key, field, ...error });
+      this.logger.error(`postgres-increment-field-error`, {
+        key,
+        field,
+        ...error,
+      });
       throw error;
     }
   }
@@ -130,14 +151,22 @@ class PostgresSearchService extends SearchService<
   /**
    * assume aggregation type query
    */
-  async sendIndexedQuery(type: string, queryParams: any[] = []): Promise<string[]> {
+  async sendIndexedQuery(
+    type: string,
+    queryParams: any[] = [],
+  ): Promise<any[]> {
     const [sql, ...params] = queryParams;
     try {
-      const res = await this.pgClient.query(sql, params.length ? params : undefined);
+      const res = await this.pgClient.query(
+        sql,
+        params.length ? params : undefined,
+      );
       return res.rows;
     } catch (error) {
-      console.error('error', error);
-      this.logger.error(`postgres-send-indexed-query-error`, { query: sql, ...error });
+      this.logger.error(`postgres-send-indexed-query-error`, {
+        query: sql,
+        ...error,
+      });
       throw error;
     }
   }

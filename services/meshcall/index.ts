@@ -20,7 +20,7 @@ import {
   MeshCallInterruptParams,
 } from '../../types/meshcall';
 import { StreamData } from '../../types/stream';
-import { ProviderConfig } from '../../types/provider';
+import { ProviderConfig, ProvidersConfig } from '../../types/provider';
 import { HMNS, KeyType } from '../../modules/key';
 import { CronHandler } from '../pipe/functions/cron';
 
@@ -81,14 +81,14 @@ class MeshCall {
   static async findFirstMatching(
     targets: Map<string, HotMesh | Promise<HotMesh>>,
     namespace = HMNS,
-    config: ProviderConfig,
+    config: ProviderConfig | ProvidersConfig,
     options: MeshCallInstanceOptions = {},
   ): Promise<HotMesh | void> {
     for (const [id, hotMeshInstance] of targets) {
       const hotMesh = await hotMeshInstance;
       const appId = hotMesh.engine.appId;
       if (appId === namespace) {
-        if (id.startsWith(hashOptions(config.options))) {
+        if (id.startsWith(MeshCall.hashOptions(config))) {
           if (
             Boolean(options.readonly) == Boolean(hotMesh.engine.router.readonly)
           ) {
@@ -104,12 +104,12 @@ class MeshCall {
    */
   static getHotMeshClient = async (
     namespace: string,
-    connection: ProviderConfig,
+    connection: ProviderConfig | ProvidersConfig,
     options: MeshCallInstanceOptions = {},
   ): Promise<HotMesh> => {
     //namespace isolation requires the connection options to be hashed
     //as multiple intersecting databases can be used by the same service
-    const optionsHash = hashOptions(connection.options);
+    const optionsHash = MeshCall.hashOptions(connection);
     const targetNS = namespace ?? HMNS;
     const connectionNS = `${optionsHash}.${targetNS}`;
     if (MeshCall.engines.has(connectionNS)) {
@@ -119,15 +119,13 @@ class MeshCall {
     }
 
     //create and cache an instance
+    const conType = 'options' in connection ? 'connection' : 'connections';
     const hotMeshClient = HotMesh.init({
       guid: options.guid,
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connection: {
-          class: connection.class,
-          options: connection.options,
-        },
+        [conType]: connection,
         readonly: options.readonly,
       },
     });
@@ -192,7 +190,7 @@ class MeshCall {
    */
   static async getInstance(
     namespace: string,
-    providerConfig: ProviderConfig,
+    providerConfig: ProviderConfig | ProvidersConfig,
     options: MeshCallInstanceOptions = {},
   ): Promise<HotMesh> {
     let hotMeshInstance: HotMesh | void;
@@ -224,6 +222,27 @@ class MeshCall {
   }
 
   /**
+   * connection re-use is important when making repeated calls, but
+   * only if the connection options are an exact match. this method
+   * hashes the connection options to ensure that the same connection
+   */
+  static hashOptions(connection: ProviderConfig | ProvidersConfig): string {
+    if ('options' in connection) {
+      //shorthand format
+      return hashOptions(connection.options);
+    } else {
+      //longhand format (sub, store, stream, pub, search)
+      const response = [];
+      for (const p in connection) {
+        if (!response.includes(connection[p])) {
+          response.push(hashOptions(connection[p]));
+        }
+      }
+      return response.join('');
+    }
+  }
+
+  /**
    * Connects and links a worker function to the mesh
    * @example
    * ```typescript
@@ -244,18 +263,21 @@ class MeshCall {
    */
   static async connect(params: MeshCallConnectParams): Promise<HotMesh> {
     const targetNamespace = params.namespace ?? HMNS;
-    const optionsHash = hashOptions(polyfill.providerConfig(params)?.options);
+    const optionsHash = MeshCall.hashOptions(polyfill.providerConfig(params));
 
     const targetTopic = `${optionsHash}.${targetNamespace}.${params.topic}`;
+    const connection = polyfill.providerConfig(params);
+    const conType = 'options' in connection ? 'connection' : 'connections';
+
     const hotMeshWorker = await HotMesh.init({
       guid: params.guid,
       logLevel: params.logLevel ?? HMSH_LOGLEVEL,
       appId: params.namespace ?? HMNS,
-      engine: { connection: polyfill.providerConfig(params) },
+      engine: { [conType]: connection },
       workers: [
         {
           topic: params.topic,
-          connection: polyfill.providerConfig(params),
+          [conType]: connection,
           callback: async function (input: StreamData) {
             const response = await params.callback.apply(this, input.data.args);
             return {

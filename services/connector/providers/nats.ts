@@ -21,7 +21,9 @@ class NatsConnection extends AbstractConnection<
     try {
       return (await Connect(options)) as NatsClientType;
     } catch (error) {
-      NatsConnection.logger.error(`nats-provider-connection-failed`, { ...error });
+      NatsConnection.logger.error(`nats-provider-connection-failed`, {
+        ...error,
+      });
       throw new Error(`nats-provider-connection-failed: ${error.message}`);
     }
   }

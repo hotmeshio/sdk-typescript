@@ -4,15 +4,10 @@ import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HMNS } from '../../../modules/key';
 import { guid } from '../../../modules/utils';
-import {
-  RedisConnection,
-} from '../../../services/connector/providers/ioredis';
-import {
-  PostgresConnection,
-} from '../../../services/connector/providers/postgres';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import config from '../../$setup/config';
 
-describe('FUNCTIONAL | AWAIT (OR NOT)', () => {
+describe('FUNCTIONAL | AWAIT (OR NOT) IORedis', () => {
   const appConfig = { id: 'awaiter', version: '1' };
   const options = {
     host: config.REDIS_HOST,

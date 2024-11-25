@@ -1,33 +1,38 @@
 import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
-import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
 import { MeshFlowMaxedError } from '../../../modules/errors';
+import { ProvidersConfig, ProviderNativeClient } from '../../../types/provider';
+import {
+  dropTables,
+  ioredis_options as redis_options,
+  postgres_options,
+} from '../../$setup/postgres';
 
 import { example, state as STATE } from './src/workflows';
-import { ProviderConfig } from '../../../types/provider';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
+describe('MESHFLOW | unknown | Postgres', () => {
   let handle: WorkflowHandleService;
   const toThrowCount = 3;
-  const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
+  let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
-    //init Redis and flush db
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
+    await dropTables(postgresClient);
+
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushdb();
   });
@@ -40,12 +45,13 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
-          class: Redis,
-          options,
-        }) as ProviderConfig;
+        const connection = (await Connection.connect({
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        })) as ProvidersConfig;
         expect(connection).toBeDefined();
-        expect(connection.options).toBeDefined();
+        expect(connection.sub).toBeDefined();
       });
     });
   });
@@ -53,7 +59,11 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options } });
+        const client = new Client({ connection: {
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        }});
         handle = await client.workflow.start({
           args: [toThrowCount],
           taskQueue: 'unknown-world',
@@ -68,7 +78,7 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
           },
         });
         expect(handle.workflowId).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
@@ -77,15 +87,16 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
       it('should create and run a worker', async () => {
         const worker = await Worker.create({
           connection: {
-            class: Redis,
-            options,
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
           },
           taskQueue: 'unknown-world',
           workflow: example,
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
@@ -104,7 +115,11 @@ describe('MESHFLOW | unknown | `Workflow Retryable Unknown Error`', () => {
       STATE.count = 0;
 
       //instance a client and start the workflow
-      const client = new Client({ connection: { class: Redis, options } });
+      const client = new Client({ connection: {
+        store: { class: Postgres, options: postgres_options }, //and search
+        stream: { class: Postgres, options: postgres_options },
+        sub: { class: Redis, options: redis_options },
+      }});
       const handle = await client.workflow.start({
         args: [toThrowCount],
         taskQueue: 'unknown-world',

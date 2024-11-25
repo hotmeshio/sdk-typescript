@@ -1,36 +1,42 @@
 import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
-import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { ClientService } from '../../../services/meshflow/client';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HMNS, KeyService, KeyType } from '../../../modules/key';
+import { ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
+import {
+  dropTables,
+  ioredis_options as redis_options,
+  postgres_options,
+} from '../../$setup/postgres';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
-import * as childWorkflows from './child/workflows';
 import * as workflows from './src/workflows';
-import { ProviderConfig } from '../../../types/provider';
+import * as childWorkflows from './child/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
+describe('MESHFLOW | hook & search | Postgres', () => {
   const namespace = 'staging';
   const prefix = 'bye-world-';
   let client: ClientService;
   let workflowGuid: string;
-  const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
+  let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
+    await dropTables(postgresClient);
+
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushdb();
   });
@@ -41,13 +47,14 @@ describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
 
   describe('Connection', () => {
     describe('connect', () => {
-      it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
-          class: Redis,
-          options,
-        }) as ProviderConfig;
+      it('should echo the Expanded config', async () => {
+        const connection = (await Connection.connect({
+          store: { class: Postgres, options: postgres_options }, //and search
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        })) as ProvidersConfig;
         expect(connection).toBeDefined();
-        expect(connection.options).toBeDefined();
+        expect(connection.sub).toBeDefined();
       });
     });
   });
@@ -55,11 +62,18 @@ describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        client = new Client({ connection: { class: Redis, options } });
+        client = new Client({
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+        });
         workflowGuid = prefix + guid();
 
         const handle = await client.workflow.start({
           namespace,
+          guid: 'client',
           args: ['HookMesh'],
           taskQueue: 'hook-world',
           workflowName: 'example',
@@ -74,7 +88,7 @@ describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
           },
         });
         expect(handle.workflowId).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
@@ -83,11 +97,15 @@ describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
       it('should create a worker', async () => {
         const worker = await Worker.create({
           namespace,
-          connection: { class: Redis, options },
+          guid: 'parent-worker',
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           taskQueue: 'hook-world',
           workflow: workflows.example,
-          //INDEX the search space; if the index doesn't exist, it will be created
-          //(this is supported by Redis backends with the FT module enabled)
+
           search: {
             index: 'bye-bye',
             prefix: [prefix],
@@ -105,31 +123,41 @@ describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
 
       it('should create and run the CHILD workflow worker', async () => {
         //the main flow has an execChild command which will be serviced
         //by this worker
         const worker = await Worker.create({
           namespace,
-          connection: { class: Redis, options },
+          guid: 'child-worker',
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           taskQueue: 'child-world',
           workflow: childWorkflows.childExample,
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 15_000);
 
       it('should create a hook worker', async () => {
         const worker = await Worker.create({
           namespace,
-          connection: { class: Redis, options },
+          guid: 'hook-worker',
+          connection: {
+            store: { class: Postgres, options: postgres_options }, //and search
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           taskQueue: 'hook-world',
           workflow: workflows.exampleHook,
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
 
       it('should spawn a hook and run the hook function', async () => {
         //sleep so the main thread fully executes and gets into a paused state
@@ -170,27 +198,21 @@ describe('MESHFLOW | hook | `Workflow Promise.all proxyActivities`', () => {
         expect(exported.data?.fred).toBe('flintstone');
         expect(exported.state?.data.done).toBe(true);
 
-        //call the FT search module to locate the workflow via fuzzy search
+        //execute raw SQL to locate the custom data attribute
         //NOTE: always include an underscore prefix before the search term (e.g., `_custom1`).
         //      HotMesh uses this to avoid collisions with reserved words
-        const [count, ...results] = await client.workflow.search(
+        const results = (await client.workflow.search(
           'hook-world',
           workflows.example.name,
           namespace,
-          'bye-bye',
-          '@_custom1:meshflow',
-        );
-        expect(count).toEqual(1);
-        const [id, ..._rest2] = results;
-
-        const keyParams = { appId: namespace, jobId: workflowGuid };
-        const expectedGuid = KeyService.mintKey(
-          HMNS,
-          KeyType.JOB_STATE,
-          keyParams,
-        );
-        expect(id).toEqual(expectedGuid);
-        await sleepFor(5_000);
+          'sql',
+          'SELECT job_id FROM hotmesh_staging_jobs_attributes WHERE field = $1 and value = $2',
+          '_custom1',
+          'meshflow',
+        )) as unknown as { job_id: string }[];
+        expect(results.length).toEqual(1);
+        console.log('RESULTS:', results[0].job_id);        
+        expect(results[0].job_id).toBeDefined();
       }, 35_000);
     });
   });

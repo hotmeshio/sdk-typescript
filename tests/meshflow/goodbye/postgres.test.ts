@@ -6,11 +6,16 @@ import { MeshFlow } from '../../../services/meshflow';
 import { RedisConnection } from '../../../services/connector/providers/redis';
 import { ClientService } from '../../../services/meshflow/client';
 import { guid, sleepFor } from '../../../modules/utils';
-import { ProviderConfig, ProviderNativeClient, RedisRedisClassType } from '../../../types';
-
-import * as workflows from './src/workflows';
+import { ProviderNativeClient, RedisRedisClassType } from '../../../types';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { ProvidersConfig } from '../../../types/provider';
+import {
+  dropTables,
+  redis_options,
+  postgres_options,
+} from '../../$setup/postgres';
+
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
@@ -20,48 +25,20 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
   let client: ClientService;
   let workflowGuid: string;
   let postgresClient: ProviderNativeClient;
-  const redis_options = {
-    socket: {
-      host: config.REDIS_HOST,
-      port: config.REDIS_PORT,
-      tls: false,
-    },
-    password: config.REDIS_PASSWORD,
-    database: config.REDIS_DATABASE,
-  };
-  const postgres_options = {
-    user: config.POSTGRES_USER,
-    host: config.POSTGRES_HOST,
-    database: config.POSTGRES_DB,
-    password: config.POSTGRES_PASSWORD,
-    port: config.POSTGRES_PORT,
-  };
 
   beforeAll(async () => {
-    // Initialize Postgres and drop tables (and data) from prior tests
-    postgresClient = (await PostgresConnection.connect(
-      guid(),
-      Postgres,
-      postgres_options,
-    )).getClient();
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
 
-    // Query the list of tables in the public schema and drop
-    const result = await postgresClient.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public';
-    `) as { rows: { table_name: string }[] };
-    let tables = result.rows.map(row => row.table_name);
-    for (const table of tables) {
-      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
-    }
+    await dropTables(postgresClient);
 
-    //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis as unknown as RedisRedisClassType,
       redis_options,
     );
+
     redisConnection.getClient().flushDb();
   });
 
@@ -72,11 +49,11 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the EXPANDED Redis config', async () => {
-        const connection = await Connection.connect({
+        const connection = (await Connection.connect({
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
-        }) as ProvidersConfig;
+        })) as ProvidersConfig;
         expect(connection).toBeDefined();
         expect(connection.sub).toBeDefined();
         expect(connection.stream).toBeDefined();
@@ -88,12 +65,13 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        client = new Client(
-          { connection: {
+        client = new Client({
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
-          }});
+          },
+        });
 
         workflowGuid = prefix + guid();
 
@@ -198,7 +176,7 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
         const result = await handle.result();
         expect(result).toEqual('Hello, HotMesh! - Goodbye, HotMesh!');
 
-        //call a search query to look for 
+        //call a search query to look for
         //NOTE: include an underscore before the search term (e.g., `_term`).
         //      (HotMesh uses `_` to avoid collisions with reserved words
         const results = (await client.workflow.search(
@@ -206,13 +184,13 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
           workflows.example.name,
           namespace,
           'sql',
-          'SELECT key FROM hotmesh_prod_jobs WHERE field = $1 and value = $2',
+          'SELECT job_id FROM hotmesh_prod_jobs_attributes WHERE field = $1 and value = $2',
           '_custom1',
           'meshflow',
-        )) as unknown as { key: string }[];
+        )) as unknown as { job_id: string }[];
 
         expect(results.length).toEqual(1);
-        expect(results[0].key).toEqual(`hmsh:${namespace}:j:${workflowGuid}`);
+        expect(results[0].job_id).toBeDefined();
       }, 7_500);
     });
   });

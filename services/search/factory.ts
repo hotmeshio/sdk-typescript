@@ -1,13 +1,14 @@
 import { identifyProvider } from '../../modules/utils';
 import { ILogger } from '../logger';
-
-import { SearchService } from './index';
-import { PostgresSearchService } from './providers/postgres/postgres';
-import { IORedisSearchService } from './providers/redis/ioredis';
-import { RedisSearchService } from './providers/redis/redis';
 import { PostgresClientType } from '../../types/postgres';
 import { ProviderClient } from '../../types/provider';
 import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
+
+import { PostgresSearchService } from './providers/postgres/postgres';
+import { IORedisSearchService } from './providers/redis/ioredis';
+import { RedisSearchService } from './providers/redis/redis';
+
+import { SearchService } from './index';
 
 class SearchServiceFactory {
   static async init(

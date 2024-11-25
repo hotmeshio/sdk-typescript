@@ -15,49 +15,30 @@ import { guid, sleepFor } from '../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../modules/enums';
 import { ProviderNativeClient } from '../../types/provider';
 import { PostgresConnection } from '../../services/connector/providers/postgres';
+import {
+  dropTables,
+  ioredis_options,
+  postgres_options,
+} from '../$setup/postgres';
 
 describe('FUNCTIONAL | HotMesh', () => {
   const appConfig = { id: 'test-app', version: '1' };
   let hotMesh: HotMesh;
   let postgresClient: ProviderNativeClient;
-  const redis_options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };;
-  const postgres_options = {
-    user: config.POSTGRES_USER,
-    host: config.POSTGRES_HOST,
-    database: config.POSTGRES_DB,
-    password: config.POSTGRES_PASSWORD,
-    port: config.POSTGRES_PORT,
-  };
 
   beforeAll(async () => {
     // Initialize Postgres and drop tables (and data) from prior tests
-    postgresClient = (await PostgresConnection.connect(
-      guid(),
-      Postgres,
-      postgres_options,
-    )).getClient();
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
 
-    // Query the list of tables in the public schema and drop
-    const result = await postgresClient.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public';
-    `) as { rows: { table_name: string }[] };
-    let tables = result.rows.map(row => row.table_name);
-    for (const table of tables) {
-      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
-    }
+    await dropTables(postgresClient);
 
     //flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      redis_options,
+      ioredis_options,
     );
     redisConnection.getClient().flushdb();
   });
@@ -78,7 +59,7 @@ describe('FUNCTIONAL | HotMesh', () => {
           connections: {
             store: { class: Postgres, options: postgres_options }, //and search
             stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
+            sub: { class: Redis, options: ioredis_options },
           },
         },
 
@@ -88,7 +69,7 @@ describe('FUNCTIONAL | HotMesh', () => {
             connections: {
               store: { class: Postgres, options: postgres_options }, //and search
               stream: { class: Postgres, options: postgres_options },
-              sub: { class: Redis, options: redis_options },
+              sub: { class: Redis, options: ioredis_options },
             },
             callback: async (streamData: StreamData) => {
               const streamDataResponse: StreamDataResponse = {

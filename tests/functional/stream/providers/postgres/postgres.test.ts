@@ -6,7 +6,10 @@ import { PostgresConnection } from '../../../../../services/connector/providers/
 import { LoggerService } from '../../../../../services/logger';
 import { PostgresStreamService } from '../../../../../services/stream/providers/postgres/postgres';
 import { PostgresClientType } from '../../../../../types/postgres';
-import { ProviderNativeClient, ProviderClient } from '../../../../../types/provider';
+import {
+  ProviderNativeClient,
+  ProviderClient,
+} from '../../../../../types/provider';
 
 describe('FUNCTIONAL | PostgresStreamService', () => {
   let postgresClient: ProviderNativeClient;
@@ -30,7 +33,7 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
         port: 5432,
       })
     ).getClient();
-  
+
     await postgresClient.query('DROP TABLE IF EXISTS stream_hmsh_mytestapp');
   });
 

@@ -1,15 +1,21 @@
 # HotMesh
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-**HotMesh** offers the power of Temporal.io as a serverless swarm. It's backed by Postgres or Redis (*your choice*), and there's no need for a central server! Just install the package and start orchestrating your microservices.
+**HotMesh** offers the power of Temporal.io in a fully serverless architecture.
+
+
+<br/>
 
 ## Features
 
-- **Temporal Your Way**: Orchestrate your microservices without the need for a central server. Just point to your Postgres or Redis instance.
-- **Pluggable Middleware**: Mix and match technologies through a standard interface. Currently supporting **Redis/ValKey/Dragonfly/KVRocks** and **Postgres**.
-- **Decentralized Orchestration**: Centralized data with decentralized execution.
+- **Serverless Orchestration**: Orchestrate your microservices without adding infrastructure.
+- **BYODB**: Bring your own database, and avoid lockin. Choose *Postgres* or *Redis*.
+- **Decentralized Execution**: Centralized persistence with decentralized execution.
 - **Linear Scalability**: Scale your database to scale your application.
-- **Real-Time Analytics**: Gain process insights with real-time analytics.
+- **Process Analytics**: Gain process insights with real-time analytics.
+
+
+<br/>
 
 ## Install
 
@@ -18,10 +24,13 @@ npm install @hotmeshio/hotmesh
 ```
 
 ## Learn
-[📄 Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 Sample Projects](https://github.com/hotmeshio/samples-typescript) | [🎥 Intro (3m)](https://www.loom.com/share/211bd4b4038d42f0ba34374ef5b6f961?sid=7b889a56-f60f-4ccc-84e7-8c2697e548a9) | [🎥 Transactional Workflow (9m)](https://www.loom.com/share/54ffd5266baf4ac6b287578abfd1d821?sid=0db2cef8-ef0d-4e02-a0b7-a1ee14f476ce)
+[🏠 Home](https://hotmesh.io/) | [📄 SDK Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 General Examples](https://github.com/hotmeshio/samples-typescript) | [💼 Temporal Examples](https://github.com/hotmeshio/temporal-patterns-typescript)
 
-## MeshCall | Connect Your Services
-[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your services as a singular mesh, exposing functions as idempotent endpoints. Function responses are cacheable and functions can even run as idempotent cron jobs. Make blazing fast interservice calls that return in milliseconds without the overhead of HTTP.
+
+<br/>
+
+## MeshCall | Fast, Simple, Inter-Service Calls
+[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects any function to the mesh.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Run an idempotent cron job <small>[more]</small></summary>
@@ -140,7 +149,7 @@ npm install @hotmeshio/hotmesh
   <summary style="font-size:1.25em;">Call and <b>cache</b> a function <small>[more]</small></summary>
 
   ### Cache a Function
-  Redis is great for unburdening stressed services. This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies an `id` and `ttl`.
+  This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies an `id` and `ttl`.
 
 1. Make the call from another service (or even the same service). Include an `id` and `ttl` to cache the result for the specified duration.
 
@@ -176,8 +185,11 @@ npm install @hotmeshio/hotmesh
     ```
 </details>
 
+
+<br/>
+
 ## MeshFlow | Transactional Workflow
-[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a drop-in replacement for [Temporal.io](https://temporal.io). If you need to orchestrate your functions as durable workflows, MeshFlow combines the popular Temporal SDK with Redis' *in-memory execution speed*.
+[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a drop-in, serverless replacement for [Temporal.io](https://temporal.io).
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Orchestrate unpredictable activities <small>[more]</small></summary>
@@ -204,10 +216,10 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
 
     ```typescript
     //workflows.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { workflow } from '@hotmeshio/hotmesh';
     import * as activities from './activities';
 
-    const { greet, saludar } = MeshFlow.workflow
+    const { greet, saludar } = workflow
       .proxyActivities<typeof activities>({
         activities
       });
@@ -224,11 +236,11 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
 
     ```typescript
     //client.ts
-    import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
+    import { Client, HotMesh } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
 
     async function run(): Promise<string> {
-      const client = new MeshFlow.Client({
+      const client = new Client({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 }
@@ -247,16 +259,16 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
     }
     ```
 
-4. Finally, create a **worker** and link the workflow function. Workers listen for tasks on their assigned Redis stream and invoke the workflow function each time they receive an event.
+4. Finally, create a **worker** and link the workflow function. Workers listen for tasks on their assigned task queue and invoke the workflow function each time they receive an event.
 
     ```typescript
     //worker.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { worker } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
     import * as workflows from './workflows';
 
     async function run() {
-      const worker = await MeshFlow.Worker.create({
+      const worker = await Worker.create({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 },
@@ -280,10 +292,10 @@ Pause a function and only awaken when a matching signal is received from the out
 
     ```typescript
     //waitForWorkflow.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { workflow } from '@hotmeshio/hotmesh';
 
     export async function waitForExample(): Promise<{hello: string}> {
-      return await MeshFlow.workflow.waitFor<{hello: string}>('my-sig-nal');
+      return await workflow.waitFor<{hello: string}>('my-sig-nal');
       //continue processing, use the payload, etc...
     }
     ```
@@ -292,11 +304,11 @@ Pause a function and only awaken when a matching signal is received from the out
 
     ```typescript
     //client.ts
-    import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
+    import { Client, HotMesh } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
 
     async function run(): Promise<string> {
-      const client = new MeshFlow.Client({
+      const client = new Client({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 }
@@ -318,12 +330,12 @@ Pause a function and only awaken when a matching signal is received from the out
 
     ```typescript
     //worker.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Worker } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
     import * as workflows from './waitForWorkflow';
 
     async function run() {
-      const worker = await MeshFlow.Worker.create({
+      const worker = await Worker.create({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 },
@@ -339,10 +351,10 @@ Pause a function and only awaken when a matching signal is received from the out
 4. Send a signal to awaken the paused function; await the function result.
 
     ```typescript
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Client } from '@hotmeshio/hotmesh';
     import * as Redis from Redis;
 
-    const client = new MeshFlow.Client({
+    const client = new Client({
       connection: {
         class: Redis,
         options: { host: 'redis', port: 6379 }
@@ -373,12 +385,12 @@ Use a standard `Promise` to collate and cache multiple signals. HotMesh will onl
 
     ```typescript
     //waitForWorkflows.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { workflow } from '@hotmeshio/hotmesh';
 
     export async function waitForExample(): Promise<[boolean, number]> {
       const [s1, s2] = await Promise.all([
-        Meshflow.workflow.waitFor<boolean>('my-sig-nal-1'),
-        Meshflow.workflow.waitFor<number>('my-sig-nal-2')
+        workflow.waitFor<boolean>('my-sig-nal-1'),
+        workflow.waitFor<number>('my-sig-nal-2')
       ]);
       //do something with the signal payloads (s1, s2)
       return [s1, s2];
@@ -388,10 +400,10 @@ Use a standard `Promise` to collate and cache multiple signals. HotMesh will onl
 2. Send **two** signals to awaken the paused function.
 
     ```typescript
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Client } from '@hotmeshio/hotmesh';
     import * as Redis from Redis;
 
-    const client = new MeshFlow.Client({
+    const client = new Client({
       connection: {
         class: Redis,
         options: { host: 'redis', port: 6379 }
@@ -425,10 +437,10 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 
     ```typescript
     //recurringWorkflow.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { workflow } from '@hotmeshio/hotmesh';
     import * as activities from './activities';
 
-    const { statusDiagnostic } = MeshFlow.workflow
+    const { statusDiagnostic } = workflow
       .proxyActivities<typeof activities>({
         activities
       });
@@ -436,7 +448,7 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
     export async function recurringExample(someValue: number): Promise<void> {
       do {
         await statusDiagnostic(someValue);
-      } while (await MeshFlow.workflow.sleepFor('1 week'));
+      } while (await workflow.sleepFor('1 week'));
     }
     ```
 
@@ -444,11 +456,11 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 
     ```typescript
     //client.ts
-    import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
+    import { Client, HotMesh } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
 
     async function run(): Promise<string> {
-      const client = new MeshFlow.Client({
+      const client = new Client({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 }
@@ -470,12 +482,12 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 
     ```typescript
     //worker.ts
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Worker } from '@hotmeshio/hotmesh';
     import Redis from 'ioredis';
     import * as workflows from './recurringWorkflow';
 
     async function run() {
-      const worker = await MeshFlow.Worker.create({
+      const worker = await Worker.create({
         connection: {
           class: Redis,
           options: { host: 'redis', port: 6379 },
@@ -491,10 +503,10 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 4. Cancel the recurring workflow (`myRecurring123`) by calling `interrupt`.
 
     ```typescript
-    import { MeshFlow } from '@hotmeshio/hotmesh';
+    import { Client } from '@hotmeshio/hotmesh';
     import * as Redis from Redis;
 
-    const client = new MeshFlow.Client({
+    const client = new Client({
       connection: {
         class: Redis,
         options: { host: 'redis', port: 6379 }
@@ -511,12 +523,10 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
     ```
 </details>
 
+<br/>
+
 ## MeshData | Transactional Analytics
-[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) extends the **MeshFlow** service, combining data record concepts and transactional workflow principles into a single *Operational Data Layer*. 
-
-Deployments with the Redis `FT.SEARCH` module enabled can use the **MeshData** module to merge [OLTP](https://en.wikipedia.org/wiki/Online_transaction_processing) and [OLAP](https://en.wikipedia.org/wiki/Online_analytical_processing) operations into a hybrid transactional/analytics ([HTAP](https://en.wikipedia.org/wiki/Hybrid_transactional/analytical_processing)) system.
-
-*For those Redis deployments without the `FT.SEARCH` module, it's still useful to define a workflow schema. The MeshData class provides convenience methods for reading and writing hash field data to a workflow record (e.g., `get`, `del`, and `incr`).*
+[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) extends the **MeshFlow** service, surfacing transactional workflows as searchable data records.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Create a search index <small>[more]</small></summary>
@@ -541,7 +551,7 @@ This example demonstrates how to define a schema and deploy an index for a 'user
     };
     ```
 
-2. Create the Redis index upon server startup. This one initializes the 'user' index in Redis, using the schema defined in the previous step. It's OK to call `createSearchIndex` multiple times; it will only create the index if it doesn't already exist.
+2. Create the index upon server startup. This one initializes the 'user' index, using the schema defined in the previous step. It's OK to call `createSearchIndex` multiple times; it will only create the index if it doesn't already exist.
 
     ```typescript
     //server.ts
@@ -697,19 +707,21 @@ This example demonstrates how to search for those workflows where a given condit
     ```
 </details> 
 
-## Visualize | OpenTelemetry
-HotMesh's telemetry output provides unmatched insight into long-running, x-service transactions. Add your Honeycomb credentials to any project using HotMesh and HotMesh will emit the full *OpenTelemetry* execution tree organized as a DAG.
+<br/>
 
-## Visualize | HotMesh Dashboard
-The HotMesh dashboard provides a detailed overview of all running workflows. An LLM is included to simplify querying and analyzing workflow data for those deployments that include the Redis `FT.SEARCH` module.
+## Metrics and Monitoring
+HotMesh's **OpenTelemetry** output provides unmatched insight into long-running, cross-service transactions. Add an OpenTelemetry sink to any service where HotMesh is deployed and HotMesh will emit the full **OpenTelemetry** execution tree organized as a single, unified DAG.
 
-## Visualize | RedisInsight
-View commands, streams, data, CPU, load, etc using the RedisInsight data browser.
+The **HotMesh Dashboard** provides a detailed overview of all running workflows. It includes an LLM to simplify querying and analyzing workflow data. An example Web server with REST APIs and the Dashboard (a WebApp) is included in the [samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo.
 
-## Samples
+<br/>
+
+## Examples
 Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo for *tutorials* and instructions on deploying the *HotMesh Dashboard* for visualizing workflows and managing network health.
 
 Refer to the [hotmeshio/temporal-patterns-typescript](https://github.com/hotmeshio/temporal-patterns-typescript) Git repo for examples of common Temporal.io patterns implemented using HotMesh.
+
+<br/>
 
 ## Advanced
 The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).

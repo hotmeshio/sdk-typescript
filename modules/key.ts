@@ -129,38 +129,65 @@ class KeyService {
    */
   static resolveEntityType(abbreviation: string, id = ''): string {
     switch (abbreviation) {
-      case 'a': return 'applications';
-      case 'r': return 'throttles';
-      case 'w': return id === '' ? 'task_priorities' : 'roles';
-      case 't': return id === '' ? 'task_schedules' : 'task_lists';
-      case 'q': return 'events';
-      case 'j': return 'jobs';
-      case 's': return 'stats';
-      case 'v': return 'versions';
-      case 'x': return id === '' ? 'streams' : 'stream_topics';
-      case 'hooks': return 'signal_patterns';
-      case 'signals': return 'signal_registry';
-      case 'sym': return 'symbols';
-      default: return 'unknown_entity';
+      case 'a':
+        return 'applications';
+      case 'r':
+        return 'throttles';
+      case 'w':
+        return id === '' ? 'task_priorities' : 'roles';
+      case 't':
+        return id === '' ? 'task_schedules' : 'task_lists';
+      case 'q':
+        return 'events';
+      case 'j':
+        return 'jobs';
+      case 's':
+        return 'stats';
+      case 'v':
+        return 'versions';
+      case 'x':
+        return id === '' ? 'streams' : 'stream_topics';
+      case 'hooks':
+        return 'signal_patterns';
+      case 'signals':
+        return 'signal_registry';
+      case 'sym':
+        return 'symbols';
+      default:
+        return 'unknown_entity';
     }
   }
 
   static resolveAbbreviation(entity: string): string {
     switch (entity) {
-      case 'applications': return 'a';
-      case 'throttles': return 'r';
-      case 'roles': return 'w';
-      case 'task_schedules': return 't';
-      case 'task_lists': return 't';
-      case 'events': return 'q';
-      case 'jobs': return 'j';
-      case 'stats': return 's';
-      case 'versions': return 'v';
-      case 'streams': return 'x';
-      case 'signal_patterns': return 'hooks';
-      case 'signal_registry': return 'signals';
-      case 'symbols': return 'sym';
-      default: return 'unknown_entity';
+      case 'applications':
+        return 'a';
+      case 'throttles':
+        return 'r';
+      case 'roles':
+        return 'w';
+      case 'task_schedules':
+        return 't';
+      case 'task_lists':
+        return 't';
+      case 'events':
+        return 'q';
+      case 'jobs':
+        return 'j';
+      case 'stats':
+        return 's';
+      case 'versions':
+        return 'v';
+      case 'streams':
+        return 'x';
+      case 'signal_patterns':
+        return 'hooks';
+      case 'signal_registry':
+        return 'signals';
+      case 'symbols':
+        return 'sym';
+      default:
+        return 'unknown_entity';
     }
   }
 }

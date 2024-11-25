@@ -37,11 +37,7 @@ import {
   StatsType,
 } from '../../../../types/stats';
 import { Transitions } from '../../../../types/transition';
-import {
-  formatISODate,
-  getSymKey,
-  sleepFor,
-} from '../../../../modules/utils';
+import { formatISODate, getSymKey, sleepFor } from '../../../../modules/utils';
 import { JobInterruptOptions } from '../../../../types/job';
 import {
   HMSH_SCOUT_INTERVAL_SECONDS,
@@ -477,7 +473,10 @@ abstract class RedisStoreBase<
     for (const { target, value } of stats.index) {
       const indexParams = { ...params, facet: target };
       const indexStatsKey = this.mintKey(KeyType.JOB_STATS_INDEX, indexParams);
-      (privateMulti as any)[this.commands.rpush](indexStatsKey, value.toString());
+      (privateMulti as any)[this.commands.rpush](
+        indexStatsKey,
+        value.toString(),
+      );
     }
     for (const { target, value } of stats.median) {
       const medianParams = { ...params, facet: target };
@@ -526,7 +525,11 @@ abstract class RedisStoreBase<
   ): Promise<IdsData> {
     const transaction = this.transact();
     for (const idsKey of indexKeys) {
-      (transaction as any)[this.commands.lrange](idsKey, idRange[0], idRange[1]); //0,-1 returns all ids
+      (transaction as any)[this.commands.lrange](
+        idsKey,
+        idRange[0],
+        idRange[1],
+      ); //0,-1 returns all ids
     }
     const results = await transaction.exec();
     const output: IdsData = {};

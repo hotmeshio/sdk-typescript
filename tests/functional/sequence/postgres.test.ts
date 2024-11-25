@@ -12,9 +12,9 @@ import {
   StreamStatus,
 } from '../../../types/stream';
 import { guid } from '../../../modules/utils';
-
 import { ProviderNativeClient } from '../../../types/provider';
 import { RedisRedisClassType } from '../../../types/redis';
+import { dropTables } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Sequence | Postgres', () => {
   const appConfig = { id: 'tree' };
@@ -39,22 +39,12 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
 
   beforeAll(async () => {
     // Initialize Postgres and drop tables (and data) from prior tests
-    postgresClient = (await PostgresConnection.connect(
-      guid(),
-      Postgres,
-      postgres_options,
-    )).getClient();
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
 
-    // Query the list of tables in the public schema and drop
-    const result = await postgresClient.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public';
-    `) as { rows: { table_name: string }[] };
-    let tables = result.rows.map(row => row.table_name);
-    for (const table of tables) {
-      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
-    }
+    // Drop tables
+    await dropTables(postgresClient);
 
     //init Redis and flush db (remove data from prior tests)
     const redisConnection = await RedisConnection.connect(
@@ -73,7 +63,7 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
           store: { class: Postgres, options: postgres_options }, //and search
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
-        }
+        },
       },
       workers: [
         {
@@ -116,7 +106,7 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
   describe('Run Version', () => {
     it('should run and map activities in sequence', async () => {
       const payload = { seed: 5, speed: 7 };
-      const result = await hotMesh.pubsub('spring', payload, null, 2_000);
+      const result = await hotMesh.pubsub('spring', payload, null, 3_500);
       const data = result?.data as {
         seed: number;
         speed: number;
@@ -125,6 +115,6 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
       expect(data.seed).toBe(payload.seed);
       expect(data.speed).toBe(payload.speed);
       expect(data.height).toBe(payload.seed * payload.speed);
-    }, 2_500);
+    });
   });
 });

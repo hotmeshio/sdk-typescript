@@ -41,10 +41,10 @@ describe('MESHFLOW | hello | `Random Hello-World` | Redis', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
+        const connection = (await Connection.connect({
           class: Redis,
           options,
-        }) as ProviderConfig;
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });

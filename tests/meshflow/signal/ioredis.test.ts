@@ -5,13 +5,13 @@ import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
+import { ProviderConfig } from '../../../types/provider';
 
 import * as workflows from './src/workflows';
-import { ProviderConfig } from '../../../types/provider';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | loopactivity | `Iterate Same Activity`', () => {
+describe('MESHFLOW | signal | IORedis', () => {
   let handle: WorkflowHandleService;
   const options = {
     host: config.REDIS_HOST,
@@ -38,10 +38,10 @@ describe('MESHFLOW | loopactivity | `Iterate Same Activity`', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
+        const connection = (await Connection.connect({
           class: Redis,
           options,
-        }) as ProviderConfig;
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });
@@ -54,11 +54,10 @@ describe('MESHFLOW | loopactivity | `Iterate Same Activity`', () => {
         const client = new Client({ connection: { class: Redis, options } });
         //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
-          args: [],
-          taskQueue: 'loop-world',
+          args: ['ColdMush'],
+          taskQueue: 'hello-world',
           workflowName: 'example',
-          workflowId: 'workflow-' + guid(),
-          expire: 120, //ensures the failed workflows aren't scrubbed too soon (so they can be reviewed)
+          workflowId: guid(),
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -69,8 +68,11 @@ describe('MESHFLOW | loopactivity | `Iterate Same Activity`', () => {
     describe('create', () => {
       it('should create and run a worker', async () => {
         const worker = await Worker.create({
-          connection: { class: Redis, options },
-          taskQueue: 'loop-world',
+          connection: {
+            class: Redis,
+            options,
+          },
+          taskQueue: 'hello-world',
           workflow: workflows.example,
         });
         await worker.run();
@@ -81,9 +83,23 @@ describe('MESHFLOW | loopactivity | `Iterate Same Activity`', () => {
 
   describe('WorkflowHandle', () => {
     describe('result', () => {
-      it('run await 3 functions and one sleepFor in parallel', async () => {
+      it('should return the workflow execution result', async () => {
+        //signal using the original client handle
+        await sleepFor(3_000);
+        await handle.signal('abcdefg', { name: 'WarmMash' });
+
+        //signal by instancing a new client connection
+        await sleepFor(1_000);
+        const client = new Client({ connection: { class: Redis, options } });
+        await client.workflow.signal('hijklmnop', { name: 'WarnCrash' });
+
         const result = await handle.result();
-        expect(result).toEqual(['Hello, 1!', 'Hello, 2!', 'Hello, 3!', 5]);
+        expect(result).toEqual([
+          'Hello, stranger!',
+          { name: 'WarmMash' },
+          { name: 'WarnCrash' },
+          'Hello, ColdMush!',
+        ]);
       }, 15_000);
     });
   });

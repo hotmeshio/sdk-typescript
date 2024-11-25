@@ -4,16 +4,17 @@ import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import { MeshFlowFatalError } from '../../../modules/errors';
 import { guid, sleepFor } from '../../../modules/utils';
+import { ProviderConfig } from '../../../types/provider';
 
 import * as workflows from './src/workflows';
-import { ProviderConfig } from '../../../types/provider';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | sleep | `Workflow Promise.all proxyActivities`', () => {
+describe('MESHFLOW | fatal | IORedis', () => {
+  const NAME = 'hot-mess';
   let handle: WorkflowHandleService;
-  const errorCycles = 3;
   const options = {
     host: config.REDIS_HOST,
     port: config.REDIS_PORT,
@@ -39,10 +40,10 @@ describe('MESHFLOW | sleep | `Workflow Promise.all proxyActivities`', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
+        const connection = (await Connection.connect({
           class: Redis,
           options,
-        }) as ProviderConfig;
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
         expect(connection.options).toBeDefined();
       });
@@ -53,13 +54,12 @@ describe('MESHFLOW | sleep | `Workflow Promise.all proxyActivities`', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({ connection: { class: Redis, options } });
-        //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
-          args: [{ amount: errorCycles }],
-          taskQueue: 'sleep-world',
+          args: [{ name: NAME }],
+          taskQueue: 'fatal-world',
           workflowName: 'example',
           workflowId: guid(),
-          expire: 120,
+          expire: 120, //ensures the failed workflows aren't scrubbed too soon (so they can be reviewed (but unnecessary for the test to succeed))
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -74,7 +74,7 @@ describe('MESHFLOW | sleep | `Workflow Promise.all proxyActivities`', () => {
             class: Redis,
             options,
           },
-          taskQueue: 'sleep-world',
+          taskQueue: 'fatal-world',
           workflow: workflows.default.example,
         });
         await worker.run();
@@ -85,10 +85,16 @@ describe('MESHFLOW | sleep | `Workflow Promise.all proxyActivities`', () => {
 
   describe('WorkflowHandle', () => {
     describe('result', () => {
-      it('should return the workflow execution result', async () => {
-        const result = await handle.result();
-        expect(result).toEqual(errorCycles);
-      }, 20_000);
+      it('should throw the fatal error with `code` and `message`', async () => {
+        try {
+          //the activity will throw `598 [MeshFlowFatalError]; the workflow will rethrow;`
+          await handle.result();
+          throw new Error('This should not be thrown');
+        } catch (err) {
+          expect(err.message).toEqual(`stop-retrying-please-${NAME}`);
+          expect(err.code).toEqual(new MeshFlowFatalError('').code);
+        }
+      });
     });
   });
 });

@@ -94,7 +94,8 @@ export class WorkerService {
     if (WorkerService.instances.has(targetTopic)) {
       return await WorkerService.instances.get(targetTopic);
     }
-    const connectionType = 'options' in config?.connection ? 'connection' : 'connections';
+    const connectionType =
+      'options' in config?.connection ? 'connection' : 'connections';
     const hotMeshClient = HotMesh.init({
       logLevel: options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
@@ -114,7 +115,7 @@ export class WorkerService {
     } else {
       //longhand format (sub, store, stream, pub, search)
       const response = [];
-      for (let p in connection) {
+      for (const p in connection) {
         if (!response.includes(connection[p])) {
           response.push(hashOptions(connection[p]));
         }
@@ -271,7 +272,8 @@ export class WorkerService {
     const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
-    const connectionType = 'options' in providerConfig ? 'connection' : 'connections';
+    const connectionType =
+      'options' in providerConfig ? 'connection' : 'connections';
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid ? `${config.guid}XA` : undefined,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
@@ -371,7 +373,8 @@ export class WorkerService {
     const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
-    const connectionType = 'options' in providerConfig ? 'connection' : 'connections';
+    const connectionType =
+      'options' in providerConfig ? 'connection' : 'connections';
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,

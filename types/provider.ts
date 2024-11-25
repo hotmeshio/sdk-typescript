@@ -69,13 +69,13 @@ export type ProviderConfig = {
   options: StringAnyType;
 };
 
-export type ProvidersConfig  = {
+export type ProvidersConfig = {
   sub: ProviderConfig;
   store: ProviderConfig;
   stream: ProviderConfig;
   pub?: ProviderConfig;
   search?: ProviderConfig;
-}
+};
 
 export interface SetOptions {
   nx?: boolean;
@@ -106,17 +106,13 @@ export interface KVSQLProviderTransaction extends ProviderTransaction {
   hset(
     key: string,
     fields: Record<string, string>,
-    options?: HSetOptions
+    options?: HSetOptions,
   ): ProviderTransaction;
   hget(key: string, field: string): ProviderTransaction;
   hdel(key: string, fields: string[]): ProviderTransaction;
   hmget(key: string, fields: string[]): ProviderTransaction;
   hgetall(key: string): ProviderTransaction;
-  hincrbyfloat(
-    key: string,
-    field: string,
-    value: number
-  ): ProviderTransaction;
+  hincrbyfloat(key: string, field: string, value: number): ProviderTransaction;
   hscan(key: string, cursor: string, count?: number): ProviderTransaction;
   lrange(key: string, start: number, end: number): ProviderTransaction;
   rpush(key: string, value: string): ProviderTransaction;
@@ -126,20 +122,20 @@ export interface KVSQLProviderTransaction extends ProviderTransaction {
     source: string,
     destination: string,
     srcPosition: 'LEFT' | 'RIGHT',
-    destPosition: 'LEFT' | 'RIGHT'
+    destPosition: 'LEFT' | 'RIGHT',
   ): ProviderTransaction;
   zadd(
     key: string,
     score: number,
     member: string,
-    options?: ZAddOptions
+    options?: ZAddOptions,
   ): ProviderTransaction;
   zrange(key: string, start: number, stop: number): ProviderTransaction;
   zrangebyscore(key: string, min: number, max: number): ProviderTransaction;
   zrangebyscore_withscores(
     key: string,
     min: number,
-    max: number
+    max: number,
   ): ProviderTransaction;
   zrem(key: string, member: string): ProviderTransaction;
   zrank(key: string, member: string): ProviderTransaction;

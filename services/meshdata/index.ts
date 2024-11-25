@@ -1,4 +1,4 @@
-import { polyfill, s } from '../../modules/utils';
+import { polyfill, s, sleepFor } from '../../modules/utils';
 import { MeshFlow } from '../meshflow';
 import { HotMesh } from '../hotmesh';
 import {
@@ -31,7 +31,11 @@ import {
 import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
 import { MAX_DELAY } from '../../modules/enums';
 import { ProviderConfig } from '../../types';
-import { ProviderClass, ProviderOptions, ProvidersConfig } from '../../types/provider';
+import {
+  ProviderClass,
+  ProviderOptions,
+  ProvidersConfig,
+} from '../../types/provider';
 
 /**
  * The `MeshData` service wraps the `MeshFlow` service.
@@ -321,8 +325,11 @@ class MeshData {
    * @private
    */
   async getConnection() {
-    return this.connections ?? await MeshFlow.Connection.connect(
-      polyfill.meshDataConfig(this) as ProviderConfig,
+    return (
+      this.connections ??
+      await MeshFlow.Connection.connect(
+        polyfill.meshDataConfig(this) as ProviderConfig,
+      )
     );
   }
 
@@ -733,7 +740,8 @@ class MeshData {
       {},
       namespace,
     );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await sleepFor(1000);
+
     //other activities may still be running; call `interrupt` to stop all threads
     await this.interrupt(
       entity,
@@ -1216,7 +1224,7 @@ class MeshData {
    * @param {string} id - the job id
    * @param {CallOptions} [options={}] - call options
    *
-   * @returns {Promise<number>} - count
+   * @returns {Promise<number>} - count. The number inserted (Postgres) / updated(Redis)
    * @example
    * // set the state of a function
    * const count = await meshData.set('greeting', 'jsmith123', { search: { data: { fred: 'flintstone', barney: 'rubble' } } });

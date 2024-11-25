@@ -1,6 +1,6 @@
 import { MeshOS } from '../services/meshos';
-import { WorkflowSearchSchema } from './meshflow';
 
+import { WorkflowSearchSchema } from './meshflow';
 import * as Types from './provider';
 import { ProviderConfig } from './provider';
 

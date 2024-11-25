@@ -1,18 +1,13 @@
 import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
-import config from '../../$setup/config';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { MathHandler } from '../../../services/pipe/functions/math';
-import {
-  RedisConnection,
-} from '../../../services/connector/providers/ioredis';
-import {
-  PostgresConnection,
-} from '../../../services/connector/providers/postgres';
+import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { QuorumService } from '../../../services/quorum';
 import {
   StreamData,
@@ -26,45 +21,24 @@ import {
   ThrottleOptions,
 } from '../../../types/quorum';
 import { ProviderNativeClient } from '../../../types/provider';
+import {
+  dropTables,
+  ioredis_options as redis_options,
+  postgres_options,
+} from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Quorum', () => {
   const appConfig = { id: 'calc', version: '1' };
   let hotMesh: HotMesh;
   let postgresClient: ProviderNativeClient;
-  const redis_options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
-  const postgres_options = {
-    user: config.POSTGRES_USER,
-    host: config.POSTGRES_HOST,
-    database: config.POSTGRES_DB,
-    password: config.POSTGRES_PASSWORD,
-    port: config.POSTGRES_PORT,
-  };
 
   beforeAll(async () => {
-    // Initialize Postgres and drop tables (and data) from prior tests
-    postgresClient = (await PostgresConnection.connect(
-      guid(),
-      Postgres,
-      postgres_options,
-    )).getClient();
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
 
-    // Query the list of tables in the public schema and drop
-    const result = await postgresClient.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public';
-    `) as { rows: { table_name: string }[] };
-    let tables = result.rows.map(row => row.table_name);
-    for (const table of tables) {
-      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
-    }
+    await dropTables(postgresClient);
 
-    //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
@@ -72,7 +46,6 @@ describe('FUNCTIONAL | Quorum', () => {
     );
     redisConnection.getClient().flushdb();
 
-    //init/activate HotMesh (test both `engine` and `worker` roles)
     const config: HotMeshConfig = {
       appId: appConfig.id,
       namespace: HMNS,

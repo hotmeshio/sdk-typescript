@@ -7,10 +7,11 @@ import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/redis';
 import { ProviderNativeClient, RedisRedisClassType } from '../../../types';
-
-import * as workflows from './src/workflows';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { ProvidersConfig } from '../../../types/provider';
+import { dropTables } from '../../$setup/postgres';
+
+import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
@@ -36,22 +37,11 @@ describe('MESHFLOW | hello | `Random Hello-World` | Postgres', () => {
 
   beforeAll(async () => {
     // Initialize Postgres and drop tables (and data) from prior tests
-    postgresClient = (await PostgresConnection.connect(
-      guid(),
-      Postgres,
-      postgres_options,
-    )).getClient();
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
 
-    // Query the list of tables in the public schema and drop
-    const result = await postgresClient.query(`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public';
-    `) as { rows: { table_name: string }[] };
-    let tables = result.rows.map(row => row.table_name);
-    for (const table of tables) {
-      await postgresClient.query(`DROP TABLE IF EXISTS ${table}`);
-    }
+    await dropTables(postgresClient);
 
     //init Redis and flush db
     const redisConnection = await RedisConnection.connect(
@@ -70,11 +60,11 @@ describe('MESHFLOW | hello | `Random Hello-World` | Postgres', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
+        const connection = (await Connection.connect({
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
-        }) as ProvidersConfig;
+        })) as ProvidersConfig;
         expect(connection).toBeDefined();
         expect(connection.sub).toBeDefined();
         expect(connection.stream).toBeDefined();
@@ -86,12 +76,13 @@ describe('MESHFLOW | hello | `Random Hello-World` | Postgres', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client(
-          { connection: {
+        const client = new Client({
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
-          }});
+          },
+        });
 
         //NOTE: `handle` is a global variable.
         handle = await client.workflow.start({
@@ -113,10 +104,10 @@ describe('MESHFLOW | hello | `Random Hello-World` | Postgres', () => {
       it('should create and run a worker', async () => {
         const worker = await Worker.create({
           connection: {
-          store: { class: Postgres, options: postgres_options },
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
-        },
+            store: { class: Postgres, options: postgres_options },
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
           taskQueue: 'hello-world',
           workflow: workflows.example,
         });

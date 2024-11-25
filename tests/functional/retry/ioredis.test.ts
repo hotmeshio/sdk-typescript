@@ -14,7 +14,7 @@ import {
 } from '../../../types/stream';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
-describe('FUNCTIONAL | Retry', () => {
+describe('FUNCTIONAL | Retry | IORedis', () => {
   const appConfig = { id: 'calc', version: '1' };
   const options = {
     host: config.REDIS_HOST,

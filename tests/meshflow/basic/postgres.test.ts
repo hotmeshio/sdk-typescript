@@ -1,19 +1,27 @@
 import * as Redis from 'redis';
+import { Client as Postgres } from 'pg';
 
 import config from '../../$setup/config';
 import { deterministicRandom, guid, sleepFor } from '../../../modules/utils';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/redis';
-import { ProviderConfig, RedisRedisClassType } from '../../../types';
+import {
+  ProviderConfig,
+  ProviderNativeClient,
+  RedisRedisClassType,
+} from '../../../types';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
+import { dropTables } from '../../$setup/postgres';
 
 import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | basic | `MeshFlow Foundational`', () => {
+describe('MESHFLOW | basic | `MeshFlow Foundational` | Postgres', () => {
   let handle: WorkflowHandleService;
-  const options = {
+  let postgresClient: ProviderNativeClient;
+  const redis_options = {
     socket: {
       host: config.REDIS_HOST,
       port: config.REDIS_PORT,
@@ -22,13 +30,25 @@ describe('MESHFLOW | basic | `MeshFlow Foundational`', () => {
     password: config.REDIS_PASSWORD,
     database: config.REDIS_DATABASE,
   };
+  const postgres_options = {
+    user: config.POSTGRES_USER,
+    host: config.POSTGRES_HOST,
+    database: config.POSTGRES_DB,
+    password: config.POSTGRES_PASSWORD,
+    port: config.POSTGRES_PORT,
+  };
 
   beforeAll(async () => {
-    //init Redis and flush db
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
+
+    await dropTables(postgresClient);
+
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis as unknown as RedisRedisClassType,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushDb();
   });
@@ -41,12 +61,12 @@ describe('MESHFLOW | basic | `MeshFlow Foundational`', () => {
   describe('Connection', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
-        const connection = await Connection.connect({
-          class: Redis,
-          options,
-        }) as ProviderConfig;
+        const connection = (await Connection.connect({
+          store: { class: Postgres, options: postgres_options },
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
-        expect(connection.options).toBeDefined();
       });
     });
   });
@@ -54,7 +74,13 @@ describe('MESHFLOW | basic | `MeshFlow Foundational`', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: { class: Redis, options } });
+        const client = new Client({
+          connection: {
+            store: { class: Postgres, options: postgres_options },
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+        });
         handle = await client.workflow.start({
           args: ['HotMesh'],
           taskQueue: 'basic-world',
@@ -63,15 +89,16 @@ describe('MESHFLOW | basic | `MeshFlow Foundational`', () => {
           expire: 600,
         });
         expect(handle.workflowId).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
   describe('Worker', () => {
     describe('create', () => {
       const connection = {
-        class: Redis,
-        options,
+        store: { class: Postgres, options: postgres_options },
+        stream: { class: Postgres, options: postgres_options },
+        sub: { class: Redis, options: redis_options },
       };
       const taskQueue = 'basic-world';
 
@@ -83,7 +110,7 @@ describe('MESHFLOW | basic | `MeshFlow Foundational`', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
 
       it('should create and run a child worker', async () => {
         const worker = await Worker.create({
@@ -93,7 +120,7 @@ describe('MESHFLOW | basic | `MeshFlow Foundational`', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 

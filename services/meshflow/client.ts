@@ -101,7 +101,8 @@ export class ClientService {
     }
 
     //create and cache an instance
-    const connectionType = 'options' in this.connection ? 'connection' : 'connections';
+    const connectionType =
+      'options' in this.connection ? 'connection' : 'connections';
     const hotMeshClient = HotMesh.init({
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
@@ -147,7 +148,7 @@ export class ClientService {
     } else {
       //longhand format (sub, store, stream, pub, search)
       const response = [];
-      for (let p in this.connection) {
+      for (const p in this.connection) {
         if (!response.includes(this.connection[p])) {
           response.push(hashOptions(this.connection[p]));
         }
