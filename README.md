@@ -1,7 +1,7 @@
 # HotMesh
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-**HotMesh** offers the power of Temporal.io in a fully serverless architecture.
+**HotMesh** offers the power of [Temporal.io](https://temporal.io) in a fully serverless architecture.
 
 
 <br/>
@@ -9,10 +9,9 @@
 ## Features
 
 - **Serverless Orchestration**: Orchestrate your microservices without adding infrastructure.
-- **BYODB**: Bring your own database, and avoid lockin. Choose *Postgres* or *Redis*.
-- **Decentralized Execution**: Centralized persistence with decentralized execution.
+- **No Vendor Lock-in**: Use your preferred database: *Postgres*, *Redis*, ...
 - **Linear Scalability**: Scale your database to scale your application.
-- **Process Analytics**: Gain process insights with real-time analytics.
+- **Process Analytics**: Gain process insights with optional analytics.
 
 
 <br/>
@@ -725,3 +724,9 @@ Refer to the [hotmeshio/temporal-patterns-typescript](https://github.com/hotmesh
 
 ## Advanced
 The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).
+
+<br/>
+
+## Disclaimer
+
+This project is not affiliated with, endorsed by, or sponsored by Temporal Technologies, Inc. Temporal is a trademark of Temporal Technologies, Inc., and all references to Temporal and related technologies are for educational and demonstration purposes only.
