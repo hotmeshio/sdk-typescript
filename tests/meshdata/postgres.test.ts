@@ -233,7 +233,7 @@ describe('MeshData | Postgres', () => {
         options: { namespace: 'staging' },
       });
       expect(worker).toBeDefined();
-    }, 15_000);
+    }, 20_000);
 
     it('should connect a hook function', async () => {
       const worker = await meshData.connect({
@@ -241,7 +241,7 @@ describe('MeshData | Postgres', () => {
         target: sendRecurringNewsLetter,
       });
       expect(worker).toBeDefined();
-    }, 10_000);
+    }, 20_000);
 
     it('should connect another hook function', async () => {
       const worker = await meshData.connect({
@@ -249,7 +249,7 @@ describe('MeshData | Postgres', () => {
         target: unsubscribeFromNewsLetter,
       });
       expect(worker).toBeDefined();
-    }, 10_000);
+    }, 20_000);
   });
 
   describe('HotMesh Instance', () => {

@@ -1,7 +1,7 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.3.16",
-  "description": "Unbreakable Workflows",
+  "version": "0.3.17",
+  "description": "Serverless Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
   "repository": {
@@ -78,6 +78,7 @@
   },
   "keywords": [
     "Serverless Orchestration",
+    "Serverless Workflow",
     "Durable Workflow",
     "Operational Data",
     "Service Mesh",

@@ -631,7 +631,7 @@ export const hashModule = (context: KVSQL) => ({
       return Promise.resolve({ cursor: 0, keys: [] });
     } else {
       const res = await context.pgClient.query(sql, params);
-      const keys = res.rows.map((row) => row.id);
+      const keys = res.rows.map((row) => row.key);
       const newCursor = cursor + res.rowCount;
       return { cursor: newCursor, keys };
     }
@@ -661,7 +661,6 @@ export const hashModule = (context: KVSQL) => ({
   
     params.push(cursor.toString());
     params.push(count.toString());
-  
     return { sql, params };
   },
 });
