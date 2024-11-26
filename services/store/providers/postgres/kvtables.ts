@@ -89,7 +89,7 @@ export const KVTables = (context: PostgresStoreService) => ({
     const tableNames = this.getTableNames(appName);
 
     const checkTablePromises = tableNames.map((tableName) =>
-      client.query(`SELECT to_regclass('public.${tableName}') AS table`),
+      client.query(`SELECT to_regclass('${tableName}') AS table`),
     );
 
     const results = await Promise.all(checkTablePromises);
@@ -102,26 +102,32 @@ export const KVTables = (context: PostgresStoreService) => ({
   ): Promise<void> {
     // Begin transaction
     await client.query('BEGIN');
-
-    const tableDefinitions = this.getTableDefinitions(
-      context.storeClient.safeName(appName),
-    );
-
+  
+    // Sanitize schema name
+    const schemaName = context.storeClient.safeName(appName);
+  
+    // Create schema if it doesn't exist
+    await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName};`);
+  
+    const tableDefinitions = this.getTableDefinitions(appName);
+  
     for (const tableDef of tableDefinitions) {
+      const fullTableName = `${tableDef.schema}.${tableDef.name}`;
+  
       switch (tableDef.type) {
         case 'string':
           await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+            CREATE TABLE IF NOT EXISTS ${fullTableName} (
               key TEXT PRIMARY KEY,
               value TEXT,
               expiry TIMESTAMP WITH TIME ZONE
             );
           `);
           break;
-
+  
         case 'hash':
           await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+            CREATE TABLE IF NOT EXISTS ${fullTableName} (
               key TEXT NOT NULL,
               field TEXT NOT NULL,
               value TEXT,
@@ -130,21 +136,25 @@ export const KVTables = (context: PostgresStoreService) => ({
             );
           `);
           break;
-
+  
         case 'jobhash':
-          // Create the enum type// Create the enum type
+          // Create the enum type in the schema
           await client.query(`
             DO $$
             BEGIN
-              IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'type_enum') THEN
-                CREATE TYPE type_enum AS ENUM ('jmark', 'hmark', 'status', 'jdata', 'adata', 'udata', 'other');
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_type t
+                JOIN pg_namespace n ON n.oid = t.typnamespace
+                WHERE t.typname = 'type_enum' AND n.nspname = '${schemaName}'
+              ) THEN
+                CREATE TYPE ${schemaName}.type_enum AS ENUM ('jmark', 'hmark', 'status', 'jdata', 'adata', 'udata', 'other');
               END IF;
             END$$;
           `);
 
           // Create the main jobs table with partitioning on id
           await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+            CREATE TABLE IF NOT EXISTS ${fullTableName} (
               id UUID DEFAULT gen_random_uuid(),
               key TEXT NOT NULL,
               entity TEXT,
@@ -156,40 +166,40 @@ export const KVTables = (context: PostgresStoreService) => ({
               PRIMARY KEY (id)  -- Primary key on id which is also our partitioning key
             ) PARTITION BY HASH (id);
           `);
-
+  
           // Create partitions using a DO block
           await client.query(`
             DO $$
             BEGIN
               FOR i IN 0..7 LOOP
                 EXECUTE format(
-                  'CREATE TABLE IF NOT EXISTS ${tableDef.name}_part_%s PARTITION OF ${tableDef.name} 
+                  'CREATE TABLE IF NOT EXISTS ${fullTableName}_part_%s PARTITION OF ${fullTableName} 
                   FOR VALUES WITH (modulus 8, remainder %s)',
                   i, i
                 );
               END LOOP;
             END$$;
           `);
-
+  
           // Create optimized indexes
           await client.query(`
             CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expired_at 
-            ON ${tableDef.name} (key, expired_at) INCLUDE (is_live);
+            ON ${fullTableName} (key, expired_at) INCLUDE (is_live);
           `);
-
+  
           await client.query(`
             CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_entity_status 
-            ON ${tableDef.name} (entity, status);
+            ON ${fullTableName} (entity, status);
           `);
-
+  
           await client.query(`
             CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_expired_at 
-            ON ${tableDef.name} (expired_at);
+            ON ${fullTableName} (expired_at);
           `);
-
-          // Create function to update is_live flag
+  
+          // Create function to update is_live flag in the schema
           await client.query(`
-            CREATE OR REPLACE FUNCTION update_is_live()
+            CREATE OR REPLACE FUNCTION ${schemaName}.update_is_live()
             RETURNS TRIGGER AS $$
             BEGIN
               NEW.is_live := NEW.expired_at IS NULL OR NEW.expired_at > NOW();
@@ -197,23 +207,23 @@ export const KVTables = (context: PostgresStoreService) => ({
             END;
             $$ LANGUAGE plpgsql;
           `);
-
+  
           // Create trigger for is_live updates
           await client.query(`
             CREATE TRIGGER trg_update_is_live
-            BEFORE INSERT OR UPDATE ON ${tableDef.name}
-            FOR EACH ROW EXECUTE PROCEDURE update_is_live();
+            BEFORE INSERT OR UPDATE ON ${fullTableName}
+            FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.update_is_live();
           `);
-
+  
           // Create function to enforce uniqueness of live jobs
           await client.query(`
-            CREATE OR REPLACE FUNCTION enforce_live_job_uniqueness()
+            CREATE OR REPLACE FUNCTION ${schemaName}.enforce_live_job_uniqueness()
             RETURNS TRIGGER AS $$
             BEGIN
               IF (NEW.expired_at IS NULL OR NEW.expired_at > NOW()) THEN
                 PERFORM pg_advisory_xact_lock(hashtextextended(NEW.key, 0));
                 IF EXISTS (
-                  SELECT 1 FROM ${tableDef.name}
+                  SELECT 1 FROM ${fullTableName}
                   WHERE key = NEW.key 
                   AND (expired_at IS NULL OR expired_at > NOW())
                   AND id <> NEW.id
@@ -225,55 +235,56 @@ export const KVTables = (context: PostgresStoreService) => ({
             END;
             $$ LANGUAGE plpgsql;
           `);
-
+  
           // Create trigger for uniqueness enforcement
           await client.query(`
             CREATE TRIGGER trg_enforce_live_job_uniqueness
-            BEFORE INSERT OR UPDATE ON ${tableDef.name}
-            FOR EACH ROW EXECUTE PROCEDURE enforce_live_job_uniqueness();
+            BEFORE INSERT OR UPDATE ON ${fullTableName}
+            FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.enforce_live_job_uniqueness();
           `);
 
           // Create the attributes table with partitioning
+          const attributesTableName = `${fullTableName}_attributes`;
           await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name}_attributes (
+            CREATE TABLE IF NOT EXISTS ${attributesTableName} (
               job_id UUID NOT NULL,
               field TEXT NOT NULL,
               value TEXT,
-              type type_enum NOT NULL,
+              type ${schemaName}.type_enum NOT NULL,
               PRIMARY KEY (job_id, field),
-              FOREIGN KEY (job_id) REFERENCES ${tableDef.name} (id) ON DELETE CASCADE
+              FOREIGN KEY (job_id) REFERENCES ${fullTableName} (id) ON DELETE CASCADE
             ) PARTITION BY HASH (job_id);
           `);
-
+  
           // Create partitions for attributes table
           await client.query(`
             DO $$
             BEGIN
               FOR i IN 0..7 LOOP
                 EXECUTE format(
-                  'CREATE TABLE IF NOT EXISTS ${tableDef.name}_attributes_part_%s PARTITION OF ${tableDef.name}_attributes 
+                  'CREATE TABLE IF NOT EXISTS ${attributesTableName}_part_%s PARTITION OF ${attributesTableName} 
                   FOR VALUES WITH (modulus 8, remainder %s)',
                   i, i
                 );
               END LOOP;
             END$$;
           `);
-
+  
           // Create indexes for attributes table
           await client.query(`
             CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_type_field 
-            ON ${tableDef.name}_attributes (type, field);
+            ON ${attributesTableName} (type, field);
           `);
-
+  
           await client.query(`
             CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_field 
-            ON ${tableDef.name}_attributes (field);
+            ON ${attributesTableName} (field);
           `);
           break;
-
+  
         case 'list':
           await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+            CREATE TABLE IF NOT EXISTS ${fullTableName} (
               key TEXT NOT NULL,
               index BIGINT NOT NULL,
               value TEXT,
@@ -283,13 +294,13 @@ export const KVTables = (context: PostgresStoreService) => ({
           `);
           await client.query(`
             CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expiry 
-            ON ${tableDef.name} (key, expiry);
+            ON ${fullTableName} (key, expiry);
           `);
           break;
-
+  
         case 'sorted_set':
           await client.query(`
-            CREATE TABLE IF NOT EXISTS ${tableDef.name} (
+            CREATE TABLE IF NOT EXISTS ${fullTableName} (
               key TEXT NOT NULL,
               member TEXT NOT NULL,
               score DOUBLE PRECISION NOT NULL,
@@ -299,16 +310,16 @@ export const KVTables = (context: PostgresStoreService) => ({
           `);
           await client.query(`
             CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_score_member 
-            ON ${tableDef.name} (key, score, member);
+            ON ${fullTableName} (key, score, member);
           `);
           break;
-
+  
         default:
           context.logger.warn(`Unknown table type for ${tableDef.name}`);
           break;
       }
     }
-
+  
     // Commit transaction
     await client.query('COMMIT');
   },
@@ -338,80 +349,98 @@ export const KVTables = (context: PostgresStoreService) => ({
     ];
 
     tablesWithAppName.forEach((table) => {
-      tableNames.push(`hotmesh_${context.storeClient.safeName(appName)}_${table}`);
+      tableNames.push(`${context.storeClient.safeName(appName)}.${table}`);
     });
 
     return tableNames;
   },
 
-  getTableDefinitions(appName: string): Array<{ name: string; type: string }> {
+  getTableDefinitions(appName: string): Array<{ schema: string; name: string; type: string }> {
+    const schemaName = context.storeClient.safeName(appName);
+  
     const tableDefinitions = [
       {
+        schema: 'public',
         name: 'hotmesh_applications',
         type: 'hash',
       },
       {
-        name: `hotmesh_connections`,
+        schema: 'public',
+        name: 'hotmesh_connections',
         type: 'hash',
       },
       {
-        name: `hotmesh_${appName}_throttles`,
+        schema: schemaName,
+        name: 'throttles',
         type: 'hash',
       },
       {
-        name: `hotmesh_${appName}_roles`,
+        schema: schemaName,
+        name: 'roles',
         type: 'string',
       },
       {
-        name: `hotmesh_${appName}_task_schedules`,
+        schema: schemaName,
+        name: 'task_schedules',
         type: 'sorted_set',
       },
       {
-        name: `hotmesh_${appName}_task_priorities`,
+        schema: schemaName,
+        name: 'task_priorities',
         type: 'sorted_set',
       },
       {
-        name: `hotmesh_${appName}_task_lists`,
+        schema: schemaName,
+        name: 'task_lists',
         type: 'list',
       },
       {
-        name: `hotmesh_${appName}_events`,
+        schema: schemaName,
+        name: 'events',
         type: 'hash',
       },
       {
-        name: `hotmesh_${appName}_jobs`,
-        type: 'jobhash', //adds partitioning, indexes, and enum type
+        schema: schemaName,
+        name: 'jobs',
+        type: 'jobhash', // Adds partitioning, indexes, and enum type
       },
       {
-        name: `hotmesh_${appName}_stats_counted`,
+        schema: schemaName,
+        name: 'stats_counted',
         type: 'hash',
       },
       {
-        name: `hotmesh_${appName}_stats_ordered`,
+        schema: schemaName,
+        name: 'stats_ordered',
         type: 'sorted_set',
       },
       {
-        name: `hotmesh_${appName}_stats_indexed`,
+        schema: schemaName,
+        name: 'stats_indexed',
         type: 'list',
       },
       {
-        name: `hotmesh_${appName}_versions`,
+        schema: schemaName,
+        name: 'versions',
         type: 'hash',
       },
       {
-        name: `hotmesh_${appName}_signal_patterns`,
+        schema: schemaName,
+        name: 'signal_patterns',
         type: 'hash',
       },
       {
-        name: `hotmesh_${appName}_symbols`,
+        schema: schemaName,
+        name: 'symbols',
         type: 'hash',
       },
       {
-        name: `hotmesh_${appName}_signal_registry`,
+        schema: schemaName,
+        name: 'signal_registry',
         type: 'string',
       },
     ];
-
+  
     return tableDefinitions;
   },
 });

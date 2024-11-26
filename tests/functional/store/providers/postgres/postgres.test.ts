@@ -27,7 +27,6 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
   const cacheConfig = { appId: 'mystoreapp', appVersion: '1' };
   let postgresClient: ProviderNativeClient;
   let postgresStoreService: PostgresStoreService;
-  let tables: string[] = [];
 
   beforeAll(async () => {
     // Initialize PostgreSQL connection
@@ -42,7 +41,7 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
     ).getClient();
 
     //drop all tables, so we start with a fresh DB
-    tables = await dropTables(postgresClient);
+    await dropTables(postgresClient);
 
     // Initialize PostgresStoreService
     postgresStoreService = new PostgresStoreService(
@@ -52,8 +51,7 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
   });
 
   beforeEach(async () => {
-    //remove all data from every table (or select only those need refreshing between tests)
-    await truncateTables(postgresClient, tables);
+    await truncateTables(postgresClient);
   });
 
   afterEach(async () => {});

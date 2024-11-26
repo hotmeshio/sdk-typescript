@@ -11,7 +11,7 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | basic | `MeshFlow Foundational` | Redis', () => {
+describe('MESHFLOW | baseline | Redis', () => {
   let handle: WorkflowHandleService;
   const options = {
     socket: {

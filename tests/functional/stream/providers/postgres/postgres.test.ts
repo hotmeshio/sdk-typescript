@@ -10,6 +10,7 @@ import {
   ProviderNativeClient,
   ProviderClient,
 } from '../../../../../types/provider';
+import { dropTables } from '../../../../$setup/postgres';
 
 describe('FUNCTIONAL | PostgresStreamService', () => {
   let postgresClient: ProviderNativeClient;
@@ -34,7 +35,7 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       })
     ).getClient();
 
-    await postgresClient.query('DROP TABLE IF EXISTS stream_hmsh_mytestapp');
+    dropTables(postgresClient);
   });
 
   beforeEach(async () => {

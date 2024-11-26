@@ -5,7 +5,6 @@ import { MeshFlow } from '../../../services/meshflow';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { ClientService } from '../../../services/meshflow/client';
 import { guid, sleepFor } from '../../../modules/utils';
-import { HMNS, KeyService, KeyType } from '../../../modules/key';
 import { ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
 import {
   dropTables,
@@ -206,7 +205,7 @@ describe('MESHFLOW | hook & search | Postgres', () => {
           workflows.example.name,
           namespace,
           'sql',
-          'SELECT job_id FROM hotmesh_staging_jobs_attributes WHERE field = $1 and value = $2',
+          'SELECT job_id FROM staging.jobs_attributes WHERE field = $1 and value = $2',
           '_custom1',
           'meshflow',
         )) as unknown as { job_id: string }[];

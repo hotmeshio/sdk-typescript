@@ -25,79 +25,81 @@ export const postgres_options = {
   port: config.POSTGRES_PORT,
 };
 
-// Drop all partitioned tables and their parent tables
-export const dropTables = async (postgresClient: any): Promise<string[]> => {
-  // Fetch all partitioned tables and their partitions
-  const partitionsResult = await postgresClient.query(`
-    SELECT 
-      child.relname AS partition_name, 
-      parent.relname AS parent_table
-    FROM 
-      pg_inherits 
-      JOIN pg_class child ON pg_inherits.inhrelid = child.oid
-      JOIN pg_class parent ON pg_inherits.inhparent = parent.oid
-      JOIN pg_namespace n ON n.oid = child.relnamespace
-    WHERE 
-      n.nspname = 'public'
-      AND child.relkind = 'r'; -- Include only tables
-  `);
+// Drop all user-defined schemas and their objects, then drop all tables in the public schema
+export const dropTables = async (postgresClient: any): Promise<void> => {
+  // Begin transaction
+  await postgresClient.query('BEGIN');
 
-  // Group partitions by their parent tables
-  const partitionsMap = partitionsResult.rows.reduce((map, row) => {
-    if (!map[row.parent_table]) {
-      map[row.parent_table] = [];
+  try {
+    // Fetch all user-defined schemas excluding system schemas and 'public'
+    const schemasResult = await postgresClient.query(`
+      SELECT schema_name 
+      FROM information_schema.schemata
+      WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+      AND schema_name NOT LIKE 'pg_%'
+      AND schema_name <> 'public';
+    `);
+
+    const schemas = schemasResult.rows.map(row => row.schema_name);
+
+    // Drop all user-defined schemas except 'public'
+    for (const schema of schemas) {
+      await postgresClient.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE;`);
     }
-    map[row.parent_table].push(row.partition_name);
-    return map;
-  }, {});
 
-  // Drop partitions first
-  for (const [_parentTable, partitions] of Object.entries(
-    partitionsMap,
-  ) as unknown as [string, string[]]) {
-    for (const partition of partitions) {
-      await postgresClient.query(
-        `DROP TABLE IF EXISTS "${partition}" CASCADE;`,
-      );
+    // Drop all tables in the 'public' schema
+    const tablesResult = await postgresClient.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public';
+    `);
+
+    const tables = tablesResult.rows.map((row: { table_name: string }) => row.table_name);
+
+    for (const table of tables) {
+      await postgresClient.query(`DROP TABLE IF EXISTS "public"."${table}" CASCADE;`);
     }
+
+    // Commit transaction
+    await postgresClient.query('COMMIT');
+  } catch (error) {
+    // Rollback transaction on error
+    await postgresClient.query('ROLLBACK');
+    console.error('Error during schema and table dropping:', error);
+    throw error;
   }
-
-  // Drop remaining tables
-  const tablesResult = await postgresClient.query(`
-    SELECT table_name 
-    FROM information_schema.tables 
-    WHERE table_schema = 'public';
-  `);
-
-  const tables = tablesResult.rows.map(
-    (row: { table_name: string }) => row.table_name,
-  );
-
-  for (const table of tables) {
-    await postgresClient.query(`DROP TABLE IF EXISTS "${table}" CASCADE;`);
-  }
-  return tables;
 };
 
-// Truncate all tables in the public schema
-export const truncateTables = async (postgresClient: any, tables: string[]) => {
+// Truncate all tables in all user-defined schemas
+export const truncateTables = async (postgresClient: any): Promise<void> => {
   await postgresClient.query('BEGIN');
   try {
-    for (const table of tables) {
-      const existsResult = await postgresClient.query(
-        `SELECT EXISTS (
-          SELECT 1 FROM pg_catalog.pg_tables 
-          WHERE schemaname = 'public' AND tablename = $1
-        );`,
-        [table],
-      );
+    // Fetch all user-defined schemas excluding system schemas
+    const schemasResult = await postgresClient.query(`
+      SELECT schema_name 
+      FROM information_schema.schemata
+      WHERE schema_name NOT IN ('information_schema', 'pg_catalog', 'pg_toast')
+      AND schema_name NOT LIKE 'pg_%';
+    `);
 
-      if (existsResult.rows[0].exists) {
-        await postgresClient.query(
-          `TRUNCATE ${table} RESTART IDENTITY CASCADE;`,
-        );
-      }
+    const schemas = schemasResult.rows.map(row => row.schema_name);
+
+    // Fetch all tables in these schemas
+    const tablesResult = await postgresClient.query(`
+      SELECT table_schema, table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = ANY ($1::text[]);
+    `, [schemas]);
+
+    const tables = tablesResult.rows.map(
+      (row: { table_schema: string; table_name: string }) => `"${row.table_schema}"."${row.table_name}"`
+    );
+
+    if (tables.length > 0) {
+      // Truncate all tables
+      await postgresClient.query(`TRUNCATE ${tables.join(', ')} RESTART IDENTITY CASCADE;`);
     }
+
     await postgresClient.query('COMMIT');
   } catch (error) {
     await postgresClient.query('ROLLBACK');

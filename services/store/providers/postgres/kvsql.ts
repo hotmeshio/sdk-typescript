@@ -75,34 +75,43 @@ export class KVSQL {
     stats_type?: 'hash' | 'sorted_set' | 'list',
   ): string {
     if (key === HMNS) {
-      return 'hotmesh_connections';
+      return 'public.hotmesh_connections';
     }
+
     const [_, appName, abbrev, ...rest] = key.split(':');
     if (appName === 'a') {
-      return 'hotmesh_applications';
+      return 'public.hotmesh_applications';
     }
+
     const id = rest?.length ? rest.join(':') : '';
     const entity = KeyService.resolveEntityType(abbrev, id);
+
     if (this.safeName(this.appId) !== this.safeName(appName)) {
       throw new Error(`App ID mismatch: ${this.appId} !== ${appName}`);
     }
+
+    const schemaName = this.safeName(appName);
+
     if (entity === 'stats') {
+      let tableName;
       if (stats_type === 'sorted_set') {
-        return `hotmesh_${this.safeName(appName)}_stats_ordered`;
+        tableName = 'stats_ordered';
       } else if (stats_type === 'list') {
-        return `hotmesh_${this.safeName(appName)}_stats_indexed`;
+        tableName = 'stats_indexed';
       } else if (stats_type === 'hash') {
-        return `hotmesh_${this.safeName(appName)}_stats_counted`;
+        tableName = 'stats_counted';
       } else {
         throw new Error(`Unknown stats type [${stats_type}] for key [${key}]`);
       }
+      return `${schemaName}.${tableName}`;
     }
+
     if (entity === 'unknown_entity') {
       throw new Error(`Unknown entity type abbreviation: ${abbrev}`);
     } else if (entity === 'applications') {
-      return 'hotmesh_applications';
+      return 'public.hotmesh_applications';
     } else {
-      return `hotmesh_${this.safeName(appName)}_${entity}`;
+      return `${schemaName}.${entity}`;
     }
   }
 
@@ -247,7 +256,7 @@ export class KVSQL {
 
   _exists(key: string): { sql: string; params: any[] } {
     const tableName = this.tableForKey(key);
-    const isJobsTable = tableName.endsWith('_jobs');
+    const isJobsTable = tableName.endsWith('jobs');
     let sql: string;
     if (isJobsTable) {
       sql = `

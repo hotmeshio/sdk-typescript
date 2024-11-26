@@ -109,23 +109,31 @@ class PostgresStreamService extends StreamService<
 
   async checkIfTablesExist(client: PostgresClientType): Promise<boolean> {
     const res = await client.query(
-      `SELECT to_regclass('public.${this.getTableName()}') AS table`,
+      `SELECT to_regclass('${this.getTableName()}') AS table`,
     );
     return res.rows[0].table !== null;
   }
 
+  safeName(appId: string) {
+    return appId.replace(/[^a-zA-Z0-9_]/g, '_')
+  }
+
   getTableName(): string {
-    return `hotmesh_${this.appId.replace(/[^a-zA-Z0-9_]/g, '_')}_streams`;
+    return `${this.safeName(this.appId)}.streams`;
   }
 
   async createTables(client: PostgresClientType): Promise<void> {
+    const schemaName = this.safeName(this.appId);
     const tableName = this.getTableName();
-    // Start transaction
+  
     await client.query('BEGIN');
 
-    // Create main table with partitioning
+    // Create schema
+    await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName};`);
+  
+    // Create main table (with partitioning)
     await client.query(
-      `CREATE TABLE ${tableName} (
+      `CREATE TABLE ${schemaName}.streams (
         id BIGSERIAL,
         stream_name TEXT NOT NULL,
         group_name TEXT NOT NULL DEFAULT 'ENGINE',
@@ -136,24 +144,24 @@ class PostgresStreamService extends StreamService<
         PRIMARY KEY (stream_name, id)
       ) PARTITION BY HASH (stream_name)`,
     );
-
+  
     // Create partitions
     for (let i = 0; i < 8; i++) {
+      const partitionTableName = `${schemaName}.streams_part_${i}`;
       await client.query(
-        `CREATE TABLE ${tableName}_part_${i} PARTITION OF ${tableName}
+        `CREATE TABLE ${partitionTableName} PARTITION OF ${tableName}
          FOR VALUES WITH (modulus 8, remainder ${i})`,
       );
     }
-
-    // Create index on parent table (will be applied to partitions)
+  
+    // Create indexes
     await client.query(
-      `CREATE INDEX idx_${tableName}_group_stream_reserved_at_id 
+      `CREATE INDEX idx_streams_group_stream_reserved_at_id 
        ON ${tableName} (group_name, stream_name, reserved_at, id)`,
     );
-
-    // Commit transaction
+  
     await client.query('COMMIT');
-  }
+  }  
 
   delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

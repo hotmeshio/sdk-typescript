@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.3.18",
+  "version": "0.3.19",
   "description": "Serverless Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -57,6 +57,7 @@
     "test:sequence": "NODE_ENV=test HMSH_LOGLEVEL=debug jest ./tests/functional/sequence/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:signal": "NODE_ENV=test jest ./tests/functional/signal/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:status": "NODE_ENV=test jest ./tests/functional/status/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:providers": "NODE_ENV=test jest ./tests/functional/*/providers/*/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:store:ioredis": "NODE_ENV=test jest ./tests/functional/store/providers/redis/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:store:redis": "NODE_ENV=test jest ./tests/functional/store/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:store:postgres": "NODE_ENV=test jest ./tests/functional/store/providers/postgres/postgres.test.ts --detectOpenHandles --forceExit --verbose",
@@ -66,6 +67,7 @@
     "test:stream:nats": "NODE_ENV=test jest ./tests/functional/stream/providers/nats/nats.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:ioredis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:redis": "NODE_ENV=test jest ./tests/functional/sub/providers/redis/redis.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:sub:postgres": "NODE_ENV=test jest ./tests/functional/sub/providers/postgres/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshdata": "NODE_ENV=test jest ./tests/meshdata/postgres.test.ts --forceExit --verbose --detectOpenHandles",
     "test:meshos": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/*.test.ts --forceExit --verbose --detectOpenHandles",

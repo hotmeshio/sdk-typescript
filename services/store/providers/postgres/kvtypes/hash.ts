@@ -86,7 +86,7 @@ export const hashModule = (context: KVSQL) => ({
     options?: HSetOptions,
   ): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
-    const isJobsTable = tableName.endsWith('_jobs');
+    const isJobsTable = this.isJobsTable(tableName);
     const fieldEntries = Object.entries(fields);
     const isStatusOnly =
       fieldEntries.length === 1 && fieldEntries[0][0] === ':';
@@ -130,6 +130,7 @@ export const hashModule = (context: KVSQL) => ({
         params.push(key, fields[':']);
       }
     } else if (isJobsTable) {
+      const schemaName = context.safeName(context.appId);
       const conflictAction = options?.nx
         ? 'ON CONFLICT DO NOTHING'
         : `ON CONFLICT (job_id, field) DO UPDATE SET value = EXCLUDED.value`;
@@ -138,7 +139,7 @@ export const hashModule = (context: KVSQL) => ({
         .map(([field, value], index) => {
           const baseIndex = index * 3 + 2; // Adjusted baseIndex
           params.push(field, value, this._deriveType(field));
-          return `($${baseIndex}, $${baseIndex + 1}, $${baseIndex + 2}::type_enum)`;
+          return `($${baseIndex}, $${baseIndex + 1}, $${baseIndex + 2}::${schemaName}.type_enum)`;
         })
         .join(', ');
     
@@ -204,7 +205,7 @@ export const hashModule = (context: KVSQL) => ({
 
   _hget(key: string, field: string): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
-    const isJobsTable = tableName.endsWith('_jobs');
+    const isJobsTable = this.isJobsTable(tableName);
     const isStatusField = field === ':';
   
     if (isJobsTable && isStatusField) {
@@ -260,7 +261,7 @@ export const hashModule = (context: KVSQL) => ({
 
   _hdel(key: string, fields: string[]): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
-    const isJobsTable = tableName.endsWith('_jobs');
+    const isJobsTable = this.isJobsTable(tableName);
     const targetTable = isJobsTable ? `${tableName}_attributes` : tableName;
   
     const fieldPlaceholders = fields.map((_, i) => `$${i + 2}`).join(', ');
@@ -342,7 +343,7 @@ export const hashModule = (context: KVSQL) => ({
 
   _hmget(key: string, fields: string[]): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
-    const isJobsTable = tableName.endsWith('_jobs');
+    const isJobsTable = this.isJobsTable(tableName);
   
     if (isJobsTable) {
       const sql = `
@@ -392,14 +393,17 @@ export const hashModule = (context: KVSQL) => ({
     key: string,
     multi?: ProviderTransaction,
   ): Promise<Record<string, string>> {
-    const { sql, params } = this._hgetall(key);
+    const tableName = context.tableForKey(key, 'hash');
+    const isJobsTable = this.isJobsTable(tableName);
 
+    const { sql, params } = this._hgetall(key);
     const processRows = (rows: any[]): Record<string, string> => {
       const result: Record<string, string> = {};
 
       for (const row of rows) {
-        // Map `status` to `':'`, otherwise keep the field as is
-        if (row.field === ':') continue;
+        // The ':' field (in the jobs table)
+        // represents 'status' and should be igored
+        if (isJobsTable && row.field === ':') continue;
         const fieldKey = row.field === 'status' ? ':' : row.field;
         result[fieldKey] = row.value;
       }
@@ -425,7 +429,7 @@ export const hashModule = (context: KVSQL) => ({
 
   _hgetall(key: string): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
-    const isJobsTable = tableName.endsWith('_jobs');
+    const isJobsTable = this.isJobsTable(tableName);
   
     if (isJobsTable) {
       const sql = `
@@ -487,7 +491,7 @@ export const hashModule = (context: KVSQL) => ({
     increment: number,
   ): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
-    const isJobsTable = tableName.endsWith('_jobs');
+    const isJobsTable = this.isJobsTable(tableName);
     const isStatusField = field === ':';
 
     if (isJobsTable && isStatusField) {
@@ -603,6 +607,7 @@ export const hashModule = (context: KVSQL) => ({
   },
 
   _expire(key: string, seconds: number): { sql: string; params: any[] } {
+    //only job tables are ever expired
     const tableName = context.tableForKey(key);
     const expiryTime = new Date(Date.now() + seconds * 1000);
     const sql = `
@@ -663,4 +668,9 @@ export const hashModule = (context: KVSQL) => ({
     params.push(count.toString());
     return { sql, params };
   },
+
+  isJobsTable(tableName: string): boolean {
+    return tableName.endsWith('jobs');
+  },
+
 });
