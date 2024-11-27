@@ -5,15 +5,9 @@ import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { guid, sleepFor } from '../../../modules/utils';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { JobOutput } from '../../../types/job';
-import config from '../../$setup/config';
+import { ioredis_options as redis_options } from '../../$setup/postgres';
 
-describe('FUNCTIONAL | Signal', () => {
-  const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
+describe('FUNCTIONAL | Signal | IORedis', () => {
   const appConfig = { id: 'signal' };
   let hotMesh: HotMesh;
 
@@ -22,7 +16,7 @@ describe('FUNCTIONAL | Signal', () => {
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      options,
+      redis_options,
     );
     redisConnection.getClient().flushdb();
 
@@ -32,7 +26,7 @@ describe('FUNCTIONAL | Signal', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connection: { class: Redis, options },
+        connection: { class: Redis, options: redis_options },
       },
     };
 
@@ -100,6 +94,8 @@ describe('FUNCTIONAL | Signal', () => {
 
   describe('Signal All', () => {
     it('sends a signal to awaken all paused jobs', async () => {
+      const job_id = 'signalall123';
+      const child_flow_id = 'abc123';
       let isDone = false;
 
       await hotMesh.psub(
@@ -119,7 +115,7 @@ describe('FUNCTIONAL | Signal', () => {
         },
       );
 
-      jobId = await hotMesh.pub('signal.test', { child_flow_id: 'abc123' });
+      jobId = await hotMesh.pub('signal.test', { job_id, child_flow_id });
       while (!isDone) {
         await sleepFor(100);
       }
@@ -131,6 +127,8 @@ describe('FUNCTIONAL | Signal', () => {
 
   describe('Signal One', () => {
     it('sends a signal to awaken one paused job', async () => {
+      const job_id = 'signalone123';
+      const child_flow_id = 'xyz456';
       let isDone = false;
 
       await hotMesh.psub(
@@ -150,7 +148,7 @@ describe('FUNCTIONAL | Signal', () => {
         },
       );
 
-      jobId = await hotMesh.pub('signal.one.test', { child_flow_id: 'xyz456' });
+      jobId = await hotMesh.pub('signal.one.test', { job_id, child_flow_id });
       while (!isDone) {
         await sleepFor(100);
       }

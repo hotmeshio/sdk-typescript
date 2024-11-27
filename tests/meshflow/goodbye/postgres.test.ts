@@ -184,7 +184,7 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
           workflows.example.name,
           namespace,
           'sql',
-          'SELECT job_id FROM hotmesh_prod_jobs_attributes WHERE field = $1 and value = $2',
+          'SELECT job_id FROM prod.jobs_attributes WHERE field = $1 and value = $2',
           '_custom1',
           'meshflow',
         )) as unknown as { job_id: string }[];

@@ -25,7 +25,6 @@ npm install @hotmeshio/hotmesh
 ## Learn
 [🏠 Home](https://hotmesh.io/) | [📄 SDK Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 General Examples](https://github.com/hotmeshio/samples-typescript) | [💼 Temporal Examples](https://github.com/hotmeshio/temporal-patterns-typescript)
 
-
 <br/>
 
 ## MeshCall | Fast, Simple, Inter-Service Calls
@@ -43,14 +42,16 @@ npm install @hotmeshio/hotmesh
     ```typescript
     //cron.ts
     import { MeshCall } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
 
     export const runMyCron = async (id: string, interval = '0 0 * * *'): Promise<boolean> => {
       return await MeshCall.cron({
         topic: 'my.cron.function',
         connection: {
-          class: Redis,
-          options: { url: 'redis://:key_admin@redis:6379' }
+          class: Postgres,
+          options: {
+            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+          }
         },
         callback: async () => {
           //your code here...
@@ -78,13 +79,15 @@ npm install @hotmeshio/hotmesh
 1. Use the same `id` and `topic` that were used to create the cron to cancel it.
     ```typescript
     import { MeshCall } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
 
     MeshCall.interrupt({
       topic: 'my.cron.function',
       connection: {
-        class: Redis,
-        options: { url: 'redis://:key_admin@redis:6379' }
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       },
       options: { id: 'myNightlyCron123' }
     });
@@ -95,21 +98,23 @@ npm install @hotmeshio/hotmesh
   <summary style="font-size:1.25em;">Call any function in any service <small>[more]</small></summary>
 
   ### Call a Function
-  Make blazing fast interservice calls that behave like HTTP but without the setup and performance overhead. This example demonstrates how to connect a function to the mesh and call it from anywhere on the network.
+  Make interservice calls that behave like HTTP but without the setup and performance overhead. This example demonstrates how to connect and call a function.
 
 1. Call `MeshCall.connect` and provide a `topic` to uniquely identify the function.
 
     ```typescript
     //myFunctionWrapper.ts
     import { MeshCall, Types } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
 
     export const connectMyFunction = async () => {
       return await MeshCall.connect({
         topic: 'my.demo.function',
         connection: {
-          class: Redis,
-          options: { url: 'redis://:key_admin@redis:6379' }
+          class: Postgres,
+          options: {
+            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+          }
         },
         callback: async (input: string) => {
           //your code goes here; response must be JSON serializable
@@ -131,14 +136,16 @@ npm install @hotmeshio/hotmesh
 
     ```typescript
     import { MeshCall } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
 
     const result = await MeshCall.exec({
       topic: 'my.demo.function',
       args: ['something'],
       connection: {
-        class: Redis,
-        options: { url: 'redis://:key_admin@redis:6379' }
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       },
     }); //returns `{ hello: 'something'}`
     ```
@@ -154,14 +161,16 @@ npm install @hotmeshio/hotmesh
 
     ```typescript
     import { MeshCall } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
 
     const result = await MeshCall.exec({
       topic: 'my.demo.function',
       args: ['anything'],
       connection: {
-        class: Redis,
-        options: { url: 'redis://:key_admin@redis:6379' }
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       },
       options: { id: 'myid123', ttl: '15 minutes' },
     }); //returns `{ hello: 'anything'}`
@@ -171,13 +180,15 @@ npm install @hotmeshio/hotmesh
 
     ```typescript
     import { MeshCall } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
 
     await MeshCall.flush({
       topic: 'my.demo.function',
       connection: {
-        class: Redis,
-        options: { url: 'redis://:key_admin@redis:6379' }
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       },
       options: { id: 'myid123' },
     });
@@ -236,13 +247,15 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
     ```typescript
     //client.ts
     import { Client, HotMesh } from '@hotmeshio/hotmesh';
-    import Redis from 'ioredis';
+    import { Client as Postgres } from 'pg';
 
     async function run(): Promise<string> {
       const client = new Client({
         connection: {
-          class: Redis,
-          options: { host: 'redis', port: 6379 }
+          class: Postgres,
+          options: {
+            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+          }
         }
       });
 
@@ -263,14 +276,16 @@ When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as 
     ```typescript
     //worker.ts
     import { worker } from '@hotmeshio/hotmesh';
-    import Redis from 'ioredis';
+    import { Client as Postgres } from 'pg';
     import * as workflows from './workflows';
 
     async function run() {
       const worker = await Worker.create({
         connection: {
-          class: Redis,
-          options: { host: 'redis', port: 6379 },
+          class: Postgres,
+          options: {
+            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+          }
         },
         taskQueue: 'default',
         workflow: workflows.example,
@@ -304,13 +319,15 @@ Pause a function and only awaken when a matching signal is received from the out
     ```typescript
     //client.ts
     import { Client, HotMesh } from '@hotmeshio/hotmesh';
-    import Redis from 'ioredis';
+    import { Client as Postgres } from 'pg';
 
     async function run(): Promise<string> {
       const client = new Client({
         connection: {
-          class: Redis,
-          options: { host: 'redis', port: 6379 }
+          class: Postgres,
+          options: {
+            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+          }
         }
       });
 
@@ -330,14 +347,16 @@ Pause a function and only awaken when a matching signal is received from the out
     ```typescript
     //worker.ts
     import { Worker } from '@hotmeshio/hotmesh';
-    import Redis from 'ioredis';
+    import { Client as Postgres } from 'pg';
     import * as workflows from './waitForWorkflow';
 
     async function run() {
       const worker = await Worker.create({
         connection: {
-          class: Redis,
-          options: { host: 'redis', port: 6379 },
+          class: Postgres,
+          options: {
+            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+          }
         },
         taskQueue: 'default',
         workflow: workflows.waitForExample,
@@ -351,12 +370,14 @@ Pause a function and only awaken when a matching signal is received from the out
 
     ```typescript
     import { Client } from '@hotmeshio/hotmesh';
-    import * as Redis from Redis;
+    import { Client as Postgres } from 'pg';
 
     const client = new Client({
       connection: {
-        class: Redis,
-        options: { host: 'redis', port: 6379 }
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       }
     });
 
@@ -400,12 +421,14 @@ Use a standard `Promise` to collate and cache multiple signals. HotMesh will onl
 
     ```typescript
     import { Client } from '@hotmeshio/hotmesh';
-    import * as Redis from Redis;
+    import { Client as Postgres } from 'pg';
 
     const client = new Client({
       connection: {
-        class: Redis,
-        options: { host: 'redis', port: 6379 }
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       }
     });
 
@@ -456,13 +479,15 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
     ```typescript
     //client.ts
     import { Client, HotMesh } from '@hotmeshio/hotmesh';
-    import Redis from 'ioredis';
+    import { Client as Postgres } from 'pg';
 
     async function run(): Promise<string> {
       const client = new Client({
         connection: {
-          class: Redis,
-          options: { host: 'redis', port: 6379 }
+          class: Postgres,
+          options: {
+            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+          }
         }
       });
 
@@ -482,14 +507,16 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
     ```typescript
     //worker.ts
     import { Worker } from '@hotmeshio/hotmesh';
-    import Redis from 'ioredis';
+    import { Client as Postgres } from 'pg';
     import * as workflows from './recurringWorkflow';
 
     async function run() {
       const worker = await Worker.create({
         connection: {
-          class: Redis,
-          options: { host: 'redis', port: 6379 },
+          class: Postgres,
+          options: {
+            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+          }
         },
         taskQueue: 'default',
         workflow: workflows.recurringExample,
@@ -503,12 +530,14 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 
     ```typescript
     import { Client } from '@hotmeshio/hotmesh';
-    import * as Redis from Redis;
+    import { Client as Postgres } from 'pg';
 
     const client = new Client({
       connection: {
-        class: Redis,
-        options: { host: 'redis', port: 6379 }
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       }
     });
 
@@ -555,12 +584,14 @@ This example demonstrates how to define a schema and deploy an index for a 'user
     ```typescript
     //server.ts
     import { MeshData } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
     import { schema } from './schema';
 
     const meshData = new MeshData(
-      Redis,
-      { url: 'redis://:key_admin@redis:6379' },
+      Postgres,
+      options: {
+        connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+      },
       schema,
     );
     await meshData.createSearchIndex('user', { namespace: 'meshdata' });
@@ -578,13 +609,15 @@ This example demonstrates how to create a 'user' workflow backed by the searchab
     ```typescript
     //connect.ts
     import { MeshData } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
     import { schema } from './schema';
 
     export const connectUserWorker = async (): Promise<void> => {
       const meshData = new MeshData(
-        Redis,
-        { url: 'redis://:key_admin@redis:6379' },
+        Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        },
         schema,
       );
     
@@ -614,11 +647,13 @@ This example demonstrates how to create a 'user' workflow backed by the searchab
     ```typescript
     //exec.ts
     import { MeshData } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
 
     const meshData = new MeshData(
-      Redis,
-      { url: 'redis://:key_admin@redis:6379' },
+      Postgres,
+      options: {
+        connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+      },
       schema,
     );
 
@@ -658,12 +693,14 @@ This example demonstrates how to read data fields directly from a workflow.
     ```typescript
     //read.ts
     import { MeshData } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
     import { schema } from './schema';
 
     const meshData = new MeshData(
-      Redis,
-      { url: 'redis://:key_admin@redis:6379' },
+      Postgres,
+      options: {
+        connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+      },
       schema,
     );
 
@@ -689,12 +726,14 @@ This example demonstrates how to search for those workflows where a given condit
     ```typescript
     //read.ts
     import { MeshData } from '@hotmeshio/hotmesh';
-    import * as Redis from 'redis';
+    import { Client as Postgres } from 'pg';
     import { schema } from './schema';
 
     const meshData = new MeshData(
-      Redis,
-      { url: 'redis://:key_admin@redis:6379' },
+      Postgres,
+      options: {
+        connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+      },
       schema,
     );
 
@@ -708,8 +747,66 @@ This example demonstrates how to search for those workflows where a given condit
 
 <br/>
 
+## Connect
+HotMesh is pluggable and ships with support for Postgres (pg) and Redis (ioredis/redis) as standalone backends.
+
+### Postgres
+```typescript
+import { Client as Postgres } from 'pg';
+//OR `import { Pool as Postgres } from 'pg';`
+
+const connection = {
+  class: Postgres,
+  options: {
+    connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+  }
+};
+```
+
+### Redis
+```typescript
+import * as Redis from 'redis';
+//OR `import { Client as Postgres } from 'pg';`
+
+const connection = {
+  class: Redis,
+  options: {
+    url: 'redis://:your_password@localhost:6379',
+  }
+};
+```
+
+### NATS
+Add NATS for improved pub/sub support, including patterned subscriptions. Note the explicit channel subscription in the example below.
+
+```typescript
+import { Client as Postgres } from 'pg';
+import { connect as NATS } from 'nats';
+
+const connection = {
+  store: {
+    class: Postgres,
+    options: {
+      connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+    }
+  },
+  stream: {
+    class: Postgres,
+    options: {
+      connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+    }
+  },
+  sub: {
+    class: NATS,
+    options: { servers: ['nats:4222'] }
+  },
+};
+```
+
+<br/>
+
 ## Metrics and Monitoring
-HotMesh's **OpenTelemetry** output provides unmatched insight into long-running, cross-service transactions. Add an OpenTelemetry sink to any service where HotMesh is deployed and HotMesh will emit the full **OpenTelemetry** execution tree organized as a single, unified DAG.
+HotMesh's **OpenTelemetry** output provides insight into long-running, cross-service transactions. Add an OpenTelemetry sink to any service where HotMesh is deployed and HotMesh will emit the full **OpenTelemetry** execution tree organized as a single, unified DAG.
 
 The **HotMesh Dashboard** provides a detailed overview of all running workflows. It includes an LLM to simplify querying and analyzing workflow data. An example Web server with REST APIs and the Dashboard (a WebApp) is included in the [samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo.
 

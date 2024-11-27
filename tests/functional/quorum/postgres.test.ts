@@ -1,4 +1,3 @@
-import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
@@ -6,7 +5,6 @@ import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { MathHandler } from '../../../services/pipe/functions/math';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { QuorumService } from '../../../services/quorum';
 import {
@@ -23,11 +21,10 @@ import {
 import { ProviderNativeClient } from '../../../types/provider';
 import {
   dropTables,
-  ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
 
-describe('FUNCTIONAL | Quorum', () => {
+describe('FUNCTIONAL | Quorum | Postgres', () => {
   const appConfig = { id: 'calc', version: '1' };
   let hotMesh: HotMesh;
   let postgresClient: ProviderNativeClient;
@@ -39,31 +36,22 @@ describe('FUNCTIONAL | Quorum', () => {
 
     await dropTables(postgresClient);
 
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-    redisConnection.getClient().flushdb();
-
     const config: HotMeshConfig = {
       appId: appConfig.id,
       namespace: HMNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connections: {
-          store: { class: Postgres, options: postgres_options }, //and search
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
+        connection: {
+          class: Postgres,
+          options: postgres_options,
         },
       },
       workers: [
         {
           topic: 'calculation.execute',
-          connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
+          connection: {
+            class: Postgres,
+            options: postgres_options,
           },
           callback: async (
             streamData: StreamData,
@@ -164,14 +152,13 @@ describe('FUNCTIONAL | Quorum', () => {
       };
       hotMesh.quorum?.sub(callback);
 
-      const throttleOpts: ThrottleOptions = {
-        throttle: 5000,
-      };
-      hotMesh.throttle(throttleOpts);
-      await sleepFor(1000);
-      hotMesh.quorum?.unsub(callback);
+      await hotMesh.throttle({ throttle: 5_000 });
+      await sleepFor(2_500);
+
+      await hotMesh.quorum?.unsub(callback);
       const savedRate = await hotMesh.engine?.store?.getThrottleRate(':');
       expect(savedRate).toBe(5000);
+
       //setting global rate always overrides all prior topic-specific rates
       const topicRate = await hotMesh.engine?.store?.getThrottleRate(
         'calculation.execute',

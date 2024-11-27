@@ -12,6 +12,9 @@
             "properties": {
               "child_flow_id": {
                 "type": "string"
+              },
+              "job_id": {
+                "type": "string"
               }
             }
           }
@@ -21,6 +24,9 @@
           "trigger": {
             "title": "Entry Point",
             "type": "trigger",
+            "stats": {
+              "id": "{$self.input.data.job_id}"
+            },
             "job": {
               "maps": {
                 "child_flow_id": "{$self.input.data.child_flow_id}"
@@ -144,6 +150,9 @@
             "properties": {
               "child_flow_id": {
                 "type": "string"
+              },
+              "job_id": {
+                "type": "string"
               }
             }
           }
@@ -153,6 +162,9 @@
           "onetrigger": {
             "title": "One Trigger Entry Point",
             "type": "trigger",
+            "stats": {
+              "id": "{$self.input.data.job_id}"
+            },
             "job": {
               "maps": {
                 "child_flow_id": "{$self.input.data.child_flow_id}"

@@ -3,13 +3,11 @@ import { ILogger } from '../logger';
 import { SubscriptionCallback } from '../../types/quorum';
 import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
-abstract class SubService<
-  ClientProvider extends ProviderClient,
-  TransactionProvider extends ProviderTransaction,
-> {
+abstract class SubService<ClientProvider extends ProviderClient> {
   protected eventClient: ClientProvider;
   protected storeClient: ProviderClient;
   protected namespace: string;
+  protected engineId: string;
   protected logger: ILogger;
   protected appId: string;
 
@@ -25,7 +23,7 @@ abstract class SubService<
     logger: ILogger,
   ): Promise<void>;
 
-  abstract transact(): TransactionProvider;
+  abstract transact(): ProviderTransaction;
 
   abstract mintKey(type: KeyType, params: KeyStoreParams): string;
 

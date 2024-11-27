@@ -20,7 +20,7 @@ import {
 import { QuorumService } from '../../../services/quorum';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 
-describe('FUNCTIONAL | Quorum', () => {
+describe('FUNCTIONAL | Quorum | IORedis', () => {
   const appConfig = { id: 'calc', version: '1' };
   const options = {
     host: config.REDIS_HOST,

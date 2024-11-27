@@ -6,6 +6,13 @@ app:
       publishes: emit.tested
       expire: 120
 
+      input:
+        schema:
+          type: object
+          properties:
+            job_id:
+              type: string
+
       output:
         schema:
           type: object
@@ -18,6 +25,8 @@ app:
       activities:
         t1:
           type: trigger
+          stats:
+            id: "{$self.input.data.job_id}"
           job:
             maps:
               done: false

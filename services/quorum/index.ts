@@ -35,7 +35,7 @@ class QuorumService {
   engine: EngineService;
   profiles: QuorumProfile[] = [];
   store: StoreService<ProviderClient, ProviderTransaction> | null;
-  subscribe: SubService<ProviderClient, ProviderTransaction> | null;
+  subscribe: SubService<ProviderClient> | null;
   logger: ILogger;
   cacheMode: CacheMode = 'cache';
   untilVersion: string | null = null;

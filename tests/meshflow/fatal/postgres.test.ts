@@ -1,13 +1,12 @@
 import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
-import config from '../../$setup/config';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { MeshFlowFatalError } from '../../../modules/errors';
 import { guid, sleepFor } from '../../../modules/utils';
-import { ProviderConfig, ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
+import { ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
 import {
   dropTables,
   ioredis_options as redis_options,

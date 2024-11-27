@@ -139,13 +139,13 @@ interface RedisRedisClientType extends ProviderClient {
   pSubscribe(
     pattern: string,
     callback: (channel: string, message: string) => void,
-  ): void;
-  pUnsubscribe(pattern: string): void;
+  ): Promise<void>;
+  pUnsubscribe(pattern: string): Promise<void>;
   subscribe(
     channel: string,
     callback: (channel: string, message: string) => void,
-  ): void;
-  unsubscribe(channel: string): void;
+  ): Promise<void>;
+  unsubscribe(channel: string): Promise<void>;
   punsubscribe(channel: string): void;
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<string>;
@@ -239,13 +239,13 @@ interface IORedisClient extends ProviderClient {
     pattern: string,
     callback: (channel: string, message: string) => void,
   ): Promise<void>;
-  punsubscribe(pattern: string): void;
+  punsubscribe(pattern: string): Promise<number>;
   subscribe(
     channel: string,
     callback: (channel: string, message: string) => void,
-  ): void;
-  unsubscribe(channel: string): void;
-  punsubscribe(channel: string): void;
+  ): Promise<void>;
+  unsubscribe(channel: string): Promise<number>;
+  punsubscribe(channel: string): Promise<number>;
 
   xadd(key: string, id: string, fields: any, message?: string): Promise<string>;
   xack(key: string, group: string, id: string): Promise<number>;

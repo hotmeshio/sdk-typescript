@@ -7,26 +7,33 @@ import { IORedisSubService } from './providers/redis/ioredis';
 import { RedisSubService } from './providers/redis/redis';
 
 import { SubService } from './index';
+import { PostgresSubService } from './providers/postgres/postgres';
+import { PostgresClientType } from '../../types';
 
 class SubServiceFactory {
   static async init(
-    redisClient: ProviderClient,
-    redisStoreClient: ProviderClient,
+    providerClient: ProviderClient,
+    providerStoreClient: ProviderClient,
     namespace: string,
     appId: string,
     engineId: string,
     logger: ILogger,
-  ): Promise<SubService<ProviderClient, ProviderTransaction>> {
-    let service: SubService<ProviderClient, ProviderTransaction>;
-    if (identifyProvider(redisClient) === 'redis') {
+  ): Promise<SubService<ProviderClient>> {
+    let service: SubService<ProviderClient>;
+    if (identifyProvider(providerClient) === 'redis') {
       service = new RedisSubService(
-        redisClient as RedisRedisClientType,
-        redisStoreClient as RedisRedisClientType,
+        providerClient as RedisRedisClientType,
+        providerStoreClient as RedisRedisClientType,
+      );
+    } else if (identifyProvider(providerClient) === 'postgres') {
+      service = new PostgresSubService(
+        providerClient as PostgresClientType & ProviderClient,
+        providerStoreClient as PostgresClientType & ProviderClient,
       );
     } else {
       service = new IORedisSubService(
-        redisClient as IORedisClientType,
-        redisStoreClient as IORedisClientType,
+        providerClient as IORedisClientType,
+        providerStoreClient as IORedisClientType,
       );
     }
     await service.init(namespace, appId, engineId, logger);

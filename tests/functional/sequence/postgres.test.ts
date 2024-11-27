@@ -1,11 +1,8 @@
 import { Client as Postgres } from 'pg';
-import * as Redis from 'redis';
 
-import config from '../../$setup/config';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
-import { RedisConnection } from '../../../services/connector/providers/redis';
 import {
   StreamData,
   StreamDataResponse,
@@ -13,66 +10,36 @@ import {
 } from '../../../types/stream';
 import { guid } from '../../../modules/utils';
 import { ProviderNativeClient } from '../../../types/provider';
-import { RedisRedisClassType } from '../../../types/redis';
-import { dropTables } from '../../$setup/postgres';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Sequence | Postgres', () => {
   const appConfig = { id: 'tree' };
   let hotMesh: HotMesh;
   let postgresClient: ProviderNativeClient;
-  const redis_options = {
-    socket: {
-      host: config.REDIS_HOST,
-      port: config.REDIS_PORT,
-      tls: false,
-    },
-    password: config.REDIS_PASSWORD,
-    database: config.REDIS_DATABASE,
-  };
-  const postgres_options = {
-    user: config.POSTGRES_USER,
-    host: config.POSTGRES_HOST,
-    database: config.POSTGRES_DB,
-    password: config.POSTGRES_PASSWORD,
-    port: config.POSTGRES_PORT,
-  };
 
   beforeAll(async () => {
-    // Initialize Postgres and drop tables (and data) from prior tests
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
 
-    // Drop tables
     await dropTables(postgresClient);
 
-    //init Redis and flush db (remove data from prior tests)
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis as unknown as RedisRedisClassType,
-      redis_options,
-    );
-    redisConnection.getClient().flushDb();
-
-    //init/activate HotMesh (test both `engine` and `worker` roles)
     const config: HotMeshConfig = {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connections: {
-          store: { class: Postgres, options: postgres_options }, //and search
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
+        connection: {
+          class: Postgres,
+          options: postgres_options,
         },
       },
       workers: [
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
-          connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
+          connection: {
+            class: Postgres,
+            options: postgres_options,
           },
           callback: async (
             streamData: StreamData,
@@ -88,7 +55,7 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
       ],
     };
     hotMesh = await HotMesh.init(config);
-  });
+  }, 10_000);
 
   afterAll(async () => {
     hotMesh.stop();
@@ -100,13 +67,13 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
       await hotMesh.deploy('/app/tests/$setup/apps/tree/v2/hotmesh.yaml');
       const isActivated = await hotMesh.activate('2');
       expect(isActivated).toBe(true);
-    });
+    }, 10_000);
   });
 
   describe('Run Version', () => {
     it('should run and map activities in sequence', async () => {
       const payload = { seed: 5, speed: 7 };
-      const result = await hotMesh.pubsub('spring', payload, null, 3_500);
+      const result = await hotMesh.pubsub('spring', payload, null, 5_000);
       const data = result?.data as {
         seed: number;
         speed: number;

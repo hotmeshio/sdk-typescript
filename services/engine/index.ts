@@ -93,7 +93,7 @@ class EngineService {
   search: SearchService<ProviderClient> | null;
   store: StoreService<ProviderClient, ProviderTransaction> | null;
   stream: StreamService<ProviderClient, ProviderTransaction> | null;
-  subscribe: SubService<ProviderClient, ProviderTransaction> | null;
+  subscribe: SubService<ProviderClient> | null;
   router: Router<typeof this.stream> | null;
   taskService: TaskService | null;
   logger: ILogger;

@@ -1,9 +1,7 @@
-import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
 import { guid } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import {
   StreamData,
@@ -14,7 +12,6 @@ import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { ProviderNativeClient } from '../../../types/provider';
 import {
   dropTables,
-  ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
 
@@ -30,33 +27,23 @@ describe('FUNCTIONAL | Redeploy | Postgres', () => {
 
     await dropTables(postgresClient);
 
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-
-    redisConnection.getClient().flushdb();
-
     //init/activate HotMesh (test both `engine` and `worker` roles)
     const config: HotMeshConfig = {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connections: {
-          store: { class: Postgres, options: postgres_options }, //and search
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
+        connection: {
+          class: Postgres,
+          options: postgres_options,
         },
       },
       workers: [
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
-          connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
+          connection: {
+            class: Postgres,
+            options: postgres_options,
           },
           callback: async (
             streamData: StreamData,
@@ -256,19 +243,17 @@ describe('FUNCTIONAL | Redeploy | Postgres', () => {
         appId: 'abc',
         logLevel: HMSH_LOGLEVEL,
         engine: {
-          connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
+          connection: {
+            class: Postgres,
+            options: postgres_options,
           },
         },
         workers: [
           {
             topic: 'work.do',
-            connections: {
-              store: { class: Postgres, options: postgres_options }, //and search
-              stream: { class: Postgres, options: postgres_options },
-              sub: { class: Redis, options: redis_options },
+            connection: {
+              class: Postgres,
+              options: postgres_options,
             },
             callback: async (data: StreamData) => {
               return {
@@ -279,10 +264,9 @@ describe('FUNCTIONAL | Redeploy | Postgres', () => {
           },
           {
             topic: 'work.do.more',
-            connections: {
-              store: { class: Postgres, options: postgres_options }, //and search
-              stream: { class: Postgres, options: postgres_options },
-              sub: { class: Redis, options: redis_options },
+            connection: {
+              class: Postgres,
+              options: postgres_options,
             },
             callback: async (data: StreamData) => {
               return {

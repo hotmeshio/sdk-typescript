@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
 import { HotMesh, HotMeshConfig } from '../../../index';
 import {
@@ -22,7 +22,6 @@ import {
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
 import config from '../../$setup/config';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import {
   JobOutput,
   StringAnyType,
@@ -31,8 +30,13 @@ import {
   StreamStatus,
   WorkflowOptions,
 } from '../../../types';
+import {
+  ProviderNativeClient,
+} from '../../../types/provider';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
+import { postgres_options } from '../../$setup/postgres';
 
-describe('FUNCTIONAL | MESHFLOW', () => {
+describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
   const appConfig = { id: 'meshflow', version: '1' };
   let activityErrorCounter = 0;
   let workflowId = 'meshflow';
@@ -73,13 +77,6 @@ describe('FUNCTIONAL | MESHFLOW', () => {
   const interruptionRegistry: any[] = [];
   const interruptionList: any[] = [];
   let counter = 0;
-
-  const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
   let hotMesh: HotMesh;
 
   const xHandleError = (err: any, interruptionList: any[]) => {
@@ -272,14 +269,17 @@ describe('FUNCTIONAL | MESHFLOW', () => {
     return { ...signalResponse, id: key } as T;
   };
 
+  let postgresClient: ProviderNativeClient;
+
   beforeAll(async () => {
-    //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      options,
-    );
-    redisConnection.getClient().flushdb();
+    postgresClient = (
+      await PostgresConnection.connect(
+        guid(),
+        Postgres,
+        postgres_options,
+      )
+    ).getClient();
+
 
     const config: HotMeshConfig = {
       appId: appConfig.id,
@@ -287,13 +287,13 @@ describe('FUNCTIONAL | MESHFLOW', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connection: { class: Redis, options },
+        connection: { class: Postgres,options: postgres_options },
       },
 
       workers: [
         {
           topic: workflowTopic,
-          connection: { class: Redis, options },
+          connection: { class: Postgres,options: postgres_options },
 
           callback: async (data: StreamData): Promise<StreamDataResponse> => {
             let sleepData: number | null = null;
@@ -425,7 +425,7 @@ describe('FUNCTIONAL | MESHFLOW', () => {
 
         {
           topic: activityTopic,
-          connection: { class: Redis, options },
+          connection: { class: Postgres, options: postgres_options },
 
           callback: async (data: StreamData): Promise<StreamDataResponse> => {
             try {

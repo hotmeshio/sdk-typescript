@@ -1,16 +1,13 @@
 import { Client as Postgres } from 'pg';
-import Redis from 'ioredis';
 
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { guid } from '../../../modules/utils';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { StreamData, StreamDataResponse } from '../../../types/stream';
 import { ProviderNativeClient } from '../../../types/provider';
 import {
   dropTables,
-  ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
 
@@ -29,24 +26,15 @@ describe('FUNCTIONAL | Activity Cycles | Postgres', () => {
     // Drop tables
     await dropTables(postgresClient);
 
-    //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-    redisConnection.getClient().flushdb();
-
     //init HotMesh
     const hmshConfig: HotMeshConfig = {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connections: {
-          store: { class: Postgres, options: postgres_options }, //and search
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
+        connection: {
+          class: Postgres,
+          options: postgres_options,
         },
       },
 
@@ -56,10 +44,9 @@ describe('FUNCTIONAL | Activity Cycles | Postgres', () => {
         //this worker runs as part of flow v1
         {
           topic: 'cycle.count',
-          connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
+          connection: {
+            class: Postgres,
+            options: postgres_options,
           },
           callback: async (
             streamData: StreamData,
@@ -79,10 +66,9 @@ describe('FUNCTIONAL | Activity Cycles | Postgres', () => {
         //this worker runs as part of flow v2
         {
           topic: 'cycle.err',
-          connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
+          connection: {
+            class: Postgres,
+            options: postgres_options,
           },
           callback: async (
             streamData: StreamData,

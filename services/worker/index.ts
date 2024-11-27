@@ -35,7 +35,7 @@ class WorkerService {
   callback: (streamData: StreamData) => Promise<StreamDataResponse | void>;
   store: StoreService<ProviderClient, ProviderTransaction> | null;
   stream: StreamService<ProviderClient, ProviderTransaction> | null;
-  subscribe: SubService<ProviderClient, ProviderTransaction> | null;
+  subscribe: SubService<ProviderClient> | null;
   router: Router<typeof this.stream> | null;
   logger: ILogger;
   reporting = false;

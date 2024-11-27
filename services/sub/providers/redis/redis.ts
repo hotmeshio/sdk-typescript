@@ -12,7 +12,7 @@ import {
 } from '../../../../types/redis';
 import { SubscriptionCallback } from '../../../../types/quorum';
 
-class RedisSubService extends SubService<ClientProvider, TransactionProvider> {
+class RedisSubService extends SubService<ClientProvider> {
   constructor(eventClient: ClientProvider, storeClient: ClientProvider) {
     super(eventClient, storeClient);
   }
@@ -26,6 +26,7 @@ class RedisSubService extends SubService<ClientProvider, TransactionProvider> {
     this.namespace = namespace;
     this.logger = logger;
     this.appId = appId;
+    this.engineId = engineId;
   }
 
   transact(): TransactionProvider {
