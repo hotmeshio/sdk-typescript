@@ -93,12 +93,12 @@ export class KVSQL {
     const schemaName = this.safeName(appName);
 
     if (entity === 'stats') {
-      let tableName;
+      let tableName: string;
       if (stats_type === 'sorted_set') {
         tableName = 'stats_ordered';
-      } else if (stats_type === 'list') {
+      } else if (stats_type === 'list' || key.endsWith(':processed')) {
         tableName = 'stats_indexed';
-      } else if (stats_type === 'hash') {
+      } else if (stats_type === 'hash' || /:\d$/.test(key)) {
         tableName = 'stats_counted';
       } else {
         throw new Error(`Unknown stats type [${stats_type}] for key [${key}]`);

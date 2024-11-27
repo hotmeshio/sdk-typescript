@@ -53,7 +53,7 @@ class PostgresSubService extends SubService<PostgresClientType & ProviderClient>
 
     // Start listening to the topic
     await this.eventClient.query(`LISTEN "${topic}"`);
-    this.logger.info(`Subscribed to topic: ${topic}`);
+    this.logger.info(`postgres-subscribe ${topic}`);
 
     // Set up the notification handler
     this.eventClient.on('notification', (msg: {channel: string, payload: any}) => {
@@ -77,7 +77,7 @@ class PostgresSubService extends SubService<PostgresClientType & ProviderClient>
 
     // Stop listening to the topic
     await this.eventClient.query(`UNLISTEN "${topic}"`);
-    this.logger.info(`Unsubscribed from topic: ${topic}`);
+    this.logger.info(`postgres-unsubscribe ${topic}`);
   }
 
   async publish(
@@ -91,7 +91,7 @@ class PostgresSubService extends SubService<PostgresClientType & ProviderClient>
     // Publish the message using NOTIFY
     const payload = JSON.stringify(message).replace(/'/g, "''");
     await this.storeClient.query(`NOTIFY "${topic}", '${payload}'`);
-    this.logger.info(`Published message to topic: ${topic}`);
+    this.logger.info(`postgres-publish ${topic}`);
     return true;
   }  
 

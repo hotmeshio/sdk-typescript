@@ -11,16 +11,10 @@ import {
   StreamDataResponse,
   StreamStatus,
 } from '../../../types/stream';
-import config from '../../$setup/config';
+import { ioredis_options } from '../../$setup/postgres';
 
-describe('FUNCTIONAL | EMIT', () => {
+describe('FUNCTIONAL | EMIT | IORedis', () => {
   const appConfig = { id: 'emit', version: '1' };
-  const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
   let hotMesh: HotMesh;
 
   beforeAll(async () => {
@@ -28,7 +22,7 @@ describe('FUNCTIONAL | EMIT', () => {
     const redisConnection = await RedisConnection.connect(
       guid(),
       Redis,
-      options,
+      ioredis_options,
     );
     redisConnection.getClient().flushdb();
 
@@ -38,13 +32,19 @@ describe('FUNCTIONAL | EMIT', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connection: { class: Redis, options },
+        connection: {
+          class: Redis,
+          options: ioredis_options,
+        },
       },
 
       workers: [
         {
           topic: 'emit.test.worker',
-          connection: { class: Redis, options },
+          connection: {
+            class: Redis,
+            options: ioredis_options,
+           },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {
@@ -70,6 +70,7 @@ describe('FUNCTIONAL | EMIT', () => {
   describe('Emit Interim Job State', () => {
     it('should emit the interim job state', async () => {
       let jobId: string;
+      let job_id = 'myjob123';
       let isDone = false;
 
       //subscribe to the 'emit.tested' topic
@@ -88,7 +89,8 @@ describe('FUNCTIONAL | EMIT', () => {
         },
       );
 
-      const payload = {};
+      const payload = { job_id };
+
 
       //publish emit.test
       jobId = (await hotMesh.pub('emit.test', payload)) as string;
