@@ -27,19 +27,23 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
  * The MeshFlow `Client` service is functionally
  * equivalent to the Temporal `Client` service.
  * Start a new workflow execution by calling
- * `workflow.start` on the client instance
+ * `workflow.start`. Note the direct connection to
+ * Postgres.
+ * 
+ * NATS can be used as the message broker if advanced
+ * messaging is required (i.e, patterned subscriptions).
  * @example
 
  * ```typescript
  * //client.ts
- * import { MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
- * import Redis from 'ioredis';
+ * import { Client, HotMesh } from '@hotmeshio/hotmesh';
+ * import { Client as Postgres } from 'pg';
 
  * async function run(): Promise<string> {
- *   const client = new MeshFlow.Client({
+ *   const client = new Client({
  *     connection: {
- *       class: Redis,
- *       options: { host: 'localhost', port: 6379 }
+ *       class: Postgres,
+ *       options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
  *     }
  *   });
 

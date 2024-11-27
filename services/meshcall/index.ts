@@ -36,14 +36,14 @@ import { getWorkflowYAML, VERSION } from './schemas/factory';
  *
  * @example
  * ```typescript
- * import * as Redis from 'redis';
+ * import { Client as Postgres } from 'pg';
  * import { MeshCall } from '@hotmesh/meshcall';
  *
  * MeshCall.cron({
  *   topic: 'my.cron.function',
  *   connection: {
- *     class: Redis,
- *     options: { url: 'redis://:key_admin@redis:6379' }
+ *     class: Postgres,
+ *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
  *   },
  *   callback: async () => {
  *     //your code here...anything goes
@@ -246,14 +246,14 @@ class MeshCall {
    * Connects and links a worker function to the mesh
    * @example
    * ```typescript
-   * import * as Redis from 'redis';
+   * import { Client as Postgres } from 'pg';
    * import { MeshCall } from '@hotmesh/meshcall';
    *
    * MeshCall.connect({
    *   topic: 'my.function',
    *   connection: {
-   *     class: Redis,
-   *     options: { url: 'redis://:key_admin@redis:6379' }
+   *     class: Postgres,
+   *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
    *   },
    *   callback: async (arg1: any) => {
    *     //your code here...
@@ -304,8 +304,8 @@ class MeshCall {
    *   topic: 'my.function',
    *   args: [{ my: 'args' }],
    *   connection: {
-   *     class: Redis,
-   *     options: { url: 'redis://:key_admin@redis:6379' }
+   *     class: Postgres,
+   *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
    *   }
    * });
    * ```
@@ -355,14 +355,14 @@ class MeshCall {
    *
    * @example
    * ```typescript
-   * import * as Redis from 'redis';
+   * import { Client as Postgres } from 'pg';
    * import { MeshCall } from '@hotmesh/meshcall';
    *
    * MeshCall.flush({
    *   topic: 'my.function',
    *   connection: {
-   *     class: Redis,
-   *     options: { url: 'redis://:key_admin@redis:6379' }
+   *     class: Postgres,
+   *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
    *   },
    *   options: { id: 'myCachedExecFunctionId' }
    * });
@@ -411,15 +411,15 @@ class MeshCall {
    *
    * @example
    * ```typescript
-   * import * as Redis from 'redis';
+   * import { Client as Postgres } from 'pg';
    * import { MeshCall } from '@hotmesh/meshcall';
    *
    * MeshCall.cron({
    *   topic: 'my.cron.function',
    *   args: ['arg1', 'arg2'], //optionally pass args
    *   connection: {
-   *     class: Redis,
-   *     options: { url: 'redis://:key_admin@redis:6379' }
+   *     class: Postgres,
+   *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
    *   },
    *   callback: async (arg1: any, arg2: any) => {
    *     //your code here...
@@ -507,14 +507,14 @@ class MeshCall {
    *
    * @example
    * ```typescript
-   * import * as Redis from 'redis';
+   * import { Client as Postgres } from 'pg';
    * import { MeshCall } from '@hotmesh/meshcall';
    *
    * MeshCall.interrupt({
    *   topic: 'my.cron.function',
    *   connection: {
-   *     class: Redis,
-   *     options: { url: 'redis://:key_admin@redis:6379' }
+   *     class: Postgres,
+   *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
    *   },
    *   options: { id: 'myDailyCron123' }
    * });

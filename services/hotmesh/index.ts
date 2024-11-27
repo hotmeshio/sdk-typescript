@@ -252,7 +252,9 @@ class HotMesh {
   }
   /**
    * Subscribe (listen) to all output and interim emissions of a single
-   * workflow topic
+   * workflow topic. NOTE: Postgres does not support patterned
+   * unsubscription, so this method is not supported for Postgres.
+   *
    * @example
    * ```typescript
    * await hotMesh.psub('a.b.c', (topic, message) => {
@@ -283,7 +285,8 @@ class HotMesh {
     return await this.engine?.psub(wild, callback);
   }
   /**
-   * Patterned unsubscribe
+   * Patterned unsubscribe. NOTE: Postgres does not support patterned
+   * unsubscription, so this method is not supported for Postgres.
    */
   async punsub(wild: string): Promise<void> {
     return await this.engine?.punsub(wild);

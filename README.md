@@ -105,7 +105,7 @@ npm install @hotmeshio/hotmesh
     ```typescript
     //myFunctionWrapper.ts
     import { MeshCall, Types } from '@hotmeshio/hotmesh';
-    import { Pool as Postgres } from 'pg';
+    import { Client as Postgres } from 'pg';
 
     export const connectMyFunction = async () => {
       return await MeshCall.connect({
@@ -136,7 +136,7 @@ npm install @hotmeshio/hotmesh
 
     ```typescript
     import { MeshCall } from '@hotmeshio/hotmesh';
-    import { Pool as Postgres } from 'pg';
+    import { Client as Postgres } from 'pg';
 
     const result = await MeshCall.exec({
       topic: 'my.demo.function',
@@ -161,7 +161,7 @@ npm install @hotmeshio/hotmesh
 
     ```typescript
     import { MeshCall } from '@hotmeshio/hotmesh';
-    import { Pool as Postgres } from 'pg';
+    import { Client as Postgres } from 'pg';
 
     const result = await MeshCall.exec({
       topic: 'my.demo.function',
@@ -180,7 +180,7 @@ npm install @hotmeshio/hotmesh
 
     ```typescript
     import { MeshCall } from '@hotmeshio/hotmesh';
-    import { Pool as Postgres } from 'pg';
+    import { Client as Postgres } from 'pg';
 
     await MeshCall.flush({
       topic: 'my.demo.function',
@@ -780,27 +780,25 @@ const connection = {
 Add NATS for improved pub/sub support, including patterned subscriptions. Note the explicit channel subscription in the example below.
 
 ```typescript
-import { Pool as Postgres } from 'pg';
+import { Client as Postgres } from 'pg';
 import { connect as NATS } from 'nats';
 
 const connection = {
   store: {
     class: Postgres,
     options: {
-      url: 'postgresql://usr:pwd@localhost:5432/db',
+      connectionString: 'postgresql://usr:pwd@localhost:5432/db',
     }
   },
   stream: {
     class: Postgres,
     options: {
-      url: 'postgresql://usr:pwd@localhost:5432/db',
+      connectionString: 'postgresql://usr:pwd@localhost:5432/db',
     }
   },
   sub: {
     class: NATS,
-    options: {
-      url: 'nats://localhost:4222',
-    }
+    options: { servers: ['nats:4222'] }
   },
 };
 ```

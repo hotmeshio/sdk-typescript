@@ -13,9 +13,14 @@ import { ExporterService } from './exporter';
  *
  * @example
  * ```typescript
- * import { MeshFlow } from '@hotmeshio/hotmesh';
+ * import { Client } from '@hotmeshio/hotmesh';
+ * import { Client as Postgres } from 'pg';
  *
- * const client = new MeshFlow.Client({ connection: { class: Redis, options } });
+ * const client = new Client({ connection: {
+ *   class: Postgres,
+ *   options: { connectionString: 'postgres://user:pass@localhost:5432/db' }
+ * }});
+ * 
  * const handle = await client.workflow.start({
  *  args: ['HotMesh'],
  *  taskQueue: 'hello-world',
@@ -89,9 +94,7 @@ export class WorkflowHandleService {
    * Returns the current search state of the workflow. This is
    * different than the job state or individual activity state.
    * Search state represents name/value pairs that were added
-   * to the workflow. As the workflow is stored in a Redis hash,
-   * this is a way to store additional data that is indexed
-   * and searchable using the RediSearch module.
+   * to the workflow.
    */
   async queryState(fields: string[]): Promise<Record<string, any>> {
     return await this.hotMesh.getQueryState(this.workflowId, fields);

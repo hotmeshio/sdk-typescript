@@ -1,17 +1,37 @@
+import * as Redis from 'redis';
 import { Client as Postgres } from 'pg';
 
+import config from '../$setup/config';
 import { guid, sleepFor } from '../../modules/utils';
 import { MeshCall } from '../../services/meshcall';
+import { RedisConnection } from '../../services/connector/providers/redis';
 import { PostgresConnection } from '../../services/connector/providers/postgres';
 import { ProviderNativeClient } from '../../types/provider';
-import { dropTables, postgres_options } from '../$setup/postgres';
+import { RedisRedisClassType } from '../../types/redis';
+import { dropTables } from '../$setup/postgres';
 
-describe('MESHCALL | Postgres', () => {
+describe('MESHCALL | Postgres+Redis', () => {
   let postgresClient: ProviderNativeClient;
-  
-  const connection = {
-    class: Postgres,
-    options: postgres_options,
+  const redis_options = {
+    socket: {
+      host: config.REDIS_HOST,
+      port: config.REDIS_PORT,
+      tls: false,
+    },
+    password: config.REDIS_PASSWORD,
+    database: config.REDIS_DATABASE,
+  };
+  const postgres_options = {
+    user: config.POSTGRES_USER,
+    host: config.POSTGRES_HOST,
+    database: config.POSTGRES_DB,
+    password: config.POSTGRES_PASSWORD,
+    port: config.POSTGRES_PORT,
+  };
+  const expanded_options = {
+    store: { class: Postgres, options: postgres_options }, //and search
+    stream: { class: Postgres, options: postgres_options },
+    sub: { class: Redis, options: redis_options },
   };
 
   beforeAll(async () => {
@@ -21,6 +41,14 @@ describe('MESHCALL | Postgres', () => {
     ).getClient();
 
     await dropTables(postgresClient);
+
+    //init Redis and flush db
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis as unknown as RedisRedisClassType,
+      { ...redis_options },
+    );
+    redisConnection.getClient().flushDb();
   });
 
   afterAll(async () => {
@@ -33,7 +61,7 @@ describe('MESHCALL | Postgres', () => {
         const worker = await MeshCall.connect({
           guid: 'jimmy',
           topic: 'my.function',
-          connection,
+          connection: expanded_options,
           callback: async (
             payload: Record<string, any>,
           ): Promise<Record<string, any>> => {
@@ -51,7 +79,7 @@ describe('MESHCALL | Postgres', () => {
         const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
-          connection,
+          connection: expanded_options,
         });
         expect(response.hello.payload).toBe('HotMesh');
       });
@@ -62,7 +90,7 @@ describe('MESHCALL | Postgres', () => {
         let response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'CoolMesh' }],
           topic: 'my.function',
-          connection,
+          connection: expanded_options,
           options: { id: 'mytest123', ttl: '1 minute' },
         });
         expect(response.hello.payload).toBe('CoolMesh');
@@ -71,7 +99,7 @@ describe('MESHCALL | Postgres', () => {
         response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
-          connection,
+          connection: expanded_options,
           options: { id: 'mytest123', ttl: '1 minute' },
         });
         //expect cached value
@@ -82,7 +110,7 @@ describe('MESHCALL | Postgres', () => {
         const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
-          connection,
+          connection: expanded_options,
           options: { id: 'mytest123', ttl: '1 minute', flush: true },
         });
         expect(response.hello.payload).toBe('HotMesh');
@@ -92,7 +120,7 @@ describe('MESHCALL | Postgres', () => {
         const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',
-          connection,
+          connection: expanded_options,
           options: { id: 'mytest123', ttl: '1 minute' },
         });
         expect(response.hello.payload).toBe('HotMesh');
@@ -102,7 +130,7 @@ describe('MESHCALL | Postgres', () => {
         //manually flush first
         await MeshCall.flush({
           topic: 'my.function',
-          connection,
+          connection: expanded_options,
           options: { id: 'mytest123' },
         });
 
@@ -110,7 +138,7 @@ describe('MESHCALL | Postgres', () => {
         const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'ColdMesh' }],
           topic: 'my.function',
-          connection,
+          connection: expanded_options,
           options: { id: 'mytest123', ttl: '1 minute' },
         });
         expect(response.hello.payload).toBe('ColdMesh');
@@ -128,7 +156,7 @@ describe('MESHCALL | Postgres', () => {
           guid: 'idemcron-RO',
           args: [{ payload: 'HotMesh' }],
           topic: 'my.cron.function',
-          connection,
+          connection: expanded_options,
           options: {
             id: 'mycron123',
             interval: '1 second',
@@ -143,7 +171,7 @@ describe('MESHCALL | Postgres', () => {
           guid: 'idemcron-RW',
           args: [{ payload: 'HotMesh' }],
           topic: 'my.cron.function',
-          connection,
+          connection: expanded_options,
           options: {
             id: 'mycron123',
             interval: '1 second',
@@ -166,7 +194,7 @@ describe('MESHCALL | Postgres', () => {
           guid: 'freddy',
           args: [{ payload: 'HotMesh' }],
           topic: 'my.cron.function',
-          connection,
+          connection: expanded_options,
           options: {
             id: 'mycron123',
             interval: '1 second',
@@ -181,7 +209,7 @@ describe('MESHCALL | Postgres', () => {
       it('should interrupt an idempotent cron', async () => {
         let interrupted = await MeshCall.interrupt({
           topic: 'my.cron.function',
-          connection,
+          connection: expanded_options,
           options: { id: 'mycron123' },
         });
         expect(interrupted).toBe(true);
@@ -189,7 +217,7 @@ describe('MESHCALL | Postgres', () => {
         //method returns false if the cron is not running
         interrupted = await MeshCall.interrupt({
           topic: 'my.cron.function',
-          connection,
+          connection: expanded_options,
           options: { id: 'mycron123' },
         });
         expect(interrupted).toBe(false);
@@ -204,7 +232,7 @@ describe('MESHCALL | Postgres', () => {
           //      so the other cron callback isn't called
           //      (which references the other `counter`)
           topic: 'my.cron.function.max',
-          connection,
+          connection: expanded_options,
           options: {
             id: 'mycron456',
             interval: '1 second',
