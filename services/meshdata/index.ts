@@ -39,7 +39,7 @@ import {
 
 /**
  * The `MeshData` service wraps the `MeshFlow` service.
- * It serves to unify both data record concepts and
+ * It serves to unify both data record and
  * transactional workflow principles into a single
  * *Operational Data Layer*. Deployments with a 'search'
  * provider configured (e.g.,Redis FT.SEARCH) can deliver

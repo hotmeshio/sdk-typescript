@@ -112,7 +112,7 @@ transitions:
 ```
 
 ## Define Activity Topics
-A well-defined topic space is crucial for the efficient functioning of your workflows. With a solid grounding in the business process, you can effectively describe how outside callers invoke workflows and how one workflow invokes another.
+A well-defined topic space is crucial for the efficient functioning of transactional workflows. With a solid grounding in the business process, you can effectively describe how outside callers invoke workflows and how one workflow invokes another.
 
 *Workflows must subscribe to and publish to exactly one topic.* In this example, the **Approve Order Price** worfklow declares its relevant topics.
 

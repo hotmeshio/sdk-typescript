@@ -80,14 +80,16 @@ export function XSleepFor(ms: number): {
 }
 
 /**
+ * Identies the provider type based on the provider object. Customers may
+ * explicitly set the provider type in the configuration. But this is a
+ * convenience method to automatically identify the provider type.
  * @private
  */
 export function identifyProvider(provider: any): Providers | null {
   const prototype = Object.getPrototypeOf(provider);
-
   if (provider.Query?.prototype || Object.keys(provider).includes('database') || (prototype.name === 'Pool')) {
     return 'postgres';
-  } else if (provider.constructor && provider.constructor.name === 'Client') {
+  } else if (provider.toString().toLowerCase().includes('nats')) {
     return 'nats';
   } else if (
     'defineCommand' in prototype ||
@@ -123,7 +125,7 @@ export function identifyProvider(provider: any): Providers | null {
     type = 'ioredis';
   } else if (Object.keys(provider).includes('createClient')) {
     type = 'redis';
-  } else if (Object.keys(provider).includes('jetstream')) {
+  } else if (prototype.constructor.toString().includes('NatsConnectionImpl')) {
     type = 'nats';
   }
   return type;
@@ -167,23 +169,6 @@ export const polyfill = {
     );
   },
 };
-
-/**
- * @private
- */
-export function identifyRedisTypeFromClass(
-  redisClass: any,
-): 'redis' | 'ioredis' | null {
-  if (
-    redisClass && redisClass.name === 'Redis' ||
-    redisClass.name === 'EventEmitter'
-  ) {
-    return 'ioredis';
-  } else if (redisClass && 'createClient' in redisClass) {
-    return 'redis';
-  }
-  return null;
-}
 
 /**
  * @private

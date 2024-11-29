@@ -1,6 +1,17 @@
 import { PostgresClientType, PostgresPoolClientType } from '../../../types/postgres';
 import config from '../config';
 
+export const postgres_options = {
+  user: config.POSTGRES_USER,
+  host: config.POSTGRES_HOST,
+  database: config.POSTGRES_DB,
+  password: config.POSTGRES_PASSWORD,
+  port: config.POSTGRES_PORT,
+};
+
+//NOTE include ioredis_options, redis_options, nats_options.
+//      postgres sub can be replaced with redis or nats for patterned subscriptions
+
 export const ioredis_options = {
   host: config.REDIS_HOST,
   port: config.REDIS_PORT,
@@ -18,12 +29,8 @@ export const redis_options = {
   database: config.REDIS_DATABASE,
 };
 
-export const postgres_options = {
-  user: config.POSTGRES_USER,
-  host: config.POSTGRES_HOST,
-  database: config.POSTGRES_DB,
-  password: config.POSTGRES_PASSWORD,
-  port: config.POSTGRES_PORT,
+export const nats_options = {
+  servers: config.NATS_SERVERS,
 };
 
 // Drop all user-defined schemas and their objects, then drop all tables in the public schema

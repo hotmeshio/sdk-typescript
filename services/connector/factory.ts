@@ -23,6 +23,7 @@ export class ConnectorService {
     await RedisConnection.disconnectAll();
     await IORedisConnection.disconnectAll();
     await PostgresConnection.disconnectAll();
+    await NatsConnection.disconnectAll();
   };
 
   /**
@@ -70,21 +71,22 @@ export class ConnectorService {
     if (connections.sub) {
       await ConnectorService.initClient(connections.sub, target, 'sub');
       // use store for publishing events if same as subscription
-      if (connections.sub.class === connections.store.class) {
-        connections.pub = {
-          class: connections.store.class,
-          options: { ...connections.store.options },
-          provider: connections.store.provider,
-        };
-        target.pub = target.store;
-      } else {
+      // if (connections.sub.class === connections.store.class) {
+      //   connections.pub = {
+      //     class: connections.store.class,
+      //     options: { ...connections.store.options },
+      //     provider: connections.store.provider,
+      //   };
+      //   target.pub = target.store;
+      // } else {
+        //initialize a separate client for publishing events
         connections.pub = {
           class: connections.sub.class,
           options: { ...connections.sub.options },
           provider: connections.sub.provider,
         };
         await ConnectorService.initClient(connections.pub, target, 'pub');
-      }
+      // }
     }
     // TODO: add search after refactoring
   }
@@ -115,6 +117,7 @@ export class ConnectorService {
           id,
           providerClass as RedisRedisClassType,
           options as RedisRedisClientOptions,
+          { provider: providerName },
         );
         break;
       case 'ioredis':
@@ -122,6 +125,7 @@ export class ConnectorService {
           id,
           providerClass as IORedisClassType,
           options as IORedisClientOptions,
+          { provider: providerName },
         );
         break;
       case 'nats':
@@ -129,6 +133,7 @@ export class ConnectorService {
           id,
           providerClass as NatsClassType,
           options as NatsClientOptions,
+          { provider: providerName },
         );
         break;
       case 'postgres':

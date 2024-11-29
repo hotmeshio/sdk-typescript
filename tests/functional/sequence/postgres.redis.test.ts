@@ -1,7 +1,6 @@
 import { Client as Postgres } from 'pg';
 import * as Redis from 'redis';
 
-import config from '../../$setup/config';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
