@@ -27,7 +27,7 @@ npm install @hotmeshio/hotmesh
 
 <br/>
 
-## MeshCall | Fast, Simple, Inter-Service Calls
+## MeshCall | Simple, Inter-Service Calls
 [MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects any function to the mesh.
 
 <details style="padding: .5em">
@@ -748,25 +748,48 @@ This example demonstrates how to search for those workflows where a given condit
 <br/>
 
 ## Connect
-HotMesh is pluggable and ships with support for Postgres (pg) and Redis (ioredis/redis) as standalone backends.
+HotMesh is pluggable and ships with support for Postgres (pg) and Redis (ioredis/redis).
 
-### Postgres
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Postgres <small>[more]</small></summary>
+
+### Connect Postgres Client
 ```typescript
-import { Client as Postgres } from 'pg';
-//OR `import { Pool as Postgres } from 'pg';`
+import { Client as PostgresClient } from 'pg';
 
+//provide these credentials to HotMesh
 const connection = {
-  class: Postgres,
+  class: PostgresClient,
   options: {
     connectionString: 'postgresql://usr:pwd@localhost:5432/db'
   }
 };
+
+```
+### Connect Postgres Pool
+```typescript
+import { Pool as PostgresPool } from 'pg';
+
+const PostgresPoolClient = new PostgresPool({
+  connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+});
+
+//provide these credentials to HotMesh
+const connection = {
+  class: PostgresPoolClient,
+  options: {}
+};
 ```
 
-### Redis
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Redis <small>[more]</small></summary>
+
+### Redis/IORedis
 ```typescript
 import * as Redis from 'redis';
-//OR `import { Client as Postgres } from 'pg';`
+//OR `import Redis from 'ioredis';`
 
 const connection = {
   class: Redis,
@@ -775,9 +798,13 @@ const connection = {
   }
 };
 ```
+</details>
 
-### NATS
-Add NATS for improved pub/sub support, including patterned subscriptions. Note the explicit channel subscription in the example below.
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">NATS <small>[more]</small></summary>
+
+### NATS PubSub
+Add NATS for improved PubSub support, including patterned subscriptions. Note the explicit channel subscription in the example below. *NATS is in alpha and may not be suitable for production use.*
 
 ```typescript
 import { Client as Postgres } from 'pg';
@@ -802,6 +829,7 @@ const connection = {
   },
 };
 ```
+</details>
 
 <br/>
 

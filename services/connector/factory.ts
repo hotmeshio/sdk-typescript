@@ -18,6 +18,13 @@ import { RedisConnection } from './providers/redis';
 import { AbstractConnection } from './index';
 
 export class ConnectorService {
+
+  static async disconnectAll(): Promise<void> {
+    await RedisConnection.disconnectAll();
+    await IORedisConnection.disconnectAll();
+    await PostgresConnection.disconnectAll();
+  };
+
   /**
    * Connect to a provider (redis, nats, postgres) and return the native
    * client. Connections are handled by the engine and worker routers at
@@ -67,12 +74,14 @@ export class ConnectorService {
         connections.pub = {
           class: connections.store.class,
           options: { ...connections.store.options },
+          provider: connections.store.provider,
         };
         target.pub = target.store;
       } else {
         connections.pub = {
           class: connections.sub.class,
           options: { ...connections.sub.options },
+          provider: connections.sub.provider,
         };
         await ConnectorService.initClient(connections.pub, target, 'pub');
       }
@@ -94,12 +103,13 @@ export class ConnectorService {
     }
     const providerClass = ProviderConfig.class;
     const options = ProviderConfig.options;
-    const providerName = identifyProvider(providerClass);
+    const providerName = ProviderConfig.provider || identifyProvider(providerClass); //e.g. 'postgres.poolclient'
+    const providerType = providerName.split('.')[0]; //e.g. 'postgres'
 
     let clientInstance: AbstractConnection<any, any>;
     const id = guid();
 
-    switch (providerName) {
+    switch (providerType) {
       case 'redis':
         clientInstance = await RedisConnection.connect(
           id,
@@ -122,16 +132,19 @@ export class ConnectorService {
         );
         break;
       case 'postgres':
+        //if connecting as a poolClient for subscription, auto connect the client
+        const bAutoConnect = field === 'sub';
         clientInstance = await PostgresConnection.connect(
           id,
           providerClass as PostgresClassType,
           options as PostgresClientOptions,
-        );
+          { connect: bAutoConnect, provider: providerName },
+        );        
         break;
       default:
-        throw new Error(`Unknown provider class: ${providerName}`);
+        throw new Error(`Unknown provider type: ${providerType}`);
     }
-
+    // Bind the resolved client instance to the target object
     target[field] = clientInstance.getClient();
   }
 }

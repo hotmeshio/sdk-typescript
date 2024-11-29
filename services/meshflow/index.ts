@@ -11,22 +11,24 @@ import { WorkflowHandleService } from './handle';
 /**
  * The MeshFlow service is a collection of services that
  * emulate Temporal's capabilities, but instead are
- * backed by Redis, ValKey, DragonflyDB, etc (whatever
- * your chosen backend). The following lifecycle example
+ * backed by Postgres or Redis/ValKey. The following lifecycle example
  * demonstrates how to start a new workflow, subscribe
  * to the result, and shutdown the system.
+ * 
  * @example
  * ```typescript
  * import { Client, Worker, MeshFlow, HotMesh } from '@hotmeshio/hotmesh';
- * import * as Redis from 'redis';
+ * import { Client as Postgres} from 'pg';
  * import * as workflows from './workflows';
  *
  * //1) Initialize the worker
  * await Worker.create({
  *   connection: {
- *     class: Redis,
- *     options: { url: 'redis://:key_admin@redis:6379' }
- *   },
+ *     class: Postgres,
+ *     options: {
+ *       connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+ *     }
+ *   }
  *   taskQueue: 'default',
  *   namespace: 'meshflow',
  *   workflow: workflows.example,
@@ -40,8 +42,10 @@ import { WorkflowHandleService } from './handle';
  * //2) initialize the client
  * const client = new Client({
  *   connection: {
- *     class: Redis,
- *     options: { url: 'redis://:key_admin@redis:6379' }
+ *     class: Postgres,
+ *     options: {
+ *       connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+ *     }
  *   }
  * });
  *

@@ -1,56 +1,45 @@
-import Redis from 'ioredis';
-import { Client as Postgres } from 'pg';
+import { Pool as Postgres } from 'pg';
 
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
-import { guid, sleepFor } from '../../../modules/utils';
-import { ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
+import { guid } from '../../../modules/utils';
+import { ProviderConfig } from '../../../types/provider';
 import {
   dropTables,
-  ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
 
 import * as workflows from './src/workflows';
-import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
 const { Connection, Client, Worker } = MeshFlow;
 
 describe('MESHFLOW | loopactivity | Postgres', () => {
   let handle: WorkflowHandleService;
-  let postgresClient: ProviderNativeClient;
+  let postgresPoolClient: any;
 
   beforeAll(async () => {
-    postgresClient = (
-      await PostgresConnection.connect(guid(), Postgres, postgres_options)
-    ).getClient();
-    await dropTables(postgresClient);
+    //drop old tables (full clean start)
+    const client = new Postgres(postgres_options);
+    await dropTables(client);
+    await client.end();
 
-    //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-    redisConnection.getClient().flushdb();
+    //initialize the Pool (share with all instances)
+    postgresPoolClient = new Postgres(postgres_options);
   });
 
   afterAll(async () => {
-    await sleepFor(1500);
     await MeshFlow.shutdown();
-  }, 10_000);
+  }, 15_000);
 
   describe('Connection', () => {
     describe('connect', () => {
-      it('should echo the Redis config', async () => {
+      it('should echo the config', async () => {
         const connection = (await Connection.connect({
-          store: { class: Postgres, options: postgres_options }, //and search
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
-        })) as ProvidersConfig;
+          class: postgresPoolClient,
+          options: {},
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
-        expect(connection.sub).toBeDefined();
+        expect(connection.options).toBeDefined();
       });
     });
   });
@@ -59,20 +48,19 @@ describe('MESHFLOW | loopactivity | Postgres', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({ connection: {
-          store: { class: Postgres, options: postgres_options }, //and search
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
+          class: postgresPoolClient,
+          options: {},
         }});
-        //NOTE: `handle` is a global variable.
+
         handle = await client.workflow.start({
           args: [],
           taskQueue: 'loop-world',
           workflowName: 'example',
           workflowId: 'workflow-' + guid(),
-          expire: 120, //ensures the failed workflows aren't scrubbed too soon (so they can be reviewed)
+          expire: 120,
         });
         expect(handle.workflowId).toBeDefined();
-      }, 10_000);
+      }, 20_000);
     });
   });
 
@@ -81,16 +69,15 @@ describe('MESHFLOW | loopactivity | Postgres', () => {
       it('should create and run a worker', async () => {
         const worker = await Worker.create({
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
+            class: postgresPoolClient,
+            options: {},
           },
           taskQueue: 'loop-world',
           workflow: workflows.example,
         });
         await worker.run();
         expect(worker).toBeDefined();
-      }, 10_000);
+      }, 20_000);
     });
   });
 
@@ -99,7 +86,7 @@ describe('MESHFLOW | loopactivity | Postgres', () => {
       it('run await 3 functions and one sleepFor in parallel', async () => {
         const result = await handle.result();
         expect(result).toEqual(['Hello, 1!', 'Hello, 2!', 'Hello, 3!', 5]);
-      }, 15_000);
+      }, 20_000);
     });
   });
 });

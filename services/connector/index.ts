@@ -1,3 +1,4 @@
+import { StringAnyType } from '../../types';
 import {
   ProviderClass,
   ProviderNativeClient,
@@ -17,7 +18,8 @@ import { ILogger, LoggerService } from '../logger';
  * 5) Update ./modules/utils.ts (identifyProvider) with logic to resolve the provider by inspecting the class/import
  */
 abstract class AbstractConnection<PClass, POptions> {
-  static logger: ILogger = new LoggerService('hotmesh', 'meshos');
+  static logger: ILogger = new LoggerService('hotmesh', 'system');
+  static disconnecting: boolean = false;
   protected connection: any | null = null;
   protected static instances: Map<
     string,
@@ -30,6 +32,7 @@ abstract class AbstractConnection<PClass, POptions> {
   protected abstract createConnection(
     client: PClass,
     options: POptions,
+    config?: StringAnyType,
   ): Promise<any>;
 
   public abstract getClient(): ProviderNativeClient;
@@ -52,7 +55,8 @@ abstract class AbstractConnection<PClass, POptions> {
     this: new () => T,
     id: string,
     client: ProviderClass,
-    options?: ProviderOptions,
+    options?: ProviderOptions, //user
+    config?: StringAnyType,   //system reserved
   ): Promise<T> {
     if (AbstractConnection.instances.has(id)) {
       return AbstractConnection.instances.get(id) as T;
@@ -60,19 +64,23 @@ abstract class AbstractConnection<PClass, POptions> {
     const instance = new this();
     const opts = options ? { ...options } : { ...instance.defaultOptions };
 
-    instance.connection = await instance.createConnection(client, opts);
+    instance.connection = await instance.createConnection(client, opts, config);
     instance.id = id;
     AbstractConnection.instances.set(id, instance);
     return instance;
   }
 
   public static async disconnectAll(): Promise<void> {
-    await Promise.all(
-      Array.from(this.instances.values()).map((instance) =>
-        instance.disconnect(),
-      ),
-    );
-    this.instances.clear();
+    if (!this.disconnecting) {
+      this.disconnecting = true;
+      await Promise.all(
+        Array.from(this.instances.values()).map((instance) =>
+          instance.disconnect(),
+        ),
+      );
+      this.instances.clear();
+      this.disconnecting = false;
+    }
   }
 }
 

@@ -85,7 +85,7 @@ export function XSleepFor(ms: number): {
 export function identifyProvider(provider: any): Providers | null {
   const prototype = Object.getPrototypeOf(provider);
 
-  if (provider.Query?.prototype || Object.keys(provider).includes('database')) {
+  if (provider.Query?.prototype || Object.keys(provider).includes('database') || (prototype.name === 'Pool')) {
     return 'postgres';
   } else if (provider.constructor && provider.constructor.name === 'Client') {
     return 'nats';
@@ -117,7 +117,7 @@ export function identifyProvider(provider: any): Providers | null {
   }
 
   let type: Providers | null = null;
-  if (Object.keys(provider).includes('connection')) {
+  if (Object.keys(provider).includes('connection') || (!isNaN(provider.totalCount) && !isNaN(provider.idleCount))) {
     type = 'postgres';
   } else if (Object.keys(provider).includes('Pipeline')) {
     type = 'ioredis';

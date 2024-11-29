@@ -1,3 +1,5 @@
+import crypto from 'crypto';
+
 import {
   KeyService,
   KeyStoreParams,
@@ -43,26 +45,43 @@ class PostgresSubService extends SubService<PostgresClientType & ProviderClient>
     return KeyService.mintKey(this.namespace, type, params);
   }
 
+  mintSafeKey(type: KeyType, params: KeyStoreParams): [string, string] {
+    const originalKey = this.mintKey(type, params);
+
+    if (originalKey.length <= 63) {
+      return [originalKey, originalKey];
+    }
+
+    const { appId = '', engineId = '' } = params;
+    const baseKey = `${this.namespace}:${appId}:${type}`;
+    const maxHashLength = 63 - baseKey.length - 1; // Reserve space for `:` delimiter
+
+    const engineIdHash = crypto.createHash('sha256').update(engineId).digest('hex').substring(0, maxHashLength);
+    const safeKey = `${baseKey}:${engineIdHash}`;
+
+    return [originalKey, safeKey];
+  }
+
   async subscribe(
     keyType: KeyType.QUORUM,
     callback: SubscriptionCallback,
     appId: string,
     engineId?: string,
   ): Promise<void> {
-    const topic = this.mintKey(keyType, { appId, engineId });
+    const [originalKey, safeKey] = this.mintSafeKey(keyType, { appId, engineId });
 
-    // Start listening to the topic
-    await this.eventClient.query(`LISTEN "${topic}"`);
-    this.logger.info(`postgres-subscribe ${topic}`);
+    // Start listening to the safe topic
+    await this.eventClient.query(`LISTEN "${safeKey}"`);
+    this.logger.debug(`postgres-subscribe`, { originalKey, safeKey });
 
     // Set up the notification handler
-    this.eventClient.on('notification', (msg: {channel: string, payload: any}) => {
-      if (msg.channel === topic) {
+    this.eventClient.on('notification', (msg: { channel: string; payload: any }) => {
+      if (msg.channel === safeKey) {
         try {
           const payload = JSON.parse(msg.payload || '{}');
-          callback(topic, payload);
+          callback(safeKey, payload);
         } catch (err) {
-          this.logger.error(`Error parsing message for topic ${topic}:`, err);
+          this.logger.error(`Error parsing message for topic ${safeKey}:`, err);
         }
       }
     });
@@ -73,11 +92,11 @@ class PostgresSubService extends SubService<PostgresClientType & ProviderClient>
     appId: string,
     engineId?: string,
   ): Promise<void> {
-    const topic = this.mintKey(keyType, { appId, engineId });
+    const [originalKey, safeKey] = this.mintSafeKey(keyType, { appId, engineId });
 
-    // Stop listening to the topic
-    await this.eventClient.query(`UNLISTEN "${topic}"`);
-    this.logger.info(`postgres-unsubscribe ${topic}`);
+    // Stop listening to the safe topic
+    await this.eventClient.query(`UNLISTEN "${safeKey}"`);
+    this.logger.debug(`postgres-subscribe`, { originalKey, safeKey });
   }
 
   async publish(
@@ -86,14 +105,14 @@ class PostgresSubService extends SubService<PostgresClientType & ProviderClient>
     appId: string,
     engineId?: string,
   ): Promise<boolean> {
-    const topic = this.mintKey(keyType, { appId, engineId });
-  
-    // Publish the message using NOTIFY
+    const [originalKey, safeKey] = this.mintSafeKey(keyType, { appId, engineId });
+
+    // Publish the message using the safe topic
     const payload = JSON.stringify(message).replace(/'/g, "''");
-    await this.storeClient.query(`NOTIFY "${topic}", '${payload}'`);
-    this.logger.info(`postgres-publish ${topic}`);
+    await this.storeClient.query(`NOTIFY "${safeKey}", '${payload}'`);
+    this.logger.debug(`postgres-publish`, { originalKey, safeKey });
     return true;
-  }  
+  }
 
   async psubscribe(): Promise<void> {
     throw new Error('Pattern subscriptions are not supported in PostgreSQL');

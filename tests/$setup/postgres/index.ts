@@ -1,3 +1,4 @@
+import { PostgresClientType, PostgresPoolClientType } from '../../../types/postgres';
 import config from '../config';
 
 export const ioredis_options = {
@@ -26,7 +27,19 @@ export const postgres_options = {
 };
 
 // Drop all user-defined schemas and their objects, then drop all tables in the public schema
-export const dropTables = async (postgresClient: any): Promise<void> => {
+export const dropTables = async (transactionClient: any): Promise<void> => {
+  let postgresClient: any;
+  let releaseClient = false;
+  
+  if (!(isNaN(transactionClient?.totalCount) && isNaN(transactionClient?.idleCount))) {
+    // It's a Pool, need to acquire a client
+    postgresClient = await (transactionClient as PostgresPoolClientType).connect();
+    releaseClient = true;
+  } else {
+    // Assume it's a connected Client
+    postgresClient = transactionClient as PostgresClientType;
+  }
+
   // Begin transaction
   await postgresClient.query('BEGIN');
 
@@ -67,6 +80,10 @@ export const dropTables = async (postgresClient: any): Promise<void> => {
     await postgresClient.query('ROLLBACK');
     console.error('Error during schema and table dropping:', error);
     throw error;
+  } finally {
+    if (releaseClient) {
+      (postgresClient as PostgresPoolClientType).release();
+    }
   }
 };
 

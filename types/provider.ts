@@ -67,7 +67,11 @@ export type TransactionResultList = (string | number)[]; // e.g., [3, 2, '0']
 export type ProviderConfig = {
   class: any;
   options: StringAnyType;
+  /* 'redis' (Class) | 'ioredis' (Class) | 'postgres' (Client module) | 'postgres.pool' | 'postgres.poolclient', 'nats' */
+  provider?: string; 
 };
+
+
 
 export type ProvidersConfig = {
   sub: ProviderConfig;

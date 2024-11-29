@@ -4,7 +4,7 @@ import { KeyService, KeyType } from '../../../../modules/key';
 import { parseStreamMessage } from '../../../../modules/utils';
 import { StreamService } from '../../index';
 import { KeyStoreParams, StringAnyType } from '../../../../types';
-import { PostgresClientType } from '../../../../types/postgres';
+import { PostgresClientType, PostgresPoolClientType } from '../../../../types/postgres';
 import {
   PublishMessageConfig,
   StreamConfig,
@@ -40,7 +40,19 @@ class PostgresStreamService extends StreamService<
   }
 
   async deploy(): Promise<void> {
-    const client = this.streamClient;
+    const transactionClient = this.streamClient as PostgresClientType | PostgresPoolClientType;
+    
+    let client: any;
+    let releaseClient = false;
+
+    if ('connect' in transactionClient && 'release' in transactionClient) {
+      // It's a Pool, need to acquire a client
+      client = await transactionClient.connect();
+      releaseClient = true;
+    } else {
+      // Assume it's a connected Client
+      client = transactionClient;
+    }
 
     try {
       // Acquire advisory lock to prevent race conditions
@@ -91,6 +103,10 @@ class PostgresStreamService extends StreamService<
     } catch (error) {
       this.logger.error('Error deploying tables', { error });
       throw error;
+    } finally {
+      if (releaseClient) {
+        await client.release();
+      }
     }
   }
 
