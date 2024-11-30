@@ -151,8 +151,8 @@ export class ClientService {
       //longhand format (sub, store, stream, pub, search)
       const response = [];
       for (const p in this.connection) {
-        if (!response.includes(this.connection[p])) {
-          response.push(hashOptions(this.connection[p]));
+        if (this.connection[p].options) {
+          response.push(hashOptions(this.connection[p].options));
         }
       }
       return response.join('');

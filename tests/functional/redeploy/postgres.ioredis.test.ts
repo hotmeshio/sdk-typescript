@@ -43,7 +43,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connections: {
+        connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
@@ -53,7 +53,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
-          connections: {
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
@@ -256,7 +256,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
         appId: 'abc',
         logLevel: HMSH_LOGLEVEL,
         engine: {
-          connections: {
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
@@ -265,7 +265,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
         workers: [
           {
             topic: 'work.do',
-            connections: {
+            connection: {
               store: { class: Postgres, options: postgres_options },
               stream: { class: Postgres, options: postgres_options },
               sub: { class: Redis, options: redis_options },
@@ -279,7 +279,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
           },
           {
             topic: 'work.do.more',
-            connections: {
+            connection: {
               store: { class: Postgres, options: postgres_options },
               stream: { class: Postgres, options: postgres_options },
               sub: { class: Redis, options: redis_options },

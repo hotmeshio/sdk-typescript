@@ -56,7 +56,7 @@ describe('FUNCTIONAL | HotMesh', () => {
         logLevel: HMSH_LOGLEVEL,
 
         engine: {
-          connections: {
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: ioredis_options },
@@ -66,7 +66,7 @@ describe('FUNCTIONAL | HotMesh', () => {
         workers: [
           {
             topic: 'order.bundle',
-            connections: {
+            connection: {
               store: { class: Postgres, options: postgres_options },
               stream: { class: Postgres, options: postgres_options },
               sub: { class: Redis, options: ioredis_options },

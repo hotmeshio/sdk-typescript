@@ -42,7 +42,7 @@ describe('FUNCTIONAL | Sequence | Postgres+Redis', () => {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connections: {
+        connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
@@ -52,7 +52,7 @@ describe('FUNCTIONAL | Sequence | Postgres+Redis', () => {
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
-          connections: {
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },

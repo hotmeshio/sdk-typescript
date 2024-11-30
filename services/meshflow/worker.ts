@@ -114,8 +114,8 @@ export class WorkerService {
       //longhand format (sub, store, stream, pub, search)
       const response = [];
       for (const p in connection) {
-        if (!response.includes(connection[p])) {
-          response.push(hashOptions(connection[p]));
+        if (connection[p].options) {
+          response.push(hashOptions(connection[p].options));
         }
       }
       return response.join('');
