@@ -57,7 +57,7 @@ describe('FUNCTIONAL | HotMesh', () => {
 
         engine: {
           connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: ioredis_options },
           },
@@ -67,7 +67,7 @@ describe('FUNCTIONAL | HotMesh', () => {
           {
             topic: 'order.bundle',
             connections: {
-              store: { class: Postgres, options: postgres_options }, //and search
+              store: { class: Postgres, options: postgres_options },
               stream: { class: Postgres, options: postgres_options },
               sub: { class: Redis, options: ioredis_options },
             },

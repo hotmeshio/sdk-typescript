@@ -51,44 +51,37 @@ export class ConnectorService {
   static async initClients(
     target: HotMeshEngine | HotMeshWorker,
   ): Promise<void> {
-    let connections = target.connections;
+    let connection = polyfill.providerConfig(target);
 
-    if (!connections) {
-      const ProviderConfig = polyfill.providerConfig(target);
-      connections = target.connections = {
-        store: { ...ProviderConfig },
-        stream: { ...ProviderConfig },
-        sub: { ...ProviderConfig },
+    if (!('store' in connection)) {
+      connection = target.connection = {
+        ...connection,
+        store: { ...connection },
+        stream: { ...connection },
+        sub: { ...connection },
       };
     }
     // Expanded form
-    if (connections.store) {
-      await ConnectorService.initClient(connections.store, target, 'store');
+    if (connection.store) {
+      await ConnectorService.initClient(connection.store, target, 'store');
     }
-    if (connections.stream) {
-      await ConnectorService.initClient(connections.stream, target, 'stream');
+    if (connection.stream) {
+      await ConnectorService.initClient(connection.stream, target, 'stream');
     }
-    if (connections.sub) {
-      await ConnectorService.initClient(connections.sub, target, 'sub');
+    if (connection.sub) {
+      await ConnectorService.initClient(connection.sub, target, 'sub');
       // use store for publishing events if same as subscription
-      // if (connections.sub.class === connections.store.class) {
-      //   connections.pub = {
-      //     class: connections.store.class,
-      //     options: { ...connections.store.options },
-      //     provider: connections.store.provider,
-      //   };
-      //   target.pub = target.store;
-      // } else {
-        //initialize a separate client for publishing events
-        connections.pub = {
-          class: connections.sub.class,
-          options: { ...connections.sub.options },
-          provider: connections.sub.provider,
+      if (connection.sub.class !== connection.store.class) {
+        //initialize a separate client for publishing events, using
+        //the same provider as the subscription client
+        connection.pub = {
+          class: connection.sub.class,
+          options: { ...connection.sub.options },
+          provider: connection.sub.provider,
         };
-        await ConnectorService.initClient(connections.pub, target, 'pub');
-      // }
+        await ConnectorService.initClient(connection.pub, target, 'pub');
+      }
     }
-    // TODO: add search after refactoring
   }
 
   /**

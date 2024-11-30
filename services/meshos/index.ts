@@ -2,7 +2,7 @@ import { MeshData } from '../meshdata/index';
 import { arrayToHash, guid } from '../../modules/utils';
 import * as Types from '../../types';
 import { LoggerService } from '../logger';
-import { ProvidersConfig } from '../../types/provider';
+import { ProviderClass, ProviderConfig, ProvidersConfig } from '../../types/provider';
 
 /**
  * MeshOS is an abstract base class for schema-driven entity management within the Mesh network.
@@ -153,15 +153,13 @@ abstract class MeshOS {
   static logger: Types.ILogger = new LoggerService('hotmesh', 'meshos');
 
   constructor(
-    providerClass: Types.ProviderClass,
+    providerConfig: ProviderConfig | ProvidersConfig,
     namespace: string,
     namespaceType: string,
-    config: Types.ProviderConfig,
-    connections: ProvidersConfig,
   ) {
     this.namespace = namespace; // e.g., 's'
-    this.namespaceType = namespaceType; // e.g., 'fuzzy' (friendly name in case namespace is abbreviated)
-    this.meshData = this.initializeMeshData(providerClass, config, connections);
+    this.namespaceType = namespaceType; // e.g., 'sandbox' (friendly name in case namespace is abbreviated)
+    this.meshData = this.initializeMeshData(providerConfig);
   }
 
   // Abstract methods to be implemented by child classes
@@ -174,19 +172,9 @@ abstract class MeshOS {
    * --the true provider of functionality)
    */
   private initializeMeshData(
-    providerClass: Types.ProviderClass,
-    providerConfig: Types.ProviderConfig,
-    connections: ProvidersConfig,
+    providerConfig: ProviderConfig | ProvidersConfig,
   ): MeshData {
-    if (connections) {
-      return new MeshData(
-        providerClass,
-        providerConfig,
-        this.getSearchOptions(),
-        connections,
-      );
-    }
-    return new MeshData(providerClass, providerConfig, this.getSearchOptions());
+    return new MeshData(providerConfig, this.getSearchOptions());
   }
 
   /**
@@ -547,7 +535,7 @@ abstract class MeshOS {
   static async init(p = MeshOS.profiles): Promise<void> {
     for (const key in p) {
       const profile = p[key];
-      if (profile.db?.connection || profile.db?.connections) {
+      if (profile.db?.connection) {
         this.logger.info(`meshos-initializing`, {
           db: profile.db.name,
           key,
@@ -572,11 +560,9 @@ abstract class MeshOS {
             });
 
             const instance = pinstances[entity.name] = new entity.class(
-              profile.db.connection?.class,
+              profile.db.connection,
               ns,
               namespace.type,
-              profile.db.connection?.options,
-              profile.db.connections,
             );
             await instance.init(profile.db.search);
           }

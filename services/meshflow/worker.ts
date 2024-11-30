@@ -94,13 +94,11 @@ export class WorkerService {
     if (WorkerService.instances.has(targetTopic)) {
       return await WorkerService.instances.get(targetTopic);
     }
-    const connectionType =
-      'options' in config?.connection ? 'connection' : 'connections';
     const hotMeshClient = HotMesh.init({
       logLevel: options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
       engine: {
-        [connectionType]: { ...config?.connection },
+        connection: { ...config?.connection },
       },
     });
     WorkerService.instances.set(targetTopic, hotMeshClient);
@@ -274,17 +272,15 @@ export class WorkerService {
     const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
-    const connectionType =
-      'options' in providerConfig ? 'connection' : 'connections';
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid ? `${config.guid}XA` : undefined,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
-      engine: { [connectionType]: providerConfig },
+      engine: { connection: providerConfig },
       workers: [
         {
           topic: activityTopic,
-          [connectionType]: providerConfig,
+          connection: providerConfig,
           callback: this.wrapActivityFunctions().bind(this),
         },
       ],
@@ -375,17 +371,15 @@ export class WorkerService {
     const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
-    const connectionType =
-      'options' in providerConfig ? 'connection' : 'connections';
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
-      engine: { [connectionType]: providerConfig },
+      engine: { connection: providerConfig },
       workers: [
         {
           topic: workflowTopic,
-          [connectionType]: providerConfig,
+          connection: providerConfig,
           callback: this.wrapWorkflowFunction(
             workflowFunction,
             workflowTopic,

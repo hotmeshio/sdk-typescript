@@ -44,7 +44,7 @@ describe('FUNCTIONAL | Activity Cycles | Postgres+IORedis', () => {
 
       engine: {
         connections: {
-          store: { class: Postgres, options: postgres_options }, //and search
+          store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
         },
@@ -57,7 +57,7 @@ describe('FUNCTIONAL | Activity Cycles | Postgres+IORedis', () => {
         {
           topic: 'cycle.count',
           connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -80,7 +80,7 @@ describe('FUNCTIONAL | Activity Cycles | Postgres+IORedis', () => {
         {
           topic: 'cycle.err',
           connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },

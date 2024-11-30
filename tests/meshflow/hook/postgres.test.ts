@@ -48,7 +48,7 @@ describe('MESHFLOW | hook & search | Postgres', () => {
     describe('connect', () => {
       it('should echo the Expanded config', async () => {
         const connection = (await Connection.connect({
-          store: { class: Postgres, options: postgres_options }, //and search
+          store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
         })) as ProvidersConfig;
@@ -63,7 +63,7 @@ describe('MESHFLOW | hook & search | Postgres', () => {
       it('should connect a client and start a workflow execution', async () => {
         client = new Client({
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -98,7 +98,7 @@ describe('MESHFLOW | hook & search | Postgres', () => {
           namespace,
           guid: 'parent-worker',
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -131,7 +131,7 @@ describe('MESHFLOW | hook & search | Postgres', () => {
           namespace,
           guid: 'child-worker',
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -147,7 +147,7 @@ describe('MESHFLOW | hook & search | Postgres', () => {
           namespace,
           guid: 'hook-worker',
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },

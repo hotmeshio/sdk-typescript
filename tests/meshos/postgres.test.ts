@@ -66,7 +66,7 @@ describe('MeshOS | Postgres', () => {
         name: 'postgres',
         label: 'Postgres',
         search: true, //searchable
-        connections: {
+        connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },

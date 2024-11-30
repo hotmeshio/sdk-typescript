@@ -46,7 +46,7 @@ describe('MESHFLOW | interrupt | Postgres', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
         const connection = (await Connection.connect({
-          store: { class: Postgres, options: postgres_options }, //and search
+          store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
         })) as ProvidersConfig;
@@ -61,7 +61,7 @@ describe('MESHFLOW | interrupt | Postgres', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
         const client = new Client({
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -83,7 +83,7 @@ describe('MESHFLOW | interrupt | Postgres', () => {
       it('should create and run the CHILD workflow worker', async () => {
         const worker = await Worker.create({
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -100,7 +100,7 @@ describe('MESHFLOW | interrupt | Postgres', () => {
       it('should create and run the PARENT workflow worker', async () => {
         const worker = await Worker.create({
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -132,7 +132,7 @@ describe('MESHFLOW | interrupt | Postgres', () => {
         expect(result).toEqual(expectedOutput);
         const client = new Client({
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },

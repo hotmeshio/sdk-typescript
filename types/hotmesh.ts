@@ -4,7 +4,7 @@ import { HotMesh as HotMeshService } from '../services/hotmesh';
 import { HookRules } from './hook';
 import { StreamData, StreamDataResponse } from './stream';
 import { LogLevel } from './logger';
-import { ProviderClient, ProviderConfig } from './provider';
+import { ProviderClient, ProviderConfig, ProvidersConfig } from './provider';
 
 /**
  * the full set of entity types that are stored in the key/value store
@@ -88,19 +88,19 @@ type HotMeshEngine = {
    * short-form format for the connection options for the
    * store, stream, sub, and search clients
    */
-  connection?: ProviderConfig;
+  connection?: ProviderConfig | ProvidersConfig;
 
   /**
    * long-form format for the connection options for the
    * store, stream, sub, and search clients
    */
-  connections?: {
-    store: ProviderConfig;
-    stream: ProviderConfig;
-    sub: ProviderConfig;
-    pub?: ProviderConfig; //system injects if necessary (if store channel cannot be used for pub)
-    search?: ProviderConfig; //inherits from store if not set
-  };
+  // connections?: {
+  //   store: ProviderConfig;
+  //   stream: ProviderConfig;
+  //   sub: ProviderConfig;
+  //   pub?: ProviderConfig; //system injects if necessary (if store channel cannot be used for pub)
+  //   search?: ProviderConfig; //inherits from store if not set
+  // };
 
   /**
    * the number of milliseconds to wait before reclaiming a stream;
@@ -171,19 +171,19 @@ type HotMeshWorker = {
    * short-form format for the connection options for the
    * store, stream, sub, and search clients
    */
-  connection?: ProviderConfig;
+  connection?: ProviderConfig | ProvidersConfig;
 
   /**
    * long-form format for the connection options for the
    * store, stream, sub, and search clients
    */
-  connections?: {
-    store: ProviderConfig;
-    stream: ProviderConfig;
-    sub: ProviderConfig;
-    pub?: ProviderConfig; //if store channel cannot be used for pub
-    search?: ProviderConfig; //inherits from store if not set
-  };
+  // connections?: {
+  //   store: ProviderConfig;
+  //   stream: ProviderConfig;
+  //   sub: ProviderConfig;
+  //   pub?: ProviderConfig; //if store channel cannot be used for pub
+  //   search?: ProviderConfig; //inherits from store if not set
+  // };
 
   /**
    * the number of milliseconds to wait before reclaiming a stream;
