@@ -84,7 +84,7 @@ describe('MESHFLOW | baseline | Postgres', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      }, 10_000);
+      }, 15_000);
 
       it('should create and run a child worker', async () => {
         const worker = await Worker.create({

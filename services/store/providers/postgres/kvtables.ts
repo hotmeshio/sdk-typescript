@@ -1,5 +1,5 @@
 import { sleepFor } from '../../../../modules/utils';
-import { PostgresClientType } from '../../../../types/postgres';
+import { PostgresClientType, PostgresPoolClientType } from '../../../../types/postgres';
 import type { PostgresStoreService } from './postgres';
 
 export const KVTables = (context: PostgresStoreService) => ({
@@ -9,7 +9,19 @@ export const KVTables = (context: PostgresStoreService) => ({
    * @param appName - The name of the application.
    */
   async deploy(appName: string): Promise<void> {
-    const client = context.pgClient;
+    const transactionClient = context.pgClient as any;
+    
+    let client: any;
+    let releaseClient = false;
+
+    if (!(isNaN(transactionClient?.totalCount) && isNaN(transactionClient?.idleCount))) {
+      // It's a Pool, need to acquire a client
+      client = await (transactionClient as PostgresPoolClientType).connect();
+      releaseClient = true;
+    } else {
+      // Assume it's a connected Client
+      client = transactionClient as PostgresClientType;
+    }
 
     try {
       // Acquire advisory lock
@@ -39,8 +51,13 @@ export const KVTables = (context: PostgresStoreService) => ({
         await this.waitForTablesCreation(client, lockId, appName);
       }
     } catch (error) {
+      console.error(error);
       context.logger.error('Error deploying tables', { error });
       throw error;
+    } finally {
+      if (releaseClient) {
+        await client.release();
+      }
     }
   },
 
@@ -97,231 +114,231 @@ export const KVTables = (context: PostgresStoreService) => ({
   },
 
   async createTables(
-    client: PostgresClientType,
+    client: PostgresClientType | PostgresPoolClientType,
     appName: string,
   ): Promise<void> {
-    // Begin transaction
-    await client.query('BEGIN');
-  
-    // Sanitize schema name
-    const schemaName = context.storeClient.safeName(appName);
-  
-    // Create schema if it doesn't exist
-    await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName};`);
-  
-    const tableDefinitions = this.getTableDefinitions(appName);
-  
-    for (const tableDef of tableDefinitions) {
-      const fullTableName = `${tableDef.schema}.${tableDef.name}`;
-  
-      switch (tableDef.type) {
-        case 'string':
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${fullTableName} (
-              key TEXT PRIMARY KEY,
-              value TEXT,
-              expiry TIMESTAMP WITH TIME ZONE
-            );
-          `);
-          break;
-  
-        case 'hash':
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${fullTableName} (
-              key TEXT NOT NULL,
-              field TEXT NOT NULL,
-              value TEXT,
-              expiry TIMESTAMP WITH TIME ZONE,
-              PRIMARY KEY (key, field)
-            );
-          `);
-          break;
-  
-        case 'jobhash':
-          // Create the enum type in the schema
-          await client.query(`
-            DO $$
-            BEGIN
-              IF NOT EXISTS (
-                SELECT 1 FROM pg_type t
-                JOIN pg_namespace n ON n.oid = t.typnamespace
-                WHERE t.typname = 'type_enum' AND n.nspname = '${schemaName}'
-              ) THEN
-                CREATE TYPE ${schemaName}.type_enum AS ENUM ('jmark', 'hmark', 'status', 'jdata', 'adata', 'udata', 'other');
-              END IF;
-            END$$;
-          `);
-
-          // Create the main jobs table with partitioning on id
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${fullTableName} (
-              id UUID DEFAULT gen_random_uuid(),
-              key TEXT NOT NULL,
-              entity TEXT,
-              status INTEGER NOT NULL,
-              created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-              updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-              expired_at TIMESTAMP WITH TIME ZONE,
-              is_live BOOLEAN DEFAULT TRUE,
-              PRIMARY KEY (id)  -- Primary key on id which is also our partitioning key
-            ) PARTITION BY HASH (id);
-          `);
-  
-          // Create partitions using a DO block
-          await client.query(`
-            DO $$
-            BEGIN
-              FOR i IN 0..7 LOOP
-                EXECUTE format(
-                  'CREATE TABLE IF NOT EXISTS ${fullTableName}_part_%s PARTITION OF ${fullTableName} 
-                  FOR VALUES WITH (modulus 8, remainder %s)',
-                  i, i
-                );
-              END LOOP;
-            END$$;
-          `);
-  
-          // Create optimized indexes
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expired_at 
-            ON ${fullTableName} (key, expired_at) INCLUDE (is_live);
-          `);
-  
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_entity_status 
-            ON ${fullTableName} (entity, status);
-          `);
-  
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_expired_at 
-            ON ${fullTableName} (expired_at);
-          `);
-  
-          // Create function to update is_live flag in the schema
-          await client.query(`
-            CREATE OR REPLACE FUNCTION ${schemaName}.update_is_live()
-            RETURNS TRIGGER AS $$
-            BEGIN
-              NEW.is_live := NEW.expired_at IS NULL OR NEW.expired_at > NOW();
-              RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
-          `);
-  
-          // Create trigger for is_live updates
-          await client.query(`
-            CREATE TRIGGER trg_update_is_live
-            BEFORE INSERT OR UPDATE ON ${fullTableName}
-            FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.update_is_live();
-          `);
-  
-          // Create function to enforce uniqueness of live jobs
-          await client.query(`
-            CREATE OR REPLACE FUNCTION ${schemaName}.enforce_live_job_uniqueness()
-            RETURNS TRIGGER AS $$
-            BEGIN
-              IF (NEW.expired_at IS NULL OR NEW.expired_at > NOW()) THEN
-                PERFORM pg_advisory_xact_lock(hashtextextended(NEW.key, 0));
-                IF EXISTS (
-                  SELECT 1 FROM ${fullTableName}
-                  WHERE key = NEW.key 
-                  AND (expired_at IS NULL OR expired_at > NOW())
-                  AND id <> NEW.id
+    try {
+      await client.query('BEGIN');
+      const schemaName = context.storeClient.safeName(appName);
+      await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName};`);
+      const tableDefinitions = this.getTableDefinitions(appName);
+    
+      for (const tableDef of tableDefinitions) {
+        const fullTableName = `${tableDef.schema}.${tableDef.name}`;
+    
+        switch (tableDef.type) {
+          case 'string':
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${fullTableName} (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                expiry TIMESTAMP WITH TIME ZONE
+              );
+            `);
+            break;
+    
+          case 'hash':
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${fullTableName} (
+                key TEXT NOT NULL,
+                field TEXT NOT NULL,
+                value TEXT,
+                expiry TIMESTAMP WITH TIME ZONE,
+                PRIMARY KEY (key, field)
+              );
+            `);
+            break;
+    
+          case 'jobhash':
+            // Create the enum type in the schema
+            await client.query(`
+              DO $$
+              BEGIN
+                IF NOT EXISTS (
+                  SELECT 1 FROM pg_type t
+                  JOIN pg_namespace n ON n.oid = t.typnamespace
+                  WHERE t.typname = 'type_enum' AND n.nspname = '${schemaName}'
                 ) THEN
-                  RAISE EXCEPTION 'A live job with key % already exists.', NEW.key;
+                  CREATE TYPE ${schemaName}.type_enum AS ENUM ('jmark', 'hmark', 'status', 'jdata', 'adata', 'udata', 'other');
                 END IF;
-              END IF;
-              RETURN NEW;
-            END;
-            $$ LANGUAGE plpgsql;
-          `);
-  
-          // Create trigger for uniqueness enforcement
-          await client.query(`
-            CREATE TRIGGER trg_enforce_live_job_uniqueness
-            BEFORE INSERT OR UPDATE ON ${fullTableName}
-            FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.enforce_live_job_uniqueness();
-          `);
+              END$$;
+            `);
 
-          // Create the attributes table with partitioning
-          const attributesTableName = `${fullTableName}_attributes`;
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${attributesTableName} (
-              job_id UUID NOT NULL,
-              field TEXT NOT NULL,
-              value TEXT,
-              type ${schemaName}.type_enum NOT NULL,
-              PRIMARY KEY (job_id, field),
-              FOREIGN KEY (job_id) REFERENCES ${fullTableName} (id) ON DELETE CASCADE
-            ) PARTITION BY HASH (job_id);
-          `);
-  
-          // Create partitions for attributes table
-          await client.query(`
-            DO $$
-            BEGIN
-              FOR i IN 0..7 LOOP
-                EXECUTE format(
-                  'CREATE TABLE IF NOT EXISTS ${attributesTableName}_part_%s PARTITION OF ${attributesTableName} 
-                  FOR VALUES WITH (modulus 8, remainder %s)',
-                  i, i
-                );
-              END LOOP;
-            END$$;
-          `);
-  
-          // Create indexes for attributes table
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_type_field 
-            ON ${attributesTableName} (type, field);
-          `);
-  
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_field 
-            ON ${attributesTableName} (field);
-          `);
-          break;
-  
-        case 'list':
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${fullTableName} (
-              key TEXT NOT NULL,
-              index BIGINT NOT NULL,
-              value TEXT,
-              expiry TIMESTAMP WITH TIME ZONE,
-              PRIMARY KEY (key, index)
-            );
-          `);
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expiry 
-            ON ${fullTableName} (key, expiry);
-          `);
-          break;
-  
-        case 'sorted_set':
-          await client.query(`
-            CREATE TABLE IF NOT EXISTS ${fullTableName} (
-              key TEXT NOT NULL,
-              member TEXT NOT NULL,
-              score DOUBLE PRECISION NOT NULL,
-              expiry TIMESTAMP WITH TIME ZONE,
-              PRIMARY KEY (key, member)
-            );
-          `);
-          await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_score_member 
-            ON ${fullTableName} (key, score, member);
-          `);
-          break;
-  
-        default:
-          context.logger.warn(`Unknown table type for ${tableDef.name}`);
-          break;
+            // Create the main jobs table with partitioning on id
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${fullTableName} (
+                id UUID DEFAULT gen_random_uuid(),
+                key TEXT NOT NULL,
+                entity TEXT,
+                status INTEGER NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                expired_at TIMESTAMP WITH TIME ZONE,
+                is_live BOOLEAN DEFAULT TRUE,
+                PRIMARY KEY (id)  -- Primary key on id which is also our partitioning key
+              ) PARTITION BY HASH (id);
+            `);
+    
+            // Create partitions using a DO block
+            await client.query(`
+              DO $$
+              BEGIN
+                FOR i IN 0..7 LOOP
+                  EXECUTE format(
+                    'CREATE TABLE IF NOT EXISTS ${fullTableName}_part_%s PARTITION OF ${fullTableName} 
+                    FOR VALUES WITH (modulus 8, remainder %s)',
+                    i, i
+                  );
+                END LOOP;
+              END$$;
+            `);
+    
+            // Create optimized indexes
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expired_at 
+              ON ${fullTableName} (key, expired_at) INCLUDE (is_live);
+            `);
+    
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_entity_status 
+              ON ${fullTableName} (entity, status);
+            `);
+    
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_expired_at 
+              ON ${fullTableName} (expired_at);
+            `);
+    
+            // Create function to update is_live flag in the schema
+            await client.query(`
+              CREATE OR REPLACE FUNCTION ${schemaName}.update_is_live()
+              RETURNS TRIGGER AS $$
+              BEGIN
+                NEW.is_live := NEW.expired_at IS NULL OR NEW.expired_at > NOW();
+                RETURN NEW;
+              END;
+              $$ LANGUAGE plpgsql;
+            `);
+    
+            // Create trigger for is_live updates
+            await client.query(`
+              CREATE TRIGGER trg_update_is_live
+              BEFORE INSERT OR UPDATE ON ${fullTableName}
+              FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.update_is_live();
+            `);
+    
+            // Create function to enforce uniqueness of live jobs
+            await client.query(`
+              CREATE OR REPLACE FUNCTION ${schemaName}.enforce_live_job_uniqueness()
+              RETURNS TRIGGER AS $$
+              BEGIN
+                IF (NEW.expired_at IS NULL OR NEW.expired_at > NOW()) THEN
+                  PERFORM pg_advisory_xact_lock(hashtextextended(NEW.key, 0));
+                  IF EXISTS (
+                    SELECT 1 FROM ${fullTableName}
+                    WHERE key = NEW.key 
+                    AND (expired_at IS NULL OR expired_at > NOW())
+                    AND id <> NEW.id
+                  ) THEN
+                    RAISE EXCEPTION 'A live job with key % already exists.', NEW.key;
+                  END IF;
+                END IF;
+                RETURN NEW;
+              END;
+              $$ LANGUAGE plpgsql;
+            `);
+    
+            // Create trigger for uniqueness enforcement
+            await client.query(`
+              CREATE TRIGGER trg_enforce_live_job_uniqueness
+              BEFORE INSERT OR UPDATE ON ${fullTableName}
+              FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.enforce_live_job_uniqueness();
+            `);
+
+            // Create the attributes table with partitioning
+            const attributesTableName = `${fullTableName}_attributes`;
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${attributesTableName} (
+                job_id UUID NOT NULL,
+                field TEXT NOT NULL,
+                value TEXT,
+                type ${schemaName}.type_enum NOT NULL,
+                PRIMARY KEY (job_id, field),
+                FOREIGN KEY (job_id) REFERENCES ${fullTableName} (id) ON DELETE CASCADE
+              ) PARTITION BY HASH (job_id);
+            `);
+    
+            // Create partitions for attributes table
+            await client.query(`
+              DO $$
+              BEGIN
+                FOR i IN 0..7 LOOP
+                  EXECUTE format(
+                    'CREATE TABLE IF NOT EXISTS ${attributesTableName}_part_%s PARTITION OF ${attributesTableName} 
+                    FOR VALUES WITH (modulus 8, remainder %s)',
+                    i, i
+                  );
+                END LOOP;
+              END$$;
+            `);
+    
+            // Create indexes for attributes table
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_type_field 
+              ON ${attributesTableName} (type, field);
+            `);
+    
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_field 
+              ON ${attributesTableName} (field);
+            `);
+            break;
+    
+          case 'list':
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${fullTableName} (
+                key TEXT NOT NULL,
+                index BIGINT NOT NULL,
+                value TEXT,
+                expiry TIMESTAMP WITH TIME ZONE,
+                PRIMARY KEY (key, index)
+              );
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expiry 
+              ON ${fullTableName} (key, expiry);
+            `);
+            break;
+    
+          case 'sorted_set':
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${fullTableName} (
+                key TEXT NOT NULL,
+                member TEXT NOT NULL,
+                score DOUBLE PRECISION NOT NULL,
+                expiry TIMESTAMP WITH TIME ZONE,
+                PRIMARY KEY (key, member)
+              );
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_score_member 
+              ON ${fullTableName} (key, score, member);
+            `);
+            break;
+    
+          default:
+            context.logger.warn(`Unknown table type for ${tableDef.name}`);
+            break;
+        }
       }
+    
+      // Commit transaction
+      await client.query('COMMIT');
+    } catch (error) {
+      context.logger.error('postgres-create-tables-error', { ...error });
+      await client.query('ROLLBACK');
+      throw error;
     }
-  
-    // Commit transaction
-    await client.query('COMMIT');
   },
 
   getTableNames(appName: string): string[] {

@@ -21,18 +21,29 @@ export type PostgresJobEnumType =
 
 export type PostgresClassType = {
   new (options: PostgresClientOptions): PostgresClientType;
-  connect: (options: PostgresClientOptions) => Promise<PostgresClientType>;
 };
 
+export type PostgresPoolType = {
+  new (options: PostgresClientOptions): PostgresPoolClientType;
+  connect: (options: PostgresClientOptions) => Promise<PostgresClientType>;
+  //NOTE: query is a shorthand and includes implicit `connect/release` handled by pool
+  query: (text: string, values?: any[]) => Promise<PostgresQueryResultType>;
+};
+  
 export interface PostgresClientType {
+  connect: () => Promise<PostgresClientType>;
   query: (text: string, values?: any[]) => Promise<PostgresQueryResultType>;
   end: () => Promise<void>;
   // Include other methods if necessary
 }
 
 export interface PostgresPoolClientType {
-  query: (text: string, values?: any[]) => Promise<PostgresQueryResultType>;
+  connect: () => Promise<PostgresClientType>;
   release: () => void;
+  end: () => Promise<void>;
+  query: (text: string, values?: any[]) => Promise<PostgresQueryResultType>;
+  idleCount: number;
+  totalCount: number;
   // Include other methods if necessary
 }
 

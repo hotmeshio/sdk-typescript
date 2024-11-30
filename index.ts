@@ -8,25 +8,40 @@ import { MeshOS } from './services/meshos';
 import * as Errors from './modules/errors';
 import * as Utils from './modules/utils';
 import { ConnectorService as Connector } from './services/connector/factory';
+import { PostgresConnection as ConnectorPostgres } from './services/connector/providers/postgres';
+import { RedisConnection as ConnectorIORedis } from './services/connector/providers/ioredis';
+import { RedisConnection as ConnectorRedis } from './services/connector/providers/redis';
+import { NatsConnection as ConnectorNATS } from './services/connector/providers/nats';
 
 const { Client, Connection, Search, Worker, workflow } = MeshFlow;
 
 export {
-  Client,
-  Connection,
-  Connector,
-  Errors,
+  //Provider Connectors
+  Connector, //factory
+  ConnectorIORedis,
+  ConnectorNATS,
+  ConnectorPostgres,
+  ConnectorRedis,
+
+  //Top-level Modules
   HotMesh,
   HotMeshConfig,
   MeshCall,
   MeshData,
   MeshFlow,
   MeshOS,
+
+  //MeshFlow Submodules
+  Client,
+  Connection,
   Search,
-  Utils,
   Worker,
   workflow,
   WorkflowHandle,
+
+  //Global Modules
+  Errors,
+  Utils,
 };
 
 export * as Types from './types';

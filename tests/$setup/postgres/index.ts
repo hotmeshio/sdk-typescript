@@ -1,4 +1,16 @@
+import { PostgresClientType, PostgresPoolClientType } from '../../../types/postgres';
 import config from '../config';
+
+export const postgres_options = {
+  user: config.POSTGRES_USER,
+  host: config.POSTGRES_HOST,
+  database: config.POSTGRES_DB,
+  password: config.POSTGRES_PASSWORD,
+  port: config.POSTGRES_PORT,
+};
+
+//NOTE include ioredis_options, redis_options, nats_options.
+//      postgres sub can be replaced with redis or nats for patterned subscriptions
 
 export const ioredis_options = {
   host: config.REDIS_HOST,
@@ -17,16 +29,24 @@ export const redis_options = {
   database: config.REDIS_DATABASE,
 };
 
-export const postgres_options = {
-  user: config.POSTGRES_USER,
-  host: config.POSTGRES_HOST,
-  database: config.POSTGRES_DB,
-  password: config.POSTGRES_PASSWORD,
-  port: config.POSTGRES_PORT,
+export const nats_options = {
+  servers: config.NATS_SERVERS,
 };
 
 // Drop all user-defined schemas and their objects, then drop all tables in the public schema
-export const dropTables = async (postgresClient: any): Promise<void> => {
+export const dropTables = async (transactionClient: any): Promise<void> => {
+  let postgresClient: any;
+  let releaseClient = false;
+  
+  if (!(isNaN(transactionClient?.totalCount) && isNaN(transactionClient?.idleCount))) {
+    // It's a Pool, need to acquire a client
+    postgresClient = await (transactionClient as PostgresPoolClientType).connect();
+    releaseClient = true;
+  } else {
+    // Assume it's a connected Client
+    postgresClient = transactionClient as PostgresClientType;
+  }
+
   // Begin transaction
   await postgresClient.query('BEGIN');
 
@@ -67,6 +87,10 @@ export const dropTables = async (postgresClient: any): Promise<void> => {
     await postgresClient.query('ROLLBACK');
     console.error('Error during schema and table dropping:', error);
     throw error;
+  } finally {
+    if (releaseClient) {
+      (postgresClient as PostgresPoolClientType).release();
+    }
   }
 };
 

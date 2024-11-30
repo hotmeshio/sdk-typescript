@@ -35,6 +35,40 @@ export interface NatsConnection extends ProviderClient {
   close(): Promise<void>;
 }
 
+export interface NatsSubscriptionType {
+  /**
+   * Unsubscribes from the subject, stopping message delivery.
+   */
+  unsubscribe(): void;
+
+  /**
+   * Drains the subscription, ensuring all pending messages are delivered
+   * before unsubscribing.
+   * @returns Promise<void>
+   */
+  drain(): Promise<void>;
+
+  /**
+   * The subject this subscription is listening to.
+   */
+  subject: string;
+
+  /**
+   * The queue group this subscription belongs to, if any.
+   */
+  queue?: string;
+
+  /**
+   * Indicates whether this subscription is currently active.
+   */
+  isClosed: boolean;
+
+  /**
+   * Async iterator for processing incoming messages.
+   */
+  [Symbol.asyncIterator](): AsyncIterableIterator<NatsMessageType>;
+}
+
 /** Type representing the NATS Connection */
 export type NatsClientType = NatsConnection;
 

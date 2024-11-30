@@ -190,14 +190,16 @@ export class WorkerService {
    * @example
    * ```typescript
    * import { MeshFlow } from '@hotmeshio/hotmesh';
-   * import Redis from 'ioredis';
+   * import { Client as Postgres } from 'pg';
    * import * as workflows from './workflows';
    *
    * async function run() {
    *   const worker = await MeshFlow.Worker.create({
    *     connection: {
-   *       class: Redis,
-   *       options: { host: 'redis', port: 6379 },
+   *       class: Postgres,
+   *       options: { 
+   *         connectionString: 'postgres://user:password@localhost:5432/db'
+   *       },
    *     },
    *     taskQueue: 'default',
    *     workflow: workflows.example,

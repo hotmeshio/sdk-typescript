@@ -18,6 +18,14 @@ import { RedisConnection } from './providers/redis';
 import { AbstractConnection } from './index';
 
 export class ConnectorService {
+
+  static async disconnectAll(): Promise<void> {
+    await RedisConnection.disconnectAll();
+    await IORedisConnection.disconnectAll();
+    await PostgresConnection.disconnectAll();
+    await NatsConnection.disconnectAll();
+  };
+
   /**
    * Connect to a provider (redis, nats, postgres) and return the native
    * client. Connections are handled by the engine and worker routers at
@@ -63,19 +71,22 @@ export class ConnectorService {
     if (connections.sub) {
       await ConnectorService.initClient(connections.sub, target, 'sub');
       // use store for publishing events if same as subscription
-      if (connections.sub.class === connections.store.class) {
-        connections.pub = {
-          class: connections.store.class,
-          options: { ...connections.store.options },
-        };
-        target.pub = target.store;
-      } else {
+      // if (connections.sub.class === connections.store.class) {
+      //   connections.pub = {
+      //     class: connections.store.class,
+      //     options: { ...connections.store.options },
+      //     provider: connections.store.provider,
+      //   };
+      //   target.pub = target.store;
+      // } else {
+        //initialize a separate client for publishing events
         connections.pub = {
           class: connections.sub.class,
           options: { ...connections.sub.options },
+          provider: connections.sub.provider,
         };
         await ConnectorService.initClient(connections.pub, target, 'pub');
-      }
+      // }
     }
     // TODO: add search after refactoring
   }
@@ -94,17 +105,19 @@ export class ConnectorService {
     }
     const providerClass = ProviderConfig.class;
     const options = ProviderConfig.options;
-    const providerName = identifyProvider(providerClass);
+    const providerName = ProviderConfig.provider || identifyProvider(providerClass); //e.g. 'postgres.poolclient'
+    const providerType = providerName.split('.')[0]; //e.g. 'postgres'
 
     let clientInstance: AbstractConnection<any, any>;
     const id = guid();
 
-    switch (providerName) {
+    switch (providerType) {
       case 'redis':
         clientInstance = await RedisConnection.connect(
           id,
           providerClass as RedisRedisClassType,
           options as RedisRedisClientOptions,
+          { provider: providerName },
         );
         break;
       case 'ioredis':
@@ -112,6 +125,7 @@ export class ConnectorService {
           id,
           providerClass as IORedisClassType,
           options as IORedisClientOptions,
+          { provider: providerName },
         );
         break;
       case 'nats':
@@ -119,19 +133,23 @@ export class ConnectorService {
           id,
           providerClass as NatsClassType,
           options as NatsClientOptions,
+          { provider: providerName },
         );
         break;
       case 'postgres':
+        //if connecting as a poolClient for subscription, auto connect the client
+        const bAutoConnect = field === 'sub';
         clientInstance = await PostgresConnection.connect(
           id,
           providerClass as PostgresClassType,
           options as PostgresClientOptions,
-        );
+          { connect: bAutoConnect, provider: providerName },
+        );        
         break;
       default:
-        throw new Error(`Unknown provider class: ${providerName}`);
+        throw new Error(`Unknown provider type: ${providerType}`);
     }
-
+    // Bind the resolved client instance to the target object
     target[field] = clientInstance.getClient();
   }
 }

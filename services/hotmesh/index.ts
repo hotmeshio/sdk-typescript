@@ -48,11 +48,12 @@ import { PostgresConnection } from '../connector/providers/postgres';
  *
  * The system is self-cleaning and self-healing, with a built-in
  * quorum for consensus and a worker pool for distributed processing.
- * Workflows are automatically removed from the system once completed.
+ * Completed workflows are always soft-deleted with a configurable
+ * retention period.
  *
  * @example
  * ```typescript
- * import { Redis } from 'ioredis';
+ * import { Client as Postgres } from 'pg';
  * import { HotMesh } from '@hotmeshio/hotmesh';
  * //...
  *
@@ -60,8 +61,10 @@ import { PostgresConnection } from '../connector/providers/postgres';
  *   appId: 'abc',
  *   engine: {
  *     connection: {
- *       class: Redis,
- *       options: { host: 'localhost', port: 6379 }
+ *       class: Postgres,
+ *       options: {
+ *         connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+ *       }
  *     }
  *   }
  * });
@@ -131,11 +134,7 @@ class HotMesh {
   }
 
   /**
-   * Instance initializer. Note the expanded `connections` object
-   * with specific target backends. Redis Pub/Sub is used for
-   * event pub/sub to coordinate the quorum and workers. And
-   * Postgres is used for the store and stream connections, which
-   * are used for managing job state. Workers are configured
+   * Instance initializer. Workers are configured
    * similarly to the engine, but as an array with
    * multiple worker objects.
    *
@@ -144,11 +143,12 @@ class HotMesh {
    * const config: HotMeshConfig = {
    *   appId: 'myapp',
    *   engine: {
-   *     connections: {
-   *      store: { class: Postgres, options: { host: 'postgres', port: 5432 } },
-   *      stream: { class: Postgres, options: { host: 'postgres', port: 5432 } },
-   *      sub: { class: Redis, options: { host: 'redis', port: 6379 } },
-   *     },
+   *     connection: {
+   *       class: Postgres,
+   *       options: {
+   *         connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+   *       }
+   *     }
    *   },
    *   workers [...]
    * };
@@ -559,9 +559,7 @@ class HotMesh {
     if (!this.disconnecting) {
       this.disconnecting = true;
       await Router.stopConsuming();
-      await RedisConnection.disconnectAll();
-      await IORedisConnection.disconnectAll();
-      await PostgresConnection.disconnectAll();
+      await ConnectorService.disconnectAll();
     }
   }
 

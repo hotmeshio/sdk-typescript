@@ -8,10 +8,10 @@
 
 ## Features
 
-- **Serverless Orchestration**: Orchestrate your microservices without adding infrastructure.
+- **Serverless Orchestration**: Orchestrate without adding infrastructure
 - **No Vendor Lock-in**: Use your preferred database: *Postgres*, *Redis*, ...
-- **Linear Scalability**: Scale your database to scale your application.
-- **Process Analytics**: Gain process insights with optional analytics.
+- **Linear Scalability**: Scale your database to scale your application
+- **Process Analytics**: Gain process insights with optional analytics
 
 
 <br/>
@@ -27,7 +27,7 @@ npm install @hotmeshio/hotmesh
 
 <br/>
 
-## MeshCall | Fast, Simple, Inter-Service Calls
+## MeshCall | Inter-Service Function Calls
 [MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects any function to the mesh.
 
 <details style="padding: .5em">
@@ -554,7 +554,7 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 <br/>
 
 ## MeshData | Transactional Analytics
-[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) adds analytics to your workflows.
+[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) adds analytics to transactional workflows.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Create a search index <small>[more]</small></summary>
@@ -748,25 +748,49 @@ This example demonstrates how to search for those workflows where a given condit
 <br/>
 
 ## Connect
-HotMesh is pluggable and ships with support for Postgres (pg) and Redis (ioredis/redis) as standalone backends.
+HotMesh is pluggable and ships with support for Postgres (pg) and Redis (ioredis/redis). NATS is also supported for PubSub for extended patterns.
 
-### Postgres
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Postgres <small>[more]</small></summary>
+
+### Connect Postgres Client
 ```typescript
-import { Client as Postgres } from 'pg';
-//OR `import { Pool as Postgres } from 'pg';`
+import { Client as PostgresClient } from 'pg';
 
+//provide these credentials to HotMesh
 const connection = {
-  class: Postgres,
+  class: PostgresClient,
   options: {
     connectionString: 'postgresql://usr:pwd@localhost:5432/db'
   }
 };
+
+```
+### Connect Postgres Pool
+Pool connections are recommended for high-throughput applications. The pool will manage connections and automatically handle connection pooling.
+```typescript
+import { Pool as PostgresPool } from 'pg';
+
+const PostgresPoolClient = new PostgresPool({
+  connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+});
+
+//provide these credentials to HotMesh
+const connection = {
+  class: PostgresPoolClient,
+  options: {}
+};
 ```
 
-### Redis
+</details>
+
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">Redis <small>[more]</small></summary>
+
+### Redis/IORedis
 ```typescript
 import * as Redis from 'redis';
-//OR `import { Client as Postgres } from 'pg';`
+//OR `import Redis from 'ioredis';`
 
 const connection = {
   class: Redis,
@@ -775,9 +799,13 @@ const connection = {
   }
 };
 ```
+</details>
 
-### NATS
-Add NATS for improved pub/sub support, including patterned subscriptions. Note the explicit channel subscription in the example below.
+<details style="padding: .5em">
+  <summary style="font-size:1.25em;">NATS <small>[more]</small></summary>
+
+### NATS PubSub
+Add NATS for improved PubSub support, including patterned subscriptions. Note the explicit channel subscription in the example below. *The NATS provider supports version 2.0 of the NATS client (the latest version). See ./package.json for details.*
 
 ```typescript
 import { Client as Postgres } from 'pg';
@@ -802,6 +830,7 @@ const connection = {
   },
 };
 ```
+</details>
 
 <br/>
 

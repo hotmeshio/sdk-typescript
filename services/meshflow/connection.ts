@@ -29,6 +29,7 @@ export class ConnectionService {
       : ({
           class: config.class,
           options: { ...config.options },
+          provider: config.provider,
         } as Connection);
   }
 }
