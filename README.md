@@ -22,13 +22,15 @@
 npm install @hotmeshio/hotmesh
 ```
 
+<br/>
+
 ## Learn
 [🏠 Home](https://hotmesh.io/) | [📄 SDK Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 General Examples](https://github.com/hotmeshio/samples-typescript) | [💼 Temporal Examples](https://github.com/hotmeshio/temporal-patterns-typescript)
 
 <br/>
 
-## MeshCall | Inter-Service Function Calls
-[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects any function to the mesh.
+## MeshCall | Service-to-Service Function Calls
+[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your functions to the mesh.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Run an idempotent cron job <small>[more]</small></summary>
@@ -453,7 +455,7 @@ Use a standard `Promise` to collate and cache multiple signals. HotMesh will onl
 ### Cyclical Workflow
 This example calls an activity and then sleeps for a week. It runs indefinitely until it's manually stopped. It takes advantage of durable execution and can safely sleep for months or years.
 
->Container restarts have no impact on actively executing workflows as all state is retained in Redis.
+>Container restarts have no impact on actively executing workflows as all state is retained in the backend.
 
 1. Define the **workflow** logic. This one calls a legacy `statusDiagnostic` function once a week.
 
@@ -587,10 +589,11 @@ This example demonstrates how to define a schema and deploy an index for a 'user
     import { Client as Postgres } from 'pg';
     import { schema } from './schema';
 
-    const meshData = new MeshData(
-      Postgres,
-      options: {
-        connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+    const meshData = new MeshData({
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       },
       schema,
     );
@@ -613,10 +616,11 @@ This example demonstrates how to create a 'user' workflow backed by the searchab
     import { schema } from './schema';
 
     export const connectUserWorker = async (): Promise<void> => {
-      const meshData = new MeshData(
-        Postgres,
+      const meshData = new MeshData({
+        class: Postgres,
         options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+            connectionString: 'postgresql://  usr:pwd@localhost:5432/db'
+          }
         },
         schema,
       );
@@ -649,10 +653,11 @@ This example demonstrates how to create a 'user' workflow backed by the searchab
     import { MeshData } from '@hotmeshio/hotmesh';
     import { Client as Postgres } from 'pg';
 
-    const meshData = new MeshData(
-      Postgres,
-      options: {
-        connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+    const meshData = new MeshData({
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       },
       schema,
     );
@@ -696,10 +701,11 @@ This example demonstrates how to read data fields directly from a workflow.
     import { Client as Postgres } from 'pg';
     import { schema } from './schema';
 
-    const meshData = new MeshData(
-      Postgres,
-      options: {
-        connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+    const meshData = new MeshData({
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       },
       schema,
     );
@@ -719,7 +725,7 @@ This example demonstrates how to read data fields directly from a workflow.
   <summary style="font-size:1.25em;">Search record data <small>[more]</small></summary>
 
 ### Query Record Data
-This example demonstrates how to search for those workflows where a given condition exists in the data. This one searches for active users. *NOTE: The native Redis FT.SEARCH syntax is supported. The JSON abstraction shown here is a convenience method for straight-forward, one-dimensional queries.*
+This example demonstrates how to search for those workflows where a given condition exists in the data. This one searches for active users. *NOTE: The native Redis FT.SEARCH syntax and SQL are currently supported. The JSON abstraction shown here is a convenience method for straight-forward, one-dimensional queries.*
 
 1. Search for active users (where the value of the `active` field is `yes`).
 
@@ -729,10 +735,11 @@ This example demonstrates how to search for those workflows where a given condit
     import { Client as Postgres } from 'pg';
     import { schema } from './schema';
 
-    const meshData = new MeshData(
-      Postgres,
-      options: {
-        connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+    const meshData = new MeshData({
+        class: Postgres,
+        options: {
+          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
+        }
       },
       schema,
     );

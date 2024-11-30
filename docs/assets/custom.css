@@ -11,13 +11,20 @@ pre {
   background-color: #ffffff;
   height: 5em;
 }
+
 #tsd-search .title {
   color: #000000;
   line-height: 2em;
   font-size: 2.45em;
   font-weight: 500;
   margin-left: 0;
-  position: relative; /* Ensure position context for pseudo-element */
+  position: relative;
+}
+
+@media screen and (max-width: 499px) {
+  #tsd-search .title {
+      color: transparent;
+  }
 }
 
 #tsd-search .title::before {

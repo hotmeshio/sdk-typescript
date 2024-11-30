@@ -7,6 +7,8 @@ import { MeshData } from './services/meshdata';
 import { MeshOS } from './services/meshos';
 import * as Errors from './modules/errors';
 import * as Utils from './modules/utils';
+import * as Enums from './modules/enums';
+import * as KeyStore from './modules/key';
 import { ConnectorService as Connector } from './services/connector/factory';
 import { PostgresConnection as ConnectorPostgres } from './services/connector/providers/postgres';
 import { RedisConnection as ConnectorIORedis } from './services/connector/providers/ioredis';
@@ -40,8 +42,10 @@ export {
   WorkflowHandle,
 
   //Global Modules
+  Enums,
   Errors,
   Utils,
+  KeyStore,
 };
 
 export * as Types from './types';

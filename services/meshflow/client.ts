@@ -105,13 +105,11 @@ export class ClientService {
     }
 
     //create and cache an instance
-    const connectionType =
-      'options' in this.connection ? 'connection' : 'connections';
     const hotMeshClient = HotMesh.init({
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        [connectionType]: this.connection,
+        connection: this.connection,
       },
     });
     ClientService.instances.set(connectionNS, hotMeshClient);

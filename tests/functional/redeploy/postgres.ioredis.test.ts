@@ -44,7 +44,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
       logLevel: HMSH_LOGLEVEL,
       engine: {
         connections: {
-          store: { class: Postgres, options: postgres_options }, //and search
+          store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
         },
@@ -54,7 +54,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
           connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -257,7 +257,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
         logLevel: HMSH_LOGLEVEL,
         engine: {
           connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -266,7 +266,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
           {
             topic: 'work.do',
             connections: {
-              store: { class: Postgres, options: postgres_options }, //and search
+              store: { class: Postgres, options: postgres_options },
               stream: { class: Postgres, options: postgres_options },
               sub: { class: Redis, options: redis_options },
             },
@@ -280,7 +280,7 @@ describe('FUNCTIONAL | Redeploy | Postgres+IORedis', () => {
           {
             topic: 'work.do.more',
             connections: {
-              store: { class: Postgres, options: postgres_options }, //and search
+              store: { class: Postgres, options: postgres_options },
               stream: { class: Postgres, options: postgres_options },
               sub: { class: Redis, options: redis_options },
             },

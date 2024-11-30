@@ -98,7 +98,7 @@ describe('FUNCTIONAL | Retry | Postgres', () => {
 
       engine: {
         connections: {
-          store: { class: Postgres, options: postgres_options }, //and search
+          store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
         },
@@ -108,7 +108,7 @@ describe('FUNCTIONAL | Retry | Postgres', () => {
         {
           topic: 'calculation.execute',
           connections: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },

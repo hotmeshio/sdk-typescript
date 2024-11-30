@@ -130,7 +130,11 @@ class EngineService {
 
       await instance.initSearchChannel(config.engine.store);
       await instance.initStoreChannel(config.engine.store);
-      await instance.initSubChannel(config.engine.sub, config.engine.pub);
+      //NOTE: if `pub` is present, use it; otherwise, use `store`
+      await instance.initSubChannel(
+        config.engine.sub,
+        config.engine.pub ?? config.engine.store,
+      );
       await instance.initStreamChannel(
         config.engine.stream,
         config.engine.store,

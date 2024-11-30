@@ -18,14 +18,20 @@ describe('MeshData | IORedis', () => {
 
   //configure meshData instance will full set of options
   //include redis instance and model/schema for use in search
-  const meshData = new MeshData(Redis, options, {
-    schema: {
-      email: { type: 'TEXT', sortable: true },
-      newsletter: { type: 'TAG', sortable: true },
+  const meshData = new MeshData(
+    {
+      class: Redis,
+      options,
     },
-    index: 'greeting',
-    prefix: ['greeting'],
-  } as HotMeshTypes.WorkflowSearchOptions);
+    {
+      schema: {
+        email: { type: 'TEXT', sortable: true },
+        newsletter: { type: 'TAG', sortable: true },
+      },
+      index: 'greeting',
+      prefix: ['greeting'],
+    } as HotMeshTypes.WorkflowSearchOptions
+  );
 
   //wrap expensive/idempotent functions with a proxy
   const { sendNewsLetter } = MeshData.proxyActivities<typeof activities>({

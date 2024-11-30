@@ -119,13 +119,12 @@ class MeshCall {
     }
 
     //create and cache an instance
-    const conType = 'options' in connection ? 'connection' : 'connections';
     const hotMeshClient = HotMesh.init({
       guid: options.guid,
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        [conType]: connection,
+        connection,
         readonly: options.readonly,
       },
     });
@@ -267,17 +266,16 @@ class MeshCall {
 
     const targetTopic = `${optionsHash}.${targetNamespace}.${params.topic}`;
     const connection = polyfill.providerConfig(params);
-    const conType = 'options' in connection ? 'connection' : 'connections';
 
     const hotMeshWorker = await HotMesh.init({
       guid: params.guid,
       logLevel: params.logLevel ?? HMSH_LOGLEVEL,
       appId: params.namespace ?? HMNS,
-      engine: { [conType]: connection },
+      engine: { connection },
       workers: [
         {
           topic: params.topic,
-          [conType]: connection,
+          connection,
           callback: async function (input: StreamData) {
             const response = await params.callback.apply(this, input.data.args);
             return {

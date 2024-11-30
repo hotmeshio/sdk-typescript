@@ -71,8 +71,10 @@ import {
  *
  * //2) Initialize MeshData and Redis
  * const meshData = new MeshData(
- *   Redis,
- *   { url: 'redis://:key_admin@redis:6379' },
+ *   {
+ *     class: Redis,
+ *     options: { url: 'redis://:key_admin@redis:6379' },
+ *   },
  *   schema,
  * );
  *
@@ -146,21 +148,25 @@ class MeshData {
    * // Example 1) Instantiate MeshData with `ioredis`
    * import Redis from 'ioredis';
    *
-   * const meshData = new MeshData(Redis, {
-   *   host: 'localhost',
-   *   port: 6379,
-   *   password: 'shhh123',
-   *   db: 0,
-   * });
+   * const meshData = new MeshData({
+   *   class: Redis,
+   *   options: {
+   *     host: 'localhost',
+   *     port: 6379,
+   *     password: 'shhh123',
+   *     db: 0,
+   *   }});
    *
    * // Example 2) Instantiate MeshData with `redis`
    * import * as Redis from 'redis';
    *
-   * const meshData = new MeshData(Redis, {
-   *   url: 'redis://:shhh123@localhost:6379'
-   * });
+   * const meshData = new MeshData({
+   *   class: Redis,
+   *   options: {
+   *     url: 'redis://:shhh123@localhost:6379'
+   *   }});
    */
-  connection: Partial<ProviderConfig> = {};
+  connection: ProviderConfig | ProvidersConfig;
 
   /**
    * Cached local instances (map) of HotMesh organized by namespace
@@ -172,11 +178,6 @@ class MeshData {
    * Search backend configuration (indexed/searchable fields and types)
    */
   search: WorkflowSearchOptions;
-
-  /**
-   * Connection configurations for multiple providers
-   */
-  connections: ProvidersConfig;
 
   /**
    * Provides a set of static extensions that can be invoked by
@@ -281,32 +282,32 @@ class MeshData {
    * // Example 1) Instantiate MeshData with `ioredis`
    * import Redis from 'ioredis';
    *
-   * const meshData = new MeshData(Redis, {
-   *   host: 'localhost',
-   *   port: 6379,
-   *   password: 'shhh123',
-   *   db: 0,
-   * });
+   * const meshData = new MeshData({
+   *   class: Redis,
+   *   options: {
+   *     host: 'localhost',
+   *     port: 6379,
+   *     password: 'shhh123',
+   *     db: 0,
+   *   }});
    *
    * // Example 2) Instantiate MeshData with `redis`
    * import * as Redis from 'redis';
    *
-   * const meshData = new MeshData(Redis, {
-   *  url: 'redis://:shhh123@localhost:6379'
-   * });
+   * const meshData = new MeshData({
+   *   class: Redis,
+   *   options: {
+   *     url: 'redis://:shhh123@localhost:6379'
+   *   }});
    *
    * // Instantiate MeshData with `postgres`
    * //...
    */
   constructor(
-    providerClass: ProviderClass,
-    providerOptions: StringAnyType,
+    providerClass: ProviderClass | ProviderConfig | ProvidersConfig,
     search?: WorkflowSearchOptions,
-    connections?: ProvidersConfig,
   ) {
-    this.connections = connections;
-    this.connection.class = providerClass;
-    this.connection.options = providerOptions;
+    this.connection = providerClass as ProviderConfig | ProvidersConfig;
     if (search) {
       this.search = search;
     }
@@ -325,12 +326,7 @@ class MeshData {
    * @private
    */
   async getConnection() {
-    return (
-      this.connections ??
-      await MeshFlow.Connection.connect(
-        polyfill.meshDataConfig(this) as ProviderConfig,
-      )
-    );
+    return this.connection;
   }
 
   /**
@@ -439,11 +435,10 @@ class MeshData {
       await this.instances.get(namespace);
     if (!hotMesh) {
       //expanded config always takes precedence over concise config
-      const connectionType = this.connections ? 'connections' : 'connection';
       hotMesh = HotMesh.init({
         appId: namespace,
         engine: {
-          [connectionType]: polyfill.meshDataConfig(this) as ProviderConfig,
+          connection: polyfill.meshDataConfig(this) as ProviderConfig | ProvidersConfig,
         },
       });
       this.instances.set(namespace, hotMesh);
@@ -568,7 +563,10 @@ class MeshData {
    *
    * @example
    * // Instantiate MeshData with Redis configuration.
-   * const meshData = new MeshData(Redis, { host: 'localhost', port: 6379 });
+   * const meshData = new MeshData({
+   *   class: Redis,
+   *   options: { host: 'localhost', port: 6379 }
+   * });
    *
    * // Define and connect a function with the 'greeting' entity.
    * // The function will be cached indefinitely (infinite TTL).

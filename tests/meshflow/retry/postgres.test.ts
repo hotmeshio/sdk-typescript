@@ -46,7 +46,7 @@ describe('MESHFLOW | retry | Postgres', () => {
     describe('connect', () => {
       it('should echo the Redis config', async () => {
         const connection = (await Connection.connect({
-          store: { class: Postgres, options: postgres_options }, //and search
+          store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
         })) as ProvidersConfig;
@@ -61,7 +61,7 @@ describe('MESHFLOW | retry | Postgres', () => {
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },
@@ -84,7 +84,7 @@ describe('MESHFLOW | retry | Postgres', () => {
       it('should create and run a worker', async () => {
         const worker = await Worker.create({
           connection: {
-            store: { class: Postgres, options: postgres_options }, //and search
+            store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
           },

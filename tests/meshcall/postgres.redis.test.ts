@@ -29,7 +29,7 @@ describe('MESHCALL | Postgres+Redis', () => {
     port: config.POSTGRES_PORT,
   };
   const expanded_options = {
-    store: { class: Postgres, options: postgres_options }, //and search
+    store: { class: Postgres, options: postgres_options },
     stream: { class: Postgres, options: postgres_options },
     sub: { class: Redis, options: redis_options },
   };

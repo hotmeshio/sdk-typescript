@@ -14,7 +14,6 @@ import { dropTables } from '../$setup/postgres';
 import * as activities from './activities';
 
 describe('MeshData | Postgres', () => {
-  const idemKey = HotMesh.guid();
   let postgresClient: ProviderNativeClient;
   const redis_options = {
     host: config.REDIS_HOST,
@@ -30,15 +29,15 @@ describe('MeshData | Postgres', () => {
     port: config.POSTGRES_PORT,
   };
   const expanded_options = {
-    store: { class: Postgres, options: postgres_options }, //and search
+    store: { class: Postgres, options: postgres_options },
     stream: { class: Postgres, options: postgres_options },
     sub: { class: Redis, options: redis_options },
   };
-  //configure meshData instance will full set of options
+
+  //configure meshData instance with full set of options
   //include redis instance and model/schema for use in search
   const meshData = new MeshData(
-    Redis, //unused
-    redis_options, //unused
+    expanded_options,
     {
       schema: {
         email: { type: 'TEXT', sortable: true },
@@ -47,7 +46,6 @@ describe('MeshData | Postgres', () => {
       index: 'greeting',
       prefix: ['greeting'],
     } as HotMeshTypes.WorkflowSearchOptions,
-    expanded_options, //new format for setting expanded options
   );
 
   //wrap expensive/idempotent functions with a proxy
