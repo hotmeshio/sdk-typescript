@@ -97,7 +97,7 @@ describe('FUNCTIONAL | Retry | Postgres', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connections: {
+        connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
@@ -107,7 +107,7 @@ describe('FUNCTIONAL | Retry | Postgres', () => {
       workers: [
         {
           topic: 'calculation.execute',
-          connections: {
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },

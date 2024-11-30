@@ -37,7 +37,7 @@ describe('FUNCTIONAL | AWAIT (OR NOT) | Postgres', () => {
       namespace: HMNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connections: {
+        connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },

@@ -51,7 +51,7 @@ describe('FUNCTIONAL | Quorum | Postgres+IORedis', () => {
       namespace: HMNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connections: {
+        connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
@@ -60,7 +60,7 @@ describe('FUNCTIONAL | Quorum | Postgres+IORedis', () => {
       workers: [
         {
           topic: 'calculation.execute',
-          connections: {
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },

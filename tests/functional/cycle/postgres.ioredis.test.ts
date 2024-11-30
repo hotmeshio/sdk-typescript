@@ -43,7 +43,7 @@ describe('FUNCTIONAL | Activity Cycles | Postgres+IORedis', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connections: {
+        connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
           sub: { class: Redis, options: redis_options },
@@ -56,7 +56,7 @@ describe('FUNCTIONAL | Activity Cycles | Postgres+IORedis', () => {
         //this worker runs as part of flow v1
         {
           topic: 'cycle.count',
-          connections: {
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
@@ -79,7 +79,7 @@ describe('FUNCTIONAL | Activity Cycles | Postgres+IORedis', () => {
         //this worker runs as part of flow v2
         {
           topic: 'cycle.err',
-          connections: {
+          connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
             sub: { class: Redis, options: redis_options },
