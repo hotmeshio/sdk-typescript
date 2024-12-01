@@ -19,7 +19,7 @@ import { ILogger, LoggerService } from '../logger';
  */
 abstract class AbstractConnection<PClass, POptions> {
   static logger: ILogger = new LoggerService('hotmesh', 'system');
-  static disconnecting: boolean = false;
+  static disconnecting = false;
   protected connection: any | null = null;
   protected static instances: Map<
     string,
@@ -56,7 +56,7 @@ abstract class AbstractConnection<PClass, POptions> {
     id: string,
     client: ProviderClass,
     options?: ProviderOptions, //user
-    config?: StringAnyType,   //system reserved
+    config?: StringAnyType, //system reserved
   ): Promise<T> {
     if (AbstractConnection.instances.has(id)) {
       return AbstractConnection.instances.get(id) as T;

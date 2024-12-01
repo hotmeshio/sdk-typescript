@@ -1,16 +1,16 @@
-import { SubService } from './index';
-import { IORedisSubService } from './providers/redis/ioredis';
-import { NatsSubService } from './providers/nats/nats';
-import { PostgresSubService } from './providers/postgres/postgres';
-import { RedisSubService } from './providers/redis/redis';
-
 import { identifyProvider } from '../../modules/utils';
 import { ILogger } from '../logger';
-
 import { NatsClientType } from '../../types/nats';
 import { PostgresClientType } from '../../types/postgres';
 import { ProviderClient } from '../../types/provider';
 import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
+
+import { RedisSubService } from './providers/redis/redis';
+import { PostgresSubService } from './providers/postgres/postgres';
+import { NatsSubService } from './providers/nats/nats';
+import { IORedisSubService } from './providers/redis/ioredis';
+
+import { SubService } from './index';
 
 class SubServiceFactory {
   static async init(

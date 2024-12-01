@@ -94,9 +94,9 @@ describe('FUNCTIONAL | Signal | Postgres', () => {
 
   describe('Signal All', () => {
     it('sends a signal to awaken all paused jobs', async () => {
-      const child_flow_id = 'abc123'
+      const child_flow_id = 'abc123';
       let isDone = false;
-      let job_id = 'signalall123'; 
+      const job_id = 'signalall123';
 
       await hotMesh.sub(
         `signal.tested.${job_id}`,
@@ -115,7 +115,7 @@ describe('FUNCTIONAL | Signal | Postgres', () => {
       );
 
       const jid = await hotMesh.pub('signal.test', { job_id, child_flow_id });
-  
+
       while (!isDone) {
         await sleepFor(100);
       }
@@ -127,8 +127,8 @@ describe('FUNCTIONAL | Signal | Postgres', () => {
 
   describe('Signal One', () => {
     it('sends a signal to awaken one paused job', async () => {
-      let job_id = 'signalone123'; 
-      const child_flow_id = 'xyz456'
+      const job_id = 'signalone123';
+      const child_flow_id = 'xyz456';
       let isDone = false;
 
       await hotMesh.sub(

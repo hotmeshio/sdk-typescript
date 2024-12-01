@@ -30,7 +30,7 @@ describe('MeshData | IORedis', () => {
       },
       index: 'greeting',
       prefix: ['greeting'],
-    } as HotMeshTypes.WorkflowSearchOptions
+    } as HotMeshTypes.WorkflowSearchOptions,
   );
 
   //wrap expensive/idempotent functions with a proxy

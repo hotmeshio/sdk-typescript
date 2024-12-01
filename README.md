@@ -29,8 +29,8 @@ npm install @hotmeshio/hotmesh
 
 <br/>
 
-## MeshCall | Service-to-Service Function Calls
-[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects your functions to the mesh.
+## MeshCall
+[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects any function to the mesh
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Run an idempotent cron job <small>[more]</small></summary>
@@ -200,8 +200,8 @@ npm install @hotmeshio/hotmesh
 
 <br/>
 
-## MeshFlow | Transactional Workflow
-[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a drop-in, serverless replacement for [Temporal.io](https://temporal.io).
+## MeshFlow
+[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a serverless replacement for *Temporal.io*
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Orchestrate unpredictable activities <small>[more]</small></summary>
@@ -555,8 +555,8 @@ This example calls an activity and then sleeps for a week. It runs indefinitely 
 
 <br/>
 
-## MeshData | Transactional Analytics
-[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) adds analytics to transactional workflows.
+## MeshData
+[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) adds analytics to running workflows
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Create a search index <small>[more]</small></summary>
@@ -755,7 +755,7 @@ This example demonstrates how to search for those workflows where a given condit
 <br/>
 
 ## Connect
-HotMesh is pluggable and ships with support for Postgres (pg) and Redis (ioredis/redis). NATS is also supported for PubSub for extended patterns.
+HotMesh is pluggable and ships with support for **Postgres** (pg) and **Redis** (ioredis/redis). **NATS** is also supported for PubSub for extended patterns.
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Postgres <small>[more]</small></summary>

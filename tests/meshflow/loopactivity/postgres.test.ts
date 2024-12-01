@@ -4,10 +4,7 @@ import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
 import { guid } from '../../../modules/utils';
 import { ProviderConfig } from '../../../types/provider';
-import {
-  dropTables,
-  postgres_options,
-} from '../../$setup/postgres';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 
 import * as workflows from './src/workflows';
 
@@ -47,10 +44,12 @@ describe('MESHFLOW | loopactivity | Postgres', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: {
-          class: postgresPoolClient,
-          options: {},
-        }});
+        const client = new Client({
+          connection: {
+            class: postgresPoolClient,
+            options: {},
+          },
+        });
 
         handle = await client.workflow.start({
           args: [],

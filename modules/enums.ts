@@ -32,6 +32,11 @@ export const HMSH_STATUS_UNKNOWN = 'unknown';
 export const HMSH_QUORUM_ROLLCALL_CYCLES = 12; //max iterations
 export const HMSH_QUORUM_DELAY_MS = 250;
 export const HMSH_ACTIVATION_MAX_RETRY = 3;
+//backend provisioning
+export const HMSH_DEPLOYMENT_DELAY =
+  parseInt(process.env.HMSH_DEPLOYMENT_DELAY, 10) || 10_000; //in ms
+export const HMSH_DEPLOYMENT_PAUSE =
+  parseInt(process.env.HMSH_DEPLOYMENT_PAUSE, 10) || 250; //in ms
 
 // ENGINE
 export const HMSH_OTT_WAIT_TIME =

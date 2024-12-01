@@ -4,10 +4,7 @@ import { connect as NATS } from 'nats';
 import { deterministicRandom, guid, sleepFor } from '../../../modules/utils';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
-import {
-  ProviderConfig,
-  ProviderNativeClient,
-} from '../../../types';
+import { ProviderConfig, ProviderNativeClient } from '../../../types';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import {
   dropTables,

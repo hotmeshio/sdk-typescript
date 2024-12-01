@@ -195,7 +195,7 @@ export class WorkerService {
    *   const worker = await MeshFlow.Worker.create({
    *     connection: {
    *       class: Postgres,
-   *       options: { 
+   *       options: {
    *         connectionString: 'postgres://user:password@localhost:5432/db'
    *       },
    *     },

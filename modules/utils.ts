@@ -87,7 +87,11 @@ export function XSleepFor(ms: number): {
  */
 export function identifyProvider(provider: any): Providers | null {
   const prototype = Object.getPrototypeOf(provider);
-  if (provider.Query?.prototype || Object.keys(provider).includes('database') || (prototype.name === 'Pool')) {
+  if (
+    provider.Query?.prototype ||
+    Object.keys(provider).includes('database') ||
+    prototype.name === 'Pool'
+  ) {
     return 'postgres';
   } else if (provider.toString().toLowerCase().includes('nats')) {
     return 'nats';
@@ -119,7 +123,10 @@ export function identifyProvider(provider: any): Providers | null {
   }
 
   let type: Providers | null = null;
-  if (Object.keys(provider).includes('connection') || (!isNaN(provider.totalCount) && !isNaN(provider.idleCount))) {
+  if (
+    Object.keys(provider).includes('connection') ||
+    !isNaN(provider.totalCount) && !isNaN(provider.idleCount)
+  ) {
     type = 'postgres';
   } else if (Object.keys(provider).includes('Pipeline')) {
     type = 'ioredis';

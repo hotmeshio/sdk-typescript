@@ -23,15 +23,21 @@ class PostgresConnection extends AbstractConnection<
   protected static poolClientInstances: Set<PostgresPoolClientType> = new Set(); //call 'release'
   protected static connectionInstances: Set<PostgresClientType> = new Set(); //call 'end'
   poolClientInstance: PostgresPoolClientType;
-  
+
   async createConnection(
     clientConstructor: any,
     options: PostgresClientOptions,
-    config: {connect?: boolean, provider?: string} = {},
+    config: { connect?: boolean; provider?: string } = {},
   ): Promise<PostgresClientType> {
     try {
-      let connection: PostgresClientType | PostgresPoolClientType | PostgresClassType;
-      if (config.provider === 'postgres.poolclient' || PostgresConnection.isPoolClient(clientConstructor)) {
+      let connection:
+        | PostgresClientType
+        | PostgresPoolClientType
+        | PostgresClassType;
+      if (
+        config.provider === 'postgres.poolclient' ||
+        PostgresConnection.isPoolClient(clientConstructor)
+      ) {
         // It's a PoolClient
         connection = clientConstructor as PostgresPoolClientType;
         if (config.connect) {
@@ -40,7 +46,7 @@ class PostgresConnection extends AbstractConnection<
           PostgresConnection.poolClientInstances.add(client);
           this.poolClientInstance = client;
         }
-      } else  {
+      } else {
         // It's a Client
         connection = new (clientConstructor as PostgresClassType)(options);
         await connection.connect();
@@ -95,10 +101,12 @@ class PostgresConnection extends AbstractConnection<
   }
 
   public static isPoolClient(client: any): client is PostgresPoolClientType {
-    return !(isNaN(client?.totalCount) && isNaN(client?.idleCount))
+    return !(isNaN(client?.totalCount) && isNaN(client?.idleCount));
   }
 
-  static async getTransactionClient(transactionClient: any): Promise<[('client' | 'poolclient'), PostgresClientType]> {
+  static async getTransactionClient(
+    transactionClient: any,
+  ): Promise<['client' | 'poolclient', PostgresClientType]> {
     let client: PostgresClientType;
     let type: 'client' | 'poolclient';
     if (PostgresConnection.isPoolClient(transactionClient)) {

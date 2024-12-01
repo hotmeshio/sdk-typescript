@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.3.22",
+  "version": "0.3.23",
   "description": "Serverless Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",

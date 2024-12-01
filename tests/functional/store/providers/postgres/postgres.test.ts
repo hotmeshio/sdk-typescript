@@ -309,10 +309,18 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
           ghi: '75',
         });
       }
-      const [_cursor, result] = await postgresStoreService.findJobs('*', 15, 15);
+      const [_cursor, result] = await postgresStoreService.findJobs(
+        '*',
+        15,
+        15,
+      );
       expect(result.length).toEqual(11);
-      
-      const [_cursor1, result1] = await postgresStoreService.findJobs(`-*`, 15, 15);
+
+      const [_cursor1, result1] = await postgresStoreService.findJobs(
+        `-*`,
+        15,
+        15,
+      );
       expect(result1.length).toEqual(11);
 
       const [_cursor2, result2] = await postgresStoreService.findJobs(
@@ -322,9 +330,12 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       );
       expect(result2.length).toEqual(0);
 
-      const [_cursor3, result3] = await postgresStoreService.findJobs(`-1*`, 15, 15);
+      const [_cursor3, result3] = await postgresStoreService.findJobs(
+        `-1*`,
+        15,
+        15,
+      );
       expect(result3.length).toEqual(2); //-1, -10
-
     });
   });
 

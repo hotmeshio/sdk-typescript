@@ -36,17 +36,14 @@ describe('MeshData | Postgres', () => {
 
   //configure meshData instance with full set of options
   //include redis instance and model/schema for use in search
-  const meshData = new MeshData(
-    expanded_options,
-    {
-      schema: {
-        email: { type: 'TEXT', sortable: true },
-        newsletter: { type: 'TAG', sortable: true },
-      },
-      index: 'greeting',
-      prefix: ['greeting'],
-    } as HotMeshTypes.WorkflowSearchOptions,
-  );
+  const meshData = new MeshData(expanded_options, {
+    schema: {
+      email: { type: 'TEXT', sortable: true },
+      newsletter: { type: 'TAG', sortable: true },
+    },
+    index: 'greeting',
+    prefix: ['greeting'],
+  } as HotMeshTypes.WorkflowSearchOptions);
 
   //wrap expensive/idempotent functions with a proxy
   const { sendNewsLetter } = MeshData.proxyActivities<typeof activities>({
@@ -452,44 +449,44 @@ describe('MeshData | Postgres', () => {
       expect(pluckResponse.data.done).toEqual(true);
     }, 15_000);
 
-  //   it('should retry if it fails', async () => {
-  //     const email = 'jim.doe@hotmesh.com';
-  //     const name = { first: 'Jim', last: 'Doe' };
+    //   it('should retry if it fails', async () => {
+    //     const email = 'jim.doe@hotmesh.com';
+    //     const name = { first: 'Jim', last: 'Doe' };
 
-  //     //call with MeshData (Redis will govern the exchange)
-  //     //a) pass an id to make sure this test starts fresh
-  //     //b) redis will retry until `showThrowError` switches to `false`
-  //     //c) the 'greet' function will set shouldThrowError to false after 2 runs
-  //     shouldThrowError = true;
-  //     const brokered = await meshData.exec<Promise<string>>({
-  //       entity: 'greeting',
-  //       args: [email, name],
-  //       options: {
-  //         id: idemKey,
-  //         ttl: '60 seconds',
-  //         //configure the retry policy to run quickly during testing
-  //         config: {
-  //           backoffCoefficient: 1, //value of throttle is: `backoffCoefficient^retryCount` (first retry is 1 second)
-  //           maximumInterval: '1 second',
-  //           maximumAttempts: 3,
-  //         },
-  //       },
-  //     });
-  //     expect(errorCount).toEqual(1);
-  //     expect(shouldThrowError).toBeFalsy();
+    //     //call with MeshData (Redis will govern the exchange)
+    //     //a) pass an id to make sure this test starts fresh
+    //     //b) redis will retry until `showThrowError` switches to `false`
+    //     //c) the 'greet' function will set shouldThrowError to false after 2 runs
+    //     shouldThrowError = true;
+    //     const brokered = await meshData.exec<Promise<string>>({
+    //       entity: 'greeting',
+    //       args: [email, name],
+    //       options: {
+    //         id: idemKey,
+    //         ttl: '60 seconds',
+    //         //configure the retry policy to run quickly during testing
+    //         config: {
+    //           backoffCoefficient: 1, //value of throttle is: `backoffCoefficient^retryCount` (first retry is 1 second)
+    //           maximumInterval: '1 second',
+    //           maximumAttempts: 3,
+    //         },
+    //       },
+    //     });
+    //     expect(errorCount).toEqual(1);
+    //     expect(shouldThrowError).toBeFalsy();
 
-  //     //call directly (NodeJS will now govern the exchange)
-  //     const direct = await localGreet(email, name);
+    //     //call directly (NodeJS will now govern the exchange)
+    //     const direct = await localGreet(email, name);
 
-  //     expect(brokered).toEqual(direct);
-  //   }, 15_000);
-  // });
+    //     expect(brokered).toEqual(direct);
+    //   }, 15_000);
+    // });
 
-  // describe('info', () => {
-  //   it('should return the full function profile', async () => {
-  //     const pluckResponse = await meshData.info('greeting', idemKey);
-  //     expect(pluckResponse.data.done).toEqual(true);
-  //   });
+    // describe('info', () => {
+    //   it('should return the full function profile', async () => {
+    //     const pluckResponse = await meshData.info('greeting', idemKey);
+    //     expect(pluckResponse.data.done).toEqual(true);
+    //   });
   });
 
   // describe('rollCall', () => {

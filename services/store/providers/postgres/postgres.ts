@@ -1216,7 +1216,7 @@ class PostgresStoreService extends StoreService<
       appId: this.appId,
       jobId,
     });
-  
+
     let enumType: string;
     let dimension: string | null = null;
     if (fieldMatchPattern.includes(',')) {
@@ -1227,14 +1227,14 @@ class PostgresStoreService extends StoreService<
     } else {
       enumType = 'jmark';
     }
-  
+
     const offset = parseInt(cursor, 10) || 0; // Convert cursor to numeric offset
     const tableName = this.kvsql().tableForKey(jobKey, 'hash');
-  
+
     // Initialize parameters array and parameter index
     const params: any[] = [jobKey];
     let paramIndex = params.length + 1; // Starts from 2 since $1 is jobKey
-  
+
     // Build the valid_job CTE to get the job's UUID id
     const validJobSql = `
       SELECT id
@@ -1243,28 +1243,28 @@ class PostgresStoreService extends StoreService<
       AND (expired_at IS NULL OR expired_at > NOW())
       LIMIT 1
     `;
-  
+
     // Build conditions for the WHERE clause
     const conditions = [];
-  
+
     // Add enumType condition
     conditions.push(`a.type = $${paramIndex}`);
     params.push(enumType);
     paramIndex++;
-  
+
     // Add dimension condition if applicable
     if (dimension) {
       conditions.push(`a.field LIKE $${paramIndex}`);
       params.push(`%${dimension}%`);
       paramIndex++;
     }
-  
+
     // Add limit and offset parameters
     const limitParamIndex = paramIndex;
     const offsetParamIndex = paramIndex + 1;
     params.push(limit, offset);
     paramIndex += 2;
-  
+
     // Construct the final SQL query
     const sql = `
       WITH valid_job AS (
@@ -1276,19 +1276,19 @@ class PostgresStoreService extends StoreService<
       WHERE ${conditions.join(' AND ')}
       LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
     `;
-  
+
     // Execute the query and map the results
     const res = await this.pgClient.query(sql, params);
     for (const row of res.rows) {
       matchingFields[row.field] = row.value;
     }
-  
+
     // Determine the next cursor
     const nextCursor =
       res.rows.length < limit ? '0' : String(offset + res.rows.length);
-  
+
     return [nextCursor, matchingFields];
-  }  
+  }
 
   async setThrottleRate(options: ThrottleOptions): Promise<void> {
     const key = this.mintKey(KeyType.THROTTLE_RATE, { appId: this.appId });

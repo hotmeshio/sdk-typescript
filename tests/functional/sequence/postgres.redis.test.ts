@@ -13,7 +13,11 @@ import {
 import { guid } from '../../../modules/utils';
 import { ProviderNativeClient } from '../../../types/provider';
 import { RedisRedisClassType } from '../../../types/redis';
-import { dropTables, postgres_options, redis_options } from '../../$setup/postgres';
+import {
+  dropTables,
+  postgres_options,
+  redis_options,
+} from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Sequence | Postgres+Redis', () => {
   const appConfig = { id: 'tree' };

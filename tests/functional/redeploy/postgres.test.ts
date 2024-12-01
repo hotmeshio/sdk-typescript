@@ -10,10 +10,7 @@ import {
 } from '../../../types/stream';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { ProviderNativeClient } from '../../../types/provider';
-import {
-  dropTables,
-  postgres_options,
-} from '../../$setup/postgres';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Redeploy | Postgres', () => {
   const appConfig = { id: 'tree' };

@@ -38,7 +38,12 @@ describe('FUNCTIONAL | NatsSubService', () => {
 
   beforeEach(async () => {
     natsSubService = new NatsSubService(natsSubClient, natsPubClient);
-    await natsSubService.init(HMNS, appConfig.id, engineId, new LoggerService(appConfig.id, engineId, 'nats-sub-service', 'debug'));
+    await natsSubService.init(
+      HMNS,
+      appConfig.id,
+      engineId,
+      new LoggerService(appConfig.id, engineId, 'nats-sub-service', 'debug'),
+    );
   });
 
   describe('subscribe/unsubscribe', () => {
@@ -133,12 +138,7 @@ describe('FUNCTIONAL | NatsSubService', () => {
         natsWildcard,
       );
 
-      await natsSubService.publish(
-        KeyType.QUORUM,
-        payload,
-        appConfig.id,
-        word,
-      );
+      await natsSubService.publish(KeyType.QUORUM, payload, appConfig.id, word);
 
       // Wait for the message to be processed
       await sleepFor(1_000);

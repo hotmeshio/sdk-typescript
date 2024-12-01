@@ -8,7 +8,7 @@ import { dropTables, postgres_options } from '../$setup/postgres';
 
 describe('MESHCALL | Postgres', () => {
   let postgresClient: ProviderNativeClient;
-  
+
   const connection = {
     class: Postgres,
     options: postgres_options,

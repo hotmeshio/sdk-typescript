@@ -21,11 +21,7 @@ describe('FUNCTIONAL | EMIT | Postgres', () => {
 
   beforeAll(async () => {
     postgresClient = (
-      await PostgresConnection.connect(
-        guid(),
-        Postgres,
-        postgres_options,
-      )
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
 
     await dropTables(postgresClient);
@@ -87,7 +83,7 @@ describe('FUNCTIONAL | EMIT | Postgres', () => {
         },
       );
 
-      const payload = { job_id};
+      const payload = { job_id };
 
       //publish emit.test
       jobId = (await hotMesh.pub('emit.test', payload)) as string;

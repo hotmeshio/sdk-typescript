@@ -210,7 +210,6 @@ describe('MESHFLOW | hook & search | Postgres', () => {
           'meshflow',
         )) as unknown as { job_id: string }[];
         expect(results.length).toEqual(1);
-        console.log('RESULTS:', results[0].job_id);        
         expect(results[0].job_id).toBeDefined();
       }, 35_000);
     });

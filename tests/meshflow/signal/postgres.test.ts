@@ -11,9 +11,9 @@ import {
   ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
 import * as workflows from './src/workflows';
-import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
 const { Connection, Client, Worker } = MeshFlow;
 
@@ -57,11 +57,13 @@ describe('MESHFLOW | signal | Postgres', () => {
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
-        const client = new Client({ connection: {
-          store: { class: Postgres, options: postgres_options },
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
-        }});
+        const client = new Client({
+          connection: {
+            store: { class: Postgres, options: postgres_options },
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+        });
 
         handle = await client.workflow.start({
           args: ['ColdMush'],
@@ -101,11 +103,13 @@ describe('MESHFLOW | signal | Postgres', () => {
 
         //signal by instancing a new client connection
         await sleepFor(1_000);
-        const client = new Client({ connection: {
-          store: { class: Postgres, options: postgres_options },
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
-        }});
+        const client = new Client({
+          connection: {
+            store: { class: Postgres, options: postgres_options },
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+        });
         await client.workflow.signal('hijklmnop', { name: 'WarnCrash' });
 
         const result = await handle.result();

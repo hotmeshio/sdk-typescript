@@ -7,11 +7,11 @@ import {
 import { ILogger } from '../../../logger';
 import { SubService } from '../../index';
 import { SubscriptionCallback } from '../../../../types/quorum';
+import { NatsClientType, NatsSubscriptionType } from '../../../../types/nats';
 import {
-  NatsClientType,
-  NatsSubscriptionType,
-} from '../../../../types/nats';
-import { ProviderClient, ProviderTransaction } from '../../../../types/provider';
+  ProviderClient,
+  ProviderTransaction,
+} from '../../../../types/provider';
 
 class NatsSubService extends SubService<NatsClientType & ProviderClient> {
   private subscriptions: Map<string, NatsSubscriptionType>;
@@ -41,7 +41,9 @@ class NatsSubService extends SubService<NatsClientType & ProviderClient> {
 
   mintKey(type: KeyType, params: KeyStoreParams): string {
     if (!this.namespace) throw new Error('namespace not set');
-    return KeyService.mintKey(this.namespace, type, params).replace(/:/g, '.').replace(/\.$/g, '.X');
+    return KeyService.mintKey(this.namespace, type, params)
+      .replace(/:/g, '.')
+      .replace(/\.$/g, '.X');
   }
 
   async subscribe(
@@ -61,7 +63,10 @@ class NatsSubService extends SubService<NatsClientType & ProviderClient> {
           const payload = JSON.parse(msg.data.toString());
           callback(subject, payload);
         } catch (e) {
-          this.logger.error(`nats-subscribe-message-parse-error: ${msg.data.toString()}`, e);
+          this.logger.error(
+            `nats-subscribe-message-parse-error: ${msg.data.toString()}`,
+            e,
+          );
         }
       }
     })().catch((err) => {
@@ -102,7 +107,10 @@ class NatsSubService extends SubService<NatsClientType & ProviderClient> {
           const payload = JSON.parse(msg.data.toString());
           callback(msg.subject, payload);
         } catch (e) {
-          this.logger.error(`nats-parse-psubscription-message-error ${msg.data.toString()}`, e);
+          this.logger.error(
+            `nats-parse-psubscription-message-error ${msg.data.toString()}`,
+            e,
+          );
         }
       }
     })().catch((err) => {
