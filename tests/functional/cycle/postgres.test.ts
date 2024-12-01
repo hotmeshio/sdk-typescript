@@ -6,10 +6,7 @@ import { guid } from '../../../modules/utils';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { StreamData, StreamDataResponse } from '../../../types/stream';
 import { ProviderNativeClient } from '../../../types/provider';
-import {
-  dropTables,
-  postgres_options,
-} from '../../$setup/postgres';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Activity Cycles | Postgres', () => {
   const appConfig = { id: 'cycle' };

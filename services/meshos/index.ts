@@ -2,7 +2,11 @@ import { MeshData } from '../meshdata/index';
 import { arrayToHash, guid } from '../../modules/utils';
 import * as Types from '../../types';
 import { LoggerService } from '../logger';
-import { ProviderClass, ProviderConfig, ProvidersConfig } from '../../types/provider';
+import {
+  ProviderClass,
+  ProviderConfig,
+  ProvidersConfig,
+} from '../../types/provider';
 
 /**
  * MeshOS is an abstract base class for schema-driven entity management within the Mesh network.

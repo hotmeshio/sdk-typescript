@@ -83,11 +83,11 @@ export const stringModule = (context: any) => ({
     let sql = '';
     const params = [key, value];
     let expiryClause = '';
-  
+
     if (options?.ex) {
       expiryClause = ", expiry = NOW() + INTERVAL '" + options.ex + " seconds'";
     }
-  
+
     if (options?.nx) {
       // INSERT only if no valid ownership exists
       sql = `
@@ -109,9 +109,9 @@ export const stringModule = (context: any) => ({
         RETURNING true as success
       `;
     }
-  
+
     return { sql, params };
-  },  
+  },
 
   async del(key: string, multi?: ProviderTransaction): Promise<number> {
     const { sql, params } = this._del(key);

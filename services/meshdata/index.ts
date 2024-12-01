@@ -438,7 +438,9 @@ class MeshData {
       hotMesh = HotMesh.init({
         appId: namespace,
         engine: {
-          connection: polyfill.meshDataConfig(this) as ProviderConfig | ProvidersConfig,
+          connection: polyfill.meshDataConfig(this) as
+            | ProviderConfig
+            | ProvidersConfig,
         },
       });
       this.instances.set(namespace, hotMesh);

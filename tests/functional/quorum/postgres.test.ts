@@ -19,10 +19,7 @@ import {
   ThrottleOptions,
 } from '../../../types/quorum';
 import { ProviderNativeClient } from '../../../types/provider';
-import {
-  dropTables,
-  postgres_options,
-} from '../../$setup/postgres';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Quorum | Postgres', () => {
   const appConfig = { id: 'calc', version: '1' };

@@ -5,10 +5,7 @@ import { deterministicRandom, guid, sleepFor } from '../../../modules/utils';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { MeshFlow } from '../../../services/meshflow';
 import { WorkflowHandleService } from '../../../services/meshflow/handle';
-import {
-  ProviderConfig,
-  ProviderNativeClient,
-} from '../../../types/provider';
+import { ProviderConfig, ProviderNativeClient } from '../../../types/provider';
 
 import * as workflows from './src/workflows';
 
@@ -20,11 +17,7 @@ describe('MESHFLOW | baseline | Postgres', () => {
 
   beforeAll(async () => {
     postgresClient = (
-      await PostgresConnection.connect(
-        guid(),
-        Postgres,
-        postgres_options,
-      )
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
 
     await dropTables(postgresClient);

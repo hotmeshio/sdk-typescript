@@ -1,20 +1,32 @@
+import {
+  HMSH_DEPLOYMENT_DELAY,
+  HMSH_DEPLOYMENT_PAUSE,
+} from '../../../../modules/enums';
 import { sleepFor } from '../../../../modules/utils';
-import { PostgresClientType, PostgresPoolClientType } from '../../../../types/postgres';
+import {
+  PostgresClientType,
+  PostgresPoolClientType,
+} from '../../../../types/postgres';
+
 import type { PostgresStoreService } from './postgres';
 
 export const KVTables = (context: PostgresStoreService) => ({
-
   /**
    * Deploys the necessary tables with the specified naming strategy.
    * @param appName - The name of the application.
    */
   async deploy(appName: string): Promise<void> {
     const transactionClient = context.pgClient as any;
-    
+
     let client: any;
     let releaseClient = false;
 
-    if (!(isNaN(transactionClient?.totalCount) && isNaN(transactionClient?.idleCount))) {
+    if (
+      !(
+        isNaN(transactionClient?.totalCount) &&
+        isNaN(transactionClient?.idleCount)
+      )
+    ) {
       // It's a Pool, need to acquire a client
       client = await (transactionClient as PostgresPoolClientType).connect();
       releaseClient = true;
@@ -80,9 +92,11 @@ export const KVTables = (context: PostgresStoreService) => ({
     appName: string,
   ): Promise<void> {
     let retries = 0;
-    const maxRetries = 20;
+    const maxRetries = Math.round(
+      HMSH_DEPLOYMENT_DELAY / HMSH_DEPLOYMENT_PAUSE,
+    );
     while (retries < maxRetries) {
-      await sleepFor(150);
+      await sleepFor(HMSH_DEPLOYMENT_PAUSE);
       const lockCheck = await client.query(
         "SELECT NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint) AS unlocked",
         [lockId],
@@ -122,10 +136,10 @@ export const KVTables = (context: PostgresStoreService) => ({
       const schemaName = context.storeClient.safeName(appName);
       await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName};`);
       const tableDefinitions = this.getTableDefinitions(appName);
-    
+
       for (const tableDef of tableDefinitions) {
         const fullTableName = `${tableDef.schema}.${tableDef.name}`;
-    
+
         switch (tableDef.type) {
           case 'string':
             await client.query(`
@@ -136,7 +150,7 @@ export const KVTables = (context: PostgresStoreService) => ({
               );
             `);
             break;
-    
+
           case 'hash':
             await client.query(`
               CREATE TABLE IF NOT EXISTS ${fullTableName} (
@@ -148,7 +162,7 @@ export const KVTables = (context: PostgresStoreService) => ({
               );
             `);
             break;
-    
+
           case 'jobhash':
             // Create the enum type in the schema
             await client.query(`
@@ -178,7 +192,7 @@ export const KVTables = (context: PostgresStoreService) => ({
                 PRIMARY KEY (id)  -- Primary key on id which is also our partitioning key
               ) PARTITION BY HASH (id);
             `);
-    
+
             // Create partitions using a DO block
             await client.query(`
               DO $$
@@ -192,23 +206,23 @@ export const KVTables = (context: PostgresStoreService) => ({
                 END LOOP;
               END$$;
             `);
-    
+
             // Create optimized indexes
             await client.query(`
               CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_expired_at 
               ON ${fullTableName} (key, expired_at) INCLUDE (is_live);
             `);
-    
+
             await client.query(`
               CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_entity_status 
               ON ${fullTableName} (entity, status);
             `);
-    
+
             await client.query(`
               CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_expired_at 
               ON ${fullTableName} (expired_at);
             `);
-    
+
             // Create function to update is_live flag in the schema
             await client.query(`
               CREATE OR REPLACE FUNCTION ${schemaName}.update_is_live()
@@ -219,14 +233,14 @@ export const KVTables = (context: PostgresStoreService) => ({
               END;
               $$ LANGUAGE plpgsql;
             `);
-    
+
             // Create trigger for is_live updates
             await client.query(`
               CREATE TRIGGER trg_update_is_live
               BEFORE INSERT OR UPDATE ON ${fullTableName}
               FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.update_is_live();
             `);
-    
+
             // Create function to enforce uniqueness of live jobs
             await client.query(`
               CREATE OR REPLACE FUNCTION ${schemaName}.enforce_live_job_uniqueness()
@@ -247,7 +261,7 @@ export const KVTables = (context: PostgresStoreService) => ({
               END;
               $$ LANGUAGE plpgsql;
             `);
-    
+
             // Create trigger for uniqueness enforcement
             await client.query(`
               CREATE TRIGGER trg_enforce_live_job_uniqueness
@@ -267,7 +281,7 @@ export const KVTables = (context: PostgresStoreService) => ({
                 FOREIGN KEY (job_id) REFERENCES ${fullTableName} (id) ON DELETE CASCADE
               ) PARTITION BY HASH (job_id);
             `);
-    
+
             // Create partitions for attributes table
             await client.query(`
               DO $$
@@ -281,19 +295,19 @@ export const KVTables = (context: PostgresStoreService) => ({
                 END LOOP;
               END$$;
             `);
-    
+
             // Create indexes for attributes table
             await client.query(`
               CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_type_field 
               ON ${attributesTableName} (type, field);
             `);
-    
+
             await client.query(`
               CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_field 
               ON ${attributesTableName} (field);
             `);
             break;
-    
+
           case 'list':
             await client.query(`
               CREATE TABLE IF NOT EXISTS ${fullTableName} (
@@ -309,7 +323,7 @@ export const KVTables = (context: PostgresStoreService) => ({
               ON ${fullTableName} (key, expiry);
             `);
             break;
-    
+
           case 'sorted_set':
             await client.query(`
               CREATE TABLE IF NOT EXISTS ${fullTableName} (
@@ -325,13 +339,13 @@ export const KVTables = (context: PostgresStoreService) => ({
               ON ${fullTableName} (key, score, member);
             `);
             break;
-    
+
           default:
             context.logger.warn(`Unknown table type for ${tableDef.name}`);
             break;
         }
       }
-    
+
       // Commit transaction
       await client.query('COMMIT');
     } catch (error) {
@@ -372,9 +386,11 @@ export const KVTables = (context: PostgresStoreService) => ({
     return tableNames;
   },
 
-  getTableDefinitions(appName: string): Array<{ schema: string; name: string; type: string }> {
+  getTableDefinitions(
+    appName: string,
+  ): Array<{ schema: string; name: string; type: string }> {
     const schemaName = context.storeClient.safeName(appName);
-  
+
     const tableDefinitions = [
       {
         schema: 'public',
@@ -457,7 +473,7 @@ export const KVTables = (context: PostgresStoreService) => ({
         type: 'string',
       },
     ];
-  
+
     return tableDefinitions;
   },
 });

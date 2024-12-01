@@ -90,9 +90,9 @@ export const hashModule = (context: KVSQL) => ({
     const fieldEntries = Object.entries(fields);
     const isStatusOnly =
       fieldEntries.length === 1 && fieldEntries[0][0] === ':';
-  
+
     let targetTable = tableName; // Default table name
-  
+
     if (isJobsTable) {
       if (isStatusOnly) {
         // Target the jobs table directly when setting only the status field
@@ -102,10 +102,10 @@ export const hashModule = (context: KVSQL) => ({
         targetTable = `${tableName}_attributes`;
       }
     }
-  
+
     const params = [];
     let sql = '';
-  
+
     if (isJobsTable && isStatusOnly) {
       if (options?.nx) {
         // Use WHERE NOT EXISTS to enforce nx
@@ -134,15 +134,15 @@ export const hashModule = (context: KVSQL) => ({
       const conflictAction = options?.nx
         ? 'ON CONFLICT DO NOTHING'
         : `ON CONFLICT (job_id, field) DO UPDATE SET value = EXCLUDED.value`;
-    
-        const placeholders = fieldEntries
+
+      const placeholders = fieldEntries
         .map(([field, value], index) => {
           const baseIndex = index * 3 + 2; // Adjusted baseIndex
           params.push(field, value, this._deriveType(field));
           return `($${baseIndex}, $${baseIndex + 1}, $${baseIndex + 2}::${schemaName}.type_enum)`;
         })
         .join(', ');
-    
+
       sql = `
         INSERT INTO ${targetTable} (job_id, field, value, type)
         SELECT 
@@ -165,14 +165,14 @@ export const hashModule = (context: KVSQL) => ({
       const conflictAction = options?.nx
         ? 'ON CONFLICT DO NOTHING'
         : `ON CONFLICT (key, field) DO UPDATE SET value = EXCLUDED.value`;
-  
+
       const placeholders = fieldEntries
         .map(([field, value], index) => {
           params.push(field, value);
           return `($1, $${index * 2 + 2}, $${index * 2 + 3})`;
         })
         .join(', ');
-  
+
       sql = `
         INSERT INTO ${targetTable} (key, field, value)
         VALUES ${placeholders}
@@ -181,7 +181,7 @@ export const hashModule = (context: KVSQL) => ({
       `;
       params.unshift(key); // Add key as the first parameter
     }
-  
+
     return { sql, params };
   },
 
@@ -207,7 +207,7 @@ export const hashModule = (context: KVSQL) => ({
     const tableName = context.tableForKey(key, 'hash');
     const isJobsTable = this.isJobsTable(tableName);
     const isStatusField = field === ':';
-  
+
     if (isJobsTable && isStatusField) {
       // Fetch status from jobs table
       const sql = `
@@ -240,11 +240,7 @@ export const hashModule = (context: KVSQL) => ({
     }
   },
 
-  async hdel(
-    key: string,
-    fields: string[],
-    multi?: unknown,
-  ): Promise<number> {
+  async hdel(key: string, fields: string[], multi?: unknown): Promise<number> {
     // Ensure fields is an array
     if (!Array.isArray(fields)) {
       fields = [fields];
@@ -263,10 +259,10 @@ export const hashModule = (context: KVSQL) => ({
     const tableName = context.tableForKey(key, 'hash');
     const isJobsTable = this.isJobsTable(tableName);
     const targetTable = isJobsTable ? `${tableName}_attributes` : tableName;
-  
+
     const fieldPlaceholders = fields.map((_, i) => `$${i + 2}`).join(', ');
     const params = [key, ...fields];
-  
+
     if (isJobsTable) {
       const sql = `
         WITH valid_job AS (
@@ -344,7 +340,7 @@ export const hashModule = (context: KVSQL) => ({
   _hmget(key: string, fields: string[]): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
     const isJobsTable = this.isJobsTable(tableName);
-  
+
     if (isJobsTable) {
       const sql = `
         WITH valid_job AS (
@@ -430,7 +426,7 @@ export const hashModule = (context: KVSQL) => ({
   _hgetall(key: string): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'hash');
     const isJobsTable = this.isJobsTable(tableName);
-  
+
     if (isJobsTable) {
       const sql = `
         WITH valid_job AS (
@@ -653,17 +649,17 @@ export const hashModule = (context: KVSQL) => ({
       WHERE (expired_at IS NULL OR expired_at > NOW())
     `;
     const params = [];
-  
+
     if (pattern) {
       sql += ' AND key LIKE $1';
       params.push(pattern.replace(/\*/g, '%'));
     }
-  
+
     sql += `
       ORDER BY key
       OFFSET $${params.length + 1} LIMIT $${params.length + 2}
     `;
-  
+
     params.push(cursor.toString());
     params.push(count.toString());
     return { sql, params };
@@ -672,5 +668,4 @@ export const hashModule = (context: KVSQL) => ({
   isJobsTable(tableName: string): boolean {
     return tableName.endsWith('jobs');
   },
-
 });

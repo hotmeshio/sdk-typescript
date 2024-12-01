@@ -14,7 +14,7 @@ import { WorkflowHandleService } from './handle';
  * backed by Postgres or Redis/ValKey. The following lifecycle example
  * demonstrates how to start a new workflow, subscribe
  * to the result, and shutdown the system.
- * 
+ *
  * @example
  * ```typescript
  * import { Client, Worker, MeshFlow, HotMesh } from '@hotmeshio/hotmesh';

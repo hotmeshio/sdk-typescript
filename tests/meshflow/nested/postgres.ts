@@ -12,10 +12,10 @@ import {
   ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
 import * as childWorkflows from './child/workflows';
 import * as parentWorkflows from './parent/workflows';
-import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
 const { Connection, Client, Worker } = MeshFlow;
 
@@ -61,11 +61,13 @@ describe('MESHFLOW | nested | Postgres', () => {
     describe('start', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
         try {
-          const client = new Client({ connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          }});
+          const client = new Client({
+            connection: {
+              store: { class: Postgres, options: postgres_options },
+              stream: { class: Postgres, options: postgres_options },
+              sub: { class: Redis, options: redis_options },
+            },
+          });
           const h = client.workflow.start({
             args: ['PARENT', false], //setting to false optimizes workflow by suppressing the reentrant branch
             taskQueue: 'parent-world',
@@ -141,11 +143,13 @@ describe('MESHFLOW | nested | Postgres', () => {
   describe('MeshFlow Control Plane', () => {
     describe('deployAndActivate', () => {
       it('should deploy the distributed executable', async () => {
-        const client = new Client({ connection: {
-          store: { class: Postgres, options: postgres_options },
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
-        }});
+        const client = new Client({
+          connection: {
+            store: { class: Postgres, options: postgres_options },
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+        });
 
         //deploy next version
         await client.deployAndActivate(

@@ -11,7 +11,11 @@ import {
 } from '../../../types/stream';
 import { guid } from '../../../modules/utils';
 import { ProviderNativeClient } from '../../../types/provider';
-import { dropTables, nats_options, postgres_options } from '../../$setup/postgres';
+import {
+  dropTables,
+  nats_options,
+  postgres_options,
+} from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Sequence | Postgres+NATS', () => {
   const appConfig = { id: 'tree' };

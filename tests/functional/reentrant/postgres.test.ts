@@ -30,9 +30,7 @@ import {
   StreamStatus,
   WorkflowOptions,
 } from '../../../types';
-import {
-  ProviderNativeClient,
-} from '../../../types/provider';
+import { ProviderNativeClient } from '../../../types/provider';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { postgres_options } from '../../$setup/postgres';
 
@@ -273,13 +271,8 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
 
   beforeAll(async () => {
     postgresClient = (
-      await PostgresConnection.connect(
-        guid(),
-        Postgres,
-        postgres_options,
-      )
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
-
 
     const config: HotMeshConfig = {
       appId: appConfig.id,
@@ -287,13 +280,13 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connection: { class: Postgres,options: postgres_options },
+        connection: { class: Postgres, options: postgres_options },
       },
 
       workers: [
         {
           topic: workflowTopic,
-          connection: { class: Postgres,options: postgres_options },
+          connection: { class: Postgres, options: postgres_options },
 
           callback: async (data: StreamData): Promise<StreamDataResponse> => {
             let sleepData: number | null = null;

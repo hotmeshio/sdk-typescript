@@ -44,7 +44,7 @@ describe('FUNCTIONAL | EMIT | IORedis', () => {
           connection: {
             class: Redis,
             options: ioredis_options,
-           },
+          },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {
@@ -70,7 +70,7 @@ describe('FUNCTIONAL | EMIT | IORedis', () => {
   describe('Emit Interim Job State', () => {
     it('should emit the interim job state', async () => {
       let jobId: string;
-      let job_id = 'myjob123';
+      const job_id = 'myjob123';
       let isDone = false;
 
       //subscribe to the 'emit.tested' topic
@@ -90,7 +90,6 @@ describe('FUNCTIONAL | EMIT | IORedis', () => {
       );
 
       const payload = { job_id };
-
 
       //publish emit.test
       jobId = (await hotMesh.pub('emit.test', payload)) as string;

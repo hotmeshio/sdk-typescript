@@ -1,4 +1,7 @@
-import { PostgresClientType, PostgresPoolClientType } from '../../../types/postgres';
+import {
+  PostgresClientType,
+  PostgresPoolClientType,
+} from '../../../types/postgres';
 import config from '../config';
 
 export const postgres_options = {
@@ -37,10 +40,17 @@ export const nats_options = {
 export const dropTables = async (transactionClient: any): Promise<void> => {
   let postgresClient: any;
   let releaseClient = false;
-  
-  if (!(isNaN(transactionClient?.totalCount) && isNaN(transactionClient?.idleCount))) {
+
+  if (
+    !(
+      isNaN(transactionClient?.totalCount) &&
+      isNaN(transactionClient?.idleCount)
+    )
+  ) {
     // It's a Pool, need to acquire a client
-    postgresClient = await (transactionClient as PostgresPoolClientType).connect();
+    postgresClient = await (
+      transactionClient as PostgresPoolClientType
+    ).connect();
     releaseClient = true;
   } else {
     // Assume it's a connected Client
@@ -60,7 +70,7 @@ export const dropTables = async (transactionClient: any): Promise<void> => {
       AND schema_name <> 'public';
     `);
 
-    const schemas = schemasResult.rows.map(row => row.schema_name);
+    const schemas = schemasResult.rows.map((row) => row.schema_name);
 
     // Drop all user-defined schemas except 'public'
     for (const schema of schemas) {
@@ -74,10 +84,14 @@ export const dropTables = async (transactionClient: any): Promise<void> => {
       WHERE table_schema = 'public';
     `);
 
-    const tables = tablesResult.rows.map((row: { table_name: string }) => row.table_name);
+    const tables = tablesResult.rows.map(
+      (row: { table_name: string }) => row.table_name,
+    );
 
     for (const table of tables) {
-      await postgresClient.query(`DROP TABLE IF EXISTS "public"."${table}" CASCADE;`);
+      await postgresClient.query(
+        `DROP TABLE IF EXISTS "public"."${table}" CASCADE;`,
+      );
     }
 
     // Commit transaction
@@ -106,22 +120,28 @@ export const truncateTables = async (postgresClient: any): Promise<void> => {
       AND schema_name NOT LIKE 'pg_%';
     `);
 
-    const schemas = schemasResult.rows.map(row => row.schema_name);
+    const schemas = schemasResult.rows.map((row) => row.schema_name);
 
     // Fetch all tables in these schemas
-    const tablesResult = await postgresClient.query(`
+    const tablesResult = await postgresClient.query(
+      `
       SELECT table_schema, table_name 
       FROM information_schema.tables 
       WHERE table_schema = ANY ($1::text[]);
-    `, [schemas]);
+    `,
+      [schemas],
+    );
 
     const tables = tablesResult.rows.map(
-      (row: { table_schema: string; table_name: string }) => `"${row.table_schema}"."${row.table_name}"`
+      (row: { table_schema: string; table_name: string }) =>
+        `"${row.table_schema}"."${row.table_name}"`,
     );
 
     if (tables.length > 0) {
       // Truncate all tables
-      await postgresClient.query(`TRUNCATE ${tables.join(', ')} RESTART IDENTITY CASCADE;`);
+      await postgresClient.query(
+        `TRUNCATE ${tables.join(', ')} RESTART IDENTITY CASCADE;`,
+      );
     }
 
     await postgresClient.query('COMMIT');

@@ -29,7 +29,7 @@ export type PostgresPoolType = {
   //NOTE: query is a shorthand and includes implicit `connect/release` handled by pool
   query: (text: string, values?: any[]) => Promise<PostgresQueryResultType>;
 };
-  
+
 export interface PostgresClientType {
   connect: () => Promise<PostgresClientType>;
   query: (text: string, values?: any[]) => Promise<PostgresQueryResultType>;

@@ -4,7 +4,10 @@ import { KeyService, KeyType } from '../../../../modules/key';
 import { parseStreamMessage } from '../../../../modules/utils';
 import { StreamService } from '../../index';
 import { KeyStoreParams, StringAnyType } from '../../../../types';
-import { PostgresClientType, PostgresPoolClientType } from '../../../../types/postgres';
+import {
+  PostgresClientType,
+  PostgresPoolClientType,
+} from '../../../../types/postgres';
 import {
   PublishMessageConfig,
   StreamConfig,
@@ -15,6 +18,10 @@ import {
   ProviderClient,
   ProviderTransaction,
 } from '../../../../types/provider';
+import {
+  HMSH_DEPLOYMENT_DELAY,
+  HMSH_DEPLOYMENT_PAUSE,
+} from '../../../../modules/enums';
 
 class PostgresStreamService extends StreamService<
   PostgresClientType & ProviderClient,
@@ -40,8 +47,10 @@ class PostgresStreamService extends StreamService<
   }
 
   async deploy(): Promise<void> {
-    const transactionClient = this.streamClient as PostgresClientType | PostgresPoolClientType;
-    
+    const transactionClient = this.streamClient as
+      | PostgresClientType
+      | PostgresPoolClientType;
+
     let client: any;
     let releaseClient = false;
 
@@ -80,9 +89,11 @@ class PostgresStreamService extends StreamService<
       } else {
         // Wait for the deploy process to complete
         let retries = 0;
-        const maxRetries = 20; // Wait up to 2 seconds
+        const maxRetries = Math.round(
+          HMSH_DEPLOYMENT_DELAY / HMSH_DEPLOYMENT_PAUSE,
+        );
         while (retries < maxRetries) {
-          await this.delay(100); // Wait 100 ms
+          await this.delay(HMSH_DEPLOYMENT_PAUSE);
           const lockCheck = await client.query(
             "SELECT NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint) AS unlocked",
             [lockId],
@@ -131,7 +142,7 @@ class PostgresStreamService extends StreamService<
   }
 
   safeName(appId: string) {
-    return appId.replace(/[^a-zA-Z0-9_]/g, '_')
+    return appId.replace(/[^a-zA-Z0-9_]/g, '_');
   }
 
   getTableName(): string {
@@ -141,12 +152,12 @@ class PostgresStreamService extends StreamService<
   async createTables(client: PostgresClientType): Promise<void> {
     const schemaName = this.safeName(this.appId);
     const tableName = this.getTableName();
-  
+
     await client.query('BEGIN');
 
     // Create schema
     await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName};`);
-  
+
     // Create main table (with partitioning)
     await client.query(
       `CREATE TABLE ${schemaName}.streams (
@@ -160,7 +171,7 @@ class PostgresStreamService extends StreamService<
         PRIMARY KEY (stream_name, id)
       ) PARTITION BY HASH (stream_name)`,
     );
-  
+
     // Create partitions
     for (let i = 0; i < 8; i++) {
       const partitionTableName = `${schemaName}.streams_part_${i}`;
@@ -169,15 +180,15 @@ class PostgresStreamService extends StreamService<
          FOR VALUES WITH (modulus 8, remainder ${i})`,
       );
     }
-  
+
     // Create indexes
     await client.query(
       `CREATE INDEX idx_streams_group_stream_reserved_at_id 
        ON ${tableName} (group_name, stream_name, reserved_at, id)`,
     );
-  
+
     await client.query('COMMIT');
-  }  
+  }
 
   delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));

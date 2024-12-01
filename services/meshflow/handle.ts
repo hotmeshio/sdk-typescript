@@ -20,7 +20,7 @@ import { ExporterService } from './exporter';
  *   class: Postgres,
  *   options: { connectionString: 'postgres://user:pass@localhost:5432/db' }
  * }});
- * 
+ *
  * const handle = await client.workflow.start({
  *  args: ['HotMesh'],
  *  taskQueue: 'hello-world',
