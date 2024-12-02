@@ -58,7 +58,7 @@ class IORedisStreamService extends StreamService<
       await this.streamClient.xdel(streamName, dummyId);
       return true;
     } catch (error) {
-      this.logger.error(`Error creating stream ${streamName}`, { error });
+      this.logger.error(`Error creating stream ${streamName}`, { ...error });
       throw error;
     }
   }
@@ -68,7 +68,7 @@ class IORedisStreamService extends StreamService<
       const result = await this.streamClient.del(streamName);
       return result > 0;
     } catch (error) {
-      this.logger.error(`Error deleting stream ${streamName}`, { error });
+      this.logger.error(`Error deleting stream ${streamName}`, { ...error });
       throw error;
     }
   }
@@ -105,7 +105,7 @@ class IORedisStreamService extends StreamService<
     } catch (error) {
       this.logger.error(
         `Error deleting consumer group ${groupName} for stream ${streamName}`,
-        { error },
+        { ...error },
       );
       throw error;
     }
@@ -367,7 +367,7 @@ class IORedisStreamService extends StreamService<
       const length = await this.streamClient.xlen(streamName);
       return length;
     } catch (error) {
-      this.logger.error(`Error getting depth for ${streamName}`, { error });
+      this.logger.error(`Error getting depth for ${streamName}`, { ...error });
       throw error;
     }
   }

@@ -112,7 +112,7 @@ class PostgresStreamService extends StreamService<
         }
       }
     } catch (error) {
-      this.logger.error('Error deploying tables', { error });
+      this.logger.error('Error deploying tables', { ...error });
       throw error;
     } finally {
       if (releaseClient) {
@@ -224,7 +224,7 @@ class PostgresStreamService extends StreamService<
       }
       return true;
     } catch (error) {
-      this.logger.error(`Error deleting stream ${streamName}`, { error });
+      this.logger.error(`Error deleting stream ${streamName}`, { ...error });
       throw error;
     }
   }
@@ -252,7 +252,7 @@ class PostgresStreamService extends StreamService<
     } catch (error) {
       this.logger.error(
         `Error deleting consumer group ${groupName} for stream ${streamName}`,
-        { error },
+        { ...error },
       );
       throw error;
     }
@@ -453,7 +453,7 @@ class PostgresStreamService extends StreamService<
         messageCount: parseInt(res.rows[0].count, 10),
       };
     } catch (error) {
-      this.logger.error(`Error getting stats for ${streamName}`, { error });
+      this.logger.error(`Error getting stats for ${streamName}`, { ...error });
       throw error;
     }
   }
@@ -486,7 +486,7 @@ class PostgresStreamService extends StreamService<
 
       return result;
     } catch (error) {
-      this.logger.error('Error getting multiple stream depths', { error });
+      this.logger.error('Error getting multiple stream depths', { ...error });
       throw error;
     }
   }
@@ -529,7 +529,7 @@ class PostgresStreamService extends StreamService<
 
       return deleted;
     } catch (error) {
-      this.logger.error(`Error trimming stream ${streamName}`, { error });
+      this.logger.error(`Error trimming stream ${streamName}`, { ...error });
       throw error;
     }
   }

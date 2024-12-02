@@ -55,7 +55,7 @@ import { WorkflowHandleService } from './handle';
  *   taskQueue: 'default',
  *   workflowName: 'example',
  *   workflowId: HotMesh.guid(),
- *   namespace: 'meshflow', //the app name in Redis
+ *   namespace: 'meshflow',
  * });
  *
  * //4) subscribe to the eventual result

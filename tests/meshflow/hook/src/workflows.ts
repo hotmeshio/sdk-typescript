@@ -92,6 +92,28 @@ export async function exampleHook(name: string): Promise<void> {
   //test out sleeping
   await MeshFlow.workflow.sleepFor('2 seconds');
 
+  //test trace, enrich, emit (in a hook)
+
+  //send `trace` to the OpenTelemetry sink (happens just once)
+  await MeshFlow.workflow.trace({
+    name: 'example',
+    version: 1,
+    complete: true,
+  });
+
+  //send `enrich` to the Database Backend (enriches record with name/value)
+  await MeshFlow.workflow.enrich({
+    name: 'example',
+    version: '1',
+    complete: 'true',
+  });
+
+  //send 'emit' event to the Event Bus (emits events via the Pub/Sub Backend)
+  await MeshFlow.workflow.emit({
+    'my.dog': { anything: 'goes' },
+    'my.dog.cat': { anything: 'goes' },
+  });
+
   //awake the parent/main thread by sending the 'abcdefg' signal
   await MeshFlow.workflow.signal('abcdefg', { data: greeting });
 }

@@ -1,4 +1,5 @@
 import { JobOutput } from './job';
+import { StringAnyType } from './serializer';
 
 interface CPULoad {
   [cpu: string]: string;
@@ -96,6 +97,12 @@ export interface ActivateMessage extends QuorumMessageBase {
   until_version: string;
 }
 
+export interface UserMessage extends QuorumMessageBase {
+  type: 'user';
+  topic: string;
+  message: StringAnyType;
+}
+
 export interface JobMessage extends QuorumMessageBase {
   type: 'job';
   entity?: string;
@@ -156,4 +163,5 @@ export type QuorumMessage =
   | JobMessage
   | ThrottleMessage
   | RollCallMessage
-  | CronMessage;
+  | CronMessage
+  | UserMessage;

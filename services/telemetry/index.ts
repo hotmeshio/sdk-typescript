@@ -70,6 +70,41 @@ class TelemetryService {
     return this;
   }
 
+  /**
+   * Traces an activity. Allows emitting custom attributes
+   * from within a running function (or anything with sufficient
+   * metadata context to locate the trace/span)
+   * @private
+   */
+  static async traceActivity(
+    appId: string,
+    attributes: StringScalarType,
+    activityId: string,
+    traceId: string,
+    spanId: string,
+    index = 0,
+  ): Promise<boolean> {
+    const spanName = `TRACE/${appId}/${activityId}/${index}`;
+    const tracer = trace.getTracer(packageJson.name, packageJson.version);
+    const restoredSpanContext: SpanContext = {
+      traceId,
+      spanId,
+      isRemote: true,
+      traceFlags: 1,
+    };
+    const parentContext = trace.setSpanContext(
+      context.active(),
+      restoredSpanContext,
+    );
+    const span = tracer.startSpan(
+      spanName,
+      { kind: SpanKind.CLIENT, attributes, root: !parentContext },
+      parentContext,
+    );
+    span.end();
+    return true;
+  }
+
   startActivitySpan(leg = this.leg): TelemetryService {
     const spanName = `${this.config.type.toUpperCase()}/${this.appId}/${this.metadata.aid}/${leg}`;
     const traceId = this.getTraceId();

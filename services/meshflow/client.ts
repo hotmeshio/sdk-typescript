@@ -447,7 +447,9 @@ export class ClientService {
       try {
         await hotMesh.activate(version);
       } catch (error) {
-        hotMesh.engine.logger.error('meshflow-client-activate-err', { error });
+        hotMesh.engine.logger.error('meshflow-client-activate-err', {
+          ...error,
+        });
         throw error;
       }
     } else if (isNaN(Number(appVersion)) || appVersion < version) {

@@ -31,33 +31,33 @@ abstract class SubService<ClientProvider extends ProviderClient> {
     keyType: KeyType.QUORUM,
     callback: SubscriptionCallback,
     appId: string,
-    engineId?: string,
+    topic?: string,
   ): Promise<void>;
 
   abstract unsubscribe(
     keyType: KeyType.QUORUM,
     appId: string,
-    engineId?: string,
+    topic?: string,
   ): Promise<void>;
 
   abstract psubscribe(
     keyType: KeyType.QUORUM,
     callback: SubscriptionCallback,
     appId: string,
-    engineId?: string,
+    topic?: string,
   ): Promise<void>;
 
   abstract punsubscribe(
     keyType: KeyType.QUORUM,
     appId: string,
-    engineId?: string,
+    topic?: string,
   ): Promise<void>;
 
   abstract publish(
     keyType: KeyType,
     message: Record<string, any>,
     appId: string,
-    engineId?: string,
+    topic?: string,
   ): Promise<boolean>;
 }
 

@@ -20,8 +20,13 @@ class PostgresConnection extends AbstractConnection<
     idleTimeoutMillis: 30_000,
   };
 
-  protected static poolClientInstances: Set<PostgresPoolClientType> = new Set(); //call 'release'
-  protected static connectionInstances: Set<PostgresClientType> = new Set(); //call 'end'
+  //statically track all clients (//call 'release')
+  protected static poolClientInstances: Set<PostgresPoolClientType> = new Set();
+
+  //statically track all connections (//call 'end')
+  protected static connectionInstances: Set<PostgresClientType> = new Set();
+
+  //the specific connection instance
   poolClientInstance: PostgresPoolClientType;
 
   async createConnection(
@@ -42,7 +47,7 @@ class PostgresConnection extends AbstractConnection<
         connection = clientConstructor as PostgresPoolClientType;
         if (config.connect) {
           const client = await clientConstructor.connect();
-          //register the connection statically to be 'released' later
+          //register the connection singularly to be 'released' later
           PostgresConnection.poolClientInstances.add(client);
           this.poolClientInstance = client;
         }
@@ -61,6 +66,7 @@ class PostgresConnection extends AbstractConnection<
         host: options.host ?? 'unknown',
         database: options.database ?? 'unknown',
         port: options.port ?? 'unknown',
+        ...error,
       });
       throw new Error(`postgres-provider-connection-failed: ${error.message}`);
     }

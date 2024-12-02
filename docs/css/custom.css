@@ -1,3 +1,13 @@
+@import url('https://fonts.googleapis.com/css?family=Lato&display=swap');
+
+body {
+  font-family: 'Lato', sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #333;
+  background-color: #ffffff;
+}
+
 :root {
   /* Light */
   --light-color-background: #ffffff;
@@ -15,8 +25,8 @@ pre {
 #tsd-search .title {
   color: #000000;
   line-height: 2em;
-  font-size: 2.45em;
-  font-weight: 500;
+  font-size: 2.4em;
+  font-weight: 700;
   margin-left: 0;
   position: relative;
 }

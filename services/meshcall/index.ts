@@ -29,10 +29,10 @@ import { getWorkflowYAML, VERSION } from './schemas/factory';
 /**
  * MeshCall connects any function as an idempotent endpoint.
  * Call functions from anywhere on the network connected to the
- * target backend (Redis, Postgres, NATS, etc). Function
+ * target backend (Postgres, Redis/ValKey, NATS, etc). Function
  * responses are cacheable and invocations can be scheduled to
  * run as idempotent cron jobs (this one runs nightly at midnight
- * and uses Redis as the backend provider).
+ * and uses Postgres as the backend provider).
  *
  * @example
  * ```typescript
@@ -167,7 +167,9 @@ class MeshCall {
       try {
         await hotMesh.activate(version);
       } catch (error) {
-        hotMesh.engine.logger.error('meshcall-client-activate-err', { error });
+        hotMesh.engine.logger.error('meshcall-client-activate-err', {
+          ...error,
+        });
         throw error;
       }
     } else if (isNaN(Number(appVersion)) || appVersion < version) {
