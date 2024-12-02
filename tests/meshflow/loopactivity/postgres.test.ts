@@ -11,17 +11,18 @@ import * as workflows from './src/workflows';
 const { Connection, Client, Worker } = MeshFlow;
 
 describe('MESHFLOW | loopactivity | Postgres', () => {
+  const workflowId = `workflow-${guid()}`;
+  const workflowName = workflows.example.name;
+  const taskQueue = 'loop-world';
   let handle: WorkflowHandleService;
   let postgresPoolClient: any;
 
   beforeAll(async () => {
-    //drop old tables (full clean start)
-    const client = new Postgres(postgres_options);
-    await dropTables(client);
-    await client.end();
-
-    //initialize the Pool (share with all instances)
+    //instance a native postgres poolClient
     postgresPoolClient = new Postgres(postgres_options);
+
+    //drop old tables (full clean start) ...  did it release?
+    await dropTables(postgresPoolClient);
   });
 
   afterAll(async () => {
@@ -53,9 +54,9 @@ describe('MESHFLOW | loopactivity | Postgres', () => {
 
         handle = await client.workflow.start({
           args: [],
-          taskQueue: 'loop-world',
-          workflowName: 'example',
-          workflowId: 'workflow-' + guid(),
+          taskQueue,
+          workflowName,
+          workflowId,
           expire: 120,
         });
         expect(handle.workflowId).toBeDefined();
@@ -71,7 +72,7 @@ describe('MESHFLOW | loopactivity | Postgres', () => {
             class: postgresPoolClient,
             options: {},
           },
-          taskQueue: 'loop-world',
+          taskQueue,
           workflow: workflows.example,
         });
         await worker.run();
@@ -83,8 +84,31 @@ describe('MESHFLOW | loopactivity | Postgres', () => {
   describe('WorkflowHandle', () => {
     describe('result', () => {
       it('run await 3 functions and one sleepFor in parallel', async () => {
-        const result = await handle.result();
-        expect(result).toEqual(['Hello, 1!', 'Hello, 2!', 'Hello, 3!', 5]);
+        const client = new Client({
+          connection: {
+            class: postgresPoolClient,
+            options: {},
+          },
+        });
+
+        const localHandle = await client.workflow.getHandle(
+          taskQueue,
+          workflows.example.name,
+          workflowId,
+        );
+
+        const [localResult, globalResult] = await Promise.all([
+          localHandle.result(),
+          handle.result(),
+        ]);
+
+        expect(localResult).toEqual(['Hello, 1!', 'Hello, 2!', 'Hello, 3!', 5]);
+        expect(globalResult).toEqual([
+          'Hello, 1!',
+          'Hello, 2!',
+          'Hello, 3!',
+          5,
+        ]);
       }, 20_000);
     });
   });

@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.3.23",
+  "version": "0.3.24",
   "description": "Serverless Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -34,7 +34,7 @@
     "test:meshflow:hello": "HMSH_LOGLEVEL=debug HMSH_IS_CLUSTER=true NODE_ENV=test jest ./tests/meshflow/helloworld/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:hook": "NODE_ENV=test jest ./tests/meshflow/hook/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:interrupt": "NODE_ENV=test jest ./tests/meshflow/interrupt/*.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:meshflow:loopactivity": "NODE_ENV=test jest ./tests/meshflow/loopactivity/I.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:meshflow:loopactivity": "NODE_ENV=test jest ./tests/meshflow/loopactivity/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:nested": "NODE_ENV=test jest ./tests/meshflow/nested/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:retry": "NODE_ENV=test jest ./tests/meshflow/retry/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:sleep": "NODE_ENV=test jest ./tests/meshflow/sleep/*.test.ts --detectOpenHandles --forceExit --verbose",
@@ -71,7 +71,7 @@
     "test:sub:nats": "NODE_ENV=test jest ./tests/functional/sub/providers/nats/nats.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshdata": "NODE_ENV=test jest ./tests/meshdata/*.test.ts --forceExit --verbose --detectOpenHandles",
-    "test:meshos": "NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/*.test.ts --forceExit --verbose --detectOpenHandles",
+    "test:meshos": "HMSH_LOGLEVEL=debug NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/*.test.ts --forceExit --verbose --detectOpenHandles",
     "test:meshcall": "NODE_ENV=test jest ./tests/meshcall/*.test.ts --forceExit --verbose --detectOpenHandles",
     "test:unit": "NODE_ENV=test jest ./tests/unit/*/*/index.test.ts --detectOpenHandles --forceExit --verbose"
   },

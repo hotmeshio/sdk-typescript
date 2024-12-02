@@ -71,11 +71,11 @@ class PostgresSubService extends SubService<
     keyType: KeyType.QUORUM,
     callback: SubscriptionCallback,
     appId: string,
-    engineId?: string,
+    topic?: string,
   ): Promise<void> {
     const [originalKey, safeKey] = this.mintSafeKey(keyType, {
       appId,
-      engineId,
+      engineId: topic,
     });
 
     // Start listening to the safe topic
@@ -104,11 +104,11 @@ class PostgresSubService extends SubService<
   async unsubscribe(
     keyType: KeyType.QUORUM,
     appId: string,
-    engineId?: string,
+    topic?: string,
   ): Promise<void> {
     const [originalKey, safeKey] = this.mintSafeKey(keyType, {
       appId,
-      engineId,
+      engineId: topic,
     });
 
     // Stop listening to the safe topic
@@ -120,13 +120,12 @@ class PostgresSubService extends SubService<
     keyType: KeyType.QUORUM,
     message: Record<string, any>,
     appId: string,
-    engineId?: string,
+    topic?: string,
   ): Promise<boolean> {
     const [originalKey, safeKey] = this.mintSafeKey(keyType, {
       appId,
-      engineId,
+      engineId: topic,
     });
-
     // Publish the message using the safe topic
     const payload = JSON.stringify(message).replace(/'/g, "''");
     await this.storeClient.query(`NOTIFY "${safeKey}", '${payload}'`);

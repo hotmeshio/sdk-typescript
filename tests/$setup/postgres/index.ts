@@ -51,6 +51,7 @@ export const dropTables = async (transactionClient: any): Promise<void> => {
     postgresClient = await (
       transactionClient as PostgresPoolClientType
     ).connect();
+    console.log('RELEASE CLIENT', true);
     releaseClient = true;
   } else {
     // Assume it's a connected Client
@@ -104,6 +105,7 @@ export const dropTables = async (transactionClient: any): Promise<void> => {
   } finally {
     if (releaseClient) {
       (postgresClient as PostgresPoolClientType).release();
+      console.log('RELEASED CLIENT!!');
     }
   }
 };

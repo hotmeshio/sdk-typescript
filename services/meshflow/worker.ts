@@ -32,7 +32,6 @@ import {
   StreamDataResponse,
   StreamStatus,
 } from '../../types/stream';
-import { ProviderConfig } from '../../types';
 
 import { Search } from './search';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
@@ -433,6 +432,8 @@ export class WorkerService {
           // garbage collect (expire) this job when originJobId is expired
           context.set('originJobId', workflowInput.originJobId);
         }
+        //TODO: the query is provider-specific;
+        //      refactor as an abstract interface the provider must implement
         let replayQuery = '';
         if (workflowInput.workflowDimension) {
           //every hook function runs in an isolated dimension controlled
@@ -441,7 +442,7 @@ export class WorkerService {
           context.set('workflowDimension', workflowInput.workflowDimension);
           replayQuery = `-*${workflowInput.workflowDimension}-*`;
         } else {
-          //last letter of words like 'hook', 'sleep', 'wait', 'signal', 'search', 'start', 'proxy', 'child', 'collator'
+          //last letter of words like 'hook', 'sleep', 'wait', 'signal', 'search', 'start', 'proxy', 'child', 'collator', 'trace', 'enrich', 'publish'
           replayQuery = '-*[ehklptydr]-*';
         }
         context.set('workflowTopic', workflowTopic);

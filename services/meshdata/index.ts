@@ -1,4 +1,4 @@
-import { polyfill, s, sleepFor } from '../../modules/utils';
+import { s, sleepFor } from '../../modules/utils';
 import { MeshFlow } from '../meshflow';
 import { HotMesh } from '../hotmesh';
 import {
@@ -30,15 +30,10 @@ import {
 } from '../../types/quorum';
 import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
 import { MAX_DELAY } from '../../modules/enums';
-import { ProviderConfig } from '../../types';
-import {
-  ProviderClass,
-  ProviderOptions,
-  ProvidersConfig,
-} from '../../types/provider';
+import { ProviderConfig, ProvidersConfig } from '../../types/provider';
 
 /**
- * The `MeshData` service wraps the `MeshFlow` service.
+ * The `MeshData` service extends the `MeshFlow` service.
  * It serves to unify both data record and
  * transactional workflow principles into a single
  * *Operational Data Layer*. Deployments with a 'search'
@@ -165,6 +160,39 @@ class MeshData {
    *   options: {
    *     url: 'redis://:shhh123@localhost:6379'
    *   }});
+   *
+   * // Example 3) Instantiate MeshData with `postgres`
+   * import { Client as PostgresClient } from 'pg';
+   *
+   * const meshData = new MeshData({
+   *  class: PostgresClient,
+   *  options: {
+   *   connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+   *  }});
+   *
+   * // Example 4) Instantiate MeshData with `postgres` and `nats`
+   * import { connect as NATS } from 'nats';
+   *
+   * const meshData = new MeshData({
+   *  store:{
+   *   class: PostgresClient,
+   *   options: {
+   *    connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+   *   }
+   *  },
+   *  stream:{
+   *   class: PostgresClient,
+   *   options: {
+   *    connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+   *   }
+   *  },
+   *  sub :{
+   *   class: NATS,
+   *   options: {
+   *     server: ['nats://localhost:4222'],
+   *   }
+   *  },
+   * });
    */
   connection: ProviderConfig | ProvidersConfig;
 
@@ -304,10 +332,10 @@ class MeshData {
    * //...
    */
   constructor(
-    providerClass: ProviderClass | ProviderConfig | ProvidersConfig,
+    connection: ProviderConfig | ProvidersConfig,
     search?: WorkflowSearchOptions,
   ) {
-    this.connection = providerClass as ProviderConfig | ProvidersConfig;
+    this.connection = connection;
     if (search) {
       this.search = search;
     }
@@ -335,7 +363,7 @@ class MeshData {
    */
   getClient() {
     return new MeshFlow.Client({
-      connection: polyfill.meshDataConfig(this) as ProviderConfig,
+      connection: this.connection,
     });
   }
 
@@ -437,11 +465,7 @@ class MeshData {
       //expanded config always takes precedence over concise config
       hotMesh = HotMesh.init({
         appId: namespace,
-        engine: {
-          connection: polyfill.meshDataConfig(this) as
-            | ProviderConfig
-            | ProvidersConfig,
-        },
+        engine: { connection: this.connection },
       });
       this.instances.set(namespace, hotMesh);
       hotMesh = await hotMesh;
@@ -572,7 +596,7 @@ class MeshData {
    *
    * // Define and connect a function with the 'greeting' entity.
    * // The function will be cached indefinitely (infinite TTL).
-   * meshData.connect({
+   * await meshData.connect({
    *   entity: 'greeting',
    *   target: (email, user) => `Hello, ${user.first}.`,
    *   options: { ttl: 'infinity' }
@@ -615,7 +639,6 @@ class MeshData {
    * precedence and can say that all calls are cached indefinitely.
    *
    * @param {any[]} args
-   * @param {StringAnyType} options
    * @param {StringAnyType} callOptions
    * @returns {StringAnyType}
    * @private

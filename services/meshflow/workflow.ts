@@ -12,7 +12,6 @@ import { KeyService, KeyType } from '../../modules/key';
 import { asyncLocalStorage } from '../../modules/storage';
 import {
   deterministicRandom,
-  formatISODate,
   guid,
   s,
   sleepImmediate,
@@ -30,7 +29,11 @@ import {
 } from '../../types/meshflow';
 import { JobInterruptOptions } from '../../types/job';
 import { StreamCode, StreamStatus } from '../../types/stream';
-import { StringStringType } from '../../types/serializer';
+import {
+  StringAnyType,
+  StringScalarType,
+  StringStringType,
+} from '../../types/serializer';
 import {
   HMSH_CODE_MESHFLOW_CHILD,
   HMSH_CODE_MESHFLOW_FATAL,
@@ -47,9 +50,12 @@ import {
   MeshFlowChildErrorType,
   MeshFlowProxyErrorType,
 } from '../../types/error';
+import { TelemetryService } from '../telemetry';
+import { QuorumMessage } from '../../types';
+import { UserMessage } from '../../types/quorum';
 
-import { WorkerService } from './worker';
 import { Search } from './search';
+import { WorkerService } from './worker';
 
 /**
  * The workflow module provides a set of static extension methods
@@ -132,6 +138,135 @@ export class WorkflowService {
       1,
     );
     return guidValue === 1;
+  }
+
+  /**
+   * Executes a trace, outputting the provided attributes to
+   * the Open Telemetry sink. Executes exactly once during
+   * workflow execution.
+   *
+   * It is safe to add this method into any actively running
+   * workflow function as long as the trace call would be
+   * the last replayable method (by execution order) in
+   * the function.
+   *
+   * @example
+   * ```typescript
+   * import { workflow } from '@hotmeshio/hotmesh';
+   *
+   * export async function traceExample(): Promise<boolean> {
+   *  const attributes = {
+   *   key1: 'value1',
+   *   key2: 'value2',
+   *  };
+   *  return await workflow.trace(attributes);
+   * }
+   * ```
+   */
+  static async trace(
+    attributes: StringScalarType,
+    config: { once: boolean } = { once: true },
+  ): Promise<boolean> {
+    const store = asyncLocalStorage.getStore();
+    const workflowTopic = store.get('workflowTopic');
+    const connection = store.get('connection');
+    const namespace = store.get('namespace');
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      connection,
+      namespace,
+    });
+    //NOTE: COUNTER is an object reference, so it is up-to-date when needed
+    const { raw, COUNTER } = this.getContext();
+    const { trc: traceId, spn: spanId, aid: activityId } = raw.metadata;
+    if (
+      !config.once ||
+      await WorkflowService.isSideEffectAllowed(hotMeshClient, 'trace')
+    ) {
+      return await TelemetryService.traceActivity(
+        namespace,
+        attributes,
+        activityId,
+        traceId,
+        spanId,
+        COUNTER.counter,
+      );
+    }
+    return true;
+  }
+
+  /**
+   * Convenience method for adding custom user data to the backend worflow record.
+   * Runs exactly once during workflow execution.
+   *
+   * @example
+   * ```typescript
+   * import { workflow } from '@hotmeshio/hotmesh';
+   *
+   * export async function enrichExample(): Promise<boolean> {
+   *  const fields = {
+   *   key1: 'value1',
+   *   key2: 'value2',
+   *  };
+   *  return await workflow.enrich(fields);
+   * }
+   * ```
+   */
+  static async enrich(fields: StringStringType): Promise<boolean> {
+    const search = await WorkflowService.search();
+    await search.set(fields);
+    return true;
+  }
+
+  /**
+   * Emits an event to the event bus provider (e.g., NATS, Redis, etc.)
+   * The topic name will be structured as follows, prefixed
+   * with the quorum (q) namespace: `hmsh:<namespace>:q:`.
+   *
+   * For example, if you provide `my.dog` as the topic, it will
+   * be published at `hmsh:myapp:q:my.dog`.
+   *
+   * If using NATS as the pubsub provider, the delimiter
+   * will be `.` instead of `:`.
+   *
+   * If using Postgres, there is a 63 character limit
+   * on topic names, so be mindful of the length of the topic. If your
+   * topic exceeds 63 characters, it will be hashed by HotMesh to ensure
+   * it isn't truncated by Postgres.
+   *
+   * @example
+   * ```typescript
+   * import { workflow } from '@hotmeshio/hotmesh';
+   *
+   * export async function emitExample(): Promise<boolean> {
+   *  const events = {
+   *   'my.dog': { 'anything': 'goes' },
+   *   'my.dog.cat': { 'anything': 'goes' },
+   *  };
+   *  return await workflow.emit(events);
+   * }
+   * ```
+   */
+  static async emit(
+    events: StringAnyType,
+    config: { once: boolean } = { once: true },
+  ): Promise<boolean> {
+    const store = asyncLocalStorage.getStore();
+    const workflowTopic = store.get('workflowTopic');
+    const connection = store.get('connection');
+    const namespace = store.get('namespace');
+    const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
+      connection,
+      namespace,
+    });
+    if (
+      !config.once ||
+      await WorkflowService.isSideEffectAllowed(hotMeshClient, 'emit')
+    ) {
+      for (const [topic, message] of Object.entries(events)) {
+        await hotMeshClient.quorum.pub({ topic, message } as UserMessage);
+      }
+    }
+    return true;
   }
 
   /**

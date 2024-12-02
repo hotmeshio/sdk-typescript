@@ -755,7 +755,9 @@ This example demonstrates how to search for those workflows where a given condit
 <br/>
 
 ## Connect
-HotMesh is pluggable and ships with support for **Postgres** (pg) and **Redis** (ioredis/redis). **NATS** is also supported for PubSub for extended patterns.
+HotMesh is pluggable and fully supports **Postgres** and **Redis/ValKey** backends. 
+
+**NATS** can be added for *pub-sub* support (when extended pattern matching is desired). And *streams* support is currently in alpha (**NATS** + **JetStream** + **Postgres**).
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Postgres <small>[more]</small></summary>

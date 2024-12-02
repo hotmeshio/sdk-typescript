@@ -1,7 +1,5 @@
 import { HMNS } from '../../modules/key';
 import { guid } from '../../modules/utils';
-import { RedisConnection } from '../connector/providers/redis';
-import { RedisConnection as IORedisConnection } from '../connector/providers/ioredis';
 import { ConnectorService } from '../connector/factory';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
@@ -397,9 +395,9 @@ class HotMesh {
     return await this.engine?.plan(path);
   }
   /**
-   * When the app YAML file is ready, the `deploy` function can be called.
+   * When the app YAML descriptor file is ready, the `deploy` function can be called.
    * This function is responsible for merging all referenced YAML source
-   * files and writing the JSON output to the file system and to Redis. It
+   * files and writing the JSON output to the file system and to the provider backend. It
    * is also possible to embed the YAML in-line as a string.
    *
    * *The version will not be active until activation is explicitly called.*
@@ -408,13 +406,13 @@ class HotMesh {
     return await this.engine?.deploy(pathOrYAML);
   }
   /**
-   * Once the app YAML file is deployed to Redis, the `activate` function can be
+   * Once the app YAML file is deployed to the provider backend, the `activate` function can be
    * called to enable it for the entire quorum at the same moment.
    *
    * The approach is to establish the coordinated health of the system through series
    * of call/response exchanges. Once it is established that the quorum is healthy,
    * the quorum is instructed to run their engine in `no-cache` mode, ensuring
-   * that the Redis backend is consulted for the active app version each time a
+   * that the provider backend is consulted for the active app version each time a
    * call is processed. This ensures that all engines are running the same version
    * of the app, switching over at the same moment and then enabling `cache` mode
    * to improve performance.

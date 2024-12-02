@@ -22,10 +22,8 @@ export const KVTables = (context: PostgresStoreService) => ({
     let releaseClient = false;
 
     if (
-      !(
-        isNaN(transactionClient?.totalCount) &&
-        isNaN(transactionClient?.idleCount)
-      )
+      transactionClient?.totalCount !== undefined &&
+      transactionClient?.idleCount !== undefined
     ) {
       // It's a Pool, need to acquire a client
       client = await (transactionClient as PostgresPoolClientType).connect();
@@ -59,15 +57,21 @@ export const KVTables = (context: PostgresStoreService) => ({
         // Release the lock
         await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
       } else {
+        // Release the client before waiting
+        if (releaseClient && client.release) {
+          await client.release();
+          releaseClient = false;
+        }
+
         // Wait for the deploy process to complete
-        await this.waitForTablesCreation(client, lockId, appName);
+        await this.waitForTablesCreation(lockId, appName);
       }
     } catch (error) {
       console.error(error);
-      context.logger.error('Error deploying tables', { error });
+      context.logger.error('Error deploying tables', { ...error });
       throw error;
     } finally {
-      if (releaseClient) {
+      if (releaseClient && client.release) {
         await client.release();
       }
     }
@@ -86,30 +90,52 @@ export const KVTables = (context: PostgresStoreService) => ({
     return Math.abs(hash);
   },
 
-  async waitForTablesCreation(
-    client: PostgresClientType,
-    lockId: number,
-    appName: string,
-  ): Promise<void> {
+  async waitForTablesCreation(lockId: number, appName: string): Promise<void> {
     let retries = 0;
     const maxRetries = Math.round(
       HMSH_DEPLOYMENT_DELAY / HMSH_DEPLOYMENT_PAUSE,
     );
+
     while (retries < maxRetries) {
       await sleepFor(HMSH_DEPLOYMENT_PAUSE);
-      const lockCheck = await client.query(
-        "SELECT NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint) AS unlocked",
-        [lockId],
-      );
-      if (lockCheck.rows[0].unlocked) {
-        // Lock has been released, tables should exist now
-        const tablesExist = await this.checkIfTablesExist(client, appName);
-        if (tablesExist) {
-          return;
+
+      let client: any;
+      let releaseClient = false;
+      const transactionClient = context.pgClient as any;
+
+      if (
+        transactionClient?.totalCount !== undefined &&
+        transactionClient?.idleCount !== undefined
+      ) {
+        // It's a Pool, need to acquire a client
+        client = await (transactionClient as PostgresPoolClientType).connect();
+        releaseClient = true;
+      } else {
+        // Assume it's a connected Client
+        client = transactionClient as PostgresClientType;
+      }
+
+      try {
+        const lockCheck = await client.query(
+          "SELECT NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint) AS unlocked",
+          [lockId],
+        );
+        if (lockCheck.rows[0].unlocked) {
+          // Lock has been released, tables should exist now
+          const tablesExist = await this.checkIfTablesExist(client, appName);
+          if (tablesExist) {
+            return;
+          }
+        }
+      } finally {
+        if (releaseClient && client.release) {
+          await client.release();
         }
       }
+
       retries++;
     }
+    console.error('table-create-timeout', { appName });
     throw new Error('Timeout waiting for table creation');
   },
 
@@ -189,7 +215,7 @@ export const KVTables = (context: PostgresStoreService) => ({
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 expired_at TIMESTAMP WITH TIME ZONE,
                 is_live BOOLEAN DEFAULT TRUE,
-                PRIMARY KEY (id)  -- Primary key on id which is also our partitioning key
+                PRIMARY KEY (id)
               ) PARTITION BY HASH (id);
             `);
 
