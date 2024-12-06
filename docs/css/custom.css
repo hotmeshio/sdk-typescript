@@ -19,36 +19,30 @@ pre {
 
 .tsd-page-toolbar {
   background-color: #ffffff;
-  height: 5em;
+  height: 4.1em;
 }
 
 #tsd-search .title {
   color: #000000;
   line-height: 2em;
-  font-size: 2.4em;
-  font-weight: 700;
-  margin-left: 0;
+  font-size: 1.9em;
+  font-weight: bold;
+  left: -3.5px;
   position: relative;
-}
-
-@media screen and (max-width: 499px) {
-  #tsd-search .title {
-      color: transparent;
-  }
 }
 
 #tsd-search .title::before {
   content: "";
   display: inline-block;
-  width: 1.25em; /* Adjust width as needed */
-  height: 1.25em; /* Adjust height as needed */
-  background-image: url("https://hotmesh.io/img/logo_144_r.png");
-  background-size: contain;
+  width: 1.25em;
+  height: 1.5em;
+  background-image: url(https://hotmesh.io/img/logo_144_r.png);
+  background-size: 40px 40px;
   background-repeat: no-repeat;
-  margin-right: 0; /* Space between logo and text */
-  position: relative; /* Ensure position context for pseudo-element */
-  top: .2em; /* Move up; adjust as needed */
-  left: -0.4em; /* Move left; adjust as needed */
+  margin-right: 0;
+  position: relative;
+  top: .25em;
+  left: -0.41em;
 }
 
 @media screen and (max-width: 499px) {
