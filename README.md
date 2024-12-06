@@ -201,7 +201,7 @@ npm install @hotmeshio/hotmesh
 <br/>
 
 ## MeshFlow
-[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a serverless replacement for *Temporal.io*
+[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a serverless alternative to *Temporal.io*
 
 <details style="padding: .5em">
   <summary style="font-size:1.25em;">Orchestrate unpredictable activities <small>[more]</small></summary>

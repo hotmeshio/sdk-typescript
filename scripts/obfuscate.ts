@@ -30,23 +30,23 @@ const obfuscateTargets = [
 const obfuscate = (filePath: string) => {
   const code = fs.readFileSync(filePath, 'utf8');
   const obfuscationResult = JavaScriptObfuscator.obfuscate(code, {
-    compact: true,
-    controlFlowFlattening: false,
-    deadCodeInjection: false,
-    debugProtection: false,
-    disableConsoleOutput: false,
-    identifierNamesGenerator: 'hexadecimal',
-    log: false,
-    renameGlobals: false,
-    rotateStringArray: true,
-    selfDefending: false,
-    shuffleStringArray: true,
-    splitStrings: false,
-    stringArray: true,
-    stringArrayEncoding: [],
-    stringArrayThreshold: 0,
-    transformObjectKeys: false,
-    unicodeEscapeSequence: false,
+    compact: true, // Remove unnecessary spaces and newlines
+    controlFlowFlattening: false, // Avoid inflating code size
+    deadCodeInjection: false, // Avoid adding extra dead code
+    debugProtection: false, // Disable debug protection
+    disableConsoleOutput: false, // Keep console outputs unchanged
+    identifierNamesGenerator: 'mangled', // Short variable names like 'a', 'b', 'c'
+    log: false, // Suppress logs
+    renameGlobals: false, // Avoid renaming global variables
+    rotateStringArray: true, // Minimize string array impact
+    selfDefending: false, // Avoid adding self-defending logic
+    shuffleStringArray: true, // Reduce predictable patterns
+    splitStrings: false, // Avoid splitting strings
+    stringArray: true, // Group strings into an array
+    stringArrayEncoding: [], // No encoding to keep size minimal
+    stringArrayThreshold: 0.75, // Adjust threshold for optimal size
+    transformObjectKeys: false, // Avoid inflating object keys
+    unicodeEscapeSequence: false, // Disable Unicode escape sequences
   });
 
   fs.writeFileSync(filePath, obfuscationResult.getObfuscatedCode());
