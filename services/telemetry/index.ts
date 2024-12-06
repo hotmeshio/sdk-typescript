@@ -86,23 +86,28 @@ class TelemetryService {
   ): Promise<boolean> {
     const spanName = `TRACE/${appId}/${activityId}/${index}`;
     const tracer = trace.getTracer(packageJson.name, packageJson.version);
+  
     const restoredSpanContext: SpanContext = {
       traceId,
       spanId,
       isRemote: true,
       traceFlags: 1,
     };
-    const parentContext = trace.setSpanContext(
-      context.active(),
-      restoredSpanContext,
-    );
-    const span = tracer.startSpan(
-      spanName,
-      { kind: SpanKind.CLIENT, attributes, root: !parentContext },
-      parentContext,
-    );
-    span.end();
-    return true;
+  
+    const parentContext = trace.setSpanContext(context.active(), restoredSpanContext);
+  
+    return context.with(parentContext, () => {
+      const span = tracer.startSpan(spanName, {
+        kind: SpanKind.CLIENT,
+        attributes,
+      });
+  
+      // Explicitly set attributes to ensure they are recorded
+      span.setAttributes(attributes);
+  
+      span.end();
+      return true;
+    });
   }
 
   startActivitySpan(leg = this.leg): TelemetryService {

@@ -50,3 +50,28 @@ pre {
   top: .2em; /* Move up; adjust as needed */
   left: -0.4em; /* Move left; adjust as needed */
 }
+
+@media screen and (max-width: 499px) {
+  #tsd-search .title {
+      color: transparent;
+  }
+
+  #tsd-search .title::before {
+    content: "";
+    display: inline-block;
+    width: 1.25em;
+    height: 1.25em;
+    background-image: url(https://hotmesh.io/img/logo_144_r.png);
+    background-size: 30px 30px;
+    background-repeat: no-repeat;
+    margin-right: 0;
+    position: relative;
+    top: .18em;
+    left: -0.57em;
+  }
+
+  .tsd-page-toolbar {
+    background-color: #ffffff;
+    height: 3.65em;
+  }
+}
