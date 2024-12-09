@@ -787,7 +787,7 @@ const PostgresPoolClient = new PostgresPool({
 //provide these credentials to HotMesh
 const connection = {
   class: PostgresPoolClient,
-  options: {}
+  options: {},
 };
 ```
 
