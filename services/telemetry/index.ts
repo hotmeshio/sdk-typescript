@@ -46,10 +46,11 @@ class TelemetryService {
    * too chatty for production; only output traces, jobs, triggers and workers
    */
   private shouldCreateSpan(): boolean {
-    if (HMSH_TELEMETRY !== 'info') {
-      return true;
-    }
-    return this.config?.type === 'worker' || this.config?.type === 'trigger';
+    return (
+      HMSH_TELEMETRY === 'debug' ||
+      this.config?.type === 'trigger' ||
+      this.config?.type === 'worker'
+    );
   }
 
   private static createNoopSpan(traceId: string, spanId: string): Span {
@@ -183,34 +184,28 @@ class TelemetryService {
       data.type === StreamDataType.RESULT ||
       data.type === StreamDataType.RESPONSE
     ) {
-      type = 'FANIN';
+      type = 'FANIN';  //re-entering engine router (from worker router)
     } else {
-      type = 'FANOUT';
+      type = 'FANOUT'; //exiting engine router (to worker router)
     }
-    const topic = data.metadata.topic ? `/${data.metadata.topic}` : '';
-    const spanName = `${type}/${this.appId}/${data.metadata.aid}${topic}`;
-    const attributes = this.getStreamSpanAttrs(data);
 
-    // Determine the "activity type" if available
-    const activityType = this.config?.type;
-
-    // If we can't determine activityType, treat it as a non-worker/trigger in 'info' mode
-    const shouldCreate =
-      process.env.HMSH_TELEMETRY !== 'info' ||
-      activityType === 'worker' ||
-      activityType === 'trigger';
-
-    // If we are not creating a new span, return a no-op span with the original parent IDs
-    const traceId = data.metadata.trc;
-    const spanId = data.metadata.spn;
-
-    if (!shouldCreate) {
-      this.traceId = traceId;
-      this.spanId = spanId;
-      this.span = TelemetryService.createNoopSpan(traceId, spanId);
+    // `EXECUTE` refers to the 'worker router' NOT the 'worker activity' run by the 'engine router'
+    // (Regardless, it's worker-related, so it matters and will be traced)
+    // `SYSTEM` refers to catastrophic errors, which are always traced
+    if (this.shouldCreateSpan() || type === 'EXECUTE' || type === 'SYSTEM') {
+      const topic = data.metadata.topic ? `/${data.metadata.topic}` : '';
+      const spanName = `${type}/${this.appId}/${data.metadata.aid}${topic}`;
+      const attributes = this.getStreamSpanAttrs(data);
+      this.span = this.startSpan(
+        data.metadata.trc,
+        data.metadata.spn,
+        spanName,
+        attributes,
+      );
     } else {
-      // proceed as normal
-      this.span = this.startSpan(traceId, spanId, spanName, attributes);
+      this.traceId = data.metadata.trc;
+      this.spanId = data.metadata.spn;
+      this.span = TelemetryService.createNoopSpan(data.metadata.trc, data.metadata.spn);
     }
 
     return this;
