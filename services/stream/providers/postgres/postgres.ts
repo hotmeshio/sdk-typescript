@@ -1,4 +1,3 @@
-// /app/services/stream/providers/postgres/postgres.ts
 import { ILogger } from '../../../logger';
 import { KeyService, KeyType } from '../../../../modules/key';
 import { parseStreamMessage } from '../../../../modules/utils';
@@ -6,7 +5,6 @@ import { StreamService } from '../../index';
 import { KeyStoreParams, StringAnyType } from '../../../../types';
 import {
   PostgresClientType,
-  PostgresPoolClientType,
 } from '../../../../types/postgres';
 import {
   PublishMessageConfig,
@@ -18,10 +16,7 @@ import {
   ProviderClient,
   ProviderTransaction,
 } from '../../../../types/provider';
-import {
-  HMSH_DEPLOYMENT_DELAY,
-  HMSH_DEPLOYMENT_PAUSE,
-} from '../../../../modules/enums';
+import { deploySchema } from './kvtables';
 
 class PostgresStreamService extends StreamService<
   PostgresClientType & ProviderClient,
@@ -43,155 +38,7 @@ class PostgresStreamService extends StreamService<
     this.namespace = namespace;
     this.appId = appId;
     this.logger = logger;
-    await this.deploy();
-  }
-
-  async deploy(): Promise<void> {
-    const transactionClient = this.streamClient as
-      | PostgresClientType
-      | PostgresPoolClientType;
-
-    let client: any;
-    let releaseClient = false;
-
-    if ('connect' in transactionClient && 'release' in transactionClient) {
-      // It's a Pool, need to acquire a client
-      client = await transactionClient.connect();
-      releaseClient = true;
-    } else {
-      // Assume it's a connected Client
-      client = transactionClient;
-    }
-
-    try {
-      // Acquire advisory lock to prevent race conditions
-      const lockId = this.getAdvisoryLockId();
-      const lockResult = await client.query(
-        'SELECT pg_try_advisory_lock($1) AS locked',
-        [lockId],
-      );
-
-      if (lockResult.rows[0].locked) {
-        // Begin transaction
-        await client.query('BEGIN');
-
-        // Check if tables exist
-        const tableExists = await this.checkIfTablesExist(client);
-        if (!tableExists) {
-          await this.createTables(client);
-        }
-
-        // Commit transaction
-        await client.query('COMMIT');
-
-        // Release the lock
-        await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
-      } else {
-        // Wait for the deploy process to complete
-        let retries = 0;
-        const maxRetries = Math.round(
-          HMSH_DEPLOYMENT_DELAY / HMSH_DEPLOYMENT_PAUSE,
-        );
-        while (retries < maxRetries) {
-          await this.delay(HMSH_DEPLOYMENT_PAUSE);
-          const lockCheck = await client.query(
-            "SELECT NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint) AS unlocked",
-            [lockId],
-          );
-          if (lockCheck.rows[0].unlocked) {
-            // Lock has been released, table should exist now
-            const tableExists = await this.checkIfTablesExist(client);
-            if (tableExists) {
-              break;
-            }
-          }
-          retries++;
-        }
-        if (retries === maxRetries) {
-          throw new Error('Timeout waiting for table creation');
-        }
-      }
-    } catch (error) {
-      this.logger.error('Error deploying tables', { error });
-      throw error;
-    } finally {
-      if (releaseClient) {
-        await client.release();
-      }
-    }
-  }
-
-  getAdvisoryLockId(): number {
-    return this.hashStringToInt(this.appId);
-  }
-
-  hashStringToInt(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0; // Convert to 32-bit integer
-    }
-    return Math.abs(hash);
-  }
-
-  async checkIfTablesExist(client: PostgresClientType): Promise<boolean> {
-    const res = await client.query(
-      `SELECT to_regclass('${this.getTableName()}') AS table`,
-    );
-    return res.rows[0].table !== null;
-  }
-
-  safeName(appId: string) {
-    return appId.replace(/[^a-zA-Z0-9_]/g, '_');
-  }
-
-  getTableName(): string {
-    return `${this.safeName(this.appId)}.streams`;
-  }
-
-  async createTables(client: PostgresClientType): Promise<void> {
-    const schemaName = this.safeName(this.appId);
-    const tableName = this.getTableName();
-
-    await client.query('BEGIN');
-
-    // Create schema
-    await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName};`);
-
-    // Create main table (with partitioning)
-    await client.query(
-      `CREATE TABLE ${schemaName}.streams (
-        id BIGSERIAL,
-        stream_name TEXT NOT NULL,
-        group_name TEXT NOT NULL DEFAULT 'ENGINE',
-        message TEXT NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        reserved_at TIMESTAMPTZ,
-        reserved_by TEXT,
-        PRIMARY KEY (stream_name, id)
-      ) PARTITION BY HASH (stream_name)`,
-    );
-
-    // Create partitions
-    for (let i = 0; i < 8; i++) {
-      const partitionTableName = `${schemaName}.streams_part_${i}`;
-      await client.query(
-        `CREATE TABLE ${partitionTableName} PARTITION OF ${tableName}
-         FOR VALUES WITH (modulus 8, remainder ${i})`,
-      );
-    }
-
-    // Create indexes
-    await client.query(
-      `CREATE INDEX idx_streams_group_stream_reserved_at_id 
-       ON ${tableName} (group_name, stream_name, reserved_at, id)`,
-    );
-
-    await client.query('COMMIT');
-  }
-
-  delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    await deploySchema(this.streamClient, this.appId, this.logger);
   }
 
   mintKey(type: KeyType, params: KeyStoreParams): string {
@@ -206,8 +53,15 @@ class PostgresStreamService extends StreamService<
     return {} as ProviderTransaction;
   }
 
+  getTableName(): string {
+    return `${this.safeName(this.appId)}.streams`;
+  }
+
+  safeName(appId: string): string {
+    return appId.replace(/[^a-zA-Z0-9_]/g, '_');
+  }
+
   async createStream(streamName: string): Promise<boolean> {
-    // Streams are managed within the table; no action needed
     return true;
   }
 
@@ -224,7 +78,9 @@ class PostgresStreamService extends StreamService<
       }
       return true;
     } catch (error) {
-      this.logger.error(`Error deleting stream ${streamName}`, { error });
+      this.logger.error(`postgres-stream-delete-error-${streamName}`, {
+        error,
+      });
       throw error;
     }
   }
@@ -233,7 +89,6 @@ class PostgresStreamService extends StreamService<
     streamName: string,
     groupName: string,
   ): Promise<boolean> {
-    // Consumer groups are managed via group_name; no action needed
     return true;
   }
 
@@ -251,7 +106,7 @@ class PostgresStreamService extends StreamService<
       return true;
     } catch (error) {
       this.logger.error(
-        `Error deleting consumer group ${groupName} for stream ${streamName}`,
+        `postgres-stream-delete-group-error-${streamName}.${groupName}`,
         { error },
       );
       throw error;
@@ -302,7 +157,7 @@ class PostgresStreamService extends StreamService<
         }
         return ids;
       } catch (error) {
-        this.logger.error(`Error publishing messages to ${streamName}`, {
+        this.logger.error(`postgres-stream-publish-error-${streamName}`, {
           error,
         });
         throw error;
@@ -350,6 +205,7 @@ class PostgresStreamService extends StreamService<
           WHERE stream_name = $1
             AND group_name = $2
             AND COALESCE(reserved_at, '1970-01-01') < NOW() - INTERVAL '${reservationTimeout} seconds'
+            AND expired_at IS NULL
           ORDER BY id
           LIMIT $3
           FOR UPDATE SKIP LOCKED
@@ -374,7 +230,7 @@ class PostgresStreamService extends StreamService<
 
       return messages;
     } catch (error) {
-      this.logger.error(`Error consuming messages from ${streamName}`, {
+      this.logger.error(`postgres-stream-consumer-error-${streamName}`, {
         error,
       });
       throw error;
@@ -410,15 +266,17 @@ class PostgresStreamService extends StreamService<
     try {
       const ids = messageIds.map((id) => parseInt(id));
 
+      // Perform a soft delete by setting `expired_at` to the current timestamp
       await client.query(
-        `DELETE FROM ${tableName}
+        `UPDATE ${tableName}
+         SET expired_at = NOW()
          WHERE stream_name = $1 AND id = ANY($2::bigint[]) AND group_name = $3`,
         [streamName, ids, groupName],
       );
 
       return messageIds.length;
     } catch (error) {
-      this.logger.error(`Error deleting messages from ${streamName}`, {
+      this.logger.error(`postgres-stream-delete-error-${streamName}`, {
         error,
       });
       throw error;
@@ -446,14 +304,16 @@ class PostgresStreamService extends StreamService<
     const tableName = this.getTableName();
     try {
       const res = await client.query(
-        `SELECT COUNT(*) AS count FROM ${tableName} WHERE stream_name = $1`,
+        `SELECT COUNT(*) AS available_count 
+        FROM ${tableName} 
+        WHERE stream_name = $1 AND expired_at IS NULL`,
         [streamName],
       );
       return {
-        messageCount: parseInt(res.rows[0].count, 10),
+        messageCount: parseInt(res.rows[0].available_count, 10),
       };
     } catch (error) {
-      this.logger.error(`Error getting stats for ${streamName}`, { error });
+      this.logger.error(`postgres-stream-stats-error-${streamName}`, { error });
       throw error;
     }
   }
@@ -486,7 +346,7 @@ class PostgresStreamService extends StreamService<
 
       return result;
     } catch (error) {
-      this.logger.error('Error getting multiple stream depths', { error });
+      this.logger.error('postgres-stream-depth-error', { error });
       throw error;
     }
   }
@@ -502,34 +362,37 @@ class PostgresStreamService extends StreamService<
     const client = this.streamClient;
     const tableName = this.getTableName();
     try {
-      let deleted = 0;
+      let expiredCount = 0;
 
       if (options.maxLen !== undefined) {
         const res = await client.query(
-          `DELETE FROM ${tableName}
-           WHERE stream_name = $1 AND id IN (
-             SELECT id FROM ${tableName}
-             WHERE stream_name = $1
-             ORDER BY id ASC
-             OFFSET $2
-           )`,
+          `WITH to_expire AS (
+            SELECT id FROM ${tableName}
+            WHERE stream_name = $1
+            ORDER BY id ASC
+            OFFSET $2
+          )
+          UPDATE ${tableName}
+          SET expired_at = NOW()
+          WHERE id IN (SELECT id FROM to_expire)`,
           [streamName, options.maxLen],
         );
-        deleted += res.rowCount;
+        expiredCount += res.rowCount;
       }
 
       if (options.maxAge !== undefined) {
         const res = await client.query(
-          `DELETE FROM ${tableName}
-           WHERE stream_name = $1 AND created_at < NOW() - INTERVAL '${options.maxAge} milliseconds'`,
+          `UPDATE ${tableName}
+          SET expired_at = NOW()
+          WHERE stream_name = $1 AND created_at < NOW() - INTERVAL '${options.maxAge} milliseconds'`,
           [streamName],
         );
-        deleted += res.rowCount;
+        expiredCount += res.rowCount;
       }
 
-      return deleted;
+      return expiredCount;
     } catch (error) {
-      this.logger.error(`Error trimming stream ${streamName}`, { error });
+      this.logger.error(`postgres-stream-trim-error-${streamName}`, { error });
       throw error;
     }
   }

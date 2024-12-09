@@ -184,7 +184,7 @@ class TelemetryService {
       data.type === StreamDataType.RESULT ||
       data.type === StreamDataType.RESPONSE
     ) {
-      type = 'FANIN';  //re-entering engine router (from worker router)
+      type = 'FANIN'; //re-entering engine router (from worker router)
     } else {
       type = 'FANOUT'; //exiting engine router (to worker router)
     }
@@ -201,11 +201,15 @@ class TelemetryService {
         data.metadata.spn,
         spanName,
         attributes,
+        true,
       );
     } else {
       this.traceId = data.metadata.trc;
       this.spanId = data.metadata.spn;
-      this.span = TelemetryService.createNoopSpan(data.metadata.trc, data.metadata.spn);
+      this.span = TelemetryService.createNoopSpan(
+        data.metadata.trc,
+        data.metadata.spn,
+      );
     }
 
     return this;
@@ -216,23 +220,23 @@ class TelemetryService {
     spanId: string,
     spanName: string,
     attributes: StringScalarType,
+    bCreate = false,
   ): Span {
     this.traceId = traceId;
     this.spanId = spanId;
 
-    if (!this.shouldCreateSpan()) {
-      // Return a no-op span with the original traceId and spanId
-      return TelemetryService.createNoopSpan(traceId, spanId);
+    if (bCreate || this.shouldCreateSpan()) {
+      const tracer = trace.getTracer(packageJson.name, packageJson.version);
+      const parentContext = this.getParentSpanContext();
+      const span = tracer.startSpan(
+        spanName,
+        { kind: SpanKind.CLIENT, attributes, root: !parentContext },
+        parentContext,
+      );
+      return span;
     }
 
-    const tracer = trace.getTracer(packageJson.name, packageJson.version);
-    const parentContext = this.getParentSpanContext();
-    const span = tracer.startSpan(
-      spanName,
-      { kind: SpanKind.CLIENT, attributes, root: !parentContext },
-      parentContext,
-    );
-    return span;
+    return TelemetryService.createNoopSpan(traceId, spanId);
   }
 
   mapActivityAttributes(): void {
