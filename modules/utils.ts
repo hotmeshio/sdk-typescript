@@ -143,13 +143,6 @@ export function identifyProvider(provider: any): Providers | null {
  */
 export const polyfill = {
   /**
-   * `activity` is deprecated; `hook` is the replacement
-   */
-  resolveActivityType(activityType: string): string {
-    return activityType === 'activity' ? 'hook' : activityType;
-  },
-
-  /**
    * `redis` is deprecated; `connection` is the generic replacement
    */
   providerConfig(obj: any): any {
@@ -375,7 +368,7 @@ export const parseStreamMessage = (message: string): StreamData => {
   try {
     return JSON.parse(message);
   } catch (error) {
-    logger.error('Error parsing Stream message', { ...error });
+    logger.error('Error parsing Stream message', { error });
     throw error;
   }
 };

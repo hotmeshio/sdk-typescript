@@ -16,29 +16,38 @@ class LoggerService implements ILogger {
   }
 
   private createDefaultLogger(): Logger {
+    // Custom format to ensure error objects include message and stack
+    const errorFormat = format((info) => {
+      if (info.error instanceof Error) {
+        return {
+          ...info,
+          error: {
+            message: info.error.message,
+            stack: info.error.stack,
+          },
+        };
+      }
+      return info;
+    });
+
     return createLogger({
       level: this.logLevel,
       format: format.combine(
-        format.colorize(),
         format.timestamp(),
-        format.printf((info) => {
-          const { timestamp, level, message } = info;
-          // Extract the object from the `info` object's `Symbol(splat)` field
-          const symbols = Object.getOwnPropertySymbols(info);
-          const splatSymbol = symbols.find(
-            (symbol) => symbol.toString() === 'Symbol(splat)',
-          );
-          let splatData = {};
-          if (splatSymbol) {
-            splatData = info[splatSymbol][0] || {};
-          }
-          // Pass it to the `tagify` method
-          const tags = this.tagify(splatData);
-
-          return `${timestamp} [${level}] [${this.name || this.appId}:${this.instanceId}] ${message} ${tags}`;
-        }),
+        format.errors({ stack: true }),
+        errorFormat(),
+        format((info) => {
+          info.ts = info.timestamp;
+          delete info.timestamp;
+          return info;
+        })(),
+        format.json(),
       ),
       transports: [new transports.Console()],
+      defaultMeta: {
+        app: this.name || this.appId,
+        id: this.instanceId,
+      },
     });
   }
 
@@ -56,32 +65,6 @@ class LoggerService implements ILogger {
 
   debug(message: string, ...meta: any[]): void {
     this.logger.debug(message, ...meta);
-  }
-
-  tagify(obj: Record<string, unknown>): string {
-    if (!obj) {
-      return '';
-    }
-    const tags: string[] = [];
-    try {
-      Object.entries(obj).forEach(([key, val]) => {
-        let value: any = val;
-        if (typeof val === 'function') {
-          val = val();
-        }
-        if (val instanceof Date) {
-          value = val.toISOString();
-        } else if (typeof val === 'object' && val !== null) {
-          value = JSON.stringify(val);
-        } else {
-          value = value ? value.toString() : value;
-        }
-        tags.push(`${key}:${value}`);
-      });
-    } catch (err) {
-      this.error('tagify-error', err);
-    }
-    return tags.join(' ');
   }
 }
 

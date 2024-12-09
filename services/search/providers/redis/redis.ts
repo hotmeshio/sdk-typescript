@@ -34,7 +34,7 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
         ...schema,
       ]);
     } catch (error) {
-      this.logger.info('Error creating search index', { ...error });
+      this.logger.info('Error creating search index', { error });
       throw error;
     }
   }
@@ -44,7 +44,7 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
       const indexes = await this.searchClient.sendCommand(['FT._LIST']);
       return indexes as string[];
     } catch (error) {
-      this.logger.info('Error listing search indexes', { ...error });
+      this.logger.info('Error listing search indexes', { error });
       throw error;
     }
   }
@@ -57,7 +57,7 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
       const result = await this.searchClient.HSET(key, fields);
       return Number(result);
     } catch (error) {
-      this.logger.error(`Error setting fields for key: ${key}`, { ...error });
+      this.logger.error(`Error setting fields for key: ${key}`, { error });
       throw error;
     }
   }
@@ -77,7 +77,7 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
     try {
       return await this.searchClient.HMGET(key, [...fields]);
     } catch (error) {
-      this.logger.error(`Error getting fields for key: ${key}`, { ...error });
+      this.logger.error(`Error getting fields for key: ${key}`, { error });
       throw error;
     }
   }
@@ -86,7 +86,7 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
     try {
       return await this.searchClient.HGETALL(key);
     } catch (error) {
-      this.logger.error(`Error getting fields for key: ${key}`, { ...error });
+      this.logger.error(`Error getting fields for key: ${key}`, { error });
       throw error;
     }
   }
@@ -96,7 +96,7 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
       const result = await this.searchClient.HDEL(key, fields);
       return Number(result);
     } catch (error) {
-      this.logger.error(`Error deleting fields for key: ${key}`, { ...error });
+      this.logger.error(`Error deleting fields for key: ${key}`, { error });
       throw error;
     }
   }
@@ -125,7 +125,7 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
     try {
       return await this.searchClient.sendCommand(query);
     } catch (error) {
-      this.logger.error('Error executing query', { ...error });
+      this.logger.error('Error executing query', { error });
       throw error;
     }
   }
@@ -141,7 +141,7 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
         ...query,
       ])) as string[];
     } catch (error) {
-      this.logger.error('Error executing query', { ...error });
+      this.logger.error('Error executing query', { error });
       throw error;
     }
   }

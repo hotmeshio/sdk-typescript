@@ -17,7 +17,7 @@ import {
   context,
   SpanStatusCode,
 } from '../../types/telemetry';
-import { polyfill } from '../../modules/utils';
+import { HMSH_TELEMETRY } from '../../modules/enums';
 
 class TelemetryService {
   span: Span;
@@ -37,10 +37,61 @@ class TelemetryService {
     context?: JobState,
   ) {
     this.appId = appId;
-    //these are REQUIRED for job and activity spans
     this.config = config;
     this.metadata = metadata;
     this.context = context;
+  }
+
+  /**
+   * too chatty for production; only output traces, jobs, triggers and workers
+   */
+  private shouldCreateSpan(): boolean {
+    if (HMSH_TELEMETRY !== 'info') {
+      return true;
+    }
+    return this.config?.type === 'worker' || this.config?.type === 'trigger';
+  }
+
+  private static createNoopSpan(traceId: string, spanId: string): Span {
+    // A no-op span that returns the given spanContext and ignores all operations.
+    return {
+      spanContext(): SpanContext {
+        return {
+          traceId,
+          spanId,
+          isRemote: true,
+          traceFlags: 1,
+        };
+      },
+      addEvent(
+        _name: string,
+        _attributesOrStartTime?: unknown,
+        _startTime?: unknown,
+      ): Span {
+        return this;
+      },
+      setAttribute(_key: string, _value: unknown): Span {
+        return this;
+      },
+      setAttributes(_attributes: { [p: string]: unknown }): Span {
+        return this;
+      },
+      setStatus(_status: { code: SpanStatusCode; message?: string }): Span {
+        return this;
+      },
+      updateName(_name: string): Span {
+        return this;
+      },
+      end(_endTime?: number): void {
+        // no-op
+      },
+      isRecording(): boolean {
+        return false;
+      },
+      recordException(_exception: unknown, _time?: number): void {
+        // no-op
+      },
+    };
   }
 
   getJobParentSpanId(): string | undefined {
@@ -65,15 +116,14 @@ class TelemetryService {
     const spanId = this.getJobParentSpanId();
     const attributes = this.getSpanAttrs(1);
     const span: Span = this.startSpan(traceId, spanId, spanName, attributes);
+
     this.jobSpan = span;
     this.setTelemetryContext(span, 1);
     return this;
   }
 
   /**
-   * Traces an activity. Allows emitting custom attributes
-   * from within a running function (or anything with sufficient
-   * metadata context to locate the trace/span)
+   * Traces an activity.
    * @private
    */
   static async traceActivity(
@@ -86,25 +136,26 @@ class TelemetryService {
   ): Promise<boolean> {
     const spanName = `TRACE/${appId}/${activityId}/${index}`;
     const tracer = trace.getTracer(packageJson.name, packageJson.version);
-  
+
     const restoredSpanContext: SpanContext = {
       traceId,
       spanId,
       isRemote: true,
       traceFlags: 1,
     };
-  
-    const parentContext = trace.setSpanContext(context.active(), restoredSpanContext);
-  
+
+    const parentContext = trace.setSpanContext(
+      context.active(),
+      restoredSpanContext,
+    );
+
     return context.with(parentContext, () => {
       const span = tracer.startSpan(spanName, {
         kind: SpanKind.CLIENT,
         attributes,
       });
-  
-      // Explicitly set attributes to ensure they are recorded
+
       span.setAttributes(attributes);
-  
       span.end();
       return true;
     });
@@ -116,8 +167,9 @@ class TelemetryService {
     const spanId = this.getActivityParentSpanId(leg);
     const attributes = this.getSpanAttrs(leg);
     const span: Span = this.startSpan(traceId, spanId, spanName, attributes);
-    this.setTelemetryContext(span, leg);
+
     this.span = span;
+    this.setTelemetryContext(span, leg);
     return this;
   }
 
@@ -138,13 +190,29 @@ class TelemetryService {
     const topic = data.metadata.topic ? `/${data.metadata.topic}` : '';
     const spanName = `${type}/${this.appId}/${data.metadata.aid}${topic}`;
     const attributes = this.getStreamSpanAttrs(data);
-    const span: Span = this.startSpan(
-      data.metadata.trc,
-      data.metadata.spn,
-      spanName,
-      attributes,
-    );
-    this.span = span;
+
+    // Determine the "activity type" if available
+    const activityType = this.config?.type;
+
+    // If we can't determine activityType, treat it as a non-worker/trigger in 'info' mode
+    const shouldCreate =
+      process.env.HMSH_TELEMETRY !== 'info' ||
+      activityType === 'worker' ||
+      activityType === 'trigger';
+
+    // If we are not creating a new span, return a no-op span with the original parent IDs
+    const traceId = data.metadata.trc;
+    const spanId = data.metadata.spn;
+
+    if (!shouldCreate) {
+      this.traceId = traceId;
+      this.spanId = spanId;
+      this.span = TelemetryService.createNoopSpan(traceId, spanId);
+    } else {
+      // proceed as normal
+      this.span = this.startSpan(traceId, spanId, spanName, attributes);
+    }
+
     return this;
   }
 
@@ -156,6 +224,12 @@ class TelemetryService {
   ): Span {
     this.traceId = traceId;
     this.spanId = spanId;
+
+    if (!this.shouldCreateSpan()) {
+      // Return a no-op span with the original traceId and spanId
+      return TelemetryService.createNoopSpan(traceId, spanId);
+    }
+
     const tracer = trace.getTracer(packageJson.name, packageJson.version);
     const parentContext = this.getParentSpanContext();
     const span = tracer.startSpan(
@@ -167,8 +241,7 @@ class TelemetryService {
   }
 
   mapActivityAttributes(): void {
-    //export user-defined span attributes (app.activity.data.*)
-    if (this.config.telemetry) {
+    if (this.config.telemetry && this.span) {
       const telemetryAtts = new MapperService(
         this.config.telemetry,
         this.context,
@@ -183,7 +256,7 @@ class TelemetryService {
           return result;
         }, {}),
       };
-      this.span?.setAttributes(namespacedAtts as StringScalarType);
+      this.span.setAttributes(namespacedAtts as StringScalarType);
     }
   }
 
@@ -212,6 +285,7 @@ class TelemetryService {
   }
 
   endSpan(span: Span): void {
+    // For a no-op span, end() does nothing anyway
     span && span.end();
   }
 
@@ -221,7 +295,7 @@ class TelemetryService {
         traceId: this.traceId,
         spanId: this.spanId,
         isRemote: true,
-        traceFlags: 1, // (todo: revisit sampling strategy/config)
+        traceFlags: 1,
       };
       const parentContext = trace.setSpanContext(
         context.active(),
@@ -259,18 +333,18 @@ class TelemetryService {
   }
 
   setTelemetryContext(span: Span, leg: number) {
+    // Even if span is no-op, we still set context so that callers remain unaware
     if (!this.context.metadata.trc) {
       this.context.metadata.trc = span.spanContext().traceId;
     }
+    if (!this.context['$self'].output.metadata) {
+      this.context['$self'].output.metadata = {};
+    }
+    // Echo the parent's or the newly created span's spanId
+    // This ensures the caller sees a consistent chain
     if (leg === 1) {
-      if (!this.context['$self'].output.metadata) {
-        this.context['$self'].output.metadata = {};
-      }
       this.context['$self'].output.metadata.l1s = span.spanContext().spanId;
     } else {
-      if (!this.context['$self'].output.metadata) {
-        this.context['$self'].output.metadata = {};
-      }
       this.context['$self'].output.metadata.l2s = span.spanContext().spanId;
     }
   }
@@ -283,13 +357,6 @@ class TelemetryService {
     this.span?.setStatus({ code: SpanStatusCode.ERROR, message });
   }
 
-  /**
-   * Adds the paths (HGET) necessary to restore telemetry state for an activity
-   * @param consumes
-   * @param config
-   * @param metadata
-   * @param leg
-   */
   static addTargetTelemetryPaths(
     consumes: Consumes,
     config: ActivityType,
@@ -327,22 +394,16 @@ class TelemetryService {
     leg: number,
   ): void {
     if (config.type === 'trigger') {
-      //trigger activities run non-duplexed and only have a single leg (2)
       state[`${metadata.aid}/output/metadata/l1s`] =
         context['$self'].output.metadata.l1s;
       state[`${metadata.aid}/output/metadata/l2s`] =
         context['$self'].output.metadata.l2s;
-    } else if (
-      polyfill.resolveActivityType(config.type) === 'hook' &&
-      leg === 1
-    ) {
-      //hook activities run non-duplexed and only have a single leg (1)
+    } else if (config.type === 'hook' && leg === 1) {
       state[`${metadata.aid}/output/metadata/l1s`] =
         context['$self'].output.metadata.l1s;
       state[`${metadata.aid}/output/metadata/l2s`] =
         context['$self'].output.metadata.l1s;
     } else if (config.type === 'signal' && leg === 1) {
-      //signal activities run non-duplexed and only have a single leg (1)
       state[`${metadata.aid}/output/metadata/l1s`] =
         context['$self'].output.metadata.l1s;
       state[`${metadata.aid}/output/metadata/l2s`] =

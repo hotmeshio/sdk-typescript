@@ -168,7 +168,7 @@ class MeshCall {
         await hotMesh.activate(version);
       } catch (error) {
         hotMesh.engine.logger.error('meshcall-client-activate-err', {
-          ...error,
+          error,
         });
         throw error;
       }
@@ -178,7 +178,7 @@ class MeshCall {
         await hotMesh.activate(version);
       } catch (error) {
         hotMesh.engine.logger.error('meshcall-client-deploy-activate-err', {
-          ...error,
+          error,
         });
         throw error;
       }

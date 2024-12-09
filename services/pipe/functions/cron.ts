@@ -34,7 +34,7 @@ class CronHandler {
     } catch (error) {
       CronHandler.logger.error(
         'Error calculating next cron job execution  delay:',
-        { ...error },
+        { error },
       );
       return -1;
     }

@@ -71,7 +71,7 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
       await this.jsm.streams.add(config);
       return true;
     } catch (error) {
-      this.logger.error(`Error creating stream ${streamName}`, { ...error });
+      this.logger.error(`Error creating stream ${streamName}`, { error });
       throw error;
     }
   }
@@ -81,7 +81,7 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
       await this.jsm.streams.delete(streamName);
       return true;
     } catch (error) {
-      this.logger.error(`Error deleting stream ${streamName}`, { ...error });
+      this.logger.error(`Error deleting stream ${streamName}`, { error });
       throw error;
     }
   }
@@ -103,7 +103,7 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
     } catch (error) {
       this.logger.error(
         `Error creating consumer group ${groupName} for stream ${streamName}`,
-        { ...error },
+        { error },
       );
       throw error;
     }
@@ -119,7 +119,7 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
     } catch (error) {
       this.logger.error(
         `Error deleting consumer group ${groupName} for stream ${streamName}`,
-        { ...error },
+        { error },
       );
       throw error;
     }
@@ -255,7 +255,7 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
         messageCount: info.state.messages,
       };
     } catch (error) {
-      this.logger.error(`Error getting stats for ${streamName}`, { ...error });
+      this.logger.error(`Error getting stats for ${streamName}`, { error });
       throw error;
     }
   }
@@ -265,7 +265,7 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
       const info = await this.jsm.streams.info(streamName);
       return info.state.messages;
     } catch (error) {
-      this.logger.error(`Error getting depth for ${streamName}`, { ...error });
+      this.logger.error(`Error getting depth for ${streamName}`, { error });
       throw error;
     }
   }
@@ -282,7 +282,7 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
       );
       return results;
     } catch (error) {
-      this.logger.error('Error getting multiple stream depths', { ...error });
+      this.logger.error('Error getting multiple stream depths', { error });
       throw error;
     }
   }
@@ -312,7 +312,7 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
       await this.jsm.streams.update(streamName, config);
       return 0; // Trimming is applied automatically based on updated config
     } catch (error) {
-      this.logger.error(`Error trimming stream ${streamName}`, { ...error });
+      this.logger.error(`Error trimming stream ${streamName}`, { error });
       throw error;
     }
   }

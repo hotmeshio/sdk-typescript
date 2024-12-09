@@ -72,7 +72,7 @@ describe('FUNCTIONAL | Interrupt', () => {
       try {
         await hotMesh.pubsub('spring', payload, null, 1500);
       } catch (err) {
-        expect(err.code).toBe(410);
+        expect(err.error.code).toBe(410);
       }
     }, 2_000);
   });
@@ -131,7 +131,7 @@ describe('FUNCTIONAL | Interrupt', () => {
         //the winter job is rethrowing the 410 error from the morning job
         //the await activity in `flow a` could have been designed
         //to include a transtion to handle the 410 and then continue
-        expect(err.code).toBe(410);
+        expect(err.error.code).toBe(410);
       }
     }, 35_000);
   });

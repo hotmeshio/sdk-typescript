@@ -59,7 +59,7 @@ class PostgresSearchService extends SearchService<
       const result = await this.searchClient.hset(key, fields);
       return Number(result);
     } catch (error) {
-      this.logger.error(`postgres-search-set-fields-error`, { key, ...error });
+      this.logger.error(`postgres-search-set-fields-error`, { key, error });
       throw error;
     }
   }
@@ -71,7 +71,7 @@ class PostgresSearchService extends SearchService<
       this.logger.error(`postgres-search-get-field-error`, {
         key,
         field,
-        ...error,
+        error,
       });
       throw error;
     }
@@ -84,7 +84,7 @@ class PostgresSearchService extends SearchService<
       this.logger.error(`postgres-search-get-fields-error`, {
         key,
         fields,
-        ...error,
+        error,
       });
       throw error;
     }
@@ -96,7 +96,7 @@ class PostgresSearchService extends SearchService<
     } catch (error) {
       this.logger.error(`postgres-search-get-all-fields-error`, {
         key,
-        ...error,
+        error,
       });
       throw error;
     }
@@ -110,7 +110,7 @@ class PostgresSearchService extends SearchService<
       this.logger.error(`postgres-search-delete-fields-error`, {
         key,
         fields,
-        ...error,
+        error,
       });
       throw error;
     }
@@ -132,7 +132,7 @@ class PostgresSearchService extends SearchService<
       this.logger.error(`postgres-increment-field-error`, {
         key,
         field,
-        ...error,
+        error,
       });
       throw error;
     }
@@ -143,7 +143,7 @@ class PostgresSearchService extends SearchService<
       //exec raw sql (local call, not meant for external use); return raw result
       return await this.pgClient.query(query);
     } catch (error) {
-      this.logger.error(`postgres-send-query-error`, { query, ...error });
+      this.logger.error(`postgres-send-query-error`, { query, error });
       throw error;
     }
   }
@@ -165,7 +165,7 @@ class PostgresSearchService extends SearchService<
     } catch (error) {
       this.logger.error(`postgres-send-indexed-query-error`, {
         query: sql,
-        ...error,
+        error,
       });
       throw error;
     }

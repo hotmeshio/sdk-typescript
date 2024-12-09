@@ -1,9 +1,22 @@
 import { LogLevel } from '../types/logger';
 
-// HOTMESH SYSTEM
+/**
+ * @description Determines the log level for the application. The default is 'info'.
+ */
 export const HMSH_LOGLEVEL = (process.env.HMSH_LOGLEVEL as LogLevel) || 'info';
+/**
+ * @description Determines the log level for telemetry. The default is 'info' which emits worker and trigger spans. 'debug' emits all spans.
+ */
+export const HMSH_TELEMETRY =
+  (process.env.HMSH_TELEMETRY as 'info' | 'debug') || 'info';
+/**
+ * @description If Redis, explicitly sets whether the application is running in a cluster. The default is false.
+ * @deprecated
+ */
 export const HMSH_IS_CLUSTER = process.env.HMSH_IS_CLUSTER === 'true';
-// default cleanup policy for signals (if left open)
+/**
+ * Default cleanup time for signal in the db when its associated job is completed.
+ */
 export const HMSH_SIGNAL_EXPIRE = 3_600; //seconds
 
 // HOTMESH STATUS CODES
@@ -15,22 +28,60 @@ export const HMSH_CODE_UNKNOWN = 500;
 export const HMSH_CODE_TIMEOUT = 504;
 export const HMSH_CODE_UNACKED = 999;
 // MESHFLOW STATUS CODES
+/**
+ * @description This is thrown when a Meshflow has been interrupted by a sleepFor call.
+ */
 export const HMSH_CODE_MESHFLOW_SLEEP = 588;
+/**
+ * @description This is thrown when a Meshflow has been interrupted by a Promise.all call.
+ */
 export const HMSH_CODE_MESHFLOW_ALL = 589;
+/**
+ * @description This is thrown when a Meshflow has been interrupted by an execChild or startChild call.
+ */
 export const HMSH_CODE_MESHFLOW_CHILD = 590;
+/**
+ * @description This is thrown when a Meshflow has been interrupted by a proxyActivity call.
+ */
 export const HMSH_CODE_MESHFLOW_PROXY = 591;
+/**
+ * @description This is thrown when a Meshflow has been interrupted by a waitForSignal call.
+ */
 export const HMSH_CODE_MESHFLOW_WAIT = 595;
+/**
+ * @description The timeout status code for Meshflow. This status code is thrown when Meshflow has encountered a timeout error and needs to aler the caller why the call failed.
+ */
 export const HMSH_CODE_MESHFLOW_TIMEOUT = 596;
+/**
+ * @description The maxed status code for Meshflow. This status code is used to indicate that the Meshflow has reached the maximum
+ * number of attempts and should be halted. Thrown from a proxied activity or a flow to halt standard execution
+ * and prevent further attempts.
+ */
 export const HMSH_CODE_MESHFLOW_MAXED = 597;
+/**
+ * @description The fatal status code for Meshflow. This status code is used to indicate that the Meshflow has encountered a fatal error. Throw from a proxied activity or a flow to halt standard execution.
+ */
 export const HMSH_CODE_MESHFLOW_FATAL = 598;
+/**
+ * @description The retryable status code for Meshflow. This status code is used to indicate that the Meshflow has encountered a retryable error (essentially unknown and covered by the standard retry policy).
+ */
 export const HMSH_CODE_MESHFLOW_RETRYABLE = 599;
 
 // HOTMESH MESSAGES
 export const HMSH_STATUS_UNKNOWN = 'unknown';
 
 // QUORUM
-export const HMSH_QUORUM_ROLLCALL_CYCLES = 12; //max iterations
+/**
+ * @description The number of cycles to re/try for a quorum to be established.
+ */
+export const HMSH_QUORUM_ROLLCALL_CYCLES = 12;
+/**
+ * @description The delay in milliseconds between quorum rollcall cycles.
+ */
 export const HMSH_QUORUM_DELAY_MS = 250;
+/**
+ * @description The number of times the call-response exchange must succeed in succession to establish a quorum.
+ */
 export const HMSH_ACTIVATION_MAX_RETRY = 3;
 //backend provisioning
 export const HMSH_DEPLOYMENT_DELAY =
@@ -53,8 +104,20 @@ export const HMSH_GRADUATED_INTERVAL_MS =
   parseInt(process.env.HMSH_GRADUATED_INTERVAL_MS, 10) || 5000;
 
 // MESHFLOW
+/**
+ * @description The maximum number of attempts to retry a MeshFlow job before it is considered failed.
+ * @default 3
+ */
 export const HMSH_MESHFLOW_MAX_ATTEMPTS = 3;
+/**
+ * @description The maximum interval to wait before retrying a MeshFlow job.
+ * @default 120s
+ */
 export const HMSH_MESHFLOW_MAX_INTERVAL = '120s';
+/**
+ * @description The exponential backoff factor to apply to the interval between retries.
+ * @default 10
+ */
 export const HMSH_MESHFLOW_EXP_BACKOFF = 10;
 
 const BASE_BLOCK_DURATION = 10000;

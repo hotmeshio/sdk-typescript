@@ -21,7 +21,6 @@ import {
 } from '../../../modules/errors';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
-import config from '../../$setup/config';
 import {
   JobOutput,
   StringAnyType,
@@ -32,7 +31,7 @@ import {
 } from '../../../types';
 import { ProviderNativeClient } from '../../../types/provider';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
-import { postgres_options } from '../../$setup/postgres';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
   const appConfig = { id: 'meshflow', version: '1' };
@@ -273,6 +272,8 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
+
+    await dropTables(postgresClient);
 
     const config: HotMeshConfig = {
       appId: appConfig.id,
