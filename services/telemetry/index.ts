@@ -48,7 +48,6 @@ class TelemetryService {
   private shouldCreateSpan(): boolean {
     return (
       HMSH_TELEMETRY === 'debug' ||
-      !this.config?.type ||
       this.config?.type === 'trigger' ||
       this.config?.type === 'worker'
     );
