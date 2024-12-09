@@ -12,7 +12,6 @@ import {
   getSubscriptionTopic,
   guid,
   identifyProvider,
-  polyfill,
   restoreHierarchy,
   sleepFor,
 } from '../../modules/utils';
@@ -358,8 +357,7 @@ class EngineService {
     context?: JobState,
   ): Promise<Await | Cycle | Hook | Signal | Trigger | Worker | Interrupt> {
     const [activityId, schema] = await this.getSchema(topic);
-    const ActivityHandler =
-      Activities[polyfill.resolveActivityType(schema.type)];
+    const ActivityHandler = Activities[schema.type];
     if (ActivityHandler) {
       const utc = formatISODate(new Date());
       const metadata: ActivityMetadata = {
@@ -867,7 +865,7 @@ class EngineService {
         if (output.metadata.err) {
           const error = JSON.parse(output.metadata.err) as StreamError;
           reject({
-            ...error,
+            error,
             job_id: output.metadata.jid,
           });
         } else {

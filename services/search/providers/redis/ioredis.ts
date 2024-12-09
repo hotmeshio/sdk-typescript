@@ -34,7 +34,7 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
         ...schema,
       );
     } catch (error) {
-      this.logger.info('Error creating search index', { ...error });
+      this.logger.info('Error creating search index', { error });
       throw error;
     }
   }
@@ -44,7 +44,7 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
       const indexes = await this.searchClient.call('FT._LIST');
       return indexes as string[];
     } catch (error) {
-      this.logger.info('Error listing search indexes', { ...error });
+      this.logger.info('Error listing search indexes', { error });
       throw error;
     }
   }
@@ -57,7 +57,7 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
       const result = await this.searchClient.hset(key, fields);
       return Number(result);
     } catch (error) {
-      this.logger.error(`Error setting fields for key: ${key}`, { ...error });
+      this.logger.error(`Error setting fields for key: ${key}`, { error });
       throw error;
     }
   }
@@ -77,7 +77,7 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
     try {
       return await this.searchClient.hmget(key, [...fields]);
     } catch (error) {
-      this.logger.error(`Error getting fields for key: ${key}`, { ...error });
+      this.logger.error(`Error getting fields for key: ${key}`, { error });
       throw error;
     }
   }
@@ -86,7 +86,7 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
     try {
       return await this.searchClient.hgetall(key);
     } catch (error) {
-      this.logger.error(`Error getting fields for key: ${key}`, { ...error });
+      this.logger.error(`Error getting fields for key: ${key}`, { error });
       throw error;
     }
   }
@@ -96,7 +96,7 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
       const result = await this.searchClient.hdel(key, ...fields);
       return Number(result);
     } catch (error) {
-      this.logger.error(`Error deleting fields for key: ${key}`, { ...error });
+      this.logger.error(`Error deleting fields for key: ${key}`, { error });
       throw error;
     }
   }
@@ -125,7 +125,7 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
     try {
       return await this.searchClient.call(...query);
     } catch (error) {
-      this.logger.error('Error executing query', { ...error });
+      this.logger.error('Error executing query', { error });
       throw error;
     }
   }
@@ -142,7 +142,7 @@ class IORedisSearchService extends SearchService<IORedisClientType> {
         ...query,
       )) as string[];
     } catch (error) {
-      this.logger.error('Error executing query', { ...error });
+      this.logger.error('Error executing query', { error });
       throw error;
     }
   }

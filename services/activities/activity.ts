@@ -193,20 +193,20 @@ class Activity {
       this.transitionAdjacent(multiResponse, telemetry);
     } catch (error) {
       if (error instanceof CollationError) {
-        this.logger.info(`process-event-${error.fault}-error`, { ...error });
+        this.logger.info(`process-event-${error.fault}-error`, { error });
         return;
       } else if (error instanceof InactiveJobError) {
-        this.logger.info('process-event-inactive-job-error', { ...error });
+        this.logger.info('process-event-inactive-job-error', { error });
         return;
       } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { ...error });
+        this.logger.info('process-event-generational-job-error', { error });
         return;
       } else if (error instanceof GetStateError) {
-        this.logger.info('process-event-get-job-error', { ...error });
+        this.logger.info('process-event-get-job-error', { error });
         return;
       }
       this.logger.error('activity-process-event-error', {
-        ...error,
+        error,
         message: error.message,
         stack: error.stack,
         name: error.name,

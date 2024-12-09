@@ -147,7 +147,7 @@ export class Search {
         );
       } catch (error) {
         hotMeshClient.engine.logger.info('meshflow-client-search-err', {
-          ...error,
+          error,
         });
       }
     }
@@ -165,7 +165,7 @@ export class Search {
       return await searchService.listSearchIndexes();
     } catch (error) {
       hotMeshClient.engine.logger.info('meshflow-client-search-list-err', {
-        ...error,
+        error,
       });
       return [];
     }
@@ -235,7 +235,7 @@ export class Search {
       return value;
     } catch (error) {
       this.hotMeshClient.logger.error('meshflow-search-get-error', {
-        ...error,
+        error,
       });
       return '';
     }
@@ -269,7 +269,7 @@ export class Search {
       return returnValues;
     } catch (error) {
       this.hotMeshClient.logger.error('meshflow-search-mget-error', {
-        ...error,
+        error,
       });
       return [];
     }

@@ -68,7 +68,7 @@ export const KVTables = (context: PostgresStoreService) => ({
       }
     } catch (error) {
       console.error(error);
-      context.logger.error('Error deploying tables', { ...error });
+      context.logger.error('Error deploying tables', { error });
       throw error;
     } finally {
       if (releaseClient && client.release) {
@@ -375,7 +375,7 @@ export const KVTables = (context: PostgresStoreService) => ({
       // Commit transaction
       await client.query('COMMIT');
     } catch (error) {
-      context.logger.error('postgres-create-tables-error', { ...error });
+      context.logger.error('postgres-create-tables-error', { error });
       await client.query('ROLLBACK');
       throw error;
     }

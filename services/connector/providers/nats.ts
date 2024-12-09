@@ -22,7 +22,7 @@ class NatsConnection extends AbstractConnection<
       return (await Connect(options)) as NatsClientType;
     } catch (error) {
       NatsConnection.logger.error(`nats-provider-connection-failed`, {
-        ...error,
+        error,
       });
       throw new Error(`nats-provider-connection-failed: ${error.message}`);
     }

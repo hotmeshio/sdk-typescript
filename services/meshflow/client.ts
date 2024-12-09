@@ -391,7 +391,7 @@ export class ClientService {
         return await this.search(hotMeshClient, index, query);
       } catch (error) {
         hotMeshClient.engine.logger.error('meshflow-client-search-err', {
-          ...error,
+          error,
         });
         throw error;
       }
@@ -448,7 +448,7 @@ export class ClientService {
         await hotMesh.activate(version);
       } catch (error) {
         hotMesh.engine.logger.error('meshflow-client-activate-err', {
-          ...error,
+          error,
         });
         throw error;
       }
@@ -458,7 +458,7 @@ export class ClientService {
         await hotMesh.activate(version);
       } catch (error) {
         hotMesh.engine.logger.error('meshflow-client-deploy-activate-err', {
-          ...error,
+          error,
         });
         throw error;
       }

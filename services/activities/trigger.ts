@@ -106,7 +106,7 @@ class Trigger extends Activity {
           guid: this.context.metadata.guid,
         });
       } else {
-        this.logger.error('trigger-process-error', { ...error });
+        this.logger.error('trigger-process-error', { error });
       }
       throw error;
     } finally {

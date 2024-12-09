@@ -58,7 +58,7 @@ class IORedisStreamService extends StreamService<
       await this.streamClient.xdel(streamName, dummyId);
       return true;
     } catch (error) {
-      this.logger.error(`Error creating stream ${streamName}`, { ...error });
+      this.logger.error(`Error creating stream ${streamName}`, { error });
       throw error;
     }
   }
@@ -68,7 +68,7 @@ class IORedisStreamService extends StreamService<
       const result = await this.streamClient.del(streamName);
       return result > 0;
     } catch (error) {
-      this.logger.error(`Error deleting stream ${streamName}`, { ...error });
+      this.logger.error(`Error deleting stream ${streamName}`, { error });
       throw error;
     }
   }
@@ -105,7 +105,7 @@ class IORedisStreamService extends StreamService<
     } catch (error) {
       this.logger.error(
         `Error deleting consumer group ${groupName} for stream ${streamName}`,
-        { ...error },
+        { error },
       );
       throw error;
     }
@@ -141,7 +141,7 @@ class IORedisStreamService extends StreamService<
         return [response as string];
       }
     } catch (error) {
-      this.logger.error(`ioredis-xadd-error key: ${streamName}`, { ...error });
+      this.logger.error(`ioredis-xadd-error key: ${streamName}`, { error });
       throw error;
     }
   }
@@ -217,7 +217,7 @@ class IORedisStreamService extends StreamService<
     } catch (error) {
       this.logger.error(
         `Error in acknowledging messages: [${ids}] in group: ${group} for key: ${stream}`,
-        { ...error },
+        { error },
       );
       throw error;
     }
@@ -239,7 +239,7 @@ class IORedisStreamService extends StreamService<
     } catch (error) {
       this.logger.error(
         `Error in deleting messages: ${ids} for key: ${stream}`,
-        { ...error },
+        { error },
       );
       throw error;
     }
@@ -271,12 +271,12 @@ class IORedisStreamService extends StreamService<
           number,
         ][];
       } catch (error) {
-        this.logger.error('err, args', { ...error }, args);
+        this.logger.error('err, args', { error }, args);
       }
     } catch (error) {
       this.logger.error(
         `Error in retrieving pending messages for [stream ${stream}], [group ${group}]`,
-        { ...error },
+        { error },
       );
       throw error;
     }
@@ -343,7 +343,7 @@ class IORedisStreamService extends StreamService<
     } catch (error) {
       this.logger.error(
         `Error in claiming message with id: ${messageId} in group: ${groupName} for key: ${streamName}`,
-        { ...error },
+        { error },
       );
       throw error;
     }
@@ -367,7 +367,7 @@ class IORedisStreamService extends StreamService<
       const length = await this.streamClient.xlen(streamName);
       return length;
     } catch (error) {
-      this.logger.error(`Error getting depth for ${streamName}`, { ...error });
+      this.logger.error(`Error getting depth for ${streamName}`, { error });
       throw error;
     }
   }

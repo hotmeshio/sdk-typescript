@@ -66,7 +66,7 @@ class PostgresConnection extends AbstractConnection<
         host: options.host ?? 'unknown',
         database: options.database ?? 'unknown',
         port: options.port ?? 'unknown',
-        ...error,
+        error,
       });
       throw new Error(`postgres-provider-connection-failed: ${error.message}`);
     }

@@ -214,10 +214,10 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
           }
         }
         setImmediate(consume.bind(this));
-      } catch (err) {
+      } catch (error) {
         if (this.shouldConsume && process.env.NODE_ENV !== 'test') {
           this.logger.error(`router-stream-error`, {
-            err,
+            error,
             stream,
             group,
             consumer,
@@ -295,7 +295,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
       output = await callback(input);
     } catch (error) {
       this.logger.error(`stream-call-function-error`, {
-        ...error,
+        error,
         input: input,
         stack: error.stack,
         message: error.message,
