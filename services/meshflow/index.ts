@@ -75,18 +75,18 @@ class MeshFlowClass {
    * The MeshFlow `Client` service is functionally
    * equivalent to the Temporal `Client` service.
    */
-  static Client = ClientService;
+  static Client: typeof ClientService = ClientService;
 
   /**
    * The MeshFlow `Connection` service is functionally
    * equivalent to the Temporal `Connection` service.
    */
-  static Connection = ConnectionService;
+  static Connection: typeof ConnectionService = ConnectionService;
 
   /**
    * @private
    */
-  static Search = Search;
+  static Search: typeof Search = Search;
 
   /**
    * The Handle provides methods to interact with a running
@@ -94,13 +94,13 @@ class MeshFlowClass {
    * querying the state of the workflow. An instance of the Handle service
    * is typically accessed via the MeshFlow.Client class (workflow.getHandle).
    */
-  static Handle = WorkflowHandleService;
+  static Handle: typeof WorkflowHandleService = WorkflowHandleService;
 
   /**
    * The MeshFlow `Worker` service is functionally
    * equivalent to the Temporal `Worker` service.
    */
-  static Worker = WorkerService;
+  static Worker: typeof WorkerService = WorkerService;
 
   /**
    * The MeshFlow `workflow` service is functionally
@@ -108,7 +108,7 @@ class MeshFlowClass {
    * with additional methods for managing workflows,
    * including: `execChild`, `waitFor`, `sleep`, etc
    */
-  static workflow = WorkflowService;
+  static workflow: typeof WorkflowService = WorkflowService;
 
   /**
    * Shutdown everything. All connections, workers, and clients will be closed.

@@ -12,7 +12,7 @@
   },
   "include": [
     "**/*.ts"
-  ],
+, "services/meshflow/workflow.bak.ts.bak"  ],
   "exclude": [
     "node_modules",
     "tests",

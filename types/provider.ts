@@ -69,6 +69,13 @@ export type ProviderConfig = {
   options: StringAnyType;
   /* 'redis' (Class) | 'ioredis' (Class) | 'postgres' (Client module) | 'postgres.pool' | 'postgres.poolclient', 'nats' */
   provider?: string;
+  /**
+   * If provided and if true, the engine router instance will
+   * be initialized as a readonly instance and will not consume
+   * messages from the stream channel. An engine in readonly mode
+   * can still read/write to the store and can still pub/sub events.
+   */
+  readonly?: boolean;
 };
 
 export type ProvidersConfig = {
@@ -77,6 +84,13 @@ export type ProvidersConfig = {
   stream: ProviderConfig;
   pub?: ProviderConfig;
   search?: ProviderConfig;
+  /**
+   * If provided and if true, the engine router instance will
+   * be initialized as a readonly instance and will not consume
+   * messages from the stream channel. An engine in readonly mode
+   * can still read/write to the store and can still pub/sub events.
+   */
+  readonly?: boolean;
 };
 
 export interface SetOptions {

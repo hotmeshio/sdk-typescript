@@ -38,14 +38,13 @@ import {
   StreamStatus,
 } from '../../types/stream';
 import { MAX_DELAY } from '../../modules/enums';
-import { PostgresConnection } from '../connector/providers/postgres';
 
 /**
  * This example shows the full lifecycle of a HotMesh engine instance,
  * including: initialization, deployment, activation and execution.
  *
- * The system is self-cleaning and self-healing, with a built-in
- * quorum for consensus and a worker pool for distributed processing.
+ * Engine routers are self-managing, but subscribe to the 'quorum' channel
+ * to establish consensus as necessary for distributed processing.
  * Completed workflows are always soft-deleted with a configurable
  * retention period.
  *
@@ -53,7 +52,6 @@ import { PostgresConnection } from '../connector/providers/postgres';
  * ```typescript
  * import { Client as Postgres } from 'pg';
  * import { HotMesh } from '@hotmeshio/hotmesh';
- * //...
  *
  * const hotMesh = await HotMesh.init({
  *   appId: 'abc',
@@ -183,6 +181,12 @@ class HotMesh {
    */
   async initEngine(config: HotMeshConfig, logger: ILogger): Promise<void> {
     if (config.engine) {
+      //connections that are 'readonly' transfer
+      //this property directly to the engine,
+      //and ALWAYS take precendence.
+      if (config.engine.connection.readonly) {
+        config.engine.readonly = true;
+      }
       await ConnectorService.initClients(config.engine);
       this.engine = await EngineService.init(
         this.namespace,

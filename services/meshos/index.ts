@@ -3,24 +3,17 @@ import { arrayToHash, guid } from '../../modules/utils';
 import * as Types from '../../types';
 import { LoggerService } from '../logger';
 import {
-  ProviderClass,
   ProviderConfig,
   ProvidersConfig,
 } from '../../types/provider';
 
 /**
  * MeshOS is an abstract base class for schema-driven entity management within the Mesh network.
- * It provides a foundation for defining custom entities that interact with the Redis-backed mesh data store.
+ * It provides a foundation for defining custom entities.
  * By subclassing MeshOS, you can create entities with specific schemas and behaviors, enabling
  * structured data storage, retrieval, and transactional workflows.
  *
  * ### Subclassing MeshOS
- *
- * To create a custom entity, subclass MeshOS and implement the required methods. At a minimum, you should implement:
- *
- * - `getTaskQueue()`: Returns the task queue (use for targeted priority and or version-based routing)
- * - `getEntity()`: Returns the name of the entity.
- * - `getSearchOptions()`: Returns indexing and schema options for the entity.
  *
  * Standard CRUD methods are included and use your provided schema to
  * fields to return in the response: create, retrieve, update, delete.
@@ -40,25 +33,6 @@ import {
  * import * as workflows from './workflows';
  *
  * class Widget extends MeshOS {
- *
- *   //Return the function version/priority
- *   getTaskQueue(): string {
- *     return 'v1';
- *   }
- *
- *   // Return the entity name
- *   getEntity(): string {
- *     return 'widget';
- *   }
- *
- *   // Return the schema definition, target hash prefixes, and index ID
- *   getSearchOptions(): Types.WorkflowSearchOptions {
- *     return {
- *       index: `${this.getNamespace()}-${this.getEntity()}`,
- *       prefix: [this.getEntity()],
- *       schema,
- *     };
- *   }
  *
  *   //Subclass the `connect` method to connect workers and
  *   // hooks (optional) when the container starts
@@ -145,7 +119,9 @@ abstract class MeshOS {
   meshData: MeshData;
   connected = false;
   namespace: string;
-  namespaceType: string;
+  schema: Types.WorkflowSearchSchema
+  entity: string;    //dog, cat, user, libarary, book
+  taskQueue: string; //anything: 'v1', 'priority', 'v1-priority', 'acmecorp'
 
   // Static properties
   static databases: Record<string, Types.DB> = {};
@@ -156,20 +132,50 @@ abstract class MeshOS {
   static classes: Record<string, typeof MeshOS> = {};
   static logger: Types.ILogger = new LoggerService('hotmesh', 'meshos');
 
+  /**
+   * Instances of MeshOS are typically initialized as a set, using a manifest.json
+   * file that describes statically the fully set names, passwords, entities, etc.
+   * The static init method is invoked to start this process (typically at server
+   * startup).
+   */
   constructor(
     providerConfig: ProviderConfig | ProvidersConfig,
     namespace: string,
-    namespaceType: string,
+    entity?: string,
+    taskQueue?: string,
+    schema?: Types.WorkflowSearchSchema,
   ) {
-    this.namespace = namespace; // e.g., 's'
-    this.namespaceType = namespaceType; // e.g., 'sandbox' (friendly name in case namespace is abbreviated)
+    this.namespace = namespace; // e.g., 'sandbox', 'default', 'production'
+    this.entity = entity;
+    this.taskQueue = taskQueue;
+    this.schema = schema;
     this.meshData = this.initializeMeshData(providerConfig);
   }
 
-  // Abstract methods to be implemented by child classes
-  protected abstract getEntity(): string;
-  abstract getSearchOptions(): Types.WorkflowSearchOptions;
-  protected abstract getTaskQueue(): string;
+  /**
+   * Return entity (e.g, book, library, user)
+   */
+  getEntity() {
+    return this.entity;
+  }
+
+  /**
+   * Get Search options (initializes the search index, specific to the backend provider)
+   */
+  getSearchOptions(): Types.WorkflowSearchOptions {
+    return {
+      index: `${this.getNamespace()}-${this.getEntity()}`,
+      prefix: [this.getEntity()],
+      schema: this.getSchema(),
+    };
+  }
+
+  /**
+   * Speficy a more-specific task queue than the default queue (v1, v1priority, v2, acmecorp, etc)
+   */
+  getTaskQueue() {
+    return this.taskQueue;
+  }
 
   /**
    * Initialize MeshData instance (this backs/supports the class
@@ -193,6 +199,13 @@ abstract class MeshOS {
    */
   getNamespace(): string {
     return this.namespace;
+  }
+
+  /**
+   * Get schema
+   */
+  getSchema(): Types.WorkflowSearchSchema {
+    return this.schema;
   }
 
   /**
@@ -540,14 +553,14 @@ abstract class MeshOS {
     for (const key in p) {
       const profile = p[key];
       if (profile.db?.connection) {
-        this.logger.info(`meshos-initializing`, {
+        MeshOS.logger.info(`meshos-initializing`, {
           db: profile.db.name,
           key,
         });
         profile.instances = {};
         for (const ns in profile.namespaces) {
           const namespace = profile.namespaces[ns];
-          this.logger.info(`meshos-initializing-namespace`, {
+          MeshOS.logger.info(`meshos-initializing-namespace`, {
             namespace: ns,
             label: namespace.label,
           });
@@ -558,7 +571,7 @@ abstract class MeshOS {
             profile.instances[ns] = pinstances;
           }
           for (const entity of namespace.entities) {
-            this.logger.info(`meshos-initializing-entity`, {
+            MeshOS.logger.info(`meshos-initializing-entity`, {
               entity: entity.name,
               label: entity.label,
             });
@@ -566,7 +579,9 @@ abstract class MeshOS {
             const instance = pinstances[entity.name] = new entity.class(
               profile.db.connection,
               ns,
-              namespace.type,
+              entity.name,
+              entity.taskQueue,
+              entity.schema,
             );
             await instance.init(profile.db.search);
           }
@@ -612,14 +627,15 @@ abstract class MeshOS {
       entity
     ] as Types.EntityInstanceTypes | undefined;
     if (!target) {
-      this.logger.error(`meshos-entity-not-found`, {
+      const fallback = Object.keys(entities)[0];
+      MeshOS.logger.error(`meshos-entity-not-found`, {
         database,
         namespace,
         entity,
+        fallback,
       });
 
-      entity = Object.keys(entities)[0];
-      return MeshOS.profiles[database]?.instances?.[namespace]?.[entity] as
+      return MeshOS.profiles[database]?.instances?.[namespace]?.[fallback] as
         | Types.EntityInstanceTypes
         | undefined;
     }
@@ -657,23 +673,30 @@ abstract class MeshOS {
    */
   static toJSON(p: Types.Profiles = MeshOS.profiles): any {
     const result: any = {};
+    
     for (const key in p) {
       const profile = p[key];
       if (!profile.db) {
         continue;
       } else {
+        // Remove the sensitive `connection` field if present
+        const { connection, ...dbWithoutConnection } = profile.db;
+
         result[key] = {
-          db: { ...profile.db, config: undefined },
+          db: { ...dbWithoutConnection },
           namespaces: {},
         };
       }
+
       for (const ns in profile.namespaces) {
         const namespace = profile.namespaces[ns];
         result[key].namespaces[ns] = {
           name: namespace.name,
           label: namespace.label,
+          module: namespace.module,
           entities: [],
         };
+
         for (const entity of namespace.entities) {
           result[key].namespaces[ns].entities.push({
             name: entity.name,
@@ -684,7 +707,7 @@ abstract class MeshOS {
       }
     }
     return result;
-  }
+  }  
 
   workflow = {};
 }

@@ -52,12 +52,14 @@ describe('MeshOS | Postgres+NATS', () => {
         label: 'Widget',
         schema: schema,
         class: Widget,
+        taskQueue: 'v1',
       });
 
       // many to many
       MeshOS.registerNamespace('meshostest', {
         name: 'meshostest',
-        type: 'meshostest',
+        type: 'meshostest', //unused; todo: remove next build
+        module: 'meshdata',
         label: 'MeshOS TEST',
         entities: [MeshOS.entities['widget']],
       });
