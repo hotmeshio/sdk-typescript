@@ -41,6 +41,7 @@ describe('MeshOS | Postgres', () => {
         label: 'Widget',
         schema: schema,
         class: Widget,
+        taskQueue: 'v1',
       });
 
       // many to many
@@ -48,6 +49,7 @@ describe('MeshOS | Postgres', () => {
         name: 'meshostest',
         type: 'meshostest',
         label: 'MeshOS TEST',
+        module: 'meshdata',
         entities: [MeshOS.entities['widget']],
       });
 

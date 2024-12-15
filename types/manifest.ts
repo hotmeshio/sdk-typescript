@@ -24,16 +24,26 @@ export type EntityInstanceTypes = MeshOS;
 
 export type SubclassType<T extends MeshOS = MeshOS> = new (...args: any[]) => T;
 export type Entity = {
-  name: string;
+  name: string;                 //can be set via static config
   label: string;
-  schema: WorkflowSearchSchema;
+  /**
+   * A more-specific value for workers when targeting version-specifc
+   * or priority-specific task queues.
+   * @default default
+   */
+  taskQueue?: string;           //can be set via static config
+  schema: WorkflowSearchSchema; //can be st via static config
   class: SubclassType;
 };
 
 export type Namespace = {
   name: string;
+  /**
+   * @deprecated; unused; name is the type; label is human-readable
+   */
   type: string;
   label: string;
+  module: 'hotmesh' | 'meshcall' | 'meshflow' | 'meshdata' | 'meshos';
   entities: Entity[];
 };
 

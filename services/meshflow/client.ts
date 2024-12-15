@@ -104,11 +104,14 @@ export class ClientService {
       return hotMeshClient;
     }
 
-    //create and cache an instance
+    //create and cache an instance (a HotMesh Engine Router
+    // is a superset of a Temporal Client, so it
+    // can be used to emulate all client behaviors)
     const hotMeshClient = HotMesh.init({
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
+        readonly: this.connection.readonly ?? undefined,
         connection: this.connection,
       },
     });

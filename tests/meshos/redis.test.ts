@@ -59,6 +59,7 @@ describe('MeshOS | Redis', () => {
         name: 'widget',
         label: 'Widget',
         schema: schema,
+        taskQueue: 'v1',
         class: Widget,
       });
 
@@ -67,6 +68,7 @@ describe('MeshOS | Redis', () => {
         name: 'meshostest',
         type: 'meshostest',
         label: 'MeshOS TEST',
+        module: 'meshdata',
         entities: [MeshOS.entities['widget']],
       });
 
