@@ -1,7 +1,4 @@
-import {
-  asyncLocalStorage,
-  WorkflowContext,
-} from './common';
+import { asyncLocalStorage, WorkflowContext } from './common';
 
 /**
  * Returns the current workflow context, restored from storage.

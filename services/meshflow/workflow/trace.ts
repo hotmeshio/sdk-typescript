@@ -7,7 +7,6 @@ import {
 import { getContext } from './context';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 
-
 /**
  * Executes a distributed trace, outputting the provided attributes
  * to the telemetry sink (e.g. OpenTelemetry).

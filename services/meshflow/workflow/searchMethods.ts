@@ -1,8 +1,4 @@
-import {
-  asyncLocalStorage,
-  WorkerService,
-  Search,
-} from './common';
+import { asyncLocalStorage, WorkerService, Search } from './common';
 
 /**
  * Returns a search session handle for interacting with the workflow's HASH storage.

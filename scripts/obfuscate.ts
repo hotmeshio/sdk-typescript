@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+import { minify } from 'terser';
 import JavaScriptObfuscator from 'javascript-obfuscator';
 
 const obfuscateTargets = [
@@ -27,56 +28,75 @@ const obfuscateTargets = [
   './build/services/worker',
 ];
 
-const obfuscate = (filePath: string) => {
-  const code = fs.readFileSync(filePath, 'utf8');
-  const obfuscationResult = JavaScriptObfuscator.obfuscate(code, {
-    compact: true, // Remove unnecessary spaces and newlines
-    controlFlowFlattening: false, // Avoid inflating code size
-    deadCodeInjection: false, // Avoid adding extra dead code
-    debugProtection: false, // Disable debug protection
-    disableConsoleOutput: false, // Keep console outputs unchanged
-    identifierNamesGenerator: 'mangled', // Short variable names like 'a', 'b', 'c'
-    log: false, // Suppress logs
-    renameGlobals: false, // Avoid renaming global variables
-    rotateStringArray: true, // Minimize string array impact
-    selfDefending: false, // Avoid adding self-defending logic
-    shuffleStringArray: true, // Reduce predictable patterns
-    splitStrings: false, // Avoid splitting strings
-    stringArray: true, // Group strings into an array
-    stringArrayEncoding: [], // No encoding to keep size minimal
-    stringArrayThreshold: 0.75, // Adjust threshold for optimal size
-    transformObjectKeys: false, // Avoid inflating object keys
-    unicodeEscapeSequence: false, // Disable Unicode escape sequences
-  });
+function shouldObfuscate(filePath) {
+  return obfuscateTargets.some((target) =>
+    path.resolve(filePath).startsWith(path.resolve(target)),
+  );
+}
 
-  fs.writeFileSync(filePath, obfuscationResult.getObfuscatedCode());
-};
-
-const obfuscateDir = (dir: string) => {
+async function processDir(dir) {
   const files = fs.readdirSync(dir);
   for (const file of files) {
     const filePath = path.join(dir, file);
     const stat = fs.statSync(filePath);
-
     if (stat.isDirectory()) {
-      obfuscateDir(filePath);
-    } else if (
-      path.extname(file) === '.js' &&
-      shouldObfuscate(`/app/${filePath}`)
-    ) {
-      obfuscate(filePath);
+      await processDir(filePath);
+    } else if (path.extname(file) === '.js' && shouldObfuscate(filePath)) {
+      await processFile(filePath);
     }
   }
-};
+}
 
-// Check if the file should be obfuscated
-const shouldObfuscate = (filePath: string): boolean => {
-  return obfuscateTargets.some((target) => {
-    return filePath.startsWith(path.resolve(target));
+async function processFile(filePath) {
+  const code = fs.readFileSync(filePath, 'utf8');
+
+  // First run Terser to minify and keep only JSDoc
+  const terserResult = await minify(code, {
+    compress: true,
+    mangle: true,
+    format: {
+      beautify: false,
+      comments: (node, comment) => {
+        // Keep only JSDoc comments. JSDoc are block comments (comment2) that start with '*'
+        // A typical JSDoc comment starts with `/**`
+        return (
+          comment.type === 'comment2' && comment.value.trim().startsWith('*')
+        );
+      },
+    },
   });
-};
 
-// Obfuscate only files in the specified folders or paths
-obfuscateDir('./build');
+  // Now run the obfuscator on the Terser output
+  const obfuscationResult = JavaScriptObfuscator.obfuscate(
+    terserResult.code as string,
+    {
+      compact: true,
+      controlFlowFlattening: false,
+      deadCodeInjection: false,
+      debugProtection: false,
+      disableConsoleOutput: false,
+      identifierNamesGenerator: 'mangled',
+      log: false,
+      renameGlobals: false,
+      rotateStringArray: true,
+      selfDefending: false,
+      shuffleStringArray: true,
+      splitStrings: false,
+      stringArray: true,
+      stringArrayEncoding: [],
+      stringArrayThreshold: 0.75,
+      transformObjectKeys: false,
+      unicodeEscapeSequence: false,
+      // Don't filter comments here. All non-JSDoc are already removed by Terser.
+      // The JSDoc comments that remain will be kept as is.
+      comments: true,
+    },
+  );
 
-console.log('Selective obfuscation complete.');
+  fs.writeFileSync(filePath, obfuscationResult.getObfuscatedCode());
+}
+
+(async () => {
+  await processDir('./build');
+  console.log('Selective obfuscation complete.');
+})();

@@ -1,7 +1,4 @@
-import {
-  asyncLocalStorage,
-  WorkerService,
-} from './common';
+import { asyncLocalStorage, WorkerService } from './common';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 
 /**

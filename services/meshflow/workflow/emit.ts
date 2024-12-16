@@ -4,7 +4,7 @@ import {
   StringAnyType,
   UserMessage,
 } from './common';
-import { isSideEffectAllowed } from './isSideEffectAllowed'
+import { isSideEffectAllowed } from './isSideEffectAllowed';
 
 /**
  * Emits events to the event bus provider. Topics are prefixed with the quorum namespace.

@@ -1,8 +1,7 @@
-import { 
+import {
   // Individual methods
   getContext,
 } from './context';
-
 import { didRun } from './didRun';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 import { trace } from './trace';
@@ -18,11 +17,7 @@ import { interrupt } from './interrupt';
 import { all } from './all';
 import { sleepFor } from './sleepFor';
 import { waitFor } from './waitFor';
-import {
-  asyncLocalStorage,
-  WorkerService,
-  HotMesh
-} from './common';
+import { asyncLocalStorage, WorkerService, HotMesh } from './common';
 
 /**
  * The WorkflowService class provides a set of static methods to be used within a workflow function.

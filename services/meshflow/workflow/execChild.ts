@@ -100,7 +100,11 @@ export async function execChild<T>(options: WorkflowOptions): Promise<T> {
     }
   }
 
-  const interruptionMessage = getChildInterruptPayload(context, options, execIndex);
+  const interruptionMessage = getChildInterruptPayload(
+    context,
+    options,
+    execIndex,
+  );
   interruptionRegistry.push({
     code: HMSH_CODE_MESHFLOW_CHILD,
     ...interruptionMessage,

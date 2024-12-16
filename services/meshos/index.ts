@@ -2,10 +2,7 @@ import { MeshData } from '../meshdata/index';
 import { arrayToHash, guid } from '../../modules/utils';
 import * as Types from '../../types';
 import { LoggerService } from '../logger';
-import {
-  ProviderConfig,
-  ProvidersConfig,
-} from '../../types/provider';
+import { ProviderConfig, ProvidersConfig } from '../../types/provider';
 
 /**
  * MeshOS is an abstract base class for schema-driven entity management within the Mesh network.
@@ -118,10 +115,10 @@ import {
 abstract class MeshOS {
   meshData: MeshData;
   connected = false;
-  namespace: string;
-  schema: Types.WorkflowSearchSchema
-  entity: string;    //dog, cat, user, libarary, book
-  taskQueue: string; //anything: 'v1', 'priority', 'v1-priority', 'acmecorp'
+  entity: string; //dog, cat, user, libarary, book
+  namespace: string; //sandbox, staging, production
+  schema: Types.WorkflowSearchSchema; //the entity fields (first, last, ssn, etc)
+  taskQueue: string; //'v1', 'priority', 'v1-priority', 'acmecorp'
 
   // Static properties
   static databases: Record<string, Types.DB> = {};
@@ -141,9 +138,9 @@ abstract class MeshOS {
   constructor(
     providerConfig: ProviderConfig | ProvidersConfig,
     namespace: string,
-    entity?: string,
-    taskQueue?: string,
-    schema?: Types.WorkflowSearchSchema,
+    entity: string,
+    taskQueue: string,
+    schema: Types.WorkflowSearchSchema,
   ) {
     this.namespace = namespace; // e.g., 'sandbox', 'default', 'production'
     this.entity = entity;
@@ -246,7 +243,7 @@ abstract class MeshOS {
    * Get index name
    */
   getIndexName(): string {
-    return this.getSearchOptions().index;
+    return this.getSearchOptions().index as string;
   }
 
   /**
@@ -673,7 +670,7 @@ abstract class MeshOS {
    */
   static toJSON(p: Types.Profiles = MeshOS.profiles): any {
     const result: any = {};
-    
+
     for (const key in p) {
       const profile = p[key];
       if (!profile.db) {
@@ -707,7 +704,7 @@ abstract class MeshOS {
       }
     }
     return result;
-  }  
+  }
 
   workflow = {};
 }

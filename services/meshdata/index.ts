@@ -302,9 +302,8 @@ class MeshData {
   };
 
   /**
-   *
-   * @param {ProviderClass} providerClass - the class/import (e.g, `ioredis`, `redis`, `postgres`, etc)
-   * @param {ProviderOptions} providerOptions - the provider connection options. These are specific to the package (refer to their docs!). Each uses different property names and structures to connect.
+   * Instances a new `MeshData` service.
+   * @param {ProviderConfig|ProvidersConfig} connection - the connection class and options
    * @param {WorkflowSearchOptions} search - the search options for JSON-based configuration of the backend search module (e.g., Redis FT.Search)
    * @example
    * // Example 1) Instantiate MeshData with `ioredis`

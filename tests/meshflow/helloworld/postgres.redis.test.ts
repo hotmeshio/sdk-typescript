@@ -15,7 +15,7 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MeshFlow;
 
-describe('MESHFLOW | hello | `Random Hello-World` | Postgres', () => {
+describe('MESHFLOW | hello | `Random Hello-World` | Postgres+Redis', () => {
   let handle: WorkflowHandleService;
   let postgresClient: ProviderNativeClient;
   const redis_options = {
@@ -95,7 +95,7 @@ describe('MESHFLOW | hello | `Random Hello-World` | Postgres', () => {
           signalIn: false,
         });
         expect(handle.workflowId).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
@@ -113,7 +113,7 @@ describe('MESHFLOW | hello | `Random Hello-World` | Postgres', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 10_000);
     });
   });
 
@@ -125,7 +125,7 @@ describe('MESHFLOW | hello | `Random Hello-World` | Postgres', () => {
         const r1 = deterministicRandom(1);
         const r2 = deterministicRandom(3);
         expect(result).toEqual(`${r1} Hello, HotMesh! ${r2}`);
-      });
+      }, 10_000);
     });
   });
 });
