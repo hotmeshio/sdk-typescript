@@ -29,13 +29,8 @@ function getProxyInterruptPayload(
   args: any[],
   options?: ActivityConfig,
 ): MeshFlowProxyErrorType {
-  const {
-    workflowDimension,
-    workflowId,
-    originJobId,
-    workflowTopic,
-    expire,
-  } = context;
+  const { workflowDimension, workflowId, originJobId, workflowTopic, expire } =
+    context;
   const activityTopic = `${workflowTopic}-activity`;
   const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
   let maximumInterval: number;
@@ -63,7 +58,7 @@ function getProxyInterruptPayload(
  * @private
  */
 function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
-  return (async function (...args: any[]) {
+  return async function (...args: any[]) {
     const [didRunAlready, execIndex, result] = await didRun('proxy');
     if (didRunAlready) {
       if (result?.$error) {
@@ -101,7 +96,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
     });
     await sleepImmediate();
     throw new MeshFlowProxyError(interruptionMessage);
-  }) as unknown as T;
+  } as unknown as T;
 }
 
 /**

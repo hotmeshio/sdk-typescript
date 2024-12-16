@@ -1,7 +1,4 @@
-import {
-  WorkerService,
-  JobInterruptOptions,
-} from './common';
+import { WorkerService, JobInterruptOptions } from './common';
 import { getContext } from './context';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 

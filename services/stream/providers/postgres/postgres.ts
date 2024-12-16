@@ -3,9 +3,7 @@ import { KeyService, KeyType } from '../../../../modules/key';
 import { parseStreamMessage } from '../../../../modules/utils';
 import { StreamService } from '../../index';
 import { KeyStoreParams, StringAnyType } from '../../../../types';
-import {
-  PostgresClientType,
-} from '../../../../types/postgres';
+import { PostgresClientType } from '../../../../types/postgres';
 import {
   PublishMessageConfig,
   StreamConfig,
@@ -16,6 +14,7 @@ import {
   ProviderClient,
   ProviderTransaction,
 } from '../../../../types/provider';
+
 import { deploySchema } from './kvtables';
 
 class PostgresStreamService extends StreamService<

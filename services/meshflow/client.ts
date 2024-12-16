@@ -104,20 +104,30 @@ export class ClientService {
       return hotMeshClient;
     }
 
-    //create and cache an instance (a HotMesh Engine Router
-    // is a superset of a Temporal Client, so it
-    // can be used to emulate all client behaviors)
-    const hotMeshClient = HotMesh.init({
+    //init, but don't await
+    const readonly = this.connection.readonly ?? undefined;
+    let hotMeshClient = HotMesh.init({
       appId: targetNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        readonly: this.connection.readonly ?? undefined,
+        readonly,
         connection: this.connection,
       },
     });
+
+    //synchronously cache the promise (before awaiting)
     ClientService.instances.set(connectionNS, hotMeshClient);
-    await this.activateWorkflow(await hotMeshClient, targetNS);
-    return hotMeshClient;
+
+    //resolve, activate, and return the client
+    const resolvedClient = await hotMeshClient;
+    if (!readonly) {
+      resolvedClient.engine.logger.info('meshflow-readonly-client', {
+        guid: resolvedClient.engine.guid,
+        appId: targetNS,
+      });
+      await this.activateWorkflow(resolvedClient, targetNS);
+    }
+    return resolvedClient;
   };
 
   /**
@@ -402,8 +412,9 @@ export class ClientService {
   };
 
   /**
-   * Any point of presence can be used to deploy and activate the HotMesh
-   * distributed executable to the active quorum.
+   * Any router can be used to deploy and activate the HotMesh
+   * distributed executable to the active quorum EXCEPT for
+   * those routers in `readonly` mode.
    */
   async deployAndActivate(
     namespace = APP_ID,

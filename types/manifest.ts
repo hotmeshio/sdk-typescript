@@ -24,14 +24,14 @@ export type EntityInstanceTypes = MeshOS;
 
 export type SubclassType<T extends MeshOS = MeshOS> = new (...args: any[]) => T;
 export type Entity = {
-  name: string;                 //can be set via static config
+  name: string; //can be set via static config
   label: string;
   /**
    * A more-specific value for workers when targeting version-specifc
    * or priority-specific task queues.
    * @default default
    */
-  taskQueue?: string;           //can be set via static config
+  taskQueue?: string; //can be set via static config
   schema: WorkflowSearchSchema; //can be st via static config
   class: SubclassType;
 };
