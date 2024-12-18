@@ -5,7 +5,6 @@ export const VERSION = '2';
  * Provides the YAML necessary to create a workflow for the `MeshCall` service.
  * The `appId` parameter is optional and defaults to the HMNS constant ('hmsh').
  *
- * All running workflows will be located in Redis, prefixed with this namespace.
  * The version is a string as it supports semantic versioning. It is also optional
  * and defaults to '1'.
  */

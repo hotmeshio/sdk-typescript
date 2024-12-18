@@ -67,6 +67,10 @@ export abstract class StreamService<
       batchSize?: number;
       blockTimeout?: number;
       autoAck?: boolean;
+      enableBackoff?: boolean;     // enable backoff
+      initialBackoff?: number;     // Initial backoff in ms
+      maxBackoff?: number;         // Maximum backoff in ms
+      maxRetries?: number;         // Maximum retries before giving up
     },
   ): Promise<StreamMessage[]>;
 

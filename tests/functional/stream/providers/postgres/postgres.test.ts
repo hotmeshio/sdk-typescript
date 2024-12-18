@@ -218,7 +218,145 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
     });
   });
 
+  describe('consumeMessages with Backoff', () => {
+    beforeEach(async () => {
+      await postgresStreamService.createStream(TEST_STREAM);
+      await postgresStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
+    });
+  
+    it('should consume messages without triggering backoff', async () => {
+      const messages = [msg(1), msg(2)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+  
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { batchSize: 2, enableBackoff: false },
+      );
+  
+      expect(consumed).toHaveLength(2);
+      expect(consumed[0]).toHaveProperty('id');
+      expect(consumed[0]).toHaveProperty('data');
+    });
+  
+    it('should apply backoff when stream is empty', async () => {
+      const start = Date.now();
+  
+      // Attempt to consume messages with backoff enabled
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { enableBackoff: true, initialBackoff: 100, maxBackoff: 500 },
+      );
+  
+      const elapsed = Date.now() - start;
+  
+      // Ensure no messages are consumed
+      expect(consumed).toHaveLength(0);
+  
+      // Verify that backoff delay occurred (at least 100ms + 200ms + 400ms = 700ms total)
+      expect(elapsed).toBeGreaterThanOrEqual(700);
+    });
+  
+    it('should reset backoff after messages are consumed', async () => {
+      const initialBackoff = 100;
+  
+      // First call with empty stream to trigger backoff
+      const consumeSpy = jest.spyOn(postgresStreamService, 'consumeMessages');
+      const firstAttempt = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { enableBackoff: true, initialBackoff, maxBackoff: 300 },
+      );
+      expect(firstAttempt).toHaveLength(0);
+      expect(consumeSpy).toHaveBeenCalledTimes(1);
+  
+      // Publish messages to reset backoff
+      const messages = [msg(1)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+  
+      // Consume the published messages
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { enableBackoff: true, initialBackoff, maxBackoff: 300 },
+      );
+  
+      expect(consumed).toHaveLength(1);
+      expect(consumed[0]).toHaveProperty('id');
+      expect(consumed[0]).toHaveProperty('data');
+    });
+  
+    it('should not exceed maximum backoff', async () => {
+      const initialBackoff = 100;
+      const maxBackoff = 500;
+    
+      const consumeSpy = jest.spyOn(postgresStreamService, 'consumeMessages');
+      const querySpy = jest.spyOn(postgresStreamService['streamClient'], 'query');
+    
+      const start = Date.now();
+    
+      await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { enableBackoff: true, initialBackoff, maxBackoff, maxRetries: 3 }
+      );
+    
+      const elapsed = Date.now() - start;
+    
+      // Ensure the backoff time does not exceed the expected maximum total time.
+      // For 3 retries, each potentially at maxBackoff, that would be (assuming exponential):
+      // initial: 100ms, second: 200ms, third: 400ms but capped at maxBackoff: 500ms
+      // So total delay ~100ms + 200ms + 500ms = 800ms (approx)
+      expect(elapsed).toBeLessThanOrEqual(maxBackoff * 3);
+    
+      // consumeMessages itself is only called once externally
+      expect(consumeSpy).toHaveBeenCalledTimes(1);
+    
+      // Check internal retries by counting how many queries were executed.
+      // With no messages, we expect multiple queries (e.g., 3 queries for 3 retries).
+      expect(querySpy.mock.calls.length).toBeGreaterThan(1);
+    });
+  });
+
   describe('Message Retry Operations', () => {
+    it('should reclaim messages after reservation timeout', async () => {
+      const messages = [msg(1), msg(2)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+    
+      const consumerA = 'consumerA';
+      const consumerB = 'consumerB';
+    
+      // Consumer A consumes but does not acknowledge
+      const consumedByA = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        consumerA,
+        { batchSize: 1, reservationTimeout: 2 },
+      );
+    
+      expect(consumedByA).toHaveLength(1);
+    
+      // Wait for reservation timeout
+      await sleepFor(3000);
+    
+      // Consumer B reclaims the message
+      const consumedByB = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        consumerB,
+        { batchSize: 1, reservationTimeout: 2 },
+      );
+    
+      expect(consumedByB).toHaveLength(1);
+      expect(consumedByB[0].id).toBe(consumedByA[0].id);
+    }); 
+  
     it('should implicitly consume stale messages without calling retryMessages', async () => {
       const message = [msg(2)];
       await postgresStreamService.publishMessages(TEST_STREAM, message);

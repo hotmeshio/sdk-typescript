@@ -75,7 +75,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               description: the maximum time in seconds to wait between retries; provides a fixed limit to exponential backoff growth
               type: number
             expire:
-              description: the time in seconds to expire the workflow in Redis once it completes
+              description: the time in seconds to expire the workflow in the backend DB once it completes
               type: number
             persistent:
               description: if true, the workflow emit the 'job completed' event while remaining open to outside signals

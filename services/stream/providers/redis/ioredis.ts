@@ -47,7 +47,7 @@ class IORedisStreamService extends StreamService<
   // Core streaming operations
   async createStream(streamName: string): Promise<boolean> {
     try {
-      // In Redis, streams are created when you add messages.
+      // streams are created when you add messages.
       // To create an empty stream, we can add and delete a dummy message.
       const dummyId = await this.streamClient.xadd(
         streamName,

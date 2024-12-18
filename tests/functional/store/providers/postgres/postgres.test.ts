@@ -468,7 +468,7 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       );
       expect(medianStats[1]).toEqual(stats.median[0].value.toString());
 
-      //expect getStats to cast the value to a number, so it is an exact match even though a string in redis
+      //expect getStats to cast the value to a number, so it is an exact match even though a string in the backend DB
       const jobStats = await postgresStoreService.getJobStats([
         generalStatsKey,
       ]);

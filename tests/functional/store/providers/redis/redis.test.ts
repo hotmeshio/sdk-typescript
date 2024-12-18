@@ -369,7 +369,7 @@ describe('FUNCTIONAL | RedisStoreService', () => {
       );
       expect(medianStats[0].score).toEqual(stats.median[0].value);
 
-      //expect getStats to cast the value to a number, so it is an exact match even though a string in redis
+      //expect getStats to cast the value to a number, so it is an exact match even though a string in the db
       const jobStats = await redisStoreService.getJobStats([generalStatsKey]);
       expect(jobStats[generalStatsKey][stats.general[0].target]).toEqual(
         stats.general[0].value,

@@ -41,7 +41,7 @@ describe('FUNCTIONAL | IORedisConnection', () => {
     expect(val).toBe('test-value');
   });
 
-  it('should set and get a hash in Redis', async () => {
+  it('should set and get a hash', async () => {
     const redisConnection =
       await RedisConnection.getConnection('test-connection');
     const redisClient = await redisConnection.getClient();

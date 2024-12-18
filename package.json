@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.3.30",
+  "version": "0.3.31",
   "description": "Serverless Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -49,7 +49,7 @@
     "test:parallel": "NODE_ENV=test jest ./tests/functional/parallel/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:pipe": "NODE_ENV=test jest ./tests/unit/services/pipe/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:quorum": "HMSH_IS_CLUSTER=true NODE_ENV=test jest ./tests/functional/quorum/*.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:reclaim": "NODE_ENV=test jest ./tests/functional/reclaim/index.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:reclaim": "NODE_ENV=test jest ./tests/functional/reclaim/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:redeploy": "NODE_ENV=test jest ./tests/functional/redeploy/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:reporter": "NODE_ENV=test jest ./tests/unit/services/reporter/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:reentrant": "NODE_ENV=test jest ./tests/functional/reentrant/*.test.ts --detectOpenHandles --forceExit --verbose",
