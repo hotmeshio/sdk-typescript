@@ -81,7 +81,7 @@ describe('MESHFLOW | goodbye | `search, waitFor` | Postgres', () => {
           taskQueue: 'goodbye-world',
           workflowName: 'example',
           workflowId: workflowGuid,
-          expire: 120, //keep in Redis after completion for 120 seconds
+          expire: 120, //keep in DB after completion for 120 seconds (expire is a soft-delete)
           //SEED the initial workflow state with data (this is
           //different than the 'args' input data which the workflow
           //receives as its first argument...this data is available

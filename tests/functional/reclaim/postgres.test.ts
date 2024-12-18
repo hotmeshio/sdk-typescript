@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
 import config from '../../$setup/config';
 import { HMNS } from '../../../modules/key';
@@ -12,20 +12,18 @@ import {
   StreamStatus,
 } from '../../../types/stream';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import { ProviderNativeClient } from '../../../types/provider';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Reclaim', () => {
   const appConfig = { id: 'calc', version: '1' };
-  const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
-  };
   let isSlow = true;
   let hotMesh: HotMesh;
   let hotMesh2: HotMesh;
+  let postgresClient: ProviderNativeClient;
 
-  //Thi is the common callback function used by workers during the test runs
+  //This is the common callback function used by workers during the test runs
   // The first call will hang for 6 seconds; subsequent calls will hang for 1 second
   // This is to simulate a slow/stalled/unresponsive worker being 'helped' by
   // the quorum of workers. When the latter calls complete, they' claim the
@@ -58,12 +56,11 @@ describe('FUNCTIONAL | Reclaim', () => {
   beforeAll(async () => {
     const hmshFactory = async (version: string, first = false) => {
       if (first) {
-        const redisConnection = await RedisConnection.connect(
-          guid(),
-          Redis,
-          options,
-        );
-        redisConnection.getClient().flushdb();
+        postgresClient = (
+          await PostgresConnection.connect(guid(), Postgres, postgres_options)
+        ).getClient();
+    
+        await dropTables(postgresClient);
       }
 
       const config: HotMeshConfig = {
@@ -71,13 +68,19 @@ describe('FUNCTIONAL | Reclaim', () => {
         namespace: HMNS,
         logLevel: HMSH_LOGLEVEL,
         engine: {
-          connection: { class: Redis, options },
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
           reclaimDelay: 1_500, //default 5_000
         },
         workers: [
           {
             topic: 'calculation.execute',
-            connection: { class: Redis, options },
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
             reclaimDelay: 1_500, //default 60_000
             callback,
           },
@@ -129,10 +132,10 @@ describe('FUNCTIONAL | Reclaim', () => {
       }
 
       //give time for the free worker to claim the job
-      await sleepFor(3_000);
+      await sleepFor(6_000);
       //verify that job 1 is completed after being reclaimed
       status1 = await hotMesh2.getStatus(jobId1 as string);
       expect(status1).toEqual(0);
-    }, 11_000);
+    }, 20_000);
   });
 });

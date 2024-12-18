@@ -1189,7 +1189,7 @@ abstract class RedisStoreBase<
       //persist the error unless specifically told not to
       if (options.throw !== false) {
         const errKey = `metadata/err`; //job errors are stored at the path `metadata/err`
-        const symbolNames = [`$${topic}`]; //the symbol for `metadata/err` is in redis and stored using the job topic
+        const symbolNames = [`$${topic}`]; //the symbol for `metadata/err`
         const symKeys = await this.getSymbolKeys(symbolNames);
         const symVals = await this.getSymbolValues();
         this.serializer.resetSymbols(symKeys, symVals, {});

@@ -177,7 +177,7 @@ export type HookInput = {
 
 export type MeshDataWorkflowOptions = {
   /**
-   * The app deployment namespace; how it appears in redis (e.g., 'meshflow')
+   * The app deployment namespace
    */
   namespace?: string;
 

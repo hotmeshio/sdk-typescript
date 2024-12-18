@@ -50,7 +50,7 @@
                 "type": "number"
               },
               "expire": {
-                "description": "the time in seconds to expire the workflow in Redis once it completes",
+                "description": "the time in seconds to expire the workflow in the backend DB once it completes",
                 "type": "number"
               }
             }

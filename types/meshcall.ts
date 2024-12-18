@@ -150,8 +150,7 @@ interface MeshCallCronParams {
    */
   guid?: string;
   /**
-   * Namespace for grouping common cron functions. The cron job keys in Redis
-   * will be prefixed with this namespace. (e.g. `hmsh:[namespace]:j:*`)
+   * Namespace for grouping common cron functions. (e.g. `hmsh:[namespace]:j:*`)
    */
   namespace?: string;
   /**

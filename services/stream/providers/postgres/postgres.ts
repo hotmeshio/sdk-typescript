@@ -1,6 +1,6 @@
 import { ILogger } from '../../../logger';
 import { KeyService, KeyType } from '../../../../modules/key';
-import { parseStreamMessage } from '../../../../modules/utils';
+import { parseStreamMessage, sleepFor } from '../../../../modules/utils';
 import { StreamService } from '../../index';
 import { KeyStoreParams, StringAnyType } from '../../../../types';
 import { PostgresClientType } from '../../../../types/postgres';
@@ -179,7 +179,6 @@ class PostgresStreamService extends StreamService<
       params: [streamName, groupName, ...messages],
     };
   }
-
   async consumeMessages(
     streamName: string,
     groupName: string,
@@ -189,45 +188,69 @@ class PostgresStreamService extends StreamService<
       blockTimeout?: number;
       autoAck?: boolean;
       reservationTimeout?: number; // in seconds
+      enableBackoff?: boolean;     // enable backoff
+      initialBackoff?: number;     // Initial backoff in ms
+      maxBackoff?: number;         // Maximum backoff in ms
+      maxRetries?: number;         // Maximum retries before giving up
     },
   ): Promise<StreamMessage[]> {
     const client = this.streamClient;
     const tableName = this.getTableName();
+    const enableBackoff = options?.enableBackoff ?? false;
+    const initialBackoff = options?.initialBackoff ?? 100;   // Default initial backoff: 100ms
+    const maxBackoff = options?.maxBackoff ?? 3000;          // Default max backoff: 3 seconds
+    const maxRetries = options?.maxRetries ?? 3;             // Set a finite default, e.g., 3 retries
+    
+    let backoff = initialBackoff;
+    let retries = 0;
+  
     try {
-      const batchSize = options?.batchSize || 1;
-      const reservationTimeout = options?.reservationTimeout || 30;
-
-      const res = await client.query(
-        `WITH selected_messages AS (
-          SELECT id, message
-          FROM ${tableName}
-          WHERE stream_name = $1
-            AND group_name = $2
-            AND COALESCE(reserved_at, '1970-01-01') < NOW() - INTERVAL '${reservationTimeout} seconds'
-            AND expired_at IS NULL
-          ORDER BY id
-          LIMIT $3
-          FOR UPDATE SKIP LOCKED
-        ),
-        update_reservation AS (
-          UPDATE ${tableName} t
-          SET 
-            reserved_at = NOW(),
-            reserved_by = $4
-          FROM selected_messages s
-          WHERE t.stream_name = $1 AND t.id = s.id
-          RETURNING t.id, t.message
-        )
-        SELECT * FROM update_reservation`,
-        [streamName, groupName, batchSize, consumerName],
-      );
-
-      const messages: StreamMessage[] = res.rows.map((row: any) => ({
-        id: row.id.toString(),
-        data: parseStreamMessage(row.message),
-      }));
-
-      return messages;
+      while (retries < maxRetries) {
+        retries++;
+        const batchSize = options?.batchSize || 1;
+        const reservationTimeout = options?.reservationTimeout || 30;
+  
+        const res = await client.query(
+          `WITH selected_messages AS (
+            SELECT id, message
+            FROM ${tableName}
+            WHERE stream_name = $1
+              AND group_name = $2
+              AND COALESCE(reserved_at, '1970-01-01') < NOW() - INTERVAL '${reservationTimeout} seconds'
+              AND expired_at IS NULL
+            ORDER BY id
+            LIMIT $3
+            FOR UPDATE SKIP LOCKED
+          ),
+          update_reservation AS (
+            UPDATE ${tableName} t
+            SET 
+              reserved_at = NOW(),
+              reserved_by = $4
+            FROM selected_messages s
+            WHERE t.stream_name = $1 AND t.id = s.id
+            RETURNING t.id, t.message
+          )
+          SELECT * FROM update_reservation`,
+          [streamName, groupName, batchSize, consumerName],
+        );
+  
+        const messages: StreamMessage[] = res.rows.map((row: any) => ({
+          id: row.id.toString(),
+          data: parseStreamMessage(row.message),
+        }));
+  
+        if (messages.length > 0 || !enableBackoff) {
+          return messages;
+        }
+  
+        // Apply backoff if enabled and no messages found
+        await sleepFor(backoff);
+        backoff = Math.min(backoff * 2, maxBackoff); // Exponential backoff
+      }
+  
+      // Return empty array if maxRetries is reached and still no messages
+      return [];
     } catch (error) {
       this.logger.error(`postgres-stream-consumer-error-${streamName}`, {
         error,
@@ -235,7 +258,7 @@ class PostgresStreamService extends StreamService<
       throw error;
     }
   }
-
+  
   async ackAndDelete(
     streamName: string,
     groupName: string,

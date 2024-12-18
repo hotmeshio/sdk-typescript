@@ -10,6 +10,7 @@ import {
   HMSH_XCLAIM_DELAY_MS,
   HMSH_XPENDING_COUNT,
   MAX_DELAY,
+  MAX_STREAM_BACKOFF,
 } from '../../modules/enums';
 import { KeyType } from '../../modules/key';
 import { guid, sleepFor } from '../../modules/utils';
@@ -32,6 +33,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
   static instances: Set<Router<any>> = new Set();
   appId: string;
   guid: string;
+  hasReachedMaxBackoff: boolean | undefined;
   role: StreamRole;
   topic: string | undefined;
   stream: S;
@@ -134,7 +136,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
     consumer: string,
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ): Promise<void> {
-    //exit early if readonly
+    // exit early if readonly
     if (this.readonly) {
       this.logger.info(`router-stream-readonly`, { group, consumer, stream });
       return;
@@ -143,77 +145,106 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
     Router.instances.add(this);
     this.shouldConsume = true;
     await this.createGroup(stream, group);
+    
     let lastCheckedPendingMessagesAt = Date.now();
-
-    async function consume() {
-      await this.customSleep();
+  
+    // Track if we've hit maximum backoff. Initially false.
+    // When true, we use the fallback mode: single attempt, no backoff, then sleep 3s if empty.
+    if (typeof this.hasReachedMaxBackoff === 'undefined') {
+      this.hasReachedMaxBackoff = false;
+    }
+  
+    const sleepFor = (ms: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms));
+  
+    const consume = async () => {
+      await this.customSleep(); // always respect the global throttle
       if (this.isStopped(group, consumer, stream)) {
         return;
       } else if (this.isPaused()) {
         setImmediate(consume.bind(this));
         return;
       }
-      //randomizer that asymptotes at 150% of `HMSH_BLOCK_TIME_MS`
+  
+      // Randomizer that asymptotes at 150% of `HMSH_BLOCK_TIME_MS`
       const streamDuration =
         HMSH_BLOCK_TIME_MS + Math.round(HMSH_BLOCK_TIME_MS * Math.random());
-
+  
       try {
-        //check for messages
-        const messages = (await this.stream.consumeMessages(
-          stream,
-          group,
-          consumer,
-          { blockTimeout: streamDuration },
-        )) as StreamMessage[];
-
+        let messages: StreamMessage[] = [];
+  
+        if (!this.hasReachedMaxBackoff) {
+          // Normal mode: try with backoff and finite retries
+          messages = await this.stream.consumeMessages(stream, group, consumer, {
+            blockTimeout: streamDuration,
+            enableBackoff: true,
+            initialBackoff: 100,
+            maxBackoff: MAX_STREAM_BACKOFF,
+            maxRetries: 6, //100 reaches maxBackoff in 6 retries
+          });
+        } else {
+          // Fallback mode: just try once, no backoff
+          messages = await this.stream.consumeMessages(stream, group, consumer, {
+            blockTimeout: streamDuration,
+            enableBackoff: false,
+            maxRetries: 1,
+          });
+        }
+  
         if (this.isStopped(group, consumer, stream)) {
           return;
         } else if (this.isPaused()) {
           setImmediate(consume.bind(this));
           return;
         }
-
-        for (let i = 0; i < messages.length; i++) {
-          const message = messages[i];
-          await this.consumeOne(
-            stream,
-            group,
-            message.id,
-            message.data,
-            callback,
-          );
-        }
-
-        // Check for pending messages
-        const now = Date.now();
-        if (
-          this.stream.getProviderSpecificFeatures().supportsRetry &&
-          now - lastCheckedPendingMessagesAt > this.reclaimDelay
-        ) {
-          lastCheckedPendingMessagesAt = now;
-          const pendingMessages = await this.stream.retryMessages(
-            stream,
-            group,
-            {
+  
+        if (messages.length > 0) {
+          // Reset if we were in fallback mode
+          this.hasReachedMaxBackoff = false;
+  
+          // Process messages
+          for (const message of messages) {
+            await this.consumeOne(stream, group, message.id, message.data, callback);
+          }
+  
+          // Check for pending messages if supported and enough time has passed
+          const now = Date.now();
+          if (
+            this.stream.getProviderSpecificFeatures().supportsRetry &&
+            now - lastCheckedPendingMessagesAt > this.reclaimDelay
+          ) {
+            lastCheckedPendingMessagesAt = now;
+            const pendingMessages = await this.stream.retryMessages(stream, group, {
               consumerName: consumer,
               minIdleTime: this.reclaimDelay,
               limit: HMSH_XPENDING_COUNT,
-            },
-          );
-
-          //process reclaimed messages one-by-one
-          for (let i = 0; i < pendingMessages.length; i++) {
-            const message = pendingMessages[i];
-            await this.consumeOne(
-              stream,
-              group,
-              message.id,
-              message.data,
-              callback,
-            );
+            });
+  
+            // Process reclaimed messages
+            for (const message of pendingMessages) {
+              await this.consumeOne(stream, group, message.id, message.data, callback);
+            }
           }
+  
+          // If we got messages, just continue as normal
+          setImmediate(consume.bind(this));
+  
+        } else {
+          // No messages found
+          if (!this.hasReachedMaxBackoff) {
+            // We were in normal mode and got no messages after maxRetries
+            // Switch to fallback mode
+            this.hasReachedMaxBackoff = true;
+          } else {
+            // We are already in fallback mode, still no messages
+            // Sleep for MAX_STREAM_BACKOFF ms before trying again
+            await sleepFor(MAX_STREAM_BACKOFF);
+          }
+  
+          // Try again after sleeping
+          setImmediate(consume.bind(this));
         }
-        setImmediate(consume.bind(this));
+  
       } catch (error) {
         if (this.shouldConsume && process.env.NODE_ENV !== 'test') {
           this.logger.error(`router-stream-error`, {
@@ -230,7 +261,8 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
           setTimeout(consume.bind(this), timeout);
         }
       }
-    }
+    };
+  
     consume.call(this);
   }
 
