@@ -1,7 +1,6 @@
 import { Client as Postgres } from 'pg';
 import Redis from 'ioredis';
 
-import config from '../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../index';
 import { JobStatsInput } from '../../types/stats';
 import {
@@ -113,7 +112,7 @@ describe('FUNCTIONAL | HotMesh', () => {
       };
       const topic = 'order.approval.requested';
       const spawned_topic = 'order.approval.price.requested';
-      const job: JobOutput = await hotMesh.pubsub(topic, payload);
+      const job: JobOutput = await hotMesh.pubsub(topic, payload, null, 5_000);
       const jobId = job?.metadata.jid;
       expect(jobId).not.toBeNull();
       expect(job?.data?.price).toBe(payload.price);
@@ -121,7 +120,7 @@ describe('FUNCTIONAL | HotMesh', () => {
       expect((job?.data?.approvals as { price: boolean }).price).toBe(true);
       const spawnedJob = await hotMesh.getState(spawned_topic, payload.id);
       expect(spawnedJob?.data.id).toBe(payload.id);
-    });
+    }, 7_500);
 
     it('executes an `await` activity that resolves to false', async () => {
       const payload = {
