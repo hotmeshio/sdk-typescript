@@ -97,7 +97,11 @@ export const HMSH_EXPIRE_JOB_SECONDS =
 
 // STREAM ROUTER
 export const MAX_STREAM_BACKOFF = 
-parseInt(process.env.MAX_STREAM_BACKOFF, 10) || 3_000;
+  parseInt(process.env.MAX_STREAM_BACKOFF, 10) || 500;
+export const INITIAL_STREAM_BACKOFF =
+  parseInt(process.env.INITIAL_STREAM_BACKOFF, 10) || 250;
+export const MAX_STREAM_RETRIES =
+  parseInt(process.env.MAX_STREAM_RETRIES, 10) || 2;
 export const MAX_DELAY = 2147483647; // Maximum allowed delay in milliseconds for setTimeout
 export const HMSH_MAX_RETRIES = parseInt(process.env.HMSH_MAX_RETRIES, 10) || 3;
 export const HMSH_MAX_TIMEOUT_MS =

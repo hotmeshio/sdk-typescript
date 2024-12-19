@@ -11,6 +11,8 @@ import {
   HMSH_XPENDING_COUNT,
   MAX_DELAY,
   MAX_STREAM_BACKOFF,
+  INITIAL_STREAM_BACKOFF,
+  MAX_STREAM_RETRIES,
 } from '../../modules/enums';
 import { KeyType } from '../../modules/key';
 import { guid, sleepFor } from '../../modules/utils';
@@ -178,9 +180,9 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
           messages = await this.stream.consumeMessages(stream, group, consumer, {
             blockTimeout: streamDuration,
             enableBackoff: true,
-            initialBackoff: 100,
+            initialBackoff: INITIAL_STREAM_BACKOFF,
             maxBackoff: MAX_STREAM_BACKOFF,
-            maxRetries: 6, //100 reaches maxBackoff in 6 retries
+            maxRetries: MAX_STREAM_RETRIES,
           });
         } else {
           // Fallback mode: just try once, no backoff
@@ -225,10 +227,9 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
               await this.consumeOne(stream, group, message.id, message.data, callback);
             }
           }
-  
+
           // If we got messages, just continue as normal
           setImmediate(consume.bind(this));
-  
         } else {
           // No messages found
           if (!this.hasReachedMaxBackoff) {
