@@ -97,7 +97,7 @@ describe('MESHFLOW | baseline | Postgres', () => {
         const signalId = 'abcdefg';
         //the test workflow calls
         //...sleep to make sure the workfow is fully paused
-        await sleepFor(20_000);
+        await sleepFor(10_000);
         //the test workflow uses  MeshFlow.workflow.waitFor(signalId)
         //...signal it and then await the result
         const signalPayload = {

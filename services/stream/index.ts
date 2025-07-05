@@ -71,6 +71,9 @@ export abstract class StreamService<
       initialBackoff?: number;     // Initial backoff in ms
       maxBackoff?: number;         // Maximum backoff in ms
       maxRetries?: number;         // Maximum retries before giving up
+      // New notification options
+      enableNotifications?: boolean; // Override global setting
+      notificationCallback?: (messages: StreamMessage[]) => void; // For event-driven consumption
     },
   ): Promise<StreamMessage[]>;
 
@@ -136,7 +139,12 @@ export abstract class StreamService<
     supportsOrdering: boolean;
     supportsTrimming: boolean;
     supportsRetry: boolean;
+    supportsNotifications?: boolean; // New optional feature flag
     maxMessageSize: number;
     maxBatchSize: number;
   };
+
+  // Optional notification management methods (implemented by providers that support them)
+  stopNotificationConsumer?(streamName: string, groupName: string): Promise<void>;
+  cleanup?(): Promise<void>;
 }

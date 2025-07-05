@@ -247,6 +247,7 @@ describe('FUNCTIONAL | IORedisStreamService', () => {
       expect(features).toEqual({
         supportsBatching: true,
         supportsDeadLetterQueue: false,
+        supportsNotifications: false,
         supportsOrdering: true,
         supportsTrimming: true,
         supportsRetry: true,

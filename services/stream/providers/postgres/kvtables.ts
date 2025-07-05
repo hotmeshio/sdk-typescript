@@ -24,6 +24,7 @@ export async function deploySchema(
       const tableName = `${schemaName}.streams`;
 
       await createTables(client, schemaName, tableName);
+      await createNotificationTriggers(client, schemaName, tableName);
 
       await client.query('COMMIT');
       await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
@@ -52,6 +53,7 @@ function hashStringToInt(str: string): number {
   }
   return Math.abs(hash);
 }
+
 async function createTables(
   client: any,
   schemaName: string,
@@ -90,6 +92,13 @@ async function createTables(
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
 
+  // Optimized index for the simplified fetchMessages query
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_streams_message_fetch 
+    ON ${tableName} (stream_name, group_name, id)
+    WHERE expired_at IS NULL;
+  `);
+
   // Index for expired messages
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_streams_expired_at 
@@ -109,4 +118,56 @@ async function createTables(
   //   CREATE INDEX IF NOT EXISTS idx_streams_created_at
   //   ON ${tableName} (created_at);
   // `);
+}
+
+async function createNotificationTriggers(
+  client: any,
+  schemaName: string,
+  tableName: string,
+): Promise<void> {
+  // Create the notification function
+  await client.query(`
+    CREATE OR REPLACE FUNCTION ${schemaName}.notify_new_stream_message()
+    RETURNS TRIGGER AS $$
+    DECLARE
+      channel_name TEXT;
+      payload JSON;
+    BEGIN
+      -- Create channel name: stream_{stream_name}_{group_name}
+      -- Truncate if too long (PostgreSQL channel names limited to 63 chars)
+      channel_name := 'stream_' || NEW.stream_name || '_' || NEW.group_name;
+      IF length(channel_name) > 63 THEN
+        channel_name := left(channel_name, 63);
+      END IF;
+      
+      -- Create payload with message details
+      payload := json_build_object(
+        'id', NEW.id,
+        'stream_name', NEW.stream_name,
+        'group_name', NEW.group_name,
+        'created_at', extract(epoch from NEW.created_at)
+      );
+      
+      -- Send notification
+      PERFORM pg_notify(channel_name, payload::text);
+      
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  // Create trigger only on the main table - it will automatically apply to all partitions
+  await client.query(`
+    DROP TRIGGER IF EXISTS notify_stream_insert ON ${tableName};
+    CREATE TRIGGER notify_stream_insert
+      AFTER INSERT ON ${tableName}
+      FOR EACH ROW
+      EXECUTE FUNCTION ${schemaName}.notify_new_stream_message();
+  `);
+}
+
+export function getNotificationChannelName(streamName: string, groupName: string): string {
+  const channelName = `stream_${streamName}_${groupName}`;
+  // PostgreSQL channel names are limited to 63 characters
+  return channelName.length > 63 ? channelName.substring(0, 63) : channelName;
 }

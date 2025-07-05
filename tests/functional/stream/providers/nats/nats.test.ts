@@ -262,6 +262,7 @@ describe('FUNCTIONAL | NatsStreamService', () => {
       expect(features).toEqual({
         supportsBatching: true,
         supportsDeadLetterQueue: true,
+        supportsNotifications: false,
         supportsOrdering: true,
         supportsTrimming: true,
         supportsRetry: false,

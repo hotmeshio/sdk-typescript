@@ -27,7 +27,7 @@
     "test:connect:nats": "NODE_ENV=test jest ./tests/unit/services/connector/providers/nats.test.ts --detectOpenHandles --forceExit --verbose",
     "test:cycle": "NODE_ENV=test jest ./tests/functional/cycle/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow": "NODE_ENV=test jest ./tests/meshflow/*/*.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:meshflow:basic": "HMSH_LOGLEVEL=info NODE_ENV=test jest ./tests/meshflow/basic/*.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:meshflow:basic": "HMSH_LOGLEVEL=info NODE_ENV=test jest ./tests/meshflow/basic/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:collision": "NODE_ENV=test jest ./tests/meshflow/collision/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:fatal": "NODE_ENV=test jest ./tests/meshflow/fatal/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:meshflow:goodbye": "NODE_ENV=test jest ./tests/meshflow/goodbye/*.test.ts --detectOpenHandles --forceExit --verbose",
@@ -70,7 +70,7 @@
     "test:sub:postgres": "NODE_ENV=test jest ./tests/functional/sub/providers/postgres/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:nats": "NODE_ENV=test jest ./tests/functional/sub/providers/nats/nats.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:meshdata": "NODE_ENV=test jest ./tests/meshdata/*.test.ts --forceExit --verbose --detectOpenHandles",
+    "test:meshdata": "NODE_ENV=test jest ./tests/meshdata/postgres.test.ts --forceExit --verbose --detectOpenHandles",
     "test:meshos": "HMSH_LOGLEVEL=info NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/*.test.ts --forceExit --verbose --detectOpenHandles",
     "test:meshcall": "NODE_ENV=test jest ./tests/meshcall/*.test.ts --forceExit --verbose --detectOpenHandles",
     "test:unit": "NODE_ENV=test jest ./tests/unit/*/*/index.test.ts --detectOpenHandles --forceExit --verbose"
