@@ -49,6 +49,14 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
     }
   }
 
+  async updateContext(
+    key: string,
+    fields: Record<string, string>,
+  ): Promise<any> {
+    //no-op;
+    throw new Error('Not implemented');
+  }
+
   async setFields(
     key: string,
     fields: Record<string, string>,

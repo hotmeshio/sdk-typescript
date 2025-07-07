@@ -1,867 +1,172 @@
-# HotMesh
-![beta release](https://img.shields.io/badge/release-beta-blue.svg)
+# HotMesh MemFlow
 
-**HotMesh** offers the power of [Temporal.io](https://temporal.io) in a fully serverless architecture.
+**Permanent-Memory Workflows & AI Agents**
 
+![beta release](https://img.shields.io/badge/release-beta-blue.svg)  ![made with typescript](https://img.shields.io/badge/built%20with-typescript-lightblue.svg)
 
-<br/>
+MemFlow is a drop-in Temporal-style engine that runs natively on Postgres — but with a twist:
+every workflow owns a *permanent*, JSON-backed context that lives beyond the main workflow.
+Any number of *hooks* (lightweight, thread-safe workers) can attach to that record at any
+time, read it, and safely write back incremental knowledge.
+Think **durable execution** + **shared, evolving memory** → perfect for human-in-the-loop
+processes and AI agents that learn over time.
 
-## Features
+---
 
-- **Serverless Orchestration**: Orchestrate without adding infrastructure
-- **No Vendor Lock-in**: Use your preferred database: *Postgres*, *Redis*, ...
-- **Linear Scalability**: Scale your database to scale your application
-- **Process Analytics**: Gain process insights with optional analytics
+## Table of Contents
 
+1. 🚀 Quick Start
+2. 🧠 How Permanent Memory Works
+3. 🔌 Hooks & Context API
+4. 🤖 Building Durable AI Agents
+5. 🔬 Advanced Patterns & Recipes
+6. 📚 Documentation & Links
 
-<br/>
+---
 
-## Install
+## 🚀 Quick Start
 
-```sh
+### Install
+```bash
 npm install @hotmeshio/hotmesh
 ```
 
-<br/>
-
-## Learn
-[🏠 Home](https://hotmesh.io/) | [📄 SDK Docs](https://hotmeshio.github.io/sdk-typescript/) | [💼 General Examples](https://github.com/hotmeshio/samples-typescript) | [💼 Temporal Examples](https://github.com/hotmeshio/temporal-patterns-typescript)
-
-<br/>
-
-## MeshCall
-[MeshCall](https://hotmeshio.github.io/sdk-typescript/classes/services_meshcall.MeshCall.html) connects any function to the mesh
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Run an idempotent cron job <small>[more]</small></summary>
-
-  ### Run a Cron
-  This example demonstrates an *idempotent* cron that runs daily at midnight. The `id` makes each cron job unique and ensures that only one instance runs, despite repeated invocations. *The `cron` method returns `false` if a workflow is already running with the same `id`.*
-  
-  Optionally set a `delay` and/or set `maxCycles` to limit the number of cycles. The `interval` can be any human-readable time format (e.g., `1 day`, `2 hours`, `30 minutes`, etc) or a standard cron expression.
-
-1. Define the cron function.
-    ```typescript
-    //cron.ts
-    import { MeshCall } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    export const runMyCron = async (id: string, interval = '0 0 * * *'): Promise<boolean> => {
-      return await MeshCall.cron({
-        topic: 'my.cron.function',
-        connection: {
-          class: Postgres,
-          options: {
-            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-          }
-        },
-        callback: async () => {
-          //your code here...
-        },
-        options: { id, interval, maxCycles: 24 }
-      });
-    };
-    ```
-
-2. Call `runMyCron` at server startup (or call as needed to run multiple crons).
-    ```typescript
-    //server.ts
-    import { runMyCron } from './cron';
-
-    runMyCron('myNightlyCron123');
-    ```
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Interrupt a cron job <small>[more]</small></summary>
-
-  ### Interrupt a Cron
-  This example demonstrates how to cancel a running cron job.
-
-1. Use the same `id` and `topic` that were used to create the cron to cancel it.
-    ```typescript
-    import { MeshCall } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    MeshCall.interrupt({
-      topic: 'my.cron.function',
-      connection: {
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      },
-      options: { id: 'myNightlyCron123' }
-    });
-    ```
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Call any function in any service <small>[more]</small></summary>
-
-  ### Call a Function
-  Make interservice calls that behave like HTTP but without the setup and performance overhead. This example demonstrates how to connect and call a function.
-
-1. Call `MeshCall.connect` and provide a `topic` to uniquely identify the function.
-
-    ```typescript
-    //myFunctionWrapper.ts
-    import { MeshCall, Types } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    export const connectMyFunction = async () => {
-      return await MeshCall.connect({
-        topic: 'my.demo.function',
-        connection: {
-          class: Postgres,
-          options: {
-            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-          }
-        },
-        callback: async (input: string) => {
-          //your code goes here; response must be JSON serializable
-          return { hello: input }
-        },
-      });
-    };
-      ```
-
-2. Call `connectMyFunction` at server startup to connect your function to the mesh.
-
-    ```typescript
-    //server.ts
-    import { connectMyFunction } from './myFunctionWrapper';
-    connectMyFunction();
-    ```
-
-3. Call your function from anywhere on the network (or even from the same service). Send any payload as long as it's JSON serializable.
-
-    ```typescript
-    import { MeshCall } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    const result = await MeshCall.exec({
-      topic: 'my.demo.function',
-      args: ['something'],
-      connection: {
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      },
-    }); //returns `{ hello: 'something'}`
-    ```
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Call and <b>cache</b> a function <small>[more]</small></summary>
-
-  ### Cache a Function
-  This solution builds upon the previous example, caching the response. The linked function will only be re/called when the cached result expires. Everything remains the same, except the caller which specifies an `id` and `ttl`.
-
-1. Make the call from another service (or even the same service). Include an `id` and `ttl` to cache the result for the specified duration.
-
-    ```typescript
-    import { MeshCall } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    const result = await MeshCall.exec({
-      topic: 'my.demo.function',
-      args: ['anything'],
-      connection: {
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      },
-      options: { id: 'myid123', ttl: '15 minutes' },
-    }); //returns `{ hello: 'anything'}`
-    ```
-
-2. Flush the cache at any time, using the same `topic` and cache `id`.
-
-    ```typescript
-    import { MeshCall } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    await MeshCall.flush({
-      topic: 'my.demo.function',
-      connection: {
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      },
-      options: { id: 'myid123' },
-    });
-    ```
-</details>
-
-
-<br/>
-
-## MeshFlow
-[MeshFlow](https://hotmeshio.github.io/sdk-typescript/classes/services_meshflow.MeshFlow.html) is a serverless alternative to *Temporal.io*
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Orchestrate unpredictable activities <small>[more]</small></summary>
-
-### Proxy Activities
-When an endpoint is unpredictable, use `proxyActivities`. HotMesh will retry as necessary until the call succeeds. This example demonstrates a workflow that greets a user in both English and Spanish. Even though both activities throw random errors, the workflow always returns a successful result.
-
-1. Start by defining **activities**. Note how each throws an error 50% of the time.
-
-    ```typescript
-    //activities.ts
-    export async function greet(name: string): Promise<string> {
-      if (Math.random() > 0.5) throw new Error('Random error');
-      return `Hello, ${name}!`;
-    }
-
-    export async function saludar(nombre: string): Promise<string> {
-      if (Math.random() > 0.5) throw new Error('Random error');
-      return `¡Hola, ${nombre}!`;
-    }
-    ```
-
-2. Define the **workflow** logic. Include conditional branching, loops, etc to control activity execution. It's vanilla JavaScript written in your own coding style. The only requirement is to use `proxyActivities`, ensuring your activities are executed with HotMesh's durability wrapper.
-
-    ```typescript
-    //workflows.ts
-    import { workflow } from '@hotmeshio/hotmesh';
-    import * as activities from './activities';
-
-    const { greet, saludar } = workflow
-      .proxyActivities<typeof activities>({
-        activities
-      });
-
-    export async function example(name: string): Promise<[string, string]> {
-      return Promise.all([
-        greet(name),
-        saludar(name)
-      ]);
-    }
-    ```
-
-3. Instance a HotMesh **client** to invoke the workflow.
-
-    ```typescript
-    //client.ts
-    import { Client, HotMesh } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    async function run(): Promise<string> {
-      const client = new Client({
-        connection: {
-          class: Postgres,
-          options: {
-            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-          }
-        }
-      });
-
-      const handle = await client.workflow.start<[string,string]>({
-        args: ['HotMesh'],
-        taskQueue: 'default',
-        workflowName: 'example',
-        workflowId: HotMesh.guid()
-      });
-
-      return await handle.result();
-      //returns ['Hello HotMesh', '¡Hola, HotMesh!']
-    }
-    ```
-
-4. Finally, create a **worker** and link the workflow function. Workers listen for tasks on their assigned task queue and invoke the workflow function each time they receive an event.
-
-    ```typescript
-    //worker.ts
-    import { worker } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-    import * as workflows from './workflows';
-
-    async function run() {
-      const worker = await Worker.create({
-        connection: {
-          class: Postgres,
-          options: {
-            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-          }
-        },
-        taskQueue: 'default',
-        workflow: workflows.example,
-      });
-
-      await worker.run();
-    }
-    ```
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Pause and wait for a signal <small>[more]</small></summary>
-
-### Wait for Signal
-Pause a function and only awaken when a matching signal is received from the outide.
-
-1. Define the **workflow** logic. This one waits for the `my-sig-nal` signal, returning the signal payload (`{ hello: 'world' }`) when it eventually arrives. Interleave additional logic to meet your use case.
-
-    ```typescript
-    //waitForWorkflow.ts
-    import { workflow } from '@hotmeshio/hotmesh';
-
-    export async function waitForExample(): Promise<{hello: string}> {
-      return await workflow.waitFor<{hello: string}>('my-sig-nal');
-      //continue processing, use the payload, etc...
-    }
-    ```
-
-2. Instance a HotMesh **client** and start a workflow. Use a custom workflow ID (`myWorkflow123`).
-
-    ```typescript
-    //client.ts
-    import { Client, HotMesh } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    async function run(): Promise<string> {
-      const client = new Client({
-        connection: {
-          class: Postgres,
-          options: {
-            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-          }
-        }
-      });
-
-      //start a workflow; it will immediately pause
-      await client.workflow.start({
-        args: ['HotMesh'],
-        taskQueue: 'default',
-        workflowName: 'waitForExample',
-        workflowId: 'myWorkflow123',
-        await: false,
-      });
-    }
-    ```
-
-3. Create a **worker** and link the `waitForExample` workflow function.
-
-    ```typescript
-    //worker.ts
-    import { Worker } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-    import * as workflows from './waitForWorkflow';
-
-    async function run() {
-      const worker = await Worker.create({
-        connection: {
-          class: Postgres,
-          options: {
-            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-          }
-        },
-        taskQueue: 'default',
-        workflow: workflows.waitForExample,
-      });
-
-      await worker.run();
-    }
-    ```
-
-4. Send a signal to awaken the paused function; await the function result.
-
-    ```typescript
-    import { Client } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    const client = new Client({
-      connection: {
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      }
-    });
-
-    //awaken the function by sending a signal
-    await client.signal('my-sig-nal', { hello: 'world' });
-
-    //get the workflow handle and await the result
-    const handle = await client.getHandle({
-      taskQueue: 'default',
-      workflowId: 'myWorkflow123'
-    });
-    
-    const result = await handle.result();
-    //returns { hello: 'world' }
-    ```
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Wait for multiple signals (collation) <small>[more]</small></summary>
-
-### Collate Multiple Signals
-Use a standard `Promise` to collate and cache multiple signals. HotMesh will only awaken once **all** signals have arrived. HotMesh will track up to 25 concurrent signals.
-
-1. Update the **workflow** logic to await two signals using a promise: `my-sig-nal-1` and `my-sig-nal-2`. Add additional logic to meet your use case.
-
-    ```typescript
-    //waitForWorkflows.ts
-    import { workflow } from '@hotmeshio/hotmesh';
-
-    export async function waitForExample(): Promise<[boolean, number]> {
-      const [s1, s2] = await Promise.all([
-        workflow.waitFor<boolean>('my-sig-nal-1'),
-        workflow.waitFor<number>('my-sig-nal-2')
-      ]);
-      //do something with the signal payloads (s1, s2)
-      return [s1, s2];
-    }
-    ```
-
-2. Send **two** signals to awaken the paused function.
-
-    ```typescript
-    import { Client } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    const client = new Client({
-      connection: {
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      }
-    });
-
-    //send 2 signals to awaken the function; order is unimportant
-    await client.signal('my-sig-nal-2', 12345);
-    await client.signal('my-sig-nal-1', true);
-
-    //get the workflow handle and await the collated result
-    const handle = await client.getHandle({
-      taskQueue: 'default',
-      workflowId: 'myWorkflow123'
-    });
-    
-    const result = await handle.result();
-    //returns [true, 12345]
-    ```
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Create a recurring, cyclical workflow <small>[more]</small></summary>
-
-### Cyclical Workflow
-This example calls an activity and then sleeps for a week. It runs indefinitely until it's manually stopped. It takes advantage of durable execution and can safely sleep for months or years.
-
->Container restarts have no impact on actively executing workflows as all state is retained in the backend.
-
-1. Define the **workflow** logic. This one calls a legacy `statusDiagnostic` function once a week.
-
-    ```typescript
-    //recurringWorkflow.ts
-    import { workflow } from '@hotmeshio/hotmesh';
-    import * as activities from './activities';
-
-    const { statusDiagnostic } = workflow
-      .proxyActivities<typeof activities>({
-        activities
-      });
-
-    export async function recurringExample(someValue: number): Promise<void> {
-      do {
-        await statusDiagnostic(someValue);
-      } while (await workflow.sleepFor('1 week'));
-    }
-    ```
-
-2. Instance a HotMesh **client** and start a workflow. Assign a custom workflow ID (e.g., `myRecurring123`) if the workflow should be idempotent.
-
-    ```typescript
-    //client.ts
-    import { Client, HotMesh } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    async function run(): Promise<string> {
-      const client = new Client({
-        connection: {
-          class: Postgres,
-          options: {
-            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-          }
-        }
-      });
-
-      //start a workflow; it will immediately pause
-      await client.workflow.start({
-        args: [55],
-        taskQueue: 'default',
-        workflowName: 'recurringExample',
-        workflowId: 'myRecurring123',
-        await: false,
-      });
-    }
-    ```
-
-3. Create a **worker** and link the `recurringExample` workflow function.
-
-    ```typescript
-    //worker.ts
-    import { Worker } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-    import * as workflows from './recurringWorkflow';
-
-    async function run() {
-      const worker = await Worker.create({
-        connection: {
-          class: Postgres,
-          options: {
-            connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-          }
-        },
-        taskQueue: 'default',
-        workflow: workflows.recurringExample,
-      });
-
-      await worker.run();
-    }
-    ```
-
-4. Cancel the recurring workflow (`myRecurring123`) by calling `interrupt`.
-
-    ```typescript
-    import { Client } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    const client = new Client({
-      connection: {
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      }
-    });
-
-    //get the workflow handle and interrupt it
-    const handle = await client.getHandle({
-      taskQueue: 'default',
-      workflowId: 'myRecurring123'
-    });
-    
-    const result = await handle.interrupt();
-    ```
-</details>
-
-<br/>
-
-## MeshData
-[MeshData](https://hotmeshio.github.io/sdk-typescript/classes/services_meshdata.MeshData.html) adds analytics to running workflows
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Create a search index <small>[more]</small></summary>
-
-### Workflow Data Indexes
-
-This example demonstrates how to define a schema and deploy an index for a 'user' entity type.
-
-1. Define the **schema** for the `user` entity. This one includes the 3 formats supported by the FT.SEARCH module: `TEXT`, `TAG` and `NUMERIC`.
-
-    ```typescript
-    //schema.ts
-    export const schema: Types.WorkflowSearchOptions = {
-      schema: {
-        id: { type: 'TAG', sortable: false },
-        first: { type: 'TEXT', sortable: false, nostem: true },
-        active: { type: 'TAG', sortable: false },
-        created: { type: 'NUMERIC', sortable: true },
-      },
-      index: 'user',
-      prefix: ['user'],
-    };
-    ```
-
-2. Create the index upon server startup. This one initializes the 'user' index, using the schema defined in the previous step. It's OK to call `createSearchIndex` multiple times; it will only create the index if it doesn't already exist.
-
-    ```typescript
-    //server.ts
-    import { MeshData } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-    import { schema } from './schema';
-
-    const meshData = new MeshData({
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      },
-      schema,
-    );
-    await meshData.createSearchIndex('user', { namespace: 'meshdata' });
-    ```
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Create an indexed, searchable record <small>[more]</small></summary>
-
-### Workflow Record Data
-This example demonstrates how to create a 'user' workflow backed by the searchable schema from the prior example.
-
-1. Call MeshData `connect` to initialize a 'user' entity *worker*. It references a target worker function which will run the workflow. Data fields that are documented in the schema (like `active`) will be automatically indexed when set on the workflow record.
-
-    ```typescript
-    //connect.ts
-    import { MeshData } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-    import { schema } from './schema';
-
-    export const connectUserWorker = async (): Promise<void> => {
-      const meshData = new MeshData({
-        class: Postgres,
-        options: {
-            connectionString: 'postgresql://  usr:pwd@localhost:5432/db'
-          }
-        },
-        schema,
-      );
-    
-      await meshData.connect({
-        entity: 'user',
-        target: async function(name: string): Promise<string> {
-          //add custom, searchable data (`active`) and return
-          const search = await MeshData.workflow.search();
-          await search.set('active', 'yes');
-          return `Welcome, ${name}.`;
-        },
-        options: { namespace: 'meshdata' },
-      });
-    }
-    ```
-
-2. Wire up the worker at server startup, so it's ready to process incoming requests.
-
-    ```typescript
-    //server.ts
-    import { connectUserWorker } from './connect';
-    await connectUserWorker();
-    ```
-
-3. Call MeshData `exec` to create a 'user' workflow. Searchable data can be set throughout the workflow's lifecycle. This one initializes the workflow with 3 data fields: `id`, `name` and `timestamp`. *An additional data field (`active`) is set within the workflow function in order to demonstrate both mechanisms for reading/writing data to a workflow.*
-  
-    ```typescript
-    //exec.ts
-    import { MeshData } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-
-    const meshData = new MeshData({
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      },
-      schema,
-    );
-
-    export const newUser = async (id: string, name: string): Promise<string> => {
-      const response = await meshData.exec({
-        entity: 'user',
-        args: [name],
-        options: {
-          ttl: 'infinity',
-          id,
-          search: {
-            data: { id, name, timestamp: Date.now() }
-          },
-          namespace: 'meshdata',
-        },
-      });
-      return response;
-    };
-    ```
-
-4. Call the `newUser` function to create a searchable 'user' record.
-
-    ```typescript
-    import { newUser } from './exec';
-    const response = await newUser('jim123', 'James');
-    ```
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Fetch record data <small>[more]</small></summary>
-
-### Read Record Data
-This example demonstrates how to read data fields directly from a workflow.
-
-1. Read data fields directly from the *jimbo123* 'user' record.
-
-    ```typescript
-    //read.ts
-    import { MeshData } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-    import { schema } from './schema';
-
-    const meshData = new MeshData({
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      },
-      schema,
-    );
-
-    const data = await meshData.get(
-      'user',
-      'jimbo123',
-      { 
-        fields: ['id', 'name', 'timestamp', 'active'],
-        namespace: 'meshdata'
-      },
-    );
-    ```
-</details> 
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Search record data <small>[more]</small></summary>
-
-### Query Record Data
-This example demonstrates how to search for those workflows where a given condition exists in the data. This one searches for active users. *NOTE: The native Redis FT.SEARCH syntax and SQL are currently supported. The JSON abstraction shown here is a convenience method for straight-forward, one-dimensional queries.*
-
-1. Search for active users (where the value of the `active` field is `yes`).
-
-    ```typescript
-    //read.ts
-    import { MeshData } from '@hotmeshio/hotmesh';
-    import { Client as Postgres } from 'pg';
-    import { schema } from './schema';
-
-    const meshData = new MeshData({
-        class: Postgres,
-        options: {
-          connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-        }
-      },
-      schema,
-    );
-
-    const results = await meshData.findWhere('user', {
-      query: [{ field: 'active', is: '=', value: 'yes' }],
-      limit: { start: 0, size: 100 },
-      return: ['id', 'name', 'timestamp', 'active']
-    });
-    ```
-</details> 
-
-<br/>
-
-## Connect
-HotMesh is pluggable and fully supports **Postgres** and **Redis/ValKey** backends. 
-
-**NATS** can be added for *pub-sub* support (when extended pattern matching is desired). And *streams* support is currently in alpha (**NATS** + **JetStream** + **Postgres**).
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Postgres <small>[more]</small></summary>
-
-### Connect Postgres Client
+### Start a workflow
 ```typescript
-import { Client as PostgresClient } from 'pg';
-
-//provide these credentials to HotMesh
-const connection = {
-  class: PostgresClient,
-  options: {
-    connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-  }
-};
-
-```
-### Connect Postgres Pool
-Pool connections are recommended for high-throughput applications. The pool will manage connections and automatically handle connection pooling.
-```typescript
-import { Pool as PostgresPool } from 'pg';
-
-const PostgresPoolClient = new PostgresPool({
-  connectionString: 'postgresql://usr:pwd@localhost:5432/db'
-});
-
-//provide these credentials to HotMesh
-const connection = {
-  class: PostgresPoolClient,
-  options: {},
-};
-```
-
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">Redis <small>[more]</small></summary>
-
-### Redis/IORedis
-```typescript
-import * as Redis from 'redis';
-//OR `import Redis from 'ioredis';`
-
-const connection = {
-  class: Redis,
-  options: {
-    url: 'redis://:your_password@localhost:6379',
-  }
-};
-```
-</details>
-
-<details style="padding: .5em">
-  <summary style="font-size:1.25em;">NATS <small>[more]</small></summary>
-
-### NATS PubSub
-Add NATS for improved PubSub support, including patterned subscriptions. Note the explicit channel subscription in the example below. *The NATS provider supports version 2.0 of the NATS client (the latest version). See ./package.json for details.*
-
-```typescript
+// index.ts
+import { MemFlow } from '@hotmeshio/hotmesh';
 import { Client as Postgres } from 'pg';
-import { connect as NATS } from 'nats';
 
-const connection = {
-  store: {
-    class: Postgres,
-    options: {
-      connectionString: 'postgresql://usr:pwd@localhost:5432/db',
+async function main() {
+  const mf = await MemFlow.init({
+    appId: 'my-app',
+    engine: {
+      connection: {
+        class: Postgres,
+        options: { connectionString: process.env.DATABASE_URL }
+      }
     }
-  },
-  stream: {
-    class: Postgres,
-    options: {
-      connectionString: 'postgresql://usr:pwd@localhost:5432/db',
-    }
-  },
-  sub: {
-    class: NATS,
-    options: { servers: ['nats:4222'] }
-  },
-};
+  });
+
+  // Kick off a workflow
+  const handle = await mf.workflow.start({
+    workflowName: 'example',
+    args: ['Jane'],
+    taskQueue: 'contextual'
+  });
+
+  console.log('Result:', await handle.result());
+}
+
+main().catch(console.error);
 ```
-</details>
 
-<br/>
 
-## Metrics and Monitoring
-HotMesh's **OpenTelemetry** output provides insight into long-running, cross-service transactions. Add an OpenTelemetry sink to any service where HotMesh is deployed and HotMesh will emit the full **OpenTelemetry** execution tree organized as a single, unified DAG.
+## 🧠 How Permanent Memory Works
 
-The **HotMesh Dashboard** provides a detailed overview of all running workflows. It includes an LLM to simplify querying and analyzing workflow data. An example Web server with REST APIs and the Dashboard (a WebApp) is included in the [samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo.
+* **Context = JSONB row** in `<yourappname>.jobs` table
+* **Atomic operations** (`set`, `merge`, `append`, `increment`, `toggle`, `delete`, …)
+* **Transactional** – every update participates in the workflow/DB transaction
+* **Time-travel-safe** – full replay compatibility; side-effect detector guarantees determinism
+* **Hook-friendly** – any worker with the record ID can attach and mutate its slice of the JSON
 
-<br/>
+* Context data is stored as JSONB; add partial indexes for improved query analysis.
 
-## Examples
-Refer to the [hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript) Git repo for *tutorials* and instructions on deploying the *HotMesh Dashboard* for visualizing workflows and managing network health.
+**Example: Adding a Partial Index for Specific Entity Types**
+```sql
+-- Create a partial index for 'user' entities with specific context values
+CREATE INDEX idx_user_premium ON your_app.jobs (id)
+WHERE entity = 'user' AND (context->>'isPremium')::boolean = true;
+```
+This index will only be used for queries that match both conditions, making lookups for premium users much faster.
 
-Refer to the [hotmeshio/temporal-patterns-typescript](https://github.com/hotmeshio/temporal-patterns-typescript) Git repo for examples of common Temporal.io patterns implemented using HotMesh.
+---
 
-<br/>
+## 🔌 Hooks & Context API – Full Example
 
-## Advanced
-The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).
+```typescript
+import { MemFlow } from '@hotmeshio/hotmesh';
 
-<br/>
+/* ------------ Main workflow ------------ */
+export async function example(name: string): Promise<any> {
+  //the context method provides transactional, replayable access to shared job state 
+  const ctx = await MemFlow.workflow.context();
 
-## Disclaimer
+  //create the initial context (even arrays are supported)
+  await ctx.set({
+    user: { name },
+    hooks: {},
+    metrics: { count: 0 }
+  });
 
-This project is not affiliated with, endorsed by, or sponsored by Temporal Technologies, Inc. Temporal is a trademark of Temporal Technologies, Inc., and all references to Temporal and related technologies are for educational and demonstration purposes only.
+  // Call two hooks in parallel to updaet the same shared context
+  const [r1, r2] = await Promise.all([
+    MemFlow.workflow.execHook({
+      taskQueue: 'contextual',
+      workflowName: 'hook1',
+      args: [name, 'hook1'],
+      signalId: 'hook1-complete',
+    }),
+    MemFlow.workflow.execHook({
+      taskQueue: 'contextual',
+      workflowName: 'hook2',
+      args: [name, 'hook2'],
+      signalId: 'hook2-complete',
+    })
+  ]);
+
+  // merge here (or have the hooks merge in...everyone can access context)
+  await ctx.merge({ hooks: { r1, r2 } });
+  await ctx.increment('metrics.count', 2);
+
+  return "The main has completed; the db record persists and can be hydrated; hook in from the outside!";
+}
+
+/* ------------ Hook 1 (hooks have access to methods like sleepFor) ------------ */
+export async function hook1(name: string, kind: string): Promise<any> {
+  await MemFlow.workflow.sleepFor('2 seconds');
+  const res = { kind, processed: true, at: Date.now() };
+  await MemFlow.workflow.signal('hook1-complete', res);
+}
+
+/* ------------ Hook 2 (hooks can access shared job context) ------------ */
+export async function hook2(name: string, kind: string): Promise<void> {
+  const ctx = await MemFlow.workflow.context();
+  await ctx.merge({ user: { lastSeen: new Date().toISOString() } });
+  await MemFlow.workflow.signal('hook2-complete', { ok: true });
+}
+```
+
+**Highlights**
+
+* Hook functions are replay-safe.
+* Hook functions can safely read and write to the the *same* JSON context.
+* All context operations (`set`, `merge`, `append`, etc.) execute transactionally.
+* Context data is stored as JSONB; add partial indexes for improved query analysis.
+
+---
+
+## 🤖 Building Durable AI Agents
+
+Permanent memory unlocks a straightforward pattern for agentic systems:
+
+1. **Planner workflow** – sketches a task list, seeds context.
+2. **Tool hooks** – execute individual tasks, feeding intermediate results back into context.
+3. **Reflector hook** – periodically summarises context into long-term memory embeddings.
+4. **Supervisor workflow** – monitors metrics stored in context and decides when to finish.
+
+Because every step is durable *and* shares the same knowledge object, agents can pause,
+restart, scale horizontally, and keep evolving their world-model indefinitely.
+
+---
+
+## 📚 Documentation & Links
+
+* SDK API – [https://hotmeshio.github.io/sdk-typescript](https://hotmeshio.github.io/sdk-typescript)
+* Examples – [https://github.com/hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript)
+
+---
+
+## License
+
+Apache 2.0 – see `LICENSE` for details.

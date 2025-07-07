@@ -51,13 +51,30 @@ class PostgresSearchService extends SearchService<
     return [];
   }
 
+  async updateContext(
+    key: string,
+    fields: Record<string, string>,
+  ): Promise<any> {
+    try {
+      const result = await this.searchClient.hset(key, fields);
+      return isNaN(result) ? result : Number(result);
+    } catch (error) {
+      this.logger.error(`postgres-search-set-fields-error`, { key, error });
+      throw error;
+    }
+  }
+
   async setFields(
     key: string,
     fields: Record<string, string>,
-  ): Promise<number> {
+  ): Promise<any> {
     try {
       const result = await this.searchClient.hset(key, fields);
-      return Number(result);
+      const isGetOperation = '@context:get' in fields;
+      if (isGetOperation) {
+        return result;
+      }
+      return isNaN(result) ? result : Number(result);
     } catch (error) {
       this.logger.error(`postgres-search-set-fields-error`, { key, error });
       throw error;

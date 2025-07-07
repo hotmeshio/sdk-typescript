@@ -425,6 +425,7 @@ class RedisStreamService extends StreamService<
       supportsOrdering: true,
       supportsTrimming: true,
       supportsRetry: true,
+      supportsNotifications: false, // Redis doesn't support LISTEN/NOTIFY like PostgreSQL
       maxMessageSize: 512 * 1024 * 1024, // 512 MB
       maxBatchSize: 1000,
     };

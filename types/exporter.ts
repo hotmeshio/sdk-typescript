@@ -87,7 +87,7 @@ export interface TransitionType {
   updated: string;
 }
 
-export interface MeshFlowJobExport {
+export interface MemFlowJobExport {
   data?: StringAnyType;
   state?: StringAnyType;
   status?: number;

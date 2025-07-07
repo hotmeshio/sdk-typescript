@@ -47,18 +47,18 @@ export {
   WorkflowSearchSchema,
   WorkflowDataType,
   WorkflowOptions,
-} from './meshflow';
+} from './memflow';
 export {
-  MeshFlowChildErrorType,
-  MeshFlowProxyErrorType,
-  MeshFlowSleepErrorType,
-  MeshFlowWaitForAllErrorType,
-  MeshFlowWaitForErrorType,
+  MemFlowChildErrorType,
+  MemFlowProxyErrorType,
+  MemFlowSleepErrorType,
+  MemFlowWaitForAllErrorType,
+  MemFlowWaitForErrorType,
 } from './error';
 export {
   ActivityAction,
   DependencyExport,
-  MeshFlowJobExport,
+  MemFlowJobExport,
   ExportCycles,
   ExportItem,
   ExportOptions,

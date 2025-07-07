@@ -43,7 +43,7 @@ export const hashModule = (context: KVSQL) => ({
     fields: Record<string, string>,
     options?: HSetOptions,
     multi?: ProviderTransaction,
-  ): Promise<number> {
+  ): Promise<number | any> {
     const { sql, params } = this._hset(key, fields, options);
 
     if (multi) {
@@ -52,6 +52,27 @@ export const hashModule = (context: KVSQL) => ({
     } else {
       try {
         const res = await context.pgClient.query(sql, params);
+        
+        // Check if this is a JSONB operation that returns a value
+        const isJsonbOperation = Object.keys(fields).some(k => 
+          k.startsWith('@context:') && k !== '@context'
+        );
+        
+        // Special handling for @context:get operations
+        const isGetOperation = '@context:get' in fields;
+        
+        if (isJsonbOperation && res.rows[0]?.new_value !== undefined) {
+          let returnValue;
+          try {
+            // Try to parse as JSON, fallback to string if it fails
+            returnValue = JSON.parse(res.rows[0].new_value);
+          } catch {
+            returnValue = res.rows[0].new_value;
+          }
+          
+          return returnValue;
+        }
+        
         return res.rowCount;
       } catch (err) {
         console.error('hset error', err, sql, params);
@@ -128,6 +149,644 @@ export const hashModule = (context: KVSQL) => ({
           RETURNING 1 as count
         `;
         params.push(key, fields[':']);
+      }
+    } else if (isJobsTable && '@context' in fields) {
+      // Handle JSONB context updates - use the jobs table directly
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context');
+      
+      if (options?.nx) {
+        if (replayId) {
+          sql = `
+            WITH inserted_job AS (
+              INSERT INTO ${tableName} (id, key, context)
+              SELECT gen_random_uuid(), $1, $2::jsonb
+              WHERE NOT EXISTS (
+                SELECT 1 FROM ${tableName}
+                WHERE key = $1 AND is_live
+              )
+              RETURNING id, context::text as new_value
+            ),
+            replay_insert AS (
+              INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+              SELECT id, $3, new_value, $4
+              FROM inserted_job
+              ON CONFLICT (job_id, field) DO UPDATE
+              SET value = EXCLUDED.value
+              RETURNING 1
+            )
+            SELECT new_value FROM inserted_job
+          `;
+          params.push(key, fields['@context'], replayId, this._deriveType(replayId));
+        } else {
+          sql = `
+            INSERT INTO ${tableName} (id, key, context)
+            SELECT gen_random_uuid(), $1, $2::jsonb
+            WHERE NOT EXISTS (
+              SELECT 1 FROM ${tableName}
+              WHERE key = $1 AND is_live
+            )
+            RETURNING context::text as new_value
+          `;
+          params.push(key, fields['@context']);
+        }
+      } else {
+        if (replayId) {
+          sql = `
+            WITH updated_job AS (
+              UPDATE ${tableName}
+              SET context = $2::jsonb
+              WHERE key = $1 AND is_live
+              RETURNING id, context::text as new_value
+            ),
+            replay_insert AS (
+              INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+              SELECT id, $3, new_value, $4
+              FROM updated_job
+              ON CONFLICT (job_id, field) DO UPDATE
+              SET value = EXCLUDED.value
+              RETURNING 1
+            )
+            SELECT new_value FROM updated_job
+          `;
+          params.push(key, fields['@context'], replayId, this._deriveType(replayId));
+        } else {
+          sql = `
+            UPDATE ${tableName}
+            SET context = $2::jsonb
+            WHERE key = $1 AND is_live
+            RETURNING context::text as new_value
+          `;
+          params.push(key, fields['@context']);
+        }
+      }
+    } else if (isJobsTable && '@context:merge' in fields) {
+      // Handle JSONB context merge - deep merge operation
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:merge');
+      
+      if (options?.nx) {
+        sql = `
+          INSERT INTO ${tableName} (id, key, context)
+          SELECT gen_random_uuid(), $1, $2::jsonb
+          WHERE NOT EXISTS (
+            SELECT 1 FROM ${tableName}
+            WHERE key = $1 AND is_live
+          )
+          RETURNING context::text as new_value
+        `;
+        params.push(key, fields['@context:merge']);
+      } else {
+        if (replayId) {
+          // Store replay value and update context in one transaction with deep merge
+          sql = `
+            WITH updated_job AS (
+              UPDATE ${tableName}
+              SET context = (
+                WITH RECURSIVE deep_merge(original, new_data, result) AS (
+                  -- Base case: start with the original and new data
+                  SELECT 
+                    COALESCE(context, '{}'::jsonb) as original,
+                    $2::jsonb as new_data,
+                    COALESCE(context, '{}'::jsonb) as result
+                  FROM ${tableName}
+                  WHERE key = $1 AND is_live
+                ),
+                merged_data AS (
+                  SELECT 
+                    (
+                      SELECT jsonb_object_agg(
+                        key,
+                        CASE 
+                          -- If both are objects, merge them recursively
+                          WHEN jsonb_typeof(original -> key) = 'object' AND jsonb_typeof(new_data -> key) = 'object'
+                          THEN (
+                            WITH nested_keys AS (
+                              SELECT unnest(ARRAY(SELECT jsonb_object_keys((original -> key) || (new_data -> key)))) as nested_key
+                            )
+                            SELECT jsonb_object_agg(
+                              nested_key,
+                              CASE 
+                                WHEN (new_data -> key) ? nested_key
+                                THEN (new_data -> key) -> nested_key
+                                ELSE (original -> key) -> nested_key
+                              END
+                            )
+                            FROM nested_keys
+                          )
+                          -- If new data has this key, use new value
+                          WHEN new_data ? key
+                          THEN new_data -> key
+                          -- Otherwise keep original value
+                          ELSE original -> key
+                        END
+                      )
+                      FROM (
+                        SELECT unnest(ARRAY(SELECT jsonb_object_keys(original || new_data))) as key
+                      ) all_keys
+                    ) as merged_context
+                  FROM deep_merge
+                )
+                SELECT merged_context FROM merged_data
+              )
+              WHERE key = $1 AND is_live
+              RETURNING id, context::text as new_value
+            ),
+            replay_insert AS (
+              INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+              SELECT id, $3, new_value, $4
+              FROM updated_job
+              ON CONFLICT (job_id, field) DO UPDATE
+              SET value = EXCLUDED.value
+              RETURNING 1
+            )
+            SELECT new_value FROM updated_job
+          `;
+          params.push(key, fields['@context:merge'], replayId, this._deriveType(replayId));
+        } else {
+          sql = `
+            UPDATE ${tableName}
+            SET context = (
+              WITH merged_data AS (
+                SELECT 
+                  (
+                    SELECT jsonb_object_agg(
+                      key,
+                      CASE 
+                        -- If both are objects, merge them recursively
+                        WHEN jsonb_typeof(original -> key) = 'object' AND jsonb_typeof(new_data -> key) = 'object'
+                        THEN (
+                          WITH nested_keys AS (
+                            SELECT unnest(ARRAY(SELECT jsonb_object_keys((original -> key) || (new_data -> key)))) as nested_key
+                          )
+                          SELECT jsonb_object_agg(
+                            nested_key,
+                            CASE 
+                              WHEN (new_data -> key) ? nested_key
+                              THEN (new_data -> key) -> nested_key
+                              ELSE (original -> key) -> nested_key
+                            END
+                          )
+                          FROM nested_keys
+                        )
+                        -- If new data has this key, use new value
+                        WHEN new_data ? key
+                        THEN new_data -> key
+                        -- Otherwise keep original value
+                        ELSE original -> key
+                      END
+                    )
+                    FROM (
+                      SELECT unnest(ARRAY(SELECT jsonb_object_keys(original || new_data))) as key
+                    ) all_keys
+                  ) as merged_context
+                FROM (
+                  SELECT 
+                    COALESCE(context, '{}'::jsonb) as original,
+                    $2::jsonb as new_data
+                  FROM ${tableName}
+                  WHERE key = $1 AND is_live
+                ) base_data
+              )
+              SELECT merged_context FROM merged_data
+            )
+            WHERE key = $1 AND is_live
+            RETURNING context::text as new_value
+          `;
+          params.push(key, fields['@context:merge']);
+        }
+      }
+    } else if (isJobsTable && '@context:delete' in fields) {
+      // Handle JSONB context delete - remove path
+      const path = fields['@context:delete'];
+      const pathParts = path.split('.');
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:delete');
+      
+      if (pathParts.length === 1) {
+        // Simple key deletion
+        if (replayId) {
+          sql = `
+            WITH updated_job AS (
+              UPDATE ${tableName}
+              SET context = context - $2
+              WHERE key = $1 AND is_live
+              RETURNING id, context::text as new_value
+            ),
+            replay_insert AS (
+              INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+              SELECT id, $3, new_value, $4
+              FROM updated_job
+              ON CONFLICT (job_id, field) DO UPDATE
+              SET value = EXCLUDED.value
+              RETURNING 1
+            )
+            SELECT new_value FROM updated_job
+          `;
+          params.push(key, path, replayId, this._deriveType(replayId));
+        } else {
+          sql = `
+            UPDATE ${tableName}
+            SET context = context - $2
+            WHERE key = $1 AND is_live
+            RETURNING context::text as new_value
+          `;
+          params.push(key, path);
+        }
+      } else {
+        // Nested path deletion using jsonb_set with null to remove
+        if (replayId) {
+          sql = `
+            WITH updated_job AS (
+              UPDATE ${tableName}
+              SET context = context #- $2::text[]
+              WHERE key = $1 AND is_live
+              RETURNING id, context::text as new_value
+            ),
+            replay_insert AS (
+              INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+              SELECT id, $3, new_value, $4
+              FROM updated_job
+              ON CONFLICT (job_id, field) DO UPDATE
+              SET value = EXCLUDED.value
+              RETURNING 1
+            )
+            SELECT new_value FROM updated_job
+          `;
+          params.push(key, pathParts, replayId, this._deriveType(replayId));
+        } else {
+          sql = `
+            UPDATE ${tableName}
+            SET context = context #- $2::text[]
+            WHERE key = $1 AND is_live
+            RETURNING context::text as new_value
+          `;
+          params.push(key, pathParts);
+        }
+      }
+    } else if (isJobsTable && '@context:append' in fields) {
+      // Handle JSONB array append
+      const { path, value } = JSON.parse(fields['@context:append']);
+      const pathParts = path.split('.');
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:append');
+      
+      if (replayId) {
+        sql = `
+          WITH updated_job AS (
+            UPDATE ${tableName}
+            SET context = jsonb_set(
+              COALESCE(context, '{}'::jsonb),
+              $2::text[],
+              COALESCE(context #> $2::text[], '[]'::jsonb) || $3::jsonb,
+              true
+            )
+            WHERE key = $1 AND is_live
+            RETURNING id, (context #> $2::text[])::text as new_value
+          ),
+          replay_insert AS (
+            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+            SELECT id, $4, new_value, $5
+            FROM updated_job
+            ON CONFLICT (job_id, field) DO UPDATE
+            SET value = EXCLUDED.value
+            RETURNING 1
+          )
+          SELECT new_value FROM updated_job
+        `;
+        params.push(key, pathParts, JSON.stringify([value]), replayId, this._deriveType(replayId));
+      } else {
+        sql = `
+          UPDATE ${tableName}
+          SET context = jsonb_set(
+            COALESCE(context, '{}'::jsonb),
+            $2::text[],
+            COALESCE(context #> $2::text[], '[]'::jsonb) || $3::jsonb,
+            true
+          )
+          WHERE key = $1 AND is_live
+          RETURNING (context #> $2::text[])::text as new_value
+        `;
+        params.push(key, pathParts, JSON.stringify([value]));
+      }
+    } else if (isJobsTable && '@context:prepend' in fields) {
+      // Handle JSONB array prepend
+      const { path, value } = JSON.parse(fields['@context:prepend']);
+      const pathParts = path.split('.');
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:prepend');
+      
+      if (replayId) {
+        sql = `
+          WITH updated_job AS (
+            UPDATE ${tableName}
+            SET context = jsonb_set(
+              COALESCE(context, '{}'::jsonb),
+              $2::text[],
+              $3::jsonb || COALESCE(context #> $2::text[], '[]'::jsonb),
+              true
+            )
+            WHERE key = $1 AND is_live
+            RETURNING id, (context #> $2::text[])::text as new_value
+          ),
+          replay_insert AS (
+            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+            SELECT id, $4, new_value, $5
+            FROM updated_job
+            ON CONFLICT (job_id, field) DO UPDATE
+            SET value = EXCLUDED.value
+            RETURNING 1
+          )
+          SELECT new_value FROM updated_job
+        `;
+        params.push(key, pathParts, JSON.stringify([value]), replayId, this._deriveType(replayId));
+      } else {
+        sql = `
+          UPDATE ${tableName}
+          SET context = jsonb_set(
+            COALESCE(context, '{}'::jsonb),
+            $2::text[],
+            $3::jsonb || COALESCE(context #> $2::text[], '[]'::jsonb),
+            true
+          )
+          WHERE key = $1 AND is_live
+          RETURNING (context #> $2::text[])::text as new_value
+        `;
+        params.push(key, pathParts, JSON.stringify([value]));
+      }
+    } else if (isJobsTable && '@context:remove' in fields) {
+      // Handle JSONB array remove by index
+      const { path, index } = JSON.parse(fields['@context:remove']);
+      const pathParts = path.split('.');
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:remove');
+      
+      if (replayId) {
+        sql = `
+          WITH updated_job AS (
+            UPDATE ${tableName}
+            SET context = jsonb_set(
+              COALESCE(context, '{}'::jsonb),
+              $2::text[],
+              (
+                SELECT jsonb_agg(value)
+                FROM (
+                  SELECT value, row_number() OVER () - 1 as idx
+                  FROM jsonb_array_elements(COALESCE(context #> $2::text[], '[]'::jsonb))
+                ) t
+                WHERE idx != $3
+              ),
+              true
+            )
+            WHERE key = $1 AND is_live
+            RETURNING id, (context #> $2::text[])::text as new_value
+          ),
+          replay_insert AS (
+            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+            SELECT id, $4, new_value, $5
+            FROM updated_job
+            ON CONFLICT (job_id, field) DO UPDATE
+            SET value = EXCLUDED.value
+            RETURNING 1
+          )
+          SELECT new_value FROM updated_job
+        `;
+        params.push(key, pathParts, index, replayId, this._deriveType(replayId));
+      } else {
+        sql = `
+          UPDATE ${tableName}
+          SET context = jsonb_set(
+            COALESCE(context, '{}'::jsonb),
+            $2::text[],
+            (
+              SELECT jsonb_agg(value)
+              FROM (
+                SELECT value, row_number() OVER () - 1 as idx
+                FROM jsonb_array_elements(COALESCE(context #> $2::text[], '[]'::jsonb))
+              ) t
+              WHERE idx != $3
+            ),
+            true
+          )
+          WHERE key = $1 AND is_live
+          RETURNING (context #> $2::text[])::text as new_value
+        `;
+        params.push(key, pathParts, index);
+      }
+    } else if (isJobsTable && '@context:increment' in fields) {
+      // Handle JSONB numeric increment
+      const { path, value } = JSON.parse(fields['@context:increment']);
+      const pathParts = path.split('.');
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:increment');
+      
+      if (replayId) {
+        sql = `
+          WITH updated_job AS (
+            UPDATE ${tableName}
+            SET context = jsonb_set(
+              COALESCE(context, '{}'::jsonb),
+              $2::text[],
+              to_jsonb((COALESCE((context #> $2::text[])::text::numeric, 0) + $3)::numeric),
+              true
+            )
+            WHERE key = $1 AND is_live
+            RETURNING id, (context #> $2::text[])::text as new_value
+          ),
+          replay_insert AS (
+            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+            SELECT id, $4, new_value, $5
+            FROM updated_job
+            ON CONFLICT (job_id, field) DO UPDATE
+            SET value = EXCLUDED.value
+            RETURNING 1
+          )
+          SELECT new_value FROM updated_job
+        `;
+        params.push(key, pathParts, value, replayId, this._deriveType(replayId));
+      } else {
+        sql = `
+          UPDATE ${tableName}
+          SET context = jsonb_set(
+            COALESCE(context, '{}'::jsonb),
+            $2::text[],
+            to_jsonb((COALESCE((context #> $2::text[])::text::numeric, 0) + $3)::numeric),
+            true
+          )
+          WHERE key = $1 AND is_live
+          RETURNING (context #> $2::text[])::text as new_value
+        `;
+        params.push(key, pathParts, value);
+      }
+    } else if (isJobsTable && '@context:toggle' in fields) {
+      // Handle JSONB boolean toggle
+      const path = fields['@context:toggle'];
+      const pathParts = path.split('.');
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:toggle');
+      
+      if (replayId) {
+        sql = `
+          WITH updated_job AS (
+            UPDATE ${tableName}
+            SET context = jsonb_set(
+              COALESCE(context, '{}'::jsonb),
+              $2::text[],
+              to_jsonb(NOT COALESCE((context #> $2::text[])::text::boolean, false)),
+              true
+            )
+            WHERE key = $1 AND is_live
+            RETURNING id, (context #> $2::text[])::text as new_value
+          ),
+          replay_insert AS (
+            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+            SELECT id, $3, new_value, $4
+            FROM updated_job
+            ON CONFLICT (job_id, field) DO UPDATE
+            SET value = EXCLUDED.value
+            RETURNING 1
+          )
+          SELECT new_value FROM updated_job
+        `;
+        params.push(key, pathParts, replayId, this._deriveType(replayId));
+      } else {
+        sql = `
+          UPDATE ${tableName}
+          SET context = jsonb_set(
+            COALESCE(context, '{}'::jsonb),
+            $2::text[],
+            to_jsonb(NOT COALESCE((context #> $2::text[])::text::boolean, false)),
+            true
+          )
+          WHERE key = $1 AND is_live
+          RETURNING (context #> $2::text[])::text as new_value
+        `;
+        params.push(key, pathParts);
+      }
+    } else if (isJobsTable && '@context:setIfNotExists' in fields) {
+      // Handle JSONB conditional set
+      const { path, value } = JSON.parse(fields['@context:setIfNotExists']);
+      const pathParts = path.split('.');
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:setIfNotExists');
+      
+      if (replayId) {
+        sql = `
+          WITH updated_job AS (
+            UPDATE ${tableName}
+            SET context = CASE 
+              WHEN context #> $2::text[] IS NULL THEN 
+                jsonb_set(COALESCE(context, '{}'::jsonb), $2::text[], $3::jsonb, true)
+              ELSE context
+            END
+            WHERE key = $1 AND is_live
+            RETURNING id, (context #> $2::text[])::text as new_value
+          ),
+          replay_insert AS (
+            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+            SELECT id, $4, new_value, $5
+            FROM updated_job
+            ON CONFLICT (job_id, field) DO UPDATE
+            SET value = EXCLUDED.value
+            RETURNING 1
+          )
+          SELECT new_value FROM updated_job
+        `;
+        params.push(key, pathParts, JSON.stringify(value), replayId, this._deriveType(replayId));
+      } else {
+        sql = `
+          UPDATE ${tableName}
+          SET context = CASE 
+            WHEN context #> $2::text[] IS NULL THEN 
+              jsonb_set(COALESCE(context, '{}'::jsonb), $2::text[], $3::jsonb, true)
+            ELSE context
+          END
+          WHERE key = $1 AND is_live
+          RETURNING (context #> $2::text[])::text as new_value
+        `;
+        params.push(key, pathParts, JSON.stringify(value));
+      }
+    } else if (isJobsTable && Object.keys(fields).some(k => k.startsWith('@context:get:'))) {
+      // Handle JSONB path extraction for get operations
+      const getField = Object.keys(fields).find(k => k.startsWith('@context:get:'));
+      const pathKey = getField.replace('@context:get:', '');
+      const pathParts = JSON.parse(fields[getField]);
+      
+      // Extract the specific path and store it as a temporary field
+      sql = `
+        INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+        SELECT 
+          job.id,
+          $2,
+          COALESCE((job.context #> $3::text[])::text, 'null'),
+          $4
+        FROM (
+          SELECT id, context FROM ${tableName} WHERE key = $1 AND is_live
+        ) AS job
+        ON CONFLICT (job_id, field) DO UPDATE
+        SET value = COALESCE((
+          SELECT context #> $3::text[]
+          FROM ${tableName} 
+          WHERE key = $1 AND is_live
+        )::text, 'null')
+        RETURNING 1 as count
+      `;
+      params.push(key, getField, pathParts, this._deriveType(getField));
+    } else if (isJobsTable && '@context:get' in fields) {
+      // Handle JSONB context get operation with replay storage
+      const path = fields['@context:get'];
+      const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:get');
+      
+      if (path === '') {
+        // Get entire context
+        if (replayId) {
+          sql = `
+            WITH job_data AS (
+              SELECT id, context::text as context_value
+              FROM ${tableName}
+              WHERE key = $1 AND is_live
+            ),
+            replay_insert AS (
+              INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+              SELECT id, $2, context_value, $3
+              FROM job_data
+              WHERE id IS NOT NULL
+              ON CONFLICT (job_id, field) DO UPDATE
+              SET value = EXCLUDED.value
+              RETURNING 1
+            )
+            SELECT context_value as new_value FROM job_data
+          `;
+          params.push(key, replayId, this._deriveType(replayId));
+        } else {
+          sql = `
+            SELECT context::text as new_value
+            FROM ${tableName}
+            WHERE key = $1 AND is_live
+          `;
+          params.push(key);
+        }
+      } else {
+        // Get specific path
+        const pathParts = path.split('.');
+        if (replayId) {
+          sql = `
+            WITH job_data AS (
+              SELECT id, COALESCE((context #> $2::text[])::text, 'null') as path_value
+              FROM ${tableName}
+              WHERE key = $1 AND is_live
+            ),
+            replay_insert AS (
+              INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+              SELECT id, $3, path_value, $4
+              FROM job_data
+              WHERE id IS NOT NULL
+              ON CONFLICT (job_id, field) DO UPDATE
+              SET value = EXCLUDED.value
+              RETURNING 1
+            )
+            SELECT path_value as new_value FROM job_data
+          `;
+          params.push(key, pathParts, replayId, this._deriveType(replayId));
+        } else {
+          sql = `
+            SELECT COALESCE((context #> $2::text[])::text, 'null') as new_value
+            FROM ${tableName}
+            WHERE key = $1 AND is_live
+          `;
+          params.push(key, pathParts);
+        }
       }
     } else if (isJobsTable) {
       const schemaName = context.safeName(context.appId);
@@ -207,11 +866,20 @@ export const hashModule = (context: KVSQL) => ({
     const tableName = context.tableForKey(key, 'hash');
     const isJobsTable = this.isJobsTable(tableName);
     const isStatusField = field === ':';
+    const isContextField = field === '@';
 
     if (isJobsTable && isStatusField) {
       // Fetch status from jobs table
       const sql = `
         SELECT status::text AS value
+        FROM ${tableName}
+        WHERE key = $1 AND is_live
+      `;
+      return { sql, params: [key] };
+    } else if (isJobsTable && isContextField) {
+      // Fetch context from jobs table
+      const sql = `
+        SELECT context::text AS value
         FROM ${tableName}
         WHERE key = $1 AND is_live
       `;
@@ -300,24 +968,31 @@ export const hashModule = (context: KVSQL) => ({
 
     const processRows = (rows: any[]) => {
       let statusValue: string | null = null;
+      let contextValue: string | null = null;
       const fieldValueMap = new Map<string, string | null>();
 
       for (const row of rows) {
         if (row.field === 'status') {
           statusValue = row.value;
-          fieldValueMap.set(':', row.value); // Map `status` to `':'`
-        } else if (row.field !== ':') {
-          // Ignore old format fields (`':'`)
+          fieldValueMap.set(':', row.value); // Map status to ':'
+        } else if (row.field === 'context') {
+          contextValue = row.value;
+          fieldValueMap.set('@', row.value); // Map context to '@'
+        } else if (row.field !== ':' && row.field !== '@') {
+          // Ignore old format fields
           fieldValueMap.set(row.field, row.value);
         }
       }
 
-      // Ensure `':'` is present in the map with the `status` value, if applicable
+      // Ensure ':' and '@' are present in the map with their values
       if (statusValue !== null) {
         fieldValueMap.set(':', statusValue);
       }
+      if (contextValue !== null) {
+        fieldValueMap.set('@', contextValue);
+      }
 
-      // Map requested fields to their values, or `null` if not present
+      // Map requested fields to their values, or null if not present
       return fields.map((field) => fieldValueMap.get(field) || null);
     };
 
@@ -344,17 +1019,24 @@ export const hashModule = (context: KVSQL) => ({
     if (isJobsTable) {
       const sql = `
         WITH valid_job AS (
-          SELECT id, status
+          SELECT id, status, context
           FROM ${tableName}
           WHERE key = $1 
           AND (expired_at IS NULL OR expired_at > NOW())
           LIMIT 1
         ),
         job_fields AS (
-          -- Always include the status field directly from jobs table
+          -- Include both status and context fields from jobs table
           SELECT 
             'status' AS field,
             status::text AS value
+          FROM valid_job
+          
+          UNION ALL
+          
+          SELECT 
+            'context' AS field,
+            context::text AS value
           FROM valid_job
           
           UNION ALL
@@ -397,11 +1079,19 @@ export const hashModule = (context: KVSQL) => ({
       const result: Record<string, string> = {};
 
       for (const row of rows) {
-        // The ':' field (in the jobs table)
-        // represents 'status' and should be igored
-        if (isJobsTable && row.field === ':') continue;
-        const fieldKey = row.field === 'status' ? ':' : row.field;
-        result[fieldKey] = row.value;
+        // Map status to ':' and context to '@'
+        // Ignore old format fields
+        if (isJobsTable) {
+          if (row.field === 'status') {
+            result[':'] = row.value;
+          } else if (row.field === 'context') {
+            result['@'] = row.value;
+          } else if (row.field !== ':' && row.field !== '@') {
+            result[row.field] = row.value;
+          }
+        } else {
+          result[row.field] = row.value;
+        }
       }
 
       return result;
@@ -418,7 +1108,7 @@ export const hashModule = (context: KVSQL) => ({
         return processRows(res.rows);
       } catch (err) {
         console.error('hgetall error', err, sql, params);
-        throw err; // Ensure errors are propagated
+        throw err;
       }
     }
   },
@@ -430,12 +1120,18 @@ export const hashModule = (context: KVSQL) => ({
     if (isJobsTable) {
       const sql = `
         WITH valid_job AS (
-          SELECT id
+          SELECT id, status, context
           FROM ${tableName}
           WHERE key = $1 AND is_live
         ),
         job_data AS (
           SELECT 'status' AS field, status::text AS value
+          FROM ${tableName}
+          WHERE key = $1 AND is_live
+          
+          UNION ALL
+          
+          SELECT 'context' AS field, context::text AS value
           FROM ${tableName}
           WHERE key = $1 AND is_live
         ),

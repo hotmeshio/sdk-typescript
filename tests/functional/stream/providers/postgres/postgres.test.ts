@@ -395,6 +395,7 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       expect(features).toEqual({
         supportsBatching: true,
         supportsDeadLetterQueue: false,
+        supportsNotifications: true,
         supportsOrdering: true,
         supportsTrimming: true,
         supportsRetry: false,

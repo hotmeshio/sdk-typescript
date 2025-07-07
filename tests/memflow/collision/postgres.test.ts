@@ -1,0 +1,170 @@
+import * as Redis from 'redis';
+import { Client as Postgres } from 'pg';
+
+import { guid, sleepFor } from '../../../modules/utils';
+import { MemFlow } from '../../../services/memflow';
+import { WorkflowHandleService } from '../../../services/memflow/handle';
+import { RedisConnection } from '../../../services/connector/providers/redis';
+import { ProviderNativeClient, RedisRedisClassType } from '../../../types';
+import {
+  dropTables,
+  redis_options,
+  postgres_options,
+} from '../../$setup/postgres';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
+import { ProvidersConfig } from '../../../types/provider';
+
+import * as workflows from './src/workflows';
+
+const { Connection, Client, Worker } = MemFlow;
+
+describe('MEMFLOW | collision | Postgres', () => {
+  const CONFLICTING_NAME = 'collision-child';
+  let handle: WorkflowHandleService;
+  let postgresClient: ProviderNativeClient;
+
+  beforeAll(async () => {
+    postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, postgres_options)
+    ).getClient();
+
+    await dropTables(postgresClient);
+
+    const redisConnection = await RedisConnection.connect(
+      guid(),
+      Redis as unknown as RedisRedisClassType,
+      redis_options,
+    );
+
+    redisConnection.getClient().flushDb();
+  });
+
+  afterAll(async () => {
+    await sleepFor(1500);
+    await MemFlow.shutdown();
+  }, 10_000);
+
+  describe('Connection', () => {
+    describe('connect', () => {
+      it('should echo the Redis config', async () => {
+        const connection = (await Connection.connect({
+          store: { class: Postgres, options: postgres_options },
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        })) as ProvidersConfig;
+        expect(connection).toBeDefined();
+        expect(connection.sub).toBeDefined();
+      });
+    });
+  });
+
+  describe('Client', () => {
+    describe('start', () => {
+      it('should connect a client and start a workflow execution', async () => {
+        const client = new Client({
+          connection: {
+            store: { class: Postgres, options: postgres_options },
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+        });
+        handle = await client.workflow.start({
+          args: ['HotMesh'],
+          taskQueue: 'collision-world',
+          workflowName: 'example',
+          workflowId: CONFLICTING_NAME, //the child will attempt to use this id
+          expire: 600,
+          config: {
+            maximumAttempts: 3, //try 3 times and give up
+            maximumInterval: '1 second',
+            backoffCoefficient: 1,
+          },
+        });
+        expect(handle.workflowId).toBeDefined();
+      }, 10_000);
+    });
+  });
+
+  describe('Worker', () => {
+    describe('create', () => {
+      it('should create and run the workers', async () => {
+        const worker = await Worker.create({
+          connection: {
+            store: { class: Postgres, options: postgres_options },
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+          taskQueue: 'collision-world',
+          workflow: workflows.example,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+
+        const childWorker = await Worker.create({
+          connection: {
+            store: { class: Postgres, options: postgres_options },
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+          taskQueue: 'collision-world',
+          workflow: workflows.childExample,
+        });
+        await childWorker.run();
+        expect(childWorker).toBeDefined();
+
+        const fixableWorker = await Worker.create({
+          connection: {
+            store: { class: Postgres, options: postgres_options },
+            stream: { class: Postgres, options: postgres_options },
+            sub: { class: Redis, options: redis_options },
+          },
+          taskQueue: 'collision-world',
+          workflow: workflows.fixableExample,
+        });
+        await fixableWorker.run();
+        expect(fixableWorker).toBeDefined();
+      }, 15_000);
+    });
+  });
+
+  describe('WorkflowHandle', () => {
+    describe('result', () => {
+      it("should throw a 'DuplicateName' error and stop due to insufficient retries", async () => {
+        try {
+          const result = await handle.result();
+          expect(result).toEqual(`Hello, HotMesh! Hello, HotMesh!`);
+        } catch (error) {
+          expect(error.message).toEqual(`Duplicate job: ${CONFLICTING_NAME}`);
+        }
+      }, 15_000);
+    });
+  });
+
+  describe('End to End', () => {
+    it("should throw a 'DuplicateName' error and then > retry, resolve (fix the name), succeed", async () => {
+      const client = new Client({
+        connection: {
+          store: { class: Postgres, options: postgres_options },
+          stream: { class: Postgres, options: postgres_options },
+          sub: { class: Redis, options: redis_options },
+        },
+      });
+      const badCount = 1;
+      const handle = await client.workflow.start({
+        args: [badCount],
+        taskQueue: 'collision-world',
+        workflowName: 'fixableExample',
+        workflowId: `fixable-${CONFLICTING_NAME}`,
+        expire: 600,
+        config: {
+          maximumAttempts: 3, //on try 3 we'll fix, and it will succeed
+          maximumInterval: '1 second',
+          backoffCoefficient: 1,
+        },
+      });
+      expect(handle.workflowId).toBe(`fixable-${CONFLICTING_NAME}`);
+      const outcome = await handle.result<string>({ throwOnError: false });
+      expect(outcome).toEqual('Hello, FIXED!');
+    }, 15_000);
+  });
+});

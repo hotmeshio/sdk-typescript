@@ -40,48 +40,191 @@ import {
 import { MAX_DELAY } from '../../modules/enums';
 
 /**
- * This example shows the full lifecycle of a HotMesh engine instance,
- * including: initialization, deployment, activation and execution.
+ * HotMesh is a distributed, reentrant process orchestration engine that transforms
+ * Redis, Postgres, or NATS into a resilient service mesh capable of running
+ * fault-tolerant workflows across multiple services and systems.
  *
- * Engine routers are self-managing, but subscribe to the 'quorum' channel
- * to establish consensus as necessary for distributed processing.
- * Completed workflows are always soft-deleted with a configurable
- * retention period.
+ * ## Core Concepts
+ *
+ * **Distributed Quorum Architecture**: HotMesh operates as a distributed quorum
+ * where multiple engine and worker instances coordinate using CQRS principles.
+ * Each member reads from assigned topic queues and writes results to other queues,
+ * creating emergent workflow orchestration without a central controller.
+ *
+ * **Reentrant Process Engine**: Unlike traditional workflow engines, HotMesh
+ * provides built-in retry logic, idempotency, and failure recovery. Your business
+ * logic doesn't need to handle timeouts or retries - the engine manages all of that.
+ *
+ * **Multi-Provider Support**: Supports Redis/ValKey, Postgres, and NATS as backend
+ * providers, allowing you to leverage existing infrastructure investments.
+ *
+ * ## Key Features
+ *
+ * - **Fault Tolerance**: Automatic retry, timeout, and failure recovery
+ * - **Distributed Execution**: No single point of failure
+ * - **Multi-Provider**: Redis, Postgres, NATS backend support
+ * - **YAML-Driven**: Model-driven development with declarative workflow definitions
+ * - **OpenTelemetry**: Built-in observability and tracing
+ * - **Durable State**: Workflow state persists across system restarts
+ * - **Pattern Matching**: Pub/sub with wildcard pattern support
+ * - **Throttling**: Dynamic flow control and backpressure management
+ *
+ * ## Architecture
+ *
+ * HotMesh consists of several specialized modules:
+ * - **HotMesh**: Core orchestration engine (this class)
+ * - **MemFlow**: Temporal.io-compatible workflow framework
+ * - **MeshCall**: Durable function execution (Temporal-like clone)
+ *
+ * ## Lifecycle Overview
+ *
+ * 1. **Initialize**: Create HotMesh instance with provider configuration
+ * 2. **Deploy**: Upload YAML workflow definitions to the backend
+ * 3. **Activate**: Coordinate quorum to enable the workflow version
+ * 4. **Execute**: Publish events to trigger workflow execution
+ * 5. **Monitor**: Track progress via OpenTelemetry and built-in observability
+ *
+ * ## Basic Usage
  *
  * @example
  * ```typescript
- * import { Client as Postgres } from 'pg';
  * import { HotMesh } from '@hotmeshio/hotmesh';
+ * import Redis from 'ioredis';
  *
+ * // Initialize with Redis backend
  * const hotMesh = await HotMesh.init({
- *   appId: 'abc',
+ *   appId: 'my-app',
  *   engine: {
  *     connection: {
- *       class: Postgres,
- *       options: {
- *         connectionString: 'postgresql://usr:pwd@localhost:5432/db',
- *       }
+ *       class: Redis,
+ *       options: { host: 'localhost', port: 6379 }
  *     }
  *   }
  * });
  *
+ * // Deploy workflow definition
  * await hotMesh.deploy(`
  * app:
- *   id: abc
+ *   id: my-app
  *   version: '1'
  *   graphs:
- *     - subscribes: abc.test
+ *     - subscribes: order.process
  *       activities:
- *         t1:
- *           type: trigger
+ *         validate:
+ *           type: worker
+ *           topic: order.validate
+ *         approve:
+ *           type: hook
+ *           topic: order.approve
+ *         fulfill:
+ *           type: worker
+ *           topic: order.fulfill
+ *       transitions:
+ *         validate:
+ *           - to: approve
+ *         approve:
+ *           - to: fulfill
  * `);
  *
+ * // Activate the workflow version
  * await hotMesh.activate('1');
  *
- * await hotMesh.pubsub('abc.test');
+ * // Execute workflow (fire-and-forget)
+ * const jobId = await hotMesh.pub('order.process', { 
+ *   orderId: '12345',
+ *   amount: 99.99 
+ * });
  *
+ * // Execute workflow and wait for result
+ * const result = await hotMesh.pubsub('order.process', {
+ *   orderId: '12345',
+ *   amount: 99.99
+ * });
+ * ```
+ *
+ * ## Postgres Backend Example
+ *
+ * @example
+ * ```typescript
+ * import { HotMesh } from '@hotmeshio/hotmesh';
+ * import { Client as Postgres } from 'pg';
+ *
+ * const hotMesh = await HotMesh.init({
+ *   appId: 'my-app',
+ *   engine: {
+ *     connection: {
+ *       class: Postgres,
+ *       options: {
+ *         connectionString: 'postgresql://user:pass@localhost:5432/db'
+ *       }
+ *     }
+ *   }
+ * });
+ * ```
+ *
+ * ## Advanced Features
+ *
+ * **Pattern Subscriptions**: Listen to multiple workflow topics
+ * ```typescript
+ * await hotMesh.psub('order.*', (topic, message) => {
+ *   console.log(`Received ${topic}:`, message);
+ * });
+ * ```
+ *
+ * **Throttling**: Control processing rates
+ * ```typescript
+ * // Pause all processing for 5 seconds
+ * await hotMesh.throttle({ throttle: 5000 });
+ * 
+ * // Emergency stop (pause indefinitely)
+ * await hotMesh.throttle({ throttle: -1 });
+ * ```
+ *
+ * **Workflow Interruption**: Gracefully stop running workflows
+ * ```typescript
+ * await hotMesh.interrupt('order.process', jobId, { 
+ *   reason: 'User cancellation' 
+ * });
+ * ```
+ *
+ * **State Inspection**: Query workflow state and progress
+ * ```typescript
+ * const state = await hotMesh.getState('order.process', jobId);
+ * const status = await hotMesh.getStatus(jobId);
+ * ```
+ *
+ * ## Distributed Coordination
+ *
+ * HotMesh automatically handles distributed coordination through its quorum system:
+ *
+ * ```typescript
+ * // Check quorum health
+ * const members = await hotMesh.rollCall();
+ * 
+ * // Coordinate version activation across all instances
+ * await hotMesh.activate('2', 1000); // 1 second delay for consensus
+ * ```
+ *
+ * ## Integration with Higher-Level Modules
+ *
+ * For most use cases, consider using the higher-level modules:
+ * - **MemFlow**: For Temporal.io-style workflows with TypeScript functions
+ * - **MeshCall**: For durable function calls and RPC patterns
+ *
+ * ## Cleanup
+ *
+ * Always clean up resources when shutting down:
+ * ```typescript
+ * // Stop this instance
+ * hotMesh.stop();
+ * 
+ * // Stop all instances (typically in signal handlers)
  * await HotMesh.stop();
  * ```
+ *
+ * @see {@link https://hotmesh.io/docs} - Complete documentation
+ * @see {@link https://github.com/hotmeshio/samples-typescript} - Examples and tutorials
+ * @see {@link https://zenodo.org/records/12168558} - Academic paper on the architecture
  */
 class HotMesh {
   namespace: string;

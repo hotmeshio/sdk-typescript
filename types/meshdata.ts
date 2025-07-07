@@ -1,4 +1,4 @@
-import { HookOptions, WorkflowConfig, WorkflowSearchOptions } from './meshflow';
+import { HookOptions, WorkflowConfig, WorkflowSearchOptions } from './memflow';
 import { StringStringType } from './serializer';
 
 export type CallOptions = {
@@ -37,7 +37,7 @@ export type CallOptions = {
   fields?: string[];
   /**
    * namespace for the the execution client
-   * @default 'meshflow'
+   * @default 'memflow'
    */
   namespace?: string;
 
@@ -74,7 +74,7 @@ export type ConnectOptions = {
   prefix?: string;
   /**
    * optional namespace for the the worker
-   * @default 'meshflow'
+   * @default 'memflow'
    */
   namespace?: string;
   /**

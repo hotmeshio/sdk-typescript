@@ -211,12 +211,19 @@ export const KVTables = (context: PostgresStoreService) => ({
                 key TEXT NOT NULL,
                 entity TEXT,
                 status INTEGER NOT NULL,
+                context JSONB DEFAULT '{}',
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 expired_at TIMESTAMP WITH TIME ZONE,
                 is_live BOOLEAN DEFAULT TRUE,
                 PRIMARY KEY (id)
               ) PARTITION BY HASH (id);
+            `);
+
+            // Create GIN index for full JSONB search
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_context_gin 
+              ON ${fullTableName} USING GIN (context);
             `);
 
             // Create partitions using a DO block

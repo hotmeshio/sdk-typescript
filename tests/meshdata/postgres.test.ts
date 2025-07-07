@@ -553,7 +553,7 @@ describe('MeshData | Postgres', () => {
   //     // other greeting jobs may exist (e.g. greeting-abc123), but we expect at least 2
   //     // one path is register another function with a unique entity to filter by
   //     expect(jobs.length).toBeGreaterThanOrEqual(2);
-  //     expect(jobs[0].startsWith('hmsh:meshflow:j:greeting-')).toBeTruthy();
+  //     expect(jobs[0].startsWith('hmsh:memflow:j:greeting-')).toBeTruthy();
   //   });
 
   //   it('should find all jobs without a wildcard', async () => {
