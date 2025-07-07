@@ -1,4 +1,4 @@
-export type MeshFlowChildErrorType = {
+export type MemFlowChildErrorType = {
   arguments: string[];
   await?: boolean;
   backoffCoefficient?: number;
@@ -15,7 +15,7 @@ export type MeshFlowChildErrorType = {
   workflowTopic: string;
 };
 
-export type MeshFlowWaitForAllErrorType = {
+export type MemFlowWaitForAllErrorType = {
   items: string[];
   workflowId: string;
   workflowTopic: string;
@@ -26,7 +26,7 @@ export type MeshFlowWaitForAllErrorType = {
   workflowDimension: string;
 };
 
-export type MeshFlowProxyErrorType = {
+export type MemFlowProxyErrorType = {
   arguments: string[];
   activityName: string;
   backoffCoefficient?: number;
@@ -41,14 +41,14 @@ export type MeshFlowProxyErrorType = {
   workflowTopic: string;
 };
 
-export type MeshFlowWaitForErrorType = {
+export type MemFlowWaitForErrorType = {
   signalId: string;
   index: number;
   workflowDimension: string;
   workflowId: string;
 };
 
-export type MeshFlowSleepErrorType = {
+export type MemFlowSleepErrorType = {
   duration: number;
   index: number;
   workflowDimension: string;

@@ -27,7 +27,11 @@ abstract class SearchService<ClientProvider extends ProviderClient> {
   abstract setFields(
     key: string,
     fields: Record<string, string>,
-  ): Promise<number>;
+  ): Promise<any>;
+  abstract updateContext(
+    key: string,
+    fields: Record<string, string>,
+  ): Promise<any>;
   abstract getField(key: string, field: string): Promise<string>;
   abstract getFields(key: string, fields: string[]): Promise<string[]>;
   abstract getAllFields(key: string): Promise<Record<string, string>>;

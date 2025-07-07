@@ -1,14 +1,14 @@
 import { HotMesh } from './services/hotmesh';
 import { HotMeshConfig } from './types/hotmesh';
 import { MeshCall } from './services/meshcall';
-import { MeshFlow } from './services/meshflow';
-import { ClientService as Client } from './services/meshflow/client';
-import { ConnectionService as Connection } from './services/meshflow/connection';
-import { Search } from './services/meshflow/search';
-import { WorkerService as Worker } from './services/meshflow/worker';
-import { WorkflowService as workflow } from './services/meshflow/workflow';
-import { WorkflowHandleService as WorkflowHandle } from './services/meshflow/handle';
-import { proxyActivities } from './services/meshflow/workflow/proxyActivities';
+import { MemFlow } from './services/memflow';
+import { ClientService as Client } from './services/memflow/client';
+import { ConnectionService as Connection } from './services/memflow/connection';
+import { Search } from './services/memflow/search';
+import { WorkerService as Worker } from './services/memflow/worker';
+import { WorkflowService as workflow } from './services/memflow/workflow';
+import { WorkflowHandleService as WorkflowHandle } from './services/memflow/handle';
+import { proxyActivities } from './services/memflow/workflow/proxyActivities';
 import { MeshData } from './services/meshdata';
 import { MeshOS } from './services/meshos';
 import * as Errors from './modules/errors';
@@ -21,7 +21,7 @@ import { RedisConnection as ConnectorIORedis } from './services/connector/provid
 import { RedisConnection as ConnectorRedis } from './services/connector/providers/redis';
 import { NatsConnection as ConnectorNATS } from './services/connector/providers/nats';
 
-//const { Client, Connection, Search, Worker, workflow } = MeshFlow;
+//const { Client, Connection, Search, Worker, workflow } = MemFlow;
 
 export {
   //Provider Connectors
@@ -36,10 +36,10 @@ export {
   HotMeshConfig,
   MeshCall,
   MeshData,
-  MeshFlow,
+  MemFlow,
   MeshOS,
 
-  //MeshFlow Submodules
+  //MemFlow Submodules
   Client,
   Connection,
   proxyActivities,

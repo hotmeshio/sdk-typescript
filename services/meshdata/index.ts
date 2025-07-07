@@ -1,5 +1,5 @@
 import { s, sleepFor } from '../../modules/utils';
-import { MeshFlow } from '../meshflow';
+import { MemFlow } from '../memflow';
 import { HotMesh } from '../hotmesh';
 import {
   WorkflowOptions,
@@ -10,7 +10,7 @@ import {
   FindWhereOptions,
   SearchResults,
   FindWhereQuery,
-} from '../../types/meshflow';
+} from '../../types/memflow';
 import {
   CallOptions,
   ConnectionInput,
@@ -28,12 +28,12 @@ import {
   SubscriptionOptions,
   ThrottleOptions,
 } from '../../types/quorum';
-import { MeshFlowJobExport, ExportOptions } from '../../types/exporter';
+import { MemFlowJobExport, ExportOptions } from '../../types/exporter';
 import { MAX_DELAY } from '../../modules/enums';
 import { ProviderConfig, ProvidersConfig } from '../../types/provider';
 
 /**
- * The `MeshData` service extends the `MeshFlow` service.
+ * The `MeshData` service extends the `MemFlow` service.
  * It serves to unify both data record and
  * transactional workflow principles into a single
  * *Operational Data Layer*. Deployments with a 'search'
@@ -227,16 +227,16 @@ class MeshData {
    * }
    */
   static workflow = {
-    sleep: MeshFlow.workflow.sleepFor,
-    sleepFor: MeshFlow.workflow.sleepFor,
-    signal: MeshFlow.workflow.signal,
-    hook: MeshFlow.workflow.hook,
-    waitForSignal: MeshFlow.workflow.waitFor,
-    waitFor: MeshFlow.workflow.waitFor,
-    getHotMesh: MeshFlow.workflow.getHotMesh,
-    random: MeshFlow.workflow.random,
-    search: MeshFlow.workflow.search,
-    getContext: MeshFlow.workflow.getContext,
+    sleep: MemFlow.workflow.sleepFor,
+    sleepFor: MemFlow.workflow.sleepFor,
+    signal: MemFlow.workflow.signal,
+    hook: MemFlow.workflow.hook,
+    waitForSignal: MemFlow.workflow.waitFor,
+    waitFor: MemFlow.workflow.waitFor,
+    getHotMesh: MemFlow.workflow.getHotMesh,
+    random: MemFlow.workflow.random,
+    search: MemFlow.workflow.search,
+    getContext: MemFlow.workflow.getContext,
 
     /**
      * Interrupts a job by its entity and id.
@@ -247,7 +247,7 @@ class MeshData {
       options: JobInterruptOptions = {},
     ) => {
       const jobId = MeshData.mintGuid(entity, id);
-      await MeshFlow.workflow.interrupt(jobId, options);
+      await MemFlow.workflow.interrupt(jobId, options);
     },
 
     /**
@@ -264,7 +264,7 @@ class MeshData {
         ...options,
         args: [...options.args, { $type: 'exec' }],
       };
-      return MeshFlow.workflow.execChild(pluckOptions as WorkflowOptions);
+      return MemFlow.workflow.execChild(pluckOptions as WorkflowOptions);
     },
 
     /**
@@ -281,7 +281,7 @@ class MeshData {
         ...options,
         args: [...options.args, { $type: 'exec' }],
       };
-      return MeshFlow.workflow.execChild(pluckOptions as WorkflowOptions);
+      return MemFlow.workflow.execChild(pluckOptions as WorkflowOptions);
     },
 
     /**
@@ -297,7 +297,7 @@ class MeshData {
         ...options,
         args: [...options.args, { $type: 'exec' }],
       };
-      return MeshFlow.workflow.startChild(pluckOptions as WorkflowOptions);
+      return MemFlow.workflow.startChild(pluckOptions as WorkflowOptions);
     },
   };
 
@@ -357,11 +357,11 @@ class MeshData {
   }
 
   /**
-   * Return a MeshFlow client
+   * Return a MemFlow client
    * @private
    */
   getClient() {
-    return new MeshFlow.Client({
+    return new MemFlow.Client({
       connection: this.connection,
     });
   }
@@ -453,10 +453,10 @@ class MeshData {
 
   /**
    * Returns a HotMesh client
-   * @param {string} [namespace='meshflow'] - the namespace for the client
+   * @param {string} [namespace='memflow'] - the namespace for the client
    * @returns {Promise<HotMesh>}
    */
-  async getHotMesh(namespace = 'meshflow'): Promise<HotMesh> {
+  async getHotMesh(namespace = 'memflow'): Promise<HotMesh> {
     //try to reuse an existing client
     let hotMesh: HotMesh | Promise<HotMesh> | undefined =
       await this.instances.get(namespace);
@@ -479,13 +479,13 @@ class MeshData {
    * data interleaved with the function state data.
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} workflowId - the workflow/job id
-   * @param {string} [namespace='meshflow'] - the namespace for the client
+   * @param {string} [namespace='memflow'] - the namespace for the client
    * @returns {Promise<string>}
    * @example
    * // mint a key
    * const key = await meshData.mintKey('greeting', 'jsmith123');
    *
-   * // returns 'hmsh:meshflow:j:greeting-jsmith123'
+   * // returns 'hmsh:memflow:j:greeting-jsmith123'
    */
   async mintKey(
     entity: string,
@@ -521,7 +521,7 @@ class MeshData {
       callback: QuorumMessageCallback,
       options: SubscriptionOptions = {},
     ): Promise<void> => {
-      const hotMesh = await this.getHotMesh(options.namespace || 'meshflow');
+      const hotMesh = await this.getHotMesh(options.namespace || 'memflow');
       const callbackWrapper: QuorumMessageCallback = (topic, message) => {
         if (message.type === 'pong' && !message.originator) {
           if (message.profile?.worker_topic) {
@@ -554,7 +554,7 @@ class MeshData {
       message: QuorumMessage,
       options: SubscriptionOptions = {},
     ): Promise<void> => {
-      const hotMesh = await this.getHotMesh(options.namespace || 'meshflow');
+      const hotMesh = await this.getHotMesh(options.namespace || 'memflow');
       await hotMesh.quorum?.pub(message);
     },
 
@@ -568,7 +568,7 @@ class MeshData {
       callback: QuorumMessageCallback,
       options: SubscriptionOptions = {},
     ): Promise<void> => {
-      const hotMesh = await this.getHotMesh(options.namespace || 'meshflow');
+      const hotMesh = await this.getHotMesh(options.namespace || 'memflow');
       await hotMesh.quorum?.unsub(callback);
     },
   };
@@ -619,7 +619,7 @@ class MeshData {
       },
     };
 
-    await MeshFlow.Worker.create({
+    await MemFlow.Worker.create({
       namespace: options.namespace,
       options: options.options as WorkerOptions,
       connection: await this.getConnection(),
@@ -744,7 +744,7 @@ class MeshData {
    *
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - The workflow/job id
-   * @param {string} [namespace='meshflow'] - the namespace for the client
+   * @param {string} [namespace='memflow'] - the namespace for the client
    *
    * @example
    * // Flush a function
@@ -789,7 +789,7 @@ class MeshData {
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - The workflow/job id
    * @param {JobInterruptOptions} [options={}] - call options
-   * @param {string} [namespace='meshflow'] - the namespace for the client
+   * @param {string} [namespace='memflow'] - the namespace for the client
    *
    * @example
    * // Interrupt a function
@@ -823,7 +823,7 @@ class MeshData {
    *
    * @param {string} guid - The global identifier for the signal
    * @param {StringAnyType} payload - The payload to send with the signal
-   * @param {string} [namespace='meshflow'] - the namespace for the client
+   * @param {string} [namespace='memflow'] - the namespace for the client
    * @returns {Promise<string>} - the signal id
    * @example
    * // Signal a function with a payload
@@ -849,7 +849,7 @@ class MeshData {
    * @returns {Promise<QuorumProfile[]>}
    */
   async rollCall(options: RollCallOptions = {}): Promise<QuorumProfile[]> {
-    return (await this.getHotMesh(options.namespace || 'meshflow')).rollCall(
+    return (await this.getHotMesh(options.namespace || 'memflow')).rollCall(
       options.delay || 1000,
     );
   }
@@ -868,7 +868,7 @@ class MeshData {
    * await meshData.throttle({ guid: '1234567890', throttle: 10_000 });
    */
   async throttle(options: ThrottleOptions): Promise<boolean> {
-    return (await this.getHotMesh(options.namespace || 'meshflow')).throttle(
+    return (await this.getHotMesh(options.namespace || 'memflow')).throttle(
       options as ThrottleOptions,
     );
   }
@@ -1032,8 +1032,8 @@ class MeshData {
    * // Response: JobOutput
    * {
    *   metadata: {
-   *    tpc: 'meshflow.execute',
-   *    app: 'meshflow',
+   *    tpc: 'memflow.execute',
+   *    app: 'memflow',
    *    vrs: '1',
    *    jid: 'greeting-jsmith123',
    *    aid: 't1',
@@ -1078,7 +1078,7 @@ class MeshData {
    * @param {string} entity - the entity name (e.g, 'user', 'order', 'product')
    * @param {string} id - The workflow/job id
    * @param {ExportOptions} [options={}] - Configuration options for the export
-   * @param {string} [namespace='meshflow'] - the namespace for the client
+   * @param {string} [namespace='memflow'] - the namespace for the client
    *
    * @example
    * // Export a function
@@ -1089,7 +1089,7 @@ class MeshData {
     id: string,
     options?: ExportOptions,
     namespace?: string,
-  ): Promise<MeshFlowJobExport> {
+  ): Promise<MemFlowJobExport> {
     const workflowId = MeshData.mintGuid(entity, id);
     const handle = await this.getClient().workflow.getHandle(
       entity,
@@ -1349,7 +1349,7 @@ class MeshData {
    * // find jobs
    * const [cursor, jobs] = await meshData.findJobs({ match: 'greeting*' });
    *
-   * // returns [ '0', [ 'hmsh:meshflow:j:greeting-jsmith123', 'hmsh:meshflow:j:greeting-jdoe456' ] ]
+   * // returns [ '0', [ 'hmsh:memflow:j:greeting-jsmith123', 'hmsh:memflow:j:greeting-jdoe456' ] ]
    */
   async findJobs(options: FindJobsOptions = {}): Promise<[string, string[]]> {
     const hotMesh = await this.getHotMesh(options.namespace);
@@ -1378,7 +1378,7 @@ class MeshData {
     return await this.getClient().workflow.search(
       options.taskQueue ?? entity,
       options.workflowName ?? entity,
-      options.namespace || 'meshflow',
+      options.namespace || 'memflow',
       options.index ?? options.search?.index ?? this.search.index ?? '',
       ...args,
     ); //[count, [id, fields[]], [id, fields[]], [id, fields[]], ...]]
@@ -1536,7 +1536,7 @@ class MeshData {
       workflowTopic,
       options.namespace,
     );
-    return await MeshFlow.Search.configureSearchIndex(
+    return await MemFlow.Search.configureSearchIndex(
       hotMeshClient,
       searchOptions ?? this.search,
     );
@@ -1554,19 +1554,19 @@ class MeshData {
    */
   async listSearchIndexes(): Promise<string[]> {
     const hotMeshClient = await this.getHotMesh();
-    return await MeshFlow.Search.listSearchIndexes(hotMeshClient);
+    return await MemFlow.Search.listSearchIndexes(hotMeshClient);
   }
 
   /**
    * Wrap activities in a proxy that will durably run them, once.
    */
-  static proxyActivities = MeshFlow.workflow.proxyActivities;
+  static proxyActivities = MemFlow.workflow.proxyActivities;
 
   /**
    * shut down MeshData (typically on sigint or sigterm)
    */
   static async shutdown() {
-    await MeshFlow.shutdown();
+    await MemFlow.shutdown();
   }
 }
 

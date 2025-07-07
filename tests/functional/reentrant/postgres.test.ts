@@ -2,22 +2,22 @@ import { Client as Postgres } from 'pg';
 
 import { HotMesh, HotMeshConfig } from '../../../index';
 import {
-  HMSH_CODE_MESHFLOW_ALL,
-  HMSH_CODE_MESHFLOW_CHILD,
-  HMSH_CODE_MESHFLOW_PROXY,
-  HMSH_CODE_MESHFLOW_SLEEP,
-  HMSH_CODE_MESHFLOW_WAIT,
+  HMSH_CODE_MEMFLOW_ALL,
+  HMSH_CODE_MEMFLOW_CHILD,
+  HMSH_CODE_MEMFLOW_PROXY,
+  HMSH_CODE_MEMFLOW_SLEEP,
+  HMSH_CODE_MEMFLOW_WAIT,
   HMSH_LOGLEVEL,
 } from '../../../modules/enums';
 import {
-  MeshFlowChildError,
-  MeshFlowFatalError,
-  MeshFlowMaxedError,
-  MeshFlowProxyError,
-  MeshFlowSleepError,
-  MeshFlowTimeoutError,
-  MeshFlowWaitForAllError,
-  MeshFlowWaitForError,
+  MemFlowChildError,
+  MemFlowFatalError,
+  MemFlowMaxedError,
+  MemFlowProxyError,
+  MemFlowSleepError,
+  MemFlowTimeoutError,
+  MemFlowWaitForAllError,
+  MemFlowWaitForError,
 } from '../../../modules/errors';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
@@ -33,17 +33,17 @@ import { ProviderNativeClient } from '../../../types/provider';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { dropTables, postgres_options } from '../../$setup/postgres';
 
-describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
-  const appConfig = { id: 'meshflow', version: '1' };
+describe('FUNCTIONAL | MEMFLOW | Postgres', () => {
+  const appConfig = { id: 'memflow', version: '1' };
   let activityErrorCounter = 0;
-  let workflowId = 'meshflow';
+  let workflowId = 'memflow';
   const originJobId = null;
   const workflowTopic = 'childWorld-childWorld';
   const activityTopic = `${workflowTopic}-activity`;
   const activityName = 'helloWorld';
   const workflowName = 'childWorld';
   const entityName = 'childWorld';
-  const collatorSignalTopic = 'meshflow.wfs.signal';
+  const collatorSignalTopic = 'memflow.wfs.signal';
   const signalId = 'abcdefg';
 
   type SignalResponseType = { response: string; id: string };
@@ -77,7 +77,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
   let hotMesh: HotMesh;
 
   const xHandleError = (err: any, interruptionList: any[]) => {
-    if (err instanceof MeshFlowSleepError) {
+    if (err instanceof MemFlowSleepError) {
       interruptionList.push({
         code: err.code,
         message: JSON.stringify({
@@ -89,13 +89,13 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
         index: err.index,
         workflowDimension: err.workflowDimension,
       });
-    } else if (err instanceof MeshFlowWaitForError) {
+    } else if (err instanceof MemFlowWaitForError) {
       interruptionList.push({
         code: err.code,
         message: JSON.stringify(err.signalId),
         signalId: err.signalId,
       });
-    } else if (err instanceof MeshFlowProxyError) {
+    } else if (err instanceof MemFlowProxyError) {
       interruptionList.push({
         arguments: err.arguments,
         code: err.code,
@@ -110,7 +110,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
         maximumAttempts: err.maximumAttempts,
         maximumInterval: err.maximumInterval,
       });
-    } else if (err instanceof MeshFlowChildError) {
+    } else if (err instanceof MemFlowChildError) {
       interruptionList.push({
         arguments: err.arguments,
         code: err.code,
@@ -122,7 +122,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
         workflowTopic: err.workflowTopic,
         await: err.await,
       });
-    } else if (err instanceof MeshFlowWaitForAllError) {
+    } else if (err instanceof MemFlowWaitForAllError) {
       interruptionList.push({
         items: err.items,
         code: err.code,
@@ -139,20 +139,20 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
     }
   };
 
-  //588: HMSH_CODE_MESHFLOW_SLEEP
+  //588: HMSH_CODE_MEMFLOW_SLEEP
   const xSleepFor = async (millis: string): Promise<number> => {
     const seconds = Number(millis) / 1000;
     if (shouldSleep) {
       shouldSleep = false;
       const execIndex = counter++;
       interruptionRegistry.push({
-        code: HMSH_CODE_MESHFLOW_SLEEP,
+        code: HMSH_CODE_MEMFLOW_SLEEP,
         duration: seconds,
         index: execIndex,
         workflowDimension: '',
       });
       await sleepFor(0);
-      throw new MeshFlowSleepError({
+      throw new MemFlowSleepError({
         workflowId,
         duration: seconds,
         index: execIndex,
@@ -162,7 +162,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
     return seconds;
   };
 
-  //590: HMSH_CODE_MESHFLOW_CHILD
+  //590: HMSH_CODE_MEMFLOW_CHILD
   const xChild = async <T>(options: WorkflowOptions): Promise<T> => {
     if (shouldChild) {
       //SYNC
@@ -177,7 +177,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
       const workflowName = options.entity ?? options.workflowName;
       const workflowTopic = `${taskQueueName}-${workflowName}`;
       interruptionRegistry.push({
-        code: HMSH_CODE_MESHFLOW_CHILD,
+        code: HMSH_CODE_MEMFLOW_CHILD,
         arguments: options.args,
         workflowDimension: workflowDimension,
         index: execIndex,
@@ -190,7 +190,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
 
       //ASYNC
       await sleepFor(0);
-      throw new MeshFlowChildError({
+      throw new MemFlowChildError({
         arguments: options.args,
         workflowDimension: workflowDimension,
         index: execIndex,
@@ -204,7 +204,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
     return childResponse as T;
   };
 
-  //591: HMSH_CODE_MESHFLOW_PROXY
+  //591: HMSH_CODE_MEMFLOW_PROXY
   const xProxyActivity = async <T>(...args: any[]): Promise<T> => {
     if (shouldProxy) {
       //SYNC
@@ -215,7 +215,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
       const activityTopic = `${workflowName}-${workflowName}-activity`;
       interruptionRegistry.push({
         arguments: args,
-        code: HMSH_CODE_MESHFLOW_PROXY,
+        code: HMSH_CODE_MEMFLOW_PROXY,
         workflowDimension: workflowDimension,
         index: execIndex,
         originJobId: originJobId || workflowId,
@@ -226,7 +226,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
 
       //ASYNC
       await sleepFor(0);
-      throw new MeshFlowProxyError({
+      throw new MemFlowProxyError({
         activityName,
         arguments: args,
         workflowDimension: workflowDimension,
@@ -242,21 +242,21 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
     } as T;
   };
 
-  //595: HMSH_CODE_MESHFLOW_WAIT
+  //595: HMSH_CODE_MEMFLOW_WAIT
   const xWaitFor = async <T>(key: string): Promise<T> => {
     if (shouldWait) {
       //SYNC
       shouldWait = false;
       const execIndex = counter++;
       interruptionRegistry.push({
-        code: HMSH_CODE_MESHFLOW_WAIT,
+        code: HMSH_CODE_MEMFLOW_WAIT,
         signalId: key,
         index: execIndex,
         workflowDimension: '',
       });
       //ASYNC
       await sleepFor(0);
-      throw new MeshFlowWaitForError({
+      throw new MemFlowWaitForError({
         signalId: key,
         index: execIndex,
         workflowDimension: '',
@@ -313,7 +313,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
                 args: ['f', { g: 7 }],
                 await: awaitChild, // if this is false, use startChild, otherwise execChild
                 workflowName, // `entity` clobbers this
-                entity: entityName, // hotmesh syntax (use taskQueue in meshflow function)
+                entity: entityName, // hotmesh syntax (use taskQueue in memflow function)
               });
 
               //all
@@ -330,7 +330,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
                   xProxyActivity<ProxyResponseType>(
                     ...(data.data.arguments as any[]),
                   ),
-                  //standard meshflows format with taskQueue and workflowName
+                  //standard memflows format with taskQueue and workflowName
                   //this is standard format (combining workflowName and taskQueue)
                   //xstream address is always taskQueue + workflowName
                   xChild<ChildResponseType>({
@@ -368,14 +368,14 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
               const execIndex = counter++;
               if (
                 interruptionRegistry.length === 1 &&
-                interruptionRegistry[0].code !== HMSH_CODE_MESHFLOW_WAIT
+                interruptionRegistry[0].code !== HMSH_CODE_MEMFLOW_WAIT
               ) {
-                //signals are the exception (HMSH_CODE_MESHFLOW_WAIT). They are bundled as an array
+                //signals are the exception (HMSH_CODE_MEMFLOW_WAIT). They are bundled as an array
                 errData = interruptionList[0];
               } else {
                 const collatorFlowId = `-${workflowId}-$${workflowDimension}-$${execIndex}`;
                 errData = {
-                  code: HMSH_CODE_MESHFLOW_ALL,
+                  code: HMSH_CODE_MEMFLOW_ALL,
                   items: [...interruptionRegistry],
                   size: interruptionRegistry.length,
                   workflowDimension: '',
@@ -440,9 +440,9 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
               } as StreamDataResponse;
             } catch (error) {
               if (
-                error instanceof MeshFlowFatalError ||
-                error instanceof MeshFlowMaxedError ||
-                error instanceof MeshFlowTimeoutError
+                error instanceof MemFlowFatalError ||
+                error instanceof MemFlowMaxedError ||
+                error instanceof MemFlowTimeoutError
               ) {
                 return {
                   status: StreamStatus.SUCCESS, //todo: might be better to return .ERROR status
@@ -474,7 +474,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
       ],
     };
     hotMesh = await HotMesh.init(config);
-    await hotMesh.deploy('/app/tests/$setup/apps/meshflow/v1/hotmesh.yaml');
+    await hotMesh.deploy('/app/tests/$setup/apps/memflow/v1/hotmesh.yaml');
     await hotMesh.activate(appConfig.version);
   }, 10_000);
 
@@ -484,7 +484,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
     await HotMesh.stop();
   }, 15_000);
 
-  describe('MeshFlow Function State', () => {
+  describe('MemFlow Function State', () => {
     afterEach(async () => {
       interruptionRegistry.length = 0;
       interruptionList.length = 0;
@@ -503,7 +503,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
         maximumAttempts: 3,
         expire: 120,
       };
-      const response = await hotMesh.pubsub('meshflow.execute', payload);
+      const response = await hotMesh.pubsub('memflow.execute', payload);
       expect(response.data.done).toBe(true);
     });
 
@@ -519,7 +519,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
         expire: 120,
       };
       const response = await hotMesh.pubsub(
-        'meshflow.execute',
+        'memflow.execute',
         payload,
         null,
         10_000,
@@ -539,7 +539,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
         maximumAttempts: 3,
         expire: 120,
       };
-      const jobId = await hotMesh.pub('meshflow.execute', payload);
+      const jobId = await hotMesh.pub('memflow.execute', payload);
       await sleepFor(2_500);
 
       await hotMesh.hook(collatorSignalTopic, {
@@ -551,7 +551,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
       let response: JobOutput;
       do {
         await sleepFor(1_000);
-        response = await hotMesh.getState('meshflow.execute', jobId);
+        response = await hotMesh.getState('memflow.execute', jobId);
       } while (!response.data.done);
       expect(shouldWait).toBe(false);
     }, 10_000);
@@ -569,7 +569,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
       };
       //activity is designed to throw three errors before completing successfully
       const response = await hotMesh.pubsub(
-        'meshflow.execute',
+        'memflow.execute',
         payload,
         null,
         15_000,
@@ -591,7 +591,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
         expire: 120,
       };
       const response = await hotMesh.pubsub(
-        'meshflow.execute',
+        'memflow.execute',
         payload,
         null,
         2_500,
@@ -613,7 +613,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
         expire: 120,
       };
       const response = await hotMesh.pubsub(
-        'meshflow.execute',
+        'memflow.execute',
         payload,
         null,
         2_500,
@@ -634,7 +634,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
         expire: 120,
       };
       //start the job and sleep for a bit (the workflow will pause in an awaited state)
-      const jobId = await hotMesh.pub('meshflow.execute', payload);
+      const jobId = await hotMesh.pub('memflow.execute', payload);
       await sleepFor(2_500);
 
       //send the signal so that the workflow can continue
@@ -647,7 +647,7 @@ describe('FUNCTIONAL | MESHFLOW | Postgres', () => {
       let response: JobOutput;
       do {
         await sleepFor(1000);
-        response = await hotMesh.getState('meshflow.execute', jobId);
+        response = await hotMesh.getState('memflow.execute', jobId);
       } while (!response.data.done);
 
       expect(shouldPromise).toBe(false);

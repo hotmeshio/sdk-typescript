@@ -27,45 +27,45 @@ export const HMSH_CODE_INTERRUPT = 410;
 export const HMSH_CODE_UNKNOWN = 500;
 export const HMSH_CODE_TIMEOUT = 504;
 export const HMSH_CODE_UNACKED = 999;
-// MESHFLOW STATUS CODES
+// MEMFLOW STATUS CODES
 /**
- * This is thrown when a Meshflow has been interrupted by a sleepFor call.
+ * This is thrown when a MemFlow has been interrupted by a sleepFor call.
  */
-export const HMSH_CODE_MESHFLOW_SLEEP = 588;
+export const HMSH_CODE_MEMFLOW_SLEEP = 588;
 /**
- * This is thrown when a Meshflow has been interrupted by a Promise.all call.
+ * This is thrown when a MemFlow has been interrupted by a Promise.all call.
  */
-export const HMSH_CODE_MESHFLOW_ALL = 589;
+export const HMSH_CODE_MEMFLOW_ALL = 589;
 /**
- * This is thrown when a Meshflow has been interrupted by an execChild or startChild call.
+ * This is thrown when a MemFlow has been interrupted by an execChild or startChild call.
  */
-export const HMSH_CODE_MESHFLOW_CHILD = 590;
+export const HMSH_CODE_MEMFLOW_CHILD = 590;
 /**
- * This is thrown when a Meshflow has been interrupted by a proxyActivity call.
+ * This is thrown when a MemFlow has been interrupted by a proxyActivity call.
  */
-export const HMSH_CODE_MESHFLOW_PROXY = 591;
+export const HMSH_CODE_MEMFLOW_PROXY = 591;
 /**
- * This is thrown when a Meshflow has been interrupted by a waitForSignal call.
+ * This is thrown when a MemFlow has been interrupted by a waitForSignal call.
  */
-export const HMSH_CODE_MESHFLOW_WAIT = 595;
+export const HMSH_CODE_MEMFLOW_WAIT = 595;
 /**
- * The timeout status code for Meshflow. This status code is thrown when Meshflow has encountered a timeout error and needs to aler the caller why the call failed.
+ * The timeout status code for MemFlow. This status code is thrown when MemFlow has encountered a timeout error and needs to aler the caller why the call failed.
  */
-export const HMSH_CODE_MESHFLOW_TIMEOUT = 596;
+export const HMSH_CODE_MEMFLOW_TIMEOUT = 596;
 /**
- * The maxed status code for Meshflow. This status code is used to indicate that the Meshflow has reached the maximum
+ * The maxed status code for MemFlow. This status code is used to indicate that the MemFlow has reached the maximum
  * number of attempts and should be halted. Thrown from a proxied activity or a flow to halt standard execution
  * and prevent further attempts.
  */
-export const HMSH_CODE_MESHFLOW_MAXED = 597;
+export const HMSH_CODE_MEMFLOW_MAXED = 597;
 /**
- * The fatal status code for Meshflow. This status code is used to indicate that the Meshflow has encountered a fatal error. Throw from a proxied activity or a flow to halt standard execution.
+ * The fatal status code for MemFlow. This status code is used to indicate that the MemFlow has encountered a fatal error. Throw from a proxied activity or a flow to halt standard execution.
  */
-export const HMSH_CODE_MESHFLOW_FATAL = 598;
+export const HMSH_CODE_MEMFLOW_FATAL = 598;
 /**
- * The retryable status code for Meshflow. This status code is used to indicate that the Meshflow has encountered a retryable error (essentially unknown and covered by the standard retry policy).
+ * The retryable status code for MemFlow. This status code is used to indicate that the MemFlow has encountered a retryable error (essentially unknown and covered by the standard retry policy).
  */
-export const HMSH_CODE_MESHFLOW_RETRYABLE = 599;
+export const HMSH_CODE_MEMFLOW_RETRYABLE = 599;
 
 // HOTMESH MESSAGES
 export const HMSH_STATUS_UNKNOWN = 'unknown';
@@ -109,22 +109,22 @@ export const HMSH_MAX_TIMEOUT_MS =
 export const HMSH_GRADUATED_INTERVAL_MS =
   parseInt(process.env.HMSH_GRADUATED_INTERVAL_MS, 10) || 5000;
 
-// MESHFLOW
+// MEMFLOW
 /**
- * The maximum number of attempts to retry a MeshFlow job before it is considered failed.
+ * The maximum number of attempts to retry a MemFlow job before it is considered failed.
  * @default 3
  */
-export const HMSH_MESHFLOW_MAX_ATTEMPTS = 3;
+export const HMSH_MEMFLOW_MAX_ATTEMPTS = 3;
 /**
- * The maximum interval to wait before retrying a MeshFlow job.
+ * The maximum interval to wait before retrying a MemFlow job.
  * @default 120s
  */
-export const HMSH_MESHFLOW_MAX_INTERVAL = '120s';
+export const HMSH_MEMFLOW_MAX_INTERVAL = '120s';
 /**
  * The exponential backoff factor to apply to the interval between retries.
  * @default 10
  */
-export const HMSH_MESHFLOW_EXP_BACKOFF = 10;
+export const HMSH_MEMFLOW_EXP_BACKOFF = 10;
 
 const BASE_BLOCK_DURATION = 10000;
 const TEST_BLOCK_DURATION = 1000;

@@ -73,7 +73,7 @@ import { MAX_DELAY } from '../../modules/enums';
  *
  * HotMesh consists of several specialized modules:
  * - **HotMesh**: Core orchestration engine (this class)
- * - **MeshFlow**: Temporal.io-compatible workflow framework
+ * - **MemFlow**: Temporal.io-compatible workflow framework
  * - **MeshCall**: Durable function execution (Temporal-like clone)
  *
  * ## Lifecycle Overview
@@ -208,7 +208,7 @@ import { MAX_DELAY } from '../../modules/enums';
  * ## Integration with Higher-Level Modules
  *
  * For most use cases, consider using the higher-level modules:
- * - **MeshFlow**: For Temporal.io-style workflows with TypeScript functions
+ * - **MemFlow**: For Temporal.io-style workflows with TypeScript functions
  * - **MeshCall**: For durable function calls and RPC patterns
  *
  * ## Cleanup

@@ -1,6 +1,6 @@
 import { MeshOS } from '../services/meshos';
 
-import { WorkflowSearchSchema } from './meshflow';
+import { WorkflowSearchSchema } from './memflow';
 import { ProviderConfig, ProvidersConfig } from './provider';
 
 export type DB = {
@@ -43,7 +43,7 @@ export type Namespace = {
    */
   type: string;
   label: string;
-  module: 'hotmesh' | 'meshcall' | 'meshflow' | 'meshdata' | 'meshos';
+  module: 'hotmesh' | 'meshcall' | 'memflow' | 'meshdata' | 'meshos';
   entities: Entity[];
 };
 
