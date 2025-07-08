@@ -270,6 +270,61 @@ class TaskService {
       throw new Error('signaler.process:error: hook rule not found');
     }
   }
+
+  /**
+   * Enhanced processTimeHooks that uses notifications for PostgreSQL stores
+   */
+  async processTimeHooksWithNotifications(
+    timeEventCallback: (
+      jobId: string,
+      gId: string,
+      activityId: string,
+      type: WorkListTaskType,
+    ) => Promise<void>,
+  ): Promise<void> {
+    // Check if the store supports notifications
+    if (this.isPostgresStore() && this.supportsNotifications()) {
+      try {
+        this.logger.info('task-using-notification-mode', {
+          appId: this.store.appId,
+          message: 'Time scout using PostgreSQL LISTEN/NOTIFY mode for efficient task processing'
+        });
+        // Use the PostgreSQL store's notification-based approach
+        await (this.store as any).startTimeScoutWithNotifications(timeEventCallback);
+      } catch (error) {
+        this.logger.warn('task-notifications-fallback', {
+          appId: this.store.appId,
+          error: error.message,
+          fallbackTo: 'polling',
+          message: 'Notification mode failed - falling back to traditional polling'
+        });
+        // Fall back to regular polling
+        await this.processTimeHooks(timeEventCallback);
+      }
+    } else {
+      this.logger.info('task-using-polling-mode', {
+        appId: this.store.appId,
+        storeType: this.store.constructor.name,
+        message: 'Time scout using traditional polling mode (notifications not available)'
+      });
+      // Use regular polling for non-PostgreSQL stores
+      await this.processTimeHooks(timeEventCallback);
+    }
+  }
+
+  /**
+   * Check if this is a PostgreSQL store
+   */
+  private isPostgresStore(): boolean {
+    return this.store.constructor.name === 'PostgresStoreService';
+  }
+
+  /**
+   * Check if the store supports notifications
+   */
+  private supportsNotifications(): boolean {
+    return typeof (this.store as any).startTimeScoutWithNotifications === 'function';
+  }
 }
 
 export { TaskService };
