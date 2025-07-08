@@ -4,12 +4,13 @@
 
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)  ![made with typescript](https://img.shields.io/badge/built%20with-typescript-lightblue.svg)
 
-MemFlow is a drop-in Temporal-style engine that runs natively on Postgres — but with a twist:
-every workflow owns a *permanent*, JSON-backed context that lives beyond the main workflow.
-Any number of *hooks* (lightweight, thread-safe functions) can attach to that record at any
-time, read it, and safely write back incremental knowledge.
-Think **durable execution** + **shared, evolving memory** → perfect for human-in-the-loop
-processes and AI agents that learn over time.
+**HotMesh** is a Temporal-style workflow engine that runs natively on PostgreSQL — with a powerful twist: every workflow maintains a permanent, JSON-backed context that persists independently of the workflow itself.
+
+This means:
+
+* Any number of lightweight, thread-safe **hook workers** can attach to the same workflow record at any time.
+* These hooks can safely **read and incrementally write** to shared state.
+* The result is a **durable execution model** with **evolving memory**, ideal for **human-in-the-loop processes** and **AI agents that learn over time**.
 
 ---
 
