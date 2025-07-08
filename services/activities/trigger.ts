@@ -57,7 +57,7 @@ class Trigger extends Activity {
       this.mapJobData();
       this.adjacencyList = await this.filterAdjacent();
       const initialStatus = this.initStatus(options, this.adjacencyList.length);
-      await this.setStateNX(initialStatus);
+      await this.setStateNX(initialStatus, options?.entity);
       await this.setStatus(initialStatus);
 
       this.bindSearchData(options);
@@ -293,9 +293,9 @@ class Trigger extends Activity {
     return jobKey ? Pipe.resolve(jobKey, context) : '';
   }
 
-  async setStateNX(status?: number): Promise<void> {
+  async setStateNX(status?: number, entity?: string): Promise<void> {
     const jobId = this.context.metadata.jid;
-    if (!await this.store.setStateNX(jobId, this.engine.appId, status)) {
+    if (!await this.store.setStateNX(jobId, this.engine.appId, status, entity)) {
       throw new DuplicateJobError(jobId);
     }
   }

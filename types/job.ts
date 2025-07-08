@@ -126,6 +126,14 @@ type ExtensionType = {
    * will be added after the job is resumed if relevant.
    */
   pending?: number;
+
+  /**
+   * Entity to organize the job in the database by type.
+   * This is useful for querying and filtering jobs by type
+   * as the <your-app-id>.jobs table is organized by entity.
+   * Add partial indexes to the entity column to speed up queries.
+   */
+  entity?: string;
 };
 
 /**

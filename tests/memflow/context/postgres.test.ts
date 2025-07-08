@@ -61,6 +61,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
 
         handle = await client.workflow.start({
           namespace,
+          entity: 'user',
           args: ['HotMesh'],
           taskQueue: 'contextual',
           workflowName: 'example',
@@ -168,6 +169,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
 
         // Start the testExecHook workflow
         const testHandle = await client.workflow.start({
+          entity: 'user',
           namespace,
           args: ['ExecHookUser'],
           taskQueue: 'contextual',

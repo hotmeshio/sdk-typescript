@@ -217,7 +217,7 @@ export class ClientService {
      */
     start: async (options: WorkflowOptions): Promise<WorkflowHandleService> => {
       const taskQueueName = options.taskQueue ?? options.entity;
-      const workflowName = options.entity ?? options.workflowName;
+      const workflowName = options.taskQueue ? options.workflowName : (options.entity ?? options.workflowName);
       const trc = options.workflowTrace;
       const spn = options.workflowSpan;
       //hotmesh `topic` is equivalent to `queue+workflowname` pattern in other systems
@@ -255,6 +255,7 @@ export class ClientService {
           search: options?.search?.data,
           marker: options?.marker,
           pending: options?.pending,
+          entity: options?.entity,
         },
       );
       return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);

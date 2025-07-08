@@ -101,6 +101,7 @@ export interface SetOptions {
 export interface HSetOptions {
   nx?: boolean;
   ex?: number; // Expiry time in seconds
+  entity?: string;
 }
 
 export interface ZAddOptions {

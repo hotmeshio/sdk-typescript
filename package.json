@@ -33,7 +33,7 @@
     "test:memflow:collision": "NODE_ENV=test jest ./tests/memflow/collision/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:fatal": "NODE_ENV=test jest ./tests/memflow/fatal/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:goodbye": "NODE_ENV=test jest ./tests/memflow/goodbye/*.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:memflow:context": "NODE_ENV=test jest ./tests/memflow/context/postgres.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:memflow:context": "NODE_ENV=test HMSH_LOGLEVEL=debug jest ./tests/memflow/context/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:hello": "HMSH_TELEMETRY=debug HMSH_LOGLEVEL=debug HMSH_IS_CLUSTER=true NODE_ENV=test jest ./tests/memflow/helloworld/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:hook": "NODE_ENV=test jest ./tests/memflow/hook/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:interrupt": "NODE_ENV=test jest ./tests/memflow/interrupt/*.test.ts --detectOpenHandles --forceExit --verbose",
