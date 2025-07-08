@@ -1,15 +1,16 @@
-# HotMesh MemFlow
+# HotMesh
 
 **Permanent-Memory Workflows & AI Agents**
 
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)  ![made with typescript](https://img.shields.io/badge/built%20with-typescript-lightblue.svg)
 
-MemFlow is a drop-in Temporal-style engine that runs natively on Postgres — but with a twist:
-every workflow owns a *permanent*, JSON-backed context that lives beyond the main workflow.
-Any number of *hooks* (lightweight, thread-safe workers) can attach to that record at any
-time, read it, and safely write back incremental knowledge.
-Think **durable execution** + **shared, evolving memory** → perfect for human-in-the-loop
-processes and AI agents that learn over time.
+**HotMesh** is a Temporal-style workflow engine that runs natively on PostgreSQL — with a powerful twist: every workflow maintains a permanent, JSON-backed context that persists independently of the workflow itself.
+
+This means:
+
+* Any number of lightweight, thread-safe **hook workers** can attach to the same workflow record at any time.
+* These hooks can safely **read and incrementally write** to shared state.
+* The result is a **durable execution model** with **evolving memory**, ideal for **human-in-the-loop processes** and **AI agents that learn over time**.
 
 ---
 
@@ -61,10 +62,11 @@ async function main() {
 main().catch(console.error);
 ```
 
+---
 
 ## 🧠 How Permanent Memory Works
 
-* **Context = JSONB row** in `<yourappname>.jobs` table
+* **Context = persistent JSON record** – each workflow's memory is stored as a JSONB row in your Postgres database
 * **Atomic operations** (`set`, `merge`, `append`, `increment`, `toggle`, `delete`, …)
 * **Transactional** – every update participates in the workflow/DB transaction
 * **Time-travel-safe** – full replay compatibility; side-effect detector guarantees determinism
@@ -135,14 +137,37 @@ export async function hook2(name: string, kind: string): Promise<void> {
   await ctx.merge({ user: { lastSeen: new Date().toISOString() } });
   await MemFlow.workflow.signal('hook2-complete', { ok: true });
 }
+
+/* ------------ Worker/Hook Registration ------------ */
+async function startWorker() {
+  const mf = await MemFlow.init({
+    appId: 'my-app',
+    engine: {
+      connection: {
+        class: Postgres,
+        options: { connectionString: process.env.DATABASE_URL }
+      }
+    }
+  });
+
+  const worker = await mf.worker.create({
+    taskQueue: 'contextual',
+    workflow: example
+  });
+
+  await mf.worker.create({
+    taskQueue: 'contextual',
+    workflow: hook1
+  });
+
+  await mf.worker.create({
+    taskQueue: 'contextual',
+    workflow: hook2
+  });
+
+  console.log('Workers and hooks started and listening...');
+}
 ```
-
-**Highlights**
-
-* Hook functions are replay-safe.
-* Hook functions can safely read and write to the the *same* JSON context.
-* All context operations (`set`, `merge`, `append`, etc.) execute transactionally.
-* Context data is stored as JSONB; add partial indexes for improved query analysis.
 
 ---
 

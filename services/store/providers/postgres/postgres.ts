@@ -45,6 +45,7 @@ import {
   HMSH_CODE_INTERRUPT,
   MAX_DELAY,
   HMSH_SIGNAL_EXPIRE,
+  HMSH_FIDELITY_SECONDS,
 } from '../../../../modules/enums';
 import { WorkListTaskType } from '../../../../types/task';
 import { ThrottleOptions } from '../../../../types/quorum';
@@ -61,6 +62,7 @@ class PostgresStoreService extends StoreService<
 > {
   pgClient: PostgresClientType;
   kvTables: ReturnType<typeof KVTables>;
+  isScout: boolean = false;
 
   transact(): ProviderTransaction {
     return this.storeClient.transact();
@@ -97,6 +99,9 @@ class PostgresStoreService extends StoreService<
 
     //confirm db tables exist
     await this.kvTables.deploy(appId);
+
+    // Deploy time notification triggers
+    await this.deployTimeNotificationTriggers(appId);
 
     //note: getSettings will contact db to confirm r/w access
     const settings = await this.getSettings(true);
@@ -1334,6 +1339,268 @@ class PostgresStoreService extends StoreService<
       return globalRate;
     }
     return resolveRate(response, topic);
+  }
+
+  /**
+   * Deploy time-aware notification triggers and functions
+   */
+  private async deployTimeNotificationTriggers(appId: string): Promise<void> {
+    const schemaName = this.kvsql().safeName(appId);
+    const client = this.pgClient;
+    
+    try {
+      // Read the SQL template and replace schema placeholder
+      const fs = await import('fs');
+      const path = await import('path');
+      const sqlTemplate = fs.readFileSync(
+        path.join(__dirname, 'time-notify.sql'),
+        'utf8'
+      );
+      const sql = sqlTemplate.replace(/{schema}/g, schemaName);
+      
+      // Execute the entire SQL as one statement (functions contain $$ blocks with semicolons)
+      await client.query(sql);
+      
+      this.logger.info('postgres-time-notifications-deployed', {
+        appId,
+        schemaName,
+        message: 'Time-aware notifications ENABLED - using LISTEN/NOTIFY instead of polling'
+      });
+    } catch (error) {
+      this.logger.error('postgres-time-notifications-deploy-error', {
+        appId,
+        schemaName,
+        error: error.message
+      });
+      // Don't throw - fall back to polling mode
+    }
+  }
+
+  /**
+   * Enhanced time scout that uses LISTEN/NOTIFY to reduce polling
+   */
+  async startTimeScoutWithNotifications(
+    timeEventCallback: (
+      jobId: string,
+      gId: string,
+      activityId: string,
+      type: WorkListTaskType,
+    ) => Promise<void>,
+  ): Promise<void> {
+    const channelName = `time_hooks_${this.appId}`;
+    
+    try {
+      // Set up LISTEN for time notifications
+      await this.pgClient.query(`LISTEN "${channelName}"`);
+      
+      // Set up notification handler
+      this.pgClient.on('notification', (notification) => {
+        this.handleTimeNotification(notification, timeEventCallback);
+      });
+      
+      this.logger.debug('postgres-time-scout-notifications-started', {
+        appId: this.appId,
+        channelName
+      });
+      
+      // Start the enhanced time scout loop
+      await this.processTimeHooksWithNotifications(timeEventCallback);
+      
+    } catch (error) {
+      this.logger.error('postgres-time-scout-notifications-error', {
+        appId: this.appId,
+        error
+      });
+      // Fall back to regular polling mode
+      throw error;
+    }
+  }
+
+  /**
+   * Handle time notifications from PostgreSQL
+   */
+  private async handleTimeNotification(
+    notification: any,
+    timeEventCallback: (
+      jobId: string,
+      gId: string,
+      activityId: string,
+      type: WorkListTaskType,
+    ) => Promise<void>,
+  ): Promise<void> {
+    try {
+      const payload = JSON.parse(notification.payload);
+      const { type, app_id, next_awakening, ready_at } = payload;
+      
+      if (app_id !== this.appId) {
+        return; // Not for this app
+      }
+      
+      this.logger.debug('postgres-time-notification-received', {
+        type,
+        appId: app_id,
+        nextAwakening: next_awakening,
+        readyAt: ready_at
+      });
+      
+      if (type === 'time_hooks_ready') {
+        // Process any ready time hooks immediately
+        await this.processReadyTimeHooks(timeEventCallback);
+      } else if (type === 'time_schedule_updated') {
+        // Update our sleep timing if we're the time scout
+        await this.updateTimeScoutSleep(next_awakening);
+      }
+    } catch (error) {
+      this.logger.error('postgres-time-notification-handle-error', {
+        notification,
+        error
+      });
+    }
+  }
+
+  /**
+   * Process time hooks that are ready to be awakened
+   */
+  private async processReadyTimeHooks(
+    timeEventCallback: (
+      jobId: string,
+      gId: string,
+      activityId: string,
+      type: WorkListTaskType,
+    ) => Promise<void>,
+  ): Promise<void> {
+    let hasMoreTasks = true;
+    
+    while (hasMoreTasks) {
+      const workListTask = await this.getNextTask();
+      
+      if (Array.isArray(workListTask)) {
+        const [listKey, target, gId, activityId, type] = workListTask;
+        
+        if (type === 'child') {
+          // Skip child tasks - they're handled by ancestors
+        } else if (type === 'delist') {
+          // Delist the signal key
+          const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
+          await this.delistSignalKey(key, target);
+        } else {
+          // Process the task
+          await timeEventCallback(target, gId, activityId, type);
+        }
+      } else if (workListTask === true) {
+        // A worklist was emptied, continue processing
+        continue;
+      } else {
+        // No more tasks ready
+        hasMoreTasks = false;
+      }
+    }
+  }
+
+  /**
+   * Enhanced time scout process that uses notifications
+   */
+  private async processTimeHooksWithNotifications(
+    timeEventCallback: (
+      jobId: string,
+      gId: string,
+      activityId: string,
+      type: WorkListTaskType,
+    ) => Promise<void>,
+  ): Promise<void> {
+    let currentSleepTimeout: NodeJS.Timeout | null = null;
+    
+    // Function to calculate next sleep duration
+    const calculateNextSleep = async (): Promise<number> => {
+      const nextAwakeningTime = await this.getNextAwakeningTime();
+      
+      if (nextAwakeningTime) {
+        const sleepMs = nextAwakeningTime - Date.now();
+        return Math.max(sleepMs, 0);
+      }
+      
+      // Default sleep if no tasks scheduled
+      return HMSH_FIDELITY_SECONDS * 1000;
+    };
+    
+    // Main loop
+    while (true) {
+      try {
+        if (await this.shouldScout()) {
+          // Process any ready tasks
+          await this.processReadyTimeHooks(timeEventCallback);
+          
+          // Calculate next sleep
+          const sleepMs = await calculateNextSleep();
+          
+          // Sleep with ability to be interrupted by notifications
+          await new Promise<void>((resolve) => {
+            currentSleepTimeout = setTimeout(resolve, sleepMs);
+          });
+          
+        } else {
+          // Not the scout, sleep longer
+          await sleepFor(HMSH_SCOUT_INTERVAL_SECONDS * 1000);
+        }
+      } catch (error) {
+        this.logger.error('postgres-time-scout-loop-error', { error });
+        await sleepFor(1000);
+      }
+    }
+  }
+
+  /**
+   * Get the next awakening time from the database
+   */
+  private async getNextAwakeningTime(): Promise<number | null> {
+    const schemaName = this.kvsql().safeName(this.appId);
+    const appKey = `${this.appId}:time_range`;
+    
+    try {
+      const result = await this.pgClient.query(
+        `SELECT ${schemaName}.get_next_awakening_time($1) as next_time`,
+        [appKey]
+      );
+      
+      if (result.rows[0]?.next_time) {
+        return new Date(result.rows[0].next_time).getTime();
+      }
+      
+      return null;
+    } catch (error) {
+      this.logger.error('postgres-get-next-awakening-error', { error });
+      return null;
+    }
+  }
+
+  /**
+   * Update the time scout's sleep timing based on schedule changes
+   */
+  private async updateTimeScoutSleep(nextAwakening: number): Promise<void> {
+    // This could be used to interrupt current sleep and recalculate
+    // For now, just log the schedule update
+    this.logger.debug('postgres-time-schedule-updated', {
+      nextAwakening,
+      currentTime: Date.now()
+    });
+  }
+
+  /**
+   * Enhanced shouldScout that can handle notifications
+   */
+  async shouldScout(): Promise<boolean> {
+    const wasScout = this.isScout;
+    const isScout =
+      wasScout || (this.isScout = await this.reserveScoutRole('time'));
+    if (isScout) {
+      if (!wasScout) {
+        setTimeout(() => {
+          this.isScout = false;
+        }, HMSH_SCOUT_INTERVAL_SECONDS * 1_000);
+      }
+      return true;
+    }
+    return false;
   }
 }
 
