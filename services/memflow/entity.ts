@@ -4,26 +4,26 @@ import { KeyService, KeyType } from '../../modules/key';
 import { asyncLocalStorage } from '../../modules/storage';
 
 /**
- * The Context module provides methods for reading and writing
- * JSONB data to a workflow's context. The instance methods 
+ * The Entity module provides methods for reading and writing
+ * JSONB data to a workflow's entity. The instance methods 
  * exposed by this class are available for use from within 
  * a running workflow.
  * 
  * @example
  * ```typescript
- * //contextWorkflow.ts
+ * //entityWorkflow.ts
  * import { workflow } from '@hotmeshio/hotmesh';
  * 
- * export async function contextExample(): Promise<void> {
- *   const context = await workflow.context();
- *   await context.set({ user: { id: 123 } });
- *   await context.merge({ user: { name: "John" } });
- *   const user = await context.get("user");
+ * export async function entityExample(): Promise<void> {
+ *   const entity = await workflow.entity();
+ *   await entity.set({ user: { id: 123 } });
+ *   await entity.merge({ user: { name: "John" } });
+ *   const user = await entity.get("user");
  *   // user = { id: 123, name: "John" }
  * }
  * ```
  */
-export class Context {
+export class Entity {
   /**
    * @private
    */
@@ -85,11 +85,11 @@ export class Context {
   }
 
   /**
-   * Sets the entire context object. This replaces any existing context.
+   * Sets the entire entity object. This replaces any existing entity.
    * 
    * @example
-   * const context = await workflow.context();
-   * await context.set({ user: { id: 123, name: "John" } });
+   * const entity = await workflow.entity();
+   * await entity.set({ user: { id: 123, name: "John" } });
    */
   async set(value: any): Promise<any> {
     const ssGuid = this.getSearchSessionGuid();
@@ -100,7 +100,7 @@ export class Context {
       return JSON.parse(replay[ssGuid]);
     }
 
-    // Use single transactional call to update context and store replay value
+    // Use single transactional call to update entity and store replay value
     const result = await this.search.updateContext(this.jobId, {
       '@context': JSON.stringify(value),
       [ssGuid]: '', // Pass replay ID to hash module for transactional replay storage
@@ -110,11 +110,11 @@ export class Context {
   }
 
   /**
-   * Deep merges the provided object with the existing context
+   * Deep merges the provided object with the existing entity
    * 
    * @example
-   * const context = await workflow.context();
-   * await context.merge({ user: { email: "john@example.com" } });
+   * const entity = await workflow.entity();
+   * await entity.merge({ user: { email: "john@example.com" } });
    */
   async merge<T>(value: T): Promise<T> {
     const ssGuid = this.getSearchSessionGuid();
@@ -135,12 +135,12 @@ export class Context {
   }
 
   /**
-   * Gets a value from the context by path
+   * Gets a value from the entity by path
    * 
    * @example
-   * const context = await workflow.context();
-   * const user = await context.get("user");
-   * const email = await context.get("user.email");
+   * const entity = await workflow.entity();
+   * const user = await entity.get("user");
+   * const email = await entity.get("user.email");
    */
   async get(path?: string): Promise<any> {
     const ssGuid = this.getSearchSessionGuid();
@@ -148,19 +148,19 @@ export class Context {
     const replay = store?.get('replay') ?? {};
 
     if (ssGuid in replay) {
-      // Replay cache stores the already-extracted value, not full context
+      // Replay cache stores the already-extracted value, not full entity
       return JSON.parse(replay[ssGuid]);
     }
 
     let value: any;
 
     if (!path) {
-      // No path - fetch entire context with replay storage
+      // No path - fetch entire entity with replay storage
       const result = await this.search.updateContext(this.jobId, {
         '@context:get': '',
         [ssGuid]: '', // Pass replay ID to hash module
       });
-      // setFields returns the actual context value for @context:get operations
+      // setFields returns the actual entity value for @context:get operations
       value = result || {};
     } else {
       // Use PostgreSQL JSONB path extraction for specific paths with replay storage
@@ -176,11 +176,11 @@ export class Context {
   }
 
   /**
-   * Deletes a value from the context by path
+   * Deletes a value from the entity by path
    * 
    * @example
-   * const context = await workflow.context();
-   * await context.delete("user.email");
+   * const entity = await workflow.entity();
+   * await entity.delete("user.email");
    */
   async delete(path: string): Promise<any> {
     const ssGuid = this.getSearchSessionGuid();
@@ -204,8 +204,8 @@ export class Context {
    * Appends a value to an array at the specified path
    * 
    * @example
-   * const context = await workflow.context();
-   * await context.append("items", { id: 1, name: "New Item" });
+   * const entity = await workflow.entity();
+   * await entity.append("items", { id: 1, name: "New Item" });
    */
   async append(path: string, value: any): Promise<any[]> {
     const ssGuid = this.getSearchSessionGuid();
@@ -229,8 +229,8 @@ export class Context {
    * Prepends a value to an array at the specified path
    * 
    * @example
-   * const context = await workflow.context();
-   * await context.prepend("items", { id: 0, name: "First Item" });
+   * const entity = await workflow.entity();
+   * await entity.prepend("items", { id: 0, name: "First Item" });
    */
   async prepend(path: string, value: any): Promise<any[]> {
     const ssGuid = this.getSearchSessionGuid();
@@ -254,8 +254,8 @@ export class Context {
    * Removes an item from an array at the specified path and index
    * 
    * @example
-   * const context = await workflow.context();
-   * await context.remove("items", 0); // Remove first item
+   * const entity = await workflow.entity();
+   * await entity.remove("items", 0); // Remove first item
    */
   async remove(path: string, index: number): Promise<any[]> {
     const ssGuid = this.getSearchSessionGuid();
@@ -279,8 +279,8 @@ export class Context {
    * Increments a numeric value at the specified path
    * 
    * @example
-   * const context = await workflow.context();
-   * await context.increment("counter", 5);
+   * const entity = await workflow.entity();
+   * await entity.increment("counter", 5);
    */
   async increment(path: string, value: number = 1): Promise<number> {
     const ssGuid = this.getSearchSessionGuid();
@@ -304,8 +304,8 @@ export class Context {
    * Toggles a boolean value at the specified path
    * 
    * @example
-   * const context = await workflow.context();
-   * await context.toggle("settings.enabled");
+   * const entity = await workflow.entity();
+   * await entity.toggle("settings.enabled");
    */
   async toggle(path: string): Promise<boolean> {
     const ssGuid = this.getSearchSessionGuid();
@@ -329,8 +329,8 @@ export class Context {
    * Sets a value at the specified path only if it doesn't already exist
    * 
    * @example
-   * const context = await workflow.context();
-   * await context.setIfNotExists("user.id", 123);
+   * const entity = await workflow.entity();
+   * await entity.setIfNotExists("user.id", 123);
    */
   async setIfNotExists(path: string, value: any): Promise<any> {
     const ssGuid = this.getSearchSessionGuid();
@@ -368,4 +368,4 @@ export class Context {
     
     return output;
   }
-}
+} 

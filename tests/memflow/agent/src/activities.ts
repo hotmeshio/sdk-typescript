@@ -2,7 +2,7 @@
  * OpenAI Analyzer Activity
  * Analyzes research questions and provides structured task decomposition
  */
-export async function openaiAnalyzer(prompt: string, context: any, generation: number): Promise<any> {
+export async function openaiAnalyzer(prompt: string, entity: any, generation: number): Promise<any> {
   // This is a mock implementation for testing
   // In a real implementation, this would call OpenAI API
   
@@ -53,7 +53,7 @@ export async function openaiAnalyzer(prompt: string, context: any, generation: n
  * Research Planning Activity
  * Analyzes a research question and provides a structured decomposition plan
  */
-export async function researchPlanner(question: string, context: any, generation: number): Promise<any> {
+export async function researchPlanner(question: string, entity: any, generation: number): Promise<any> {
   // Simulate planning delay
   await new Promise(resolve => setTimeout(resolve, 150));
   

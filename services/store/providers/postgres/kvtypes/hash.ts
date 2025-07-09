@@ -22,8 +22,9 @@ export const hashModule = (context: KVSQL) => ({
     field: string,
     value: string,
     multi?: ProviderTransaction,
+    entity?: string,
   ): Promise<number> {
-    const { sql, params } = this._hset(key, { [field]: value }, { nx: true });
+    const { sql, params } = this._hset(key, { [field]: value }, { nx: true, entity });
     if (multi) {
       (multi as Multi).addCommand(sql, params, 'number');
       return Promise.resolve(0);
@@ -131,24 +132,24 @@ export const hashModule = (context: KVSQL) => ({
       if (options?.nx) {
         // Use WHERE NOT EXISTS to enforce nx
         sql = `
-          INSERT INTO ${targetTable} (id, key, status)
-          SELECT gen_random_uuid(), $1, $2
+          INSERT INTO ${targetTable} (id, key, status, entity)
+          SELECT gen_random_uuid(), $1, $2, $3
           WHERE NOT EXISTS (
             SELECT 1 FROM ${targetTable}
             WHERE key = $1 AND is_live
           )
           RETURNING 1 as count
         `;
-        params.push(key, fields[':']);
+        params.push(key, fields[':'], options?.entity ?? null);
       } else {
         // Update existing job or insert new one
         sql = `
-          INSERT INTO ${targetTable} (id, key, status)
-          VALUES (gen_random_uuid(), $1, $2)
+          INSERT INTO ${targetTable} (id, key, status, entity)
+          VALUES (gen_random_uuid(), $1, $2, $3)
           ON CONFLICT (key) WHERE is_live DO UPDATE SET status = EXCLUDED.status
           RETURNING 1 as count
         `;
-        params.push(key, fields[':']);
+        params.push(key, fields[':'], options?.entity ?? null);
       }
     } else if (isJobsTable && '@context' in fields) {
       // Handle JSONB context updates - use the jobs table directly

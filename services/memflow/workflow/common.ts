@@ -55,7 +55,7 @@ import { QuorumMessage } from '../../../types';
 import { UserMessage } from '../../../types/quorum';
 import { Search } from '../search';
 import { WorkerService } from '../worker';
-import { Context } from '../context';
+import { Entity } from '../entity';
 import { ExecHookOptions } from './execHook';
 
 // Common utilities and exports for all submodules
@@ -108,5 +108,5 @@ export {
   UserMessage,
   Search,
   WorkerService,
-  Context,
+  Entity,
 };

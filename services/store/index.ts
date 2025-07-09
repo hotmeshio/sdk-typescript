@@ -89,6 +89,7 @@ abstract class StoreService<
     jobId: string,
     appId: string,
     status?: number,
+    entity?: string,
   ): Promise<boolean>;
   abstract setState(
     state: StringAnyType,

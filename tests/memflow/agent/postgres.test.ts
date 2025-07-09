@@ -150,7 +150,7 @@ describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
         expect(worker).toBeDefined();
       });
 
-      it('should test infinite loop protection in agent context', async () => {
+      it('should test infinite loop protection in agent entity', async () => {
         const worker = await Worker.create({
           connection: {
             class: Postgres,
@@ -223,14 +223,14 @@ describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
         expect(Array.isArray(result.hookResults)).toBe(true);
         expect(result.hookResults.length).toBeGreaterThan(0);
         
-        // Validate final context
-        expect(result).toHaveProperty('finalContext');
-        expect(result.finalContext).toHaveProperty('originalQuestion');
-        expect(result.finalContext).toHaveProperty('generation', 0);
-        expect(result.finalContext).toHaveProperty('status', 'hooks-completed');
-        expect(result.finalContext).toHaveProperty('metrics');
-        expect(result.finalContext.metrics).toHaveProperty('totalHooks');
-        expect(result.finalContext.metrics).toHaveProperty('totalActivities');
+        // Validate final entity
+        expect(result).toHaveProperty('finalEntity');
+        expect(result.finalEntity).toHaveProperty('originalQuestion');
+        expect(result.finalEntity).toHaveProperty('generation', 0);
+        expect(result.finalEntity).toHaveProperty('status', 'hooks-completed');
+        expect(result.finalEntity).toHaveProperty('metrics');
+        expect(result.finalEntity.metrics).toHaveProperty('totalHooks');
+        expect(result.finalEntity.metrics).toHaveProperty('totalActivities');
         
         // Validate summary
         expect(result).toHaveProperty('summary');
@@ -239,7 +239,7 @@ describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
         expect(result.summary).toHaveProperty('generation', 0);
       });
 
-      it('should return the complete research agent results with context evolution', async () => {
+      it('should return the complete research agent results with entity evolution', async () => {
         const response = await handle.result();
         expect(response).toBeDefined();
         expect(typeof response).toBe('object');
@@ -281,30 +281,30 @@ describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
         expect(firstHookResult).toHaveProperty('status');
         expect(firstHookResult).toHaveProperty('generation');
         
-        // Validate final context structure
-        expect(result).toHaveProperty('finalContext');
-        expect(result.finalContext).toHaveProperty('originalQuestion');
-        expect(result.finalContext.originalQuestion).toContain('artificial intelligence');
-        expect(result.finalContext).toHaveProperty('generation', 0);
-        expect(result.finalContext).toHaveProperty('maxDepth', 2);
-        expect(result.finalContext).toHaveProperty('status', 'hooks-completed');
-        expect(result.finalContext).toHaveProperty('operations');
-        expect(result.finalContext).toHaveProperty('metrics');
+        // Validate final entity structure
+        expect(result).toHaveProperty('finalEntity');
+        expect(result.finalEntity).toHaveProperty('originalQuestion');
+        expect(result.finalEntity.originalQuestion).toContain('artificial intelligence');
+        expect(result.finalEntity).toHaveProperty('generation', 0);
+        expect(result.finalEntity).toHaveProperty('maxDepth', 2);
+        expect(result.finalEntity).toHaveProperty('status', 'hooks-completed');
+        expect(result.finalEntity).toHaveProperty('operations');
+        expect(result.finalEntity).toHaveProperty('metrics');
         
-        // Validate context operations
-        expect(Array.isArray(result.finalContext.operations)).toBe(true);
-        expect(result.finalContext.operations).toContain('ai-analysis-completed');
-        expect(result.finalContext.operations).toContain('plan-created');
-        expect(result.finalContext.operations).toContain('hooks-executed');
+        // Validate entity operations
+        expect(Array.isArray(result.finalEntity.operations)).toBe(true);
+        expect(result.finalEntity.operations).toContain('ai-analysis-completed');
+        expect(result.finalEntity.operations).toContain('plan-created');
+        expect(result.finalEntity.operations).toContain('hooks-executed');
         
-        // Validate context metrics
-        expect(result.finalContext.metrics).toHaveProperty('totalHooks');
-        expect(result.finalContext.metrics).toHaveProperty('totalGenerations');
-        expect(result.finalContext.metrics).toHaveProperty('totalActivities');
-        expect(result.finalContext.metrics).toHaveProperty('completedTasks');
-        expect(result.finalContext.metrics.totalHooks).toBeGreaterThan(0);
-        expect(result.finalContext.metrics.totalActivities).toBeGreaterThan(0);
-        expect(result.finalContext.metrics.completedTasks).toBeGreaterThan(0);
+        // Validate entity metrics
+        expect(result.finalEntity.metrics).toHaveProperty('totalHooks');
+        expect(result.finalEntity.metrics).toHaveProperty('totalGenerations');
+        expect(result.finalEntity.metrics).toHaveProperty('totalActivities');
+        expect(result.finalEntity.metrics).toHaveProperty('completedTasks');
+        expect(result.finalEntity.metrics.totalHooks).toBeGreaterThan(0);
+        expect(result.finalEntity.metrics.totalActivities).toBeGreaterThan(0);
+        expect(result.finalEntity.metrics.completedTasks).toBeGreaterThan(0);
         
         // Validate summary
         expect(result).toHaveProperty('summary');
@@ -319,35 +319,35 @@ describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
         expect(result.summary.complexity).toBe(result.analysis.complexity);
         expect(result.summary.nextActions).toEqual(result.analysis.nextActions);
         
-        // Validate that context contains research data if research hook was executed
+        // Validate that entity contains research data if research hook was executed
         if (result.analysis.nextActions.includes('research-hook')) {
-          expect(result.finalContext).toHaveProperty('research_0');
-          expect(result.finalContext.research_0).toHaveProperty('findings');
-          expect(result.finalContext.research_0).toHaveProperty('sources');
-          expect(result.finalContext.research_0).toHaveProperty('confidence');
+          expect(result.finalEntity).toHaveProperty('research_0');
+          expect(result.finalEntity.research_0).toHaveProperty('findings');
+          expect(result.finalEntity.research_0).toHaveProperty('sources');
+          expect(result.finalEntity.research_0).toHaveProperty('confidence');
         }
         
-        // Validate that context contains analysis data if analysis hook was executed
+        // Validate that entity contains analysis data if analysis hook was executed
         if (result.analysis.nextActions.includes('analysis-hook')) {
-          expect(result.finalContext).toHaveProperty('analysis_0');
-          expect(result.finalContext.analysis_0).toHaveProperty('patterns');
-          expect(result.finalContext.analysis_0).toHaveProperty('insights');
-          expect(result.finalContext.analysis_0).toHaveProperty('recommendations');
+          expect(result.finalEntity).toHaveProperty('analysis_0');
+          expect(result.finalEntity.analysis_0).toHaveProperty('patterns');
+          expect(result.finalEntity.analysis_0).toHaveProperty('insights');
+          expect(result.finalEntity.analysis_0).toHaveProperty('recommendations');
         }
         
         // If decomposition hook was executed, validate child workflows
         if (result.analysis.nextActions.includes('decomposition-hook')) {
-          expect(result.finalContext).toHaveProperty('childWorkflows');
-          expect(Array.isArray(result.finalContext.childWorkflows)).toBe(true);
+          expect(result.finalEntity).toHaveProperty('childWorkflows');
+          expect(Array.isArray(result.finalEntity.childWorkflows)).toBe(true);
           // Note: childWorkflows may be empty if max depth was reached
         }
         
         console.log('✅ Research Agent Test Results:');
-        console.log(`   Question: "${result.finalContext.originalQuestion}"`);
+        console.log(`   Question: "${result.finalEntity.originalQuestion}"`);
         console.log(`   Complexity: ${result.analysis.complexity}`);
         console.log(`   Total Hooks: ${result.summary.totalHooks}`);
-        console.log(`   Total Activities: ${result.finalContext.metrics.totalActivities}`);
-        console.log(`   Operations: ${result.finalContext.operations.join(', ')}`);
+        console.log(`   Total Activities: ${result.finalEntity.metrics.totalActivities}`);
+        console.log(`   Operations: ${result.finalEntity.operations.join(', ')}`);
         console.log(`   Next Actions: ${result.analysis.nextActions.join(', ')}`);
         
       }, 60_000); // 60 seconds timeout for complex AI workflow

@@ -738,6 +738,7 @@ abstract class RedisStoreBase<
     jobId: string,
     appId: string,
     status?: number,
+    entity?: string, //unspported
   ): Promise<boolean> {
     const hashKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
     const result = await this.storeClient[this.commands.hsetnx](

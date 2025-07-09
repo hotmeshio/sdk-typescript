@@ -1,10 +1,10 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Permanent-Memory Workflows & AI Agents",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
-  "homepage": "https://hotmesh.io/",
+  "homepage": "https://github.com/hotmeshio/sdk-typescript/",
   "publishConfig": {
     "access": "public"
   },
@@ -33,7 +33,8 @@
     "test:memflow:collision": "NODE_ENV=test jest ./tests/memflow/collision/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:fatal": "NODE_ENV=test jest ./tests/memflow/fatal/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:goodbye": "NODE_ENV=test jest ./tests/memflow/goodbye/*.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:memflow:context": "NODE_ENV=test jest ./tests/memflow/context/postgres.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:memflow:entity": "NODE_ENV=test HMSH_LOGLEVEL=debug jest ./tests/memflow/entity/postgres.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:memflow:agent": "NODE_ENV=test HMSH_LOGLEVEL=debug jest ./tests/memflow/agent/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:hello": "HMSH_TELEMETRY=debug HMSH_LOGLEVEL=debug HMSH_IS_CLUSTER=true NODE_ENV=test jest ./tests/memflow/helloworld/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:hook": "NODE_ENV=test jest ./tests/memflow/hook/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:memflow:interrupt": "NODE_ENV=test jest ./tests/memflow/interrupt/*.test.ts --detectOpenHandles --forceExit --verbose",

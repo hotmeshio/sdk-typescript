@@ -741,12 +741,15 @@ class PostgresStoreService extends StoreService<
     jobId: string,
     appId: string,
     status?: number,
+    entity?: string,
   ): Promise<boolean> {
     const hashKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
     const result = await this.kvsql().hsetnx(
       hashKey,
       ':',
       status?.toString() ?? '1',
+      undefined, //multi
+      entity,
     );
     return this.isSuccessful(result);
   }
