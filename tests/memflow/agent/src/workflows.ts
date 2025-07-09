@@ -6,10 +6,10 @@ import { openaiAnalyzer, researchPlanner } from './activities';
  * Coordinates AI-driven research task decomposition and execution
  */
 export async function researchAgent(question: string, maxDepth: number = 3): Promise<any> {
-  const context = await MemFlow.workflow.context();
+  const entity = await MemFlow.workflow.entity();
   
-  // Initialize the research context
-  await context.set({
+  // Initialize the research entity
+  await entity.set({
     originalQuestion: question,
     generation: 0,
     maxDepth,
@@ -38,21 +38,21 @@ export async function researchAgent(question: string, maxDepth: number = 3): Pro
   // Step 1: Analyze the question with AI
   const analysis = await activities.openaiAnalyzer(
     `Analyze this research question: "${question}". Determine complexity and recommend approach.`,
-    await context.get(),
+    await entity.get(),
     0
   );
 
-  // Update context with analysis
-  await context.merge({
+  // Update entity with analysis
+  await entity.merge({
     analysis,
     status: 'analyzed',
     metrics: { totalActivities: 1 }
   });
 
   // Step 2: Create execution plan
-  const plan = await activities.researchPlanner(question, await context.get(), 0);
+  const plan = await activities.researchPlanner(question, await entity.get(), 0);
   
-  await context.merge({
+  await entity.merge({
     plan,
     status: 'planned'
   });
@@ -100,24 +100,24 @@ export async function researchAgent(question: string, maxDepth: number = 3): Pro
   // Wait for all hooks to complete
   const hookResults = await Promise.all(hookPromises);
   
-  // Update context with hook results
-  await context.merge({
+  // Update entity with hook results
+  await entity.merge({
     hookResults,
     status: 'hooks-completed',
     metrics: { totalHooks: hookResults.length }
   });
 
   // Append operations
-  await context.append('operations', 'ai-analysis-completed');
-  await context.append('operations', 'plan-created');
-  await context.append('operations', 'hooks-executed');
+  await entity.append('operations', 'ai-analysis-completed');
+  await entity.append('operations', 'plan-created');
+  await entity.append('operations', 'hooks-executed');
   
   // Increment metrics
-  await context.increment('metrics.completedTasks', hookResults.length);
-  await context.increment('metrics.totalGenerations', 1);
+  await entity.increment('metrics.completedTasks', hookResults.length);
+  await entity.increment('metrics.totalGenerations', 1);
 
-  // Get final context
-  const finalContext = await context.get();
+  // Get final entity
+  const finalEntity = await entity.get();
   
   return {
     success: true,
@@ -125,7 +125,7 @@ export async function researchAgent(question: string, maxDepth: number = 3): Pro
     analysis,
     plan,
     hookResults,
-    finalContext,
+    finalEntity,
     summary: {
       totalHooks: hookResults.length,
       complexity: analysis.complexity,
@@ -139,7 +139,7 @@ export async function researchAgent(question: string, maxDepth: number = 3): Pro
  * Research Hook - Gathers and validates information
  */
 export async function researchHook(question: string, hookType: string, generation: number): Promise<any> {
-  const context = await MemFlow.workflow.context();
+  const entity = await MemFlow.workflow.entity();
   
   // Simulate research processing
   await MemFlow.workflow.sleepFor('1 second');
@@ -151,8 +151,8 @@ export async function researchHook(question: string, hookType: string, generatio
     `Validated source information for: ${question}`
   ];
   
-  // Update shared context with findings
-  await context.merge({
+  // Update shared entity with findings
+  await entity.merge({
     [`research_${generation}`]: {
       findings,
       sources: ['Source A', 'Source B', 'Source C'],
@@ -181,15 +181,15 @@ export async function researchHook(question: string, hookType: string, generatio
  * Analysis Hook - Analyzes and synthesizes information
  */
 export async function analysisHook(question: string, hookType: string, generation: number): Promise<any> {
-  const context = await MemFlow.workflow.context();
+  const entity = await MemFlow.workflow.entity();
   
   // Simulate analysis processing
   await MemFlow.workflow.sleepFor('1.5 seconds');
   
-  // Get current context to analyze existing data
-  const currentContext = await context.get();
+  // Get current entity to analyze existing data
+  const currentEntity = await entity.get();
   
-  // Create analysis based on existing context
+  // Create analysis based on existing entity
   const analysis = {
     patterns: ['Pattern A identified', 'Pattern B identified'],
     insights: [`Key insight about: ${question}`, 'Cross-reference insight'],
@@ -197,12 +197,12 @@ export async function analysisHook(question: string, hookType: string, generatio
     confidence: 0.90
   };
   
-  // Update context with analysis
-  await context.merge({
+  // Update entity with analysis
+  await entity.merge({
     [`analysis_${generation}`]: {
       ...analysis,
       timestamp: new Date().toISOString(),
-      basedOn: Object.keys(currentContext.knowledge || {})
+      basedOn: Object.keys(currentEntity.knowledge || {})
     }
   });
   
@@ -223,7 +223,7 @@ export async function analysisHook(question: string, hookType: string, generatio
  * Decomposition Hook - Breaks down complex questions and spawns child workflows
  */
 export async function decompositionHook(question: string, maxDepth: number, generation: number): Promise<any> {
-  const context = await MemFlow.workflow.context();
+  const entity = await MemFlow.workflow.entity();
   
   // Check if we've reached max depth
   if (generation >= maxDepth) {
@@ -244,7 +244,7 @@ export async function decompositionHook(question: string, maxDepth: number, gene
   const subQuestions = [
     `Sub-question 1: ${question.substring(0, 20)}...?`,
     `Sub-question 2: What are the implications of ${question}?`,
-    `Sub-question 3: How does this relate to broader context?`
+    `Sub-question 3: How does this relate to broader entity?`
   ];
   
   const childWorkflows: any[] = [];
@@ -270,8 +270,8 @@ export async function decompositionHook(question: string, maxDepth: number, gene
         status: 'completed'
       });
       
-      // Update context with child results
-      await context.merge({
+      // Update entity with child results
+      await entity.merge({
         [`child_${generation + 1}_${i}`]: childResult
       });
       
@@ -287,11 +287,11 @@ export async function decompositionHook(question: string, maxDepth: number, gene
   }
   
   // Update generation counter
-  await context.increment('metrics.totalGenerations', childWorkflows.length);
+  await entity.increment('metrics.totalGenerations', childWorkflows.length);
   
   // Update child workflows list
   for (const childWorkflow of childWorkflows) {
-    await context.append('childWorkflows', childWorkflow);
+    await entity.append('childWorkflows', childWorkflow);
   }
   
   const result = {
@@ -312,13 +312,13 @@ export async function decompositionHook(question: string, maxDepth: number, gene
  * Test workflow for validation hook functionality
  */
 export async function validationHook(question: string, hookType: string, generation: number): Promise<any> {
-  const context = await MemFlow.workflow.context();
+  const entity = await MemFlow.workflow.entity();
   
   // Simulate validation processing
   await MemFlow.workflow.sleepFor('800ms');
   
-  // Get current context to validate against
-  const currentContext = await context.get();
+  // Get current entity to validate against
+  const currentEntity = await entity.get();
   
   // Create validation results
   const validation = {
@@ -329,12 +329,12 @@ export async function validationHook(question: string, hookType: string, generat
     errors: []
   };
   
-  // Update context with validation
-  await context.merge({
+  // Update entity with validation
+  await entity.merge({
     [`validation_${generation}`]: {
       ...validation,
       timestamp: new Date().toISOString(),
-      validatedContext: Object.keys(currentContext)
+      validatedEntity: Object.keys(currentEntity)
     }
   });
   

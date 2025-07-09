@@ -19,7 +19,7 @@ import { all } from './all';
 import { sleepFor } from './sleepFor';
 import { waitFor } from './waitFor';
 import { asyncLocalStorage, WorkerService, HotMesh } from './common';
-import { context } from './contextMethods';
+import { entity } from './entityMethods';
 
 /**
  * The WorkflowService class provides a set of static methods to be used within a workflow function.
@@ -63,7 +63,7 @@ export class WorkflowService {
   static execHook = execHook;
   static proxyActivities = proxyActivities;
   static search = search;
-  static context = context;
+  static entity = entity;
   static random = random;
   static signal = signal;
   static hook = hook;

@@ -16,8 +16,8 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = MemFlow;
 
-describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
-  const prefix = 'context-';
+describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
+  const prefix = 'entity-';
   const namespace = 'prod';
   let client: ClientService;
   let workflowGuid: string;
@@ -63,7 +63,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
           namespace,
           entity: 'user',
           args: ['HotMesh'],
-          taskQueue: 'contextual',
+          taskQueue: 'entityqueue',
           workflowName: 'example',
           workflowId: workflowGuid,
           expire: 120, //keep in DB after completion for 120 seconds (expire is a soft-delete)
@@ -82,7 +82,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
             options: postgres_options,
           },
           namespace,
-          taskQueue: 'contextual',
+          taskQueue: 'entityqueue',
           workflow: workflows.example,
         });
         await worker.run();
@@ -96,7 +96,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
             options: postgres_options,
           },
           namespace,
-          taskQueue: 'contextual',
+          taskQueue: 'entityqueue',
           workflow: workflows.hook1,
         });
         await worker.run();
@@ -110,7 +110,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
             options: postgres_options,
           },
           namespace,
-          taskQueue: 'contextual',
+          taskQueue: 'entityqueue',
           workflow: workflows.hook2,
         });
         await worker.run();
@@ -125,7 +125,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
             options: postgres_options,
           },
           namespace,
-          taskQueue: 'contextual',
+          taskQueue: 'entityqueue',
           workflow: workflows.testInfiniteLoopProtection,
         });
         await worker.run();
@@ -134,7 +134,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
         const testHandle = await client.workflow.start({
           namespace,
           args: ['TestUser'],
-          taskQueue: 'contextual',
+          taskQueue: 'entityqueue',
           workflowName: 'testInfiniteLoopProtection',
           workflowId: prefix + 'infinite-loop-test-' + guid(),
           expire: 30,
@@ -162,7 +162,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
             options: postgres_options,
           },
           namespace,
-          taskQueue: 'contextual',
+          taskQueue: 'entityqueue',
           workflow: workflows.testExecHook,
         });
         await worker.run();
@@ -172,7 +172,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
           entity: 'user',
           namespace,
           args: ['ExecHookUser'],
-          taskQueue: 'contextual',
+          taskQueue: 'entityqueue',
           workflowName: 'testExecHook',
           workflowId: prefix + 'exec-hook-test-' + guid(),
           expire: 30,
@@ -189,9 +189,9 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
         expect(result).toHaveProperty('success', true);
         expect(result).toHaveProperty('message', 'ExecHook functionality working correctly');
         expect(result).toHaveProperty('signalResult');
-        expect(result).toHaveProperty('initialContext');
-        expect(result).toHaveProperty('mergedContext');
-        expect(result).toHaveProperty('finalContext');
+        expect(result).toHaveProperty('initialEntity');
+        expect(result).toHaveProperty('mergedEntity');
+        expect(result).toHaveProperty('finalEntity');
         
         // Validate the signal result structure (hook1 response)
         const signalResult = result.signalResult;
@@ -202,60 +202,60 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
         expect(signalResult).toHaveProperty('data');
         expect(signalResult.data).toContain('Processed by hook1: ExecHookUser-execHook-test');
         
-        // Validate initial context structure
-        const initialContext = result.initialContext;
-        expect(initialContext).toHaveProperty('testType', 'execHook');
-        expect(initialContext).toHaveProperty('user');
-        expect(initialContext.user).toHaveProperty('name', 'ExecHookUser');
-        expect(initialContext.user).toHaveProperty('id');
-        expect(initialContext.user.id).toMatch(/^user-\d+$/);
-        expect(initialContext).toHaveProperty('startTime');
-        expect(initialContext).toHaveProperty('status', 'initialized');
-        expect(initialContext).toHaveProperty('operations');
-        expect(Array.isArray(initialContext.operations)).toBe(true);
-        expect(initialContext.operations).toHaveLength(0);
-        expect(initialContext).toHaveProperty('metrics');
-        expect(initialContext.metrics).toHaveProperty('hookCount', 0);
-        expect(initialContext.metrics).toHaveProperty('totalProcessingTime', 0);
+        // Validate initial entity structure
+        const initialEntity = result.initialEntity;
+        expect(initialEntity).toHaveProperty('testType', 'execHook');
+        expect(initialEntity).toHaveProperty('user');
+        expect(initialEntity.user).toHaveProperty('name', 'ExecHookUser');
+        expect(initialEntity.user).toHaveProperty('id');
+        expect(initialEntity.user.id).toMatch(/^user-\d+$/);
+        expect(initialEntity).toHaveProperty('startTime');
+        expect(initialEntity).toHaveProperty('status', 'initialized');
+        expect(initialEntity).toHaveProperty('operations');
+        expect(Array.isArray(initialEntity.operations)).toBe(true);
+        expect(initialEntity.operations).toHaveLength(0);
+        expect(initialEntity).toHaveProperty('metrics');
+        expect(initialEntity.metrics).toHaveProperty('hookCount', 0);
+        expect(initialEntity.metrics).toHaveProperty('totalProcessingTime', 0);
         
-        // Validate merged context structure
-        const mergedContext = result.mergedContext;
-        expect(mergedContext).toHaveProperty('testType', 'execHook');
-        expect(mergedContext).toHaveProperty('status', 'hook-completed');
-        expect(mergedContext).toHaveProperty('hookResult');
-        expect(mergedContext).toHaveProperty('completedAt');
-        expect(mergedContext).toHaveProperty('metrics');
-        expect(mergedContext.metrics).toHaveProperty('hookCount', 1);
-        expect(mergedContext.metrics).toHaveProperty('totalProcessingTime', 2000);
+        // Validate merged entity structure
+        const mergedEntity = result.mergedEntity;
+        expect(mergedEntity).toHaveProperty('testType', 'execHook');
+        expect(mergedEntity).toHaveProperty('status', 'hook-completed');
+        expect(mergedEntity).toHaveProperty('hookResult');
+        expect(mergedEntity).toHaveProperty('completedAt');
+        expect(mergedEntity).toHaveProperty('metrics');
+        expect(mergedEntity.metrics).toHaveProperty('hookCount', 1);
+        expect(mergedEntity.metrics).toHaveProperty('totalProcessingTime', 2000);
         
-        // Validate final context structure (should include operations)
-        const finalContext = result.finalContext;
-        expect(finalContext).toHaveProperty('testType', 'execHook');
-        expect(finalContext).toHaveProperty('status', 'hook-completed');
-        expect(finalContext).toHaveProperty('hookResult');
-        expect(finalContext).toHaveProperty('operations');
-        expect(Array.isArray(finalContext.operations)).toBe(true);
-        expect(finalContext.operations).toContain('execHook-executed');
-        expect(finalContext.operations).toContain('context-merged');
-        expect(finalContext.operations).toHaveLength(2);
+        // Validate final entity structure (should include operations)
+        const finalEntity = result.finalEntity;
+        expect(finalEntity).toHaveProperty('testType', 'execHook');
+        expect(finalEntity).toHaveProperty('status', 'hook-completed');
+        expect(finalEntity).toHaveProperty('hookResult');
+        expect(finalEntity).toHaveProperty('operations');
+        expect(Array.isArray(finalEntity.operations)).toBe(true);
+        expect(finalEntity.operations).toContain('execHook-executed');
+        expect(finalEntity.operations).toContain('entity-merged');
+        expect(finalEntity.operations).toHaveLength(2);
         
-        // Validate that hook result is properly embedded in final context
-        expect(finalContext.hookResult).toHaveProperty('hook', 'hook1');
-        expect(finalContext.hookResult).toHaveProperty('name', 'ExecHookUser');
-        expect(finalContext.hookResult).toHaveProperty('hookType', 'execHook-test');
+        // Validate that hook result is properly embedded in final entity
+        expect(finalEntity.hookResult).toHaveProperty('hook', 'hook1');
+        expect(finalEntity.hookResult).toHaveProperty('name', 'ExecHookUser');
+        expect(finalEntity.hookResult).toHaveProperty('hookType', 'execHook-test');
         
         // Validate user data is preserved
-        expect(finalContext).toHaveProperty('user');
-        expect(finalContext.user).toHaveProperty('name', 'ExecHookUser');
-        expect(finalContext.user).toHaveProperty('id');
+        expect(finalEntity).toHaveProperty('user');
+        expect(finalEntity.user).toHaveProperty('name', 'ExecHookUser');
+        expect(finalEntity.user).toHaveProperty('id');
         
         // Validate timestamps
-        expect(finalContext).toHaveProperty('startTime');
-        expect(finalContext).toHaveProperty('completedAt');
-        expect(new Date(finalContext.completedAt).getTime()).toBeGreaterThan(new Date(finalContext.startTime).getTime());
+        expect(finalEntity).toHaveProperty('startTime');
+        expect(finalEntity).toHaveProperty('completedAt');
+        expect(new Date(finalEntity.completedAt).getTime()).toBeGreaterThan(new Date(finalEntity.startTime).getTime());
       });
 
-      it('should return the evolved context', async () => {
+      it('should return the evolved entity', async () => {
         const response = await handle.result();
         expect(response).toBeDefined();
         expect(typeof response).toBe('object');
@@ -266,7 +266,7 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
         // Validate the response structure
         expect(result).toHaveProperty('message');
         expect(result).toHaveProperty('hookResults');
-        expect(result).toHaveProperty('finalContext');
+        expect(result).toHaveProperty('finalEntity');
         
         // Validate message
         expect(typeof result.message).toBe('string');
@@ -301,35 +301,35 @@ describe('MEMFLOW | context | `get, set, merge` | Postgres', () => {
         expect(result.hookResults.hook2.name).toBe('HotMesh');
         expect(result.hookResults.hook2.processingDetails.type).toBe('advanced');
         
-        // Validate final context
-        expect(result.finalContext).toBeDefined();
-        expect(typeof result.finalContext).toBe('object');
-        expect(result.finalContext).toHaveProperty('user');
-        expect(result.finalContext).toHaveProperty('hookResults');
-        expect(result.finalContext).toHaveProperty('operations');
-        expect(result.finalContext).toHaveProperty('metrics');
+        // Validate final entity
+        expect(result.finalEntity).toBeDefined();
+        expect(typeof result.finalEntity).toBe('object');
+        expect(result.finalEntity).toHaveProperty('user');
+        expect(result.finalEntity).toHaveProperty('hookResults');
+        expect(result.finalEntity).toHaveProperty('operations');
+        expect(result.finalEntity).toHaveProperty('metrics');
         
-        // Validate context user data
-        expect(result.finalContext.user).toBeDefined();
-        expect(result.finalContext.user.name).toBe('HotMesh');
-        expect(result.finalContext.user.language).toBe('en');
-        expect(result.finalContext.user).toHaveProperty('lastUpdated');
-        expect(result.finalContext.user.processedBy).toBe('example-workflow');
+        // Validate entity user data
+        expect(result.finalEntity.user).toBeDefined();
+        expect(result.finalEntity.user.name).toBe('HotMesh');
+        expect(result.finalEntity.user.language).toBe('en');
+        expect(result.finalEntity.user).toHaveProperty('lastUpdated');
+        expect(result.finalEntity.user.processedBy).toBe('example-workflow');
         
-        // Validate context operations
-        expect(Array.isArray(result.finalContext.operations)).toBe(true);
-        expect(result.finalContext.operations).toContain('hook1-executed');
-        expect(result.finalContext.operations).toContain('hook2-executed');
+        // Validate entity operations
+        expect(Array.isArray(result.finalEntity.operations)).toBe(true);
+        expect(result.finalEntity.operations).toContain('hook1-executed');
+        expect(result.finalEntity.operations).toContain('hook2-executed');
         
-        // Validate context metrics
-        expect(result.finalContext.metrics).toBeDefined();
-        expect(result.finalContext.metrics.totalHooks).toBe(2);
-        expect(result.finalContext.metrics.count).toBe(5);
+        // Validate entity metrics
+        expect(result.finalEntity.metrics).toBeDefined();
+        expect(result.finalEntity.metrics.totalHooks).toBe(2);
+        expect(result.finalEntity.metrics.count).toBe(5);
         
-        // Validate hook status in context
-        expect(result.finalContext).toHaveProperty('hookResults');
-        expect(result.finalContext.hookResults).toHaveProperty('hook1');
-        expect(result.finalContext.hookResults).toHaveProperty('hook2');
+        // Validate hook status in entity
+        expect(result.finalEntity).toHaveProperty('hookResults');
+        expect(result.finalEntity.hookResults).toHaveProperty('hook1');
+        expect(result.finalEntity.hookResults).toHaveProperty('hook2');
       }, 20_000);
     });
   });

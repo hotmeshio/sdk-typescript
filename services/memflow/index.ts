@@ -4,7 +4,7 @@ import { ContextType } from '../../types/memflow';
 import { ClientService } from './client';
 import { ConnectionService } from './connection';
 import { Search } from './search';
-import { Context } from './context';
+import { Entity } from './entity';
 import { WorkerService } from './worker';
 import { WorkflowService } from './workflow';
 import { WorkflowHandleService } from './handle';
@@ -92,7 +92,7 @@ class MemFlowClass {
   /**
    * @private
    */
-  static Context: typeof Context = Context;
+  static Entity: typeof Entity = Entity;
 
   /**
    * The Handle provides methods to interact with a running

@@ -5,6 +5,7 @@ import { MemFlow } from './services/memflow';
 import { ClientService as Client } from './services/memflow/client';
 import { ConnectionService as Connection } from './services/memflow/connection';
 import { Search } from './services/memflow/search';
+import { Entity } from './services/memflow/entity';
 import { WorkerService as Worker } from './services/memflow/worker';
 import { WorkflowService as workflow } from './services/memflow/workflow';
 import { WorkflowHandleService as WorkflowHandle } from './services/memflow/handle';
@@ -20,8 +21,6 @@ import { PostgresConnection as ConnectorPostgres } from './services/connector/pr
 import { RedisConnection as ConnectorIORedis } from './services/connector/providers/ioredis';
 import { RedisConnection as ConnectorRedis } from './services/connector/providers/redis';
 import { NatsConnection as ConnectorNATS } from './services/connector/providers/nats';
-
-//const { Client, Connection, Search, Worker, workflow } = MemFlow;
 
 export {
   //Provider Connectors
@@ -44,6 +43,7 @@ export {
   Connection,
   proxyActivities,
   Search,
+  Entity,
   Worker,
   workflow,
   WorkflowHandle,

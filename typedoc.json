@@ -13,7 +13,7 @@
     "services/memflow/client.ts",
     "services/memflow/handle.ts",
     "services/memflow/search.ts",
-    "services/memflow/context.ts",
+    "services/memflow/entity.ts",
     "services/memflow/worker.ts",
     "services/memflow/workflow.ts",
     "services/memflow/connection.ts",
