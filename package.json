@@ -1,10 +1,10 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "Permanent-Memory Workflows & AI Agents",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
-  "homepage": "https://hotmesh.io/",
+  "homepage": "https://github.com/hotmeshio/sdk-typescript/",
   "publishConfig": {
     "access": "public"
   },
