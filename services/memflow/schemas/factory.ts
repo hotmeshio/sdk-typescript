@@ -18,7 +18,7 @@
  * * Master Data Management systems
  */
 
-const APP_VERSION = '4';
+const APP_VERSION = '5';
 const APP_ID = 'memflow';
 
 /**
@@ -83,6 +83,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
             signalIn:
               description: if false, the job will not support subordinated hooks
               type: boolean
+            entity:
+              description: the entity type for this workflow instance
+              type: string
 
       output:
         schema:
@@ -117,6 +120,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
         trigger:
           title: Main Flow Trigger
           type: trigger
+          entity: '{$self.input.data.entity}'
           job:
             maps:
               done: false
@@ -246,6 +250,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   await:
                     type: string
                     description: when set to false, do not await the child flow's completion
+                  entity:
+                    type: string
+                    description: the entity type for the child workflow
             591:
               schema:
                 type: object
@@ -364,6 +371,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   description: the arguments to pass to the activity
                   items:
                     type: string
+                entity:
+                  type: string
+                  description: the entity type for the child workflow
             maps:
               arguments: '{worker.output.data.arguments}'
               workflowDimension: '{worker.output.data.workflowDimension}'
@@ -376,6 +386,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               workflowId: '{worker.output.data.workflowId}'
               workflowName: '{worker.output.data.workflowName}'
               workflowTopic: '{worker.output.data.workflowTopic}'
+              entity: '{worker.output.data.entity}'
               backoffCoefficient:
                 '@pipe':
                   - ['{worker.output.data.backoffCoefficient}','{trigger.output.data.backoffCoefficient}']
@@ -989,6 +1000,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   await:
                     type: string
                     description: when set to false, do not await the child flow's completion
+                  entity:
+                    type: string
+                    description: the entity type for the child workflow
             591:
               schema:
                 type: object
@@ -1106,6 +1120,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   description: the arguments to pass to the activity
                   items:
                     type: string
+                entity:
+                  type: string
+                  description: the entity type for the child workflow
             maps:
               arguments: '{signaler_worker.output.data.arguments}'
               workflowDimension: '{signaler_worker.output.data.workflowDimension}'
@@ -1118,6 +1135,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               workflowId: '{signaler_worker.output.data.workflowId}'
               workflowName: '{signaler_worker.output.data.workflowName}'
               workflowTopic: '{signaler_worker.output.data.workflowTopic}'
+              entity: '{signaler_worker.output.data.entity}'
               backoffCoefficient:
                 '@pipe':
                   - ['{signaler_worker.output.data.backoffCoefficient}','{trigger.output.data.backoffCoefficient}']
@@ -1872,6 +1890,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   description: the arguments to pass to the activity
                   items:
                     type: string
+                entity:
+                  type: string
+                  description: the entity type for the child workflow
             maps:
               arguments:
                 '@pipe':
@@ -1942,6 +1963,11 @@ const getWorkflowYAML = (app: string, version: string): string => {
                 '@pipe':
                   - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                   - ['{@array.get}', maximumInterval]
+                  - ['{@object.get}']
+              entity:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', entity]
                   - ['{@object.get}']
           output:
             schema:

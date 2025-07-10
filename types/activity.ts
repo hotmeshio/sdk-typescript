@@ -21,6 +21,7 @@ interface BaseActivity {
   statusThreshold?: number; //default is 0; set to 1 to ensure not last standing; message will be ignored as if too late to process
   statusThresholdType?: 'stop' | 'throw' | 'stall'; //default is stop; must explicitly set to throw to throw an error or stall to stall
   input?: Record<string, any>;
+  entity?: string; //for triggers the type
   output?: Record<string, any>;
   settings?: Record<string, any>;
   job?: Record<string, any>;
@@ -84,6 +85,7 @@ interface TriggerActivityStats {
 interface TriggerActivity extends BaseActivity {
   type: 'trigger';
   stats?: TriggerActivityStats;
+  entity?: string;
 }
 
 interface AwaitActivity extends BaseActivity {

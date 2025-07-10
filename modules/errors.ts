@@ -84,6 +84,7 @@ class MemFlowProxyError extends Error {
 
 class MemFlowChildError extends Error {
   await: boolean;
+  entity: string;
   arguments: string[];
   backoffCoefficient: number;
   code: number;
@@ -108,6 +109,7 @@ class MemFlowChildError extends Error {
     this.persistent = params.persistent;
     this.signalIn = params.signalIn;
     this.originJobId = params.originJobId;
+    this.entity = params.entity;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
     this.code = HMSH_CODE_MEMFLOW_CHILD;

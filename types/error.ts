@@ -6,6 +6,7 @@ export type MemFlowChildErrorType = {
   expire?: number;
   persistent?: boolean;
   signalIn?: boolean;
+  entity?: string;
   maximumAttempts?: number;
   maximumInterval?: number;
   originJobId: string | null;
