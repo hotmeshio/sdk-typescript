@@ -582,6 +582,7 @@ export class WorkerService {
               maximumInterval:
                 err.maximumInterval || s(HMSH_MEMFLOW_MAX_INTERVAL),
               originJobId: err.originJobId,
+              entity: err.entity,
               parentWorkflowId: err.parentWorkflowId,
               expire: err.expire,
               persistent: err.persistent,

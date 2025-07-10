@@ -22,6 +22,7 @@ import { ProviderTransaction } from '../../types/provider';
 import { StringScalarType } from '../../types/serializer';
 
 import { Activity } from './activity';
+import { MapperService } from '../mapper';
 
 class Trigger extends Activity {
   config: TriggerActivity;
@@ -57,7 +58,12 @@ class Trigger extends Activity {
       this.mapJobData();
       this.adjacencyList = await this.filterAdjacent();
       const initialStatus = this.initStatus(options, this.adjacencyList.length);
-      await this.setStateNX(initialStatus, options?.entity);
+      //config.entity is a pipe expression; if 'entity' exists, it will resolve
+      const resolvedEntity = new MapperService(
+        { entity: this.config.entity },
+        this.context,
+      ).mapRules()?.entity as string;
+      await this.setStateNX(initialStatus, options?.entity || resolvedEntity);
       await this.setStatus(initialStatus);
 
       this.bindSearchData(options);
@@ -293,7 +299,7 @@ class Trigger extends Activity {
     return jobKey ? Pipe.resolve(jobKey, context) : '';
   }
 
-  async setStateNX(status?: number, entity?: string): Promise<void> {
+  async setStateNX(status?: number, entity?: string | undefined): Promise<void> {
     const jobId = this.context.metadata.jid;
     if (!await this.store.setStateNX(jobId, this.engine.appId, status, entity)) {
       throw new DuplicateJobError(jobId);

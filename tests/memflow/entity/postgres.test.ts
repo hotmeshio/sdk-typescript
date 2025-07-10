@@ -117,6 +117,34 @@ describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
         expect(worker).toBeDefined();
       });
 
+      it('should create testExecChildWithEntity worker', async () => {
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'entityqueue',
+          workflow: workflows.testExecChildWithEntity,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+
+      it('should create createProduct worker', async () => {
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'entityqueue',
+          workflow: workflows.createProduct,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+
       it('should test infinite loop protection', async () => {
         // Create a worker for the test function
         const worker = await Worker.create({
@@ -253,6 +281,86 @@ describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
         expect(finalEntity).toHaveProperty('startTime');
         expect(finalEntity).toHaveProperty('completedAt');
         expect(new Date(finalEntity.completedAt).getTime()).toBeGreaterThan(new Date(finalEntity.startTime).getTime());
+      });
+
+      it('should test execChild functionality with entity parameter', async () => {
+        // Start the testExecChildWithEntity workflow
+        const testHandle = await client.workflow.start({
+          entity: 'user', // Parent entity type
+          namespace,
+          args: ['ExecChildUser'],
+          taskQueue: 'entityqueue',
+          workflowName: 'testExecChildWithEntity',
+          workflowId: prefix + 'exec-child-entity-test-' + guid(),
+          expire: 30,
+        });
+
+        // Wait for the result
+        const response = await testHandle.result();
+        expect(response).toBeDefined();
+        
+        // Cast response to any to access properties since we know the structure
+        const result = response as any;
+        
+        // Validate basic response structure
+        expect(result).toHaveProperty('success', true);
+        expect(result).toHaveProperty('message', 'ExecChild with entity functionality working correctly');
+        expect(result).toHaveProperty('userEntity');
+        expect(result).toHaveProperty('productResult');
+        expect(result).toHaveProperty('entityType', 'user');
+        expect(result).toHaveProperty('childEntityType', 'product');
+        
+        // Validate user entity structure
+        const userEntity = result.userEntity;
+        expect(userEntity).toHaveProperty('entityType', 'user');
+        expect(userEntity).toHaveProperty('name', 'ExecChildUser');
+        expect(userEntity).toHaveProperty('id');
+        expect(userEntity.id).toMatch(/^user-\d+$/);
+        expect(userEntity).toHaveProperty('status', 'product-created');
+        expect(userEntity).toHaveProperty('startTime');
+        expect(userEntity).toHaveProperty('completedAt');
+        expect(userEntity).toHaveProperty('operations');
+        expect(Array.isArray(userEntity.operations)).toBe(true);
+        expect(userEntity.operations).toContain('execChild-called');
+        expect(userEntity.operations).toContain('product-created');
+        expect(userEntity).toHaveProperty('createdEntities');
+        expect(Array.isArray(userEntity.createdEntities)).toBe(true);
+        expect(userEntity.createdEntities).toHaveLength(1);
+        
+        // Validate product result structure
+        const productResult = result.productResult;
+        expect(productResult).toHaveProperty('success', true);
+        expect(productResult).toHaveProperty('message');
+        expect(productResult.message).toContain('Product Laptop created successfully by ExecChildUser');
+        expect(productResult).toHaveProperty('product');
+        expect(productResult).toHaveProperty('entityType', 'product');
+        expect(productResult).toHaveProperty('id');
+        
+        // Validate the created product entity
+        const product = productResult.product;
+        expect(product).toHaveProperty('entityType', 'product');
+        expect(product).toHaveProperty('name', 'Laptop');
+        expect(product).toHaveProperty('price', 999.99);
+        expect(product).toHaveProperty('id');
+        expect(product.id).toMatch(/^product-\d+$/);
+        expect(product).toHaveProperty('createdBy', 'ExecChildUser');
+        expect(product).toHaveProperty('createdAt');
+        expect(product).toHaveProperty('status', 'created');
+        expect(product).toHaveProperty('operations');
+        expect(Array.isArray(product.operations)).toBe(true);
+        expect(product.operations).toContain('product-initialized');
+        expect(product.operations).toContain('inventory-updated');
+        expect(product).toHaveProperty('metadata');
+        expect(product.metadata).toHaveProperty('category', 'electronics');
+        expect(product.metadata).toHaveProperty('inStock', true);
+        expect(product).toHaveProperty('processedAt');
+        
+        // Validate that the user entity references the created product
+        expect(userEntity.createdEntities[0]).toBe(productResult.id);
+        
+        // Validate timestamps
+        expect(new Date(userEntity.completedAt).getTime()).toBeGreaterThan(new Date(userEntity.startTime).getTime());
+        expect(new Date(product.processedAt).getTime()).toBeGreaterThan(new Date(product.createdAt).getTime());
       });
 
       it('should return the evolved entity', async () => {

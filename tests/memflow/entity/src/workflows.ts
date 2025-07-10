@@ -226,3 +226,103 @@ export async function testExecHook(name: string): Promise<any> {
     finalEntity: finalEntity
   };
 }
+
+/**
+ * Test execChild functionality with entity parameter
+ * This function tests a 'user' entity creating a 'product' entity using execChild
+ */
+export async function testExecChildWithEntity(userName: string): Promise<any> {
+  // Create user entity and set initial data
+  const userEntity = await MemFlow.workflow.entity();
+  
+  const initialUserData = {
+    entityType: 'user',
+    name: userName,
+    id: `user-${Date.now()}`,
+    startTime: new Date().toISOString(),
+    status: 'creating-product',
+    operations: [],
+    createdEntities: []
+  };
+  
+  await userEntity.set(initialUserData);
+  
+  // User entity creates a product entity via execChild
+  const productResult = await MemFlow.workflow.execChild<any>({
+    entity: 'product', // This is the key - different entity type
+    args: [userName, 'Laptop', 999.99],
+    taskQueue: 'entityqueue',
+    workflowName: 'createProduct'
+  });
+  
+  // Update user entity with the created product information
+  await userEntity.merge({
+    status: 'product-created',
+    completedAt: new Date().toISOString()
+  });
+  
+  await userEntity.append('operations', 'execChild-called');
+  await userEntity.append('operations', 'product-created');
+  await userEntity.append('createdEntities', productResult.id);
+  
+  // Get final user entity state
+  const finalUserEntity = await userEntity.get();
+
+  return {
+    success: true,
+    message: 'ExecChild with entity functionality working correctly',
+    userEntity: finalUserEntity,
+    productResult: productResult,
+    entityType: 'user',
+    childEntityType: 'product'
+  };
+}
+
+/**
+ * Child workflow that creates a product entity
+ * This workflow runs as a 'product' entity type
+ */
+export async function createProduct(createdBy: string, productName: string, price: number): Promise<any> {
+  // Create product entity
+  const productEntity = await MemFlow.workflow.entity();
+  
+  const productData = {
+    entityType: 'product',
+    name: productName,
+    price: price,
+    id: `product-${Date.now()}`,
+    createdBy: createdBy,
+    createdAt: new Date().toISOString(),
+    status: 'active',
+    operations: [],
+    metadata: {
+      category: 'electronics',
+      inStock: true
+    }
+  };
+  
+  await productEntity.set(productData);
+  
+  // Simulate some product creation processing
+  await MemFlow.workflow.sleepFor('1 second');
+  
+  await productEntity.append('operations', 'product-initialized');
+  await productEntity.append('operations', 'inventory-updated');
+  
+  // Update status to completed
+  await productEntity.merge({
+    status: 'created',
+    processedAt: new Date().toISOString()
+  });
+  
+  // Get final product entity state
+  const finalProductEntity = await productEntity.get();
+
+  return {
+    success: true,
+    message: `Product ${productName} created successfully by ${createdBy}`,
+    product: finalProductEntity,
+    entityType: 'product',
+    id: finalProductEntity.id
+  };
+}

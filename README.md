@@ -211,15 +211,156 @@ async function externalHookExample() {
 
 ## 🤖 Building Durable AI Agents
 
-Permanent memory unlocks a straightforward pattern for agentic systems:
+HotMesh's permanent memory enables a revolutionary approach to AI agents: **perspective-oriented intelligence**. Instead of monolithic agents, you build **multi-faceted agents** where:
 
-1. **Planner workflow** – sketches a task list, seeds entity state.
-2. **Tool hooks** – execute individual tasks, feeding intermediate results back into state.
-3. **Reflector hook** – periodically summarizes state into long-term memory embeddings.
-4. **Supervisor workflow** – monitors metrics stored in state and decides when to finish.
+* **Entity state** = the agent's living, evolving context
+* **Hooks** = different perspectives that operate on that context
+* **Child workflows** = specialized co-agents with their own entity types
+* **Shared memory** = enables rich self-reflection and multi-agent collaboration
 
-Because every step is durable *and* shares the same knowledge object, agents can pause,
-restart, scale horizontally, and keep evolving their world-model indefinitely.
+### Example: A Research Agent with Multiple Perspectives
+
+```typescript
+/* ------------ Main Research Agent ------------ */
+export async function researchAgent(query: string): Promise<any> {
+  const entity = await MemFlow.workflow.entity();
+  
+  // Initialize agent context
+  await entity.set({
+    query,
+    findings: [],
+    perspectives: {},
+    confidence: 0,
+    status: 'researching'
+  });
+
+  // Spawn perspective hooks that operate on shared context
+  const optimisticView = MemFlow.workflow.execHook({
+    taskQueue: 'perspectives',
+    workflowName: 'optimisticPerspective',
+    args: [query]
+  });
+
+  const skepticalView = MemFlow.workflow.execHook({
+    taskQueue: 'perspectives', 
+    workflowName: 'skepticalPerspective',
+    args: [query]
+  });
+
+  // Spawn a fact-checker child agent with its own entity type
+  const factChecker = await MemFlow.workflow.execChild({
+    entity: 'fact-checker',
+    workflowName: 'factCheckAgent',
+    workflowId: `fact-check-${Date.now()}`,
+    args: [query],
+    taskQueue: 'agents'
+  });
+
+  // Wait for all perspectives to contribute
+  await Promise.all([optimisticView, skepticalView, factChecker]);
+
+  // Self-reflection: analyze conflicting perspectives
+  await MemFlow.workflow.execHook({
+    taskQueue: 'perspectives',
+    workflowName: 'synthesizePerspectives',
+    args: []
+  });
+
+  const finalContext = await entity.get();
+  return finalContext;
+}
+
+/* ------------ Optimistic Perspective Hook ------------ */
+export async function optimisticPerspective(query: string): Promise<void> {
+  const entity = await MemFlow.workflow.entity();
+  
+  // Optimistic perspective: look for supporting evidence
+  const findings = await searchForSupportingEvidence(query);
+  
+  await entity.merge({
+    perspectives: {
+      optimistic: {
+        findings,
+        confidence: 0.8,
+        bias: 'Tends to emphasize positive evidence'
+      }
+    }
+  });
+}
+
+/* ------------ Skeptical Perspective Hook ------------ */
+export async function skepticalPerspective(query: string): Promise<void> {
+  const entity = await MemFlow.workflow.entity();
+  
+  // Skeptical perspective: challenge assumptions
+  const counterEvidence = await searchForCounterEvidence(query);
+  
+  await entity.merge({
+    perspectives: {
+      skeptical: {
+        counterEvidence,
+        confidence: 0.6,
+        bias: 'Challenges assumptions and seeks contradictory evidence'
+      }
+    }
+  });
+}
+
+/* ------------ Fact-Checker Child Agent ------------ */
+export async function factCheckAgent(query: string): Promise<any> {
+  // This child has its own entity type for specialized fact-checking context
+  const entity = await MemFlow.workflow.entity();
+  
+  await entity.set({
+    query,
+    sources: [],
+    verifications: [],
+    credibilityScore: 0
+  });
+
+  // Fact-checker can spawn its own specialized hooks
+  await MemFlow.workflow.execHook({
+    taskQueue: 'verification',
+    workflowName: 'verifySourceCredibility',
+    args: [query]
+  });
+
+  return await entity.get();
+}
+
+/* ------------ Synthesis Perspective Hook ------------ */
+export async function synthesizePerspectives(): Promise<void> {
+  const entity = await MemFlow.workflow.entity();
+  const context = await entity.get();
+  
+  // Analyze conflicting perspectives and synthesize
+  const synthesis = await analyzePerspectives(context.perspectives);
+  
+  await entity.merge({
+    perspectives: {
+      synthesis: {
+        finalAssessment: synthesis,
+        confidence: calculateConfidence(context.perspectives),
+        reasoning: 'Balanced analysis of optimistic and skeptical viewpoints'
+      }
+    },
+    status: 'completed'
+  });
+}
+```
+
+### The Power of Perspective-Oriented Agents
+
+This approach enables agents that can:
+
+* **Question themselves** – different hooks challenge each other's assumptions
+* **Spawn specialized co-agents** – child workflows with their own entity types tackle specific domains
+* **Maintain rich context** – all perspectives contribute to a shared, evolving knowledge base
+* **Scale horizontally** – each perspective can run on different workers
+* **Learn continuously** – entity state accumulates insights across all interactions
+* **Self-reflect** – synthesis hooks analyze conflicting perspectives and improve decision-making
+
+Because every perspective operates on the same durable entity, agents can pause, restart, and evolve their world-model indefinitely while maintaining coherent, multi-faceted intelligence.
 
 ---
 

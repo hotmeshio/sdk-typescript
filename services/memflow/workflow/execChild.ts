@@ -41,7 +41,7 @@ function getChildInterruptPayload(
 
   const parentWorkflowId = workflowId;
   const taskQueueName = options.taskQueue ?? options.entity;
-  const workflowName = options.entity ?? options.workflowName;
+  const workflowName = options.taskQueue ? options.workflowName : (options.entity ?? options.workflowName);
   const workflowTopic = `${taskQueueName}-${workflowName}`;
   return {
     arguments: [...(options.args || [])],
@@ -55,6 +55,7 @@ function getChildInterruptPayload(
       options?.config?.maximumInterval ?? HMSH_MEMFLOW_MAX_INTERVAL,
     ),
     originJobId: originJobId ?? workflowId,
+    entity: options.entity,
     expire: options.expire ?? expire,
     persistent: options.persistent,
     signalIn: options.signalIn,
