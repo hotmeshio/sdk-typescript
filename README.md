@@ -1,44 +1,52 @@
 # HotMesh
 
-**Permanent-Memory Workflows & AI Agents**
+**🧠 Workflow That Remembers**
 
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)  ![made with typescript](https://img.shields.io/badge/built%20with-typescript-lightblue.svg)
 
-**HotMesh** is a Temporal-style workflow engine that runs natively on PostgreSQL — with a powerful twist: every workflow maintains permanent, state that persists independently of the workflow itself.
+HotMesh brings a **memory model** to your automation: durable entities that hold context, support concurrency, and evolve across runs. Built on PostgreSQL, it treats your database not just as storage—but as the runtime hub for agents, pipelines, and long-lived processes.
 
-This means:
+Use HotMesh to:
 
-* Any number of lightweight, thread-safe **hook workers** can attach to the same workflow record at any time.
-* These hooks can safely **read and write** to shared state.
-* The result is a **durable execution model** with **evolving memory**, ideal for **human-in-the-loop processes** and **AI agents that learn over time**.
+* **Store Evolving State** – Retain memory/state between executions
+* **Coordinate Distributed Work** – Safely allow multiple workers to act on shared state
+* **Track and Replay** – Full audit history and replay support by default
 
 ---
 
 ## Table of Contents
 
-1. 🚀 Quick Start
-2. 🧠 How Permanent Memory Works
-3. 🔌 Hooks & Entity API
-4. 🤖 Building Durable AI Agents
-5. 🔬 Advanced Patterns & Recipes
-6. 📚 Documentation & Links
+1. [Quick Start](#-quick-start)
+2. [Permanent Memory Architecture](#-permanent-memory-architecture)
+3. [Durable AI Agents](#-durable-ai-agents)
+4. [Building Pipelines with State](#-building-pipelines-with-state)
+5. [Documentation & Links](#-documentation--links)
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
+
+### Prerequisites
+
+* PostgreSQL (or Supabase)
+* Node.js 16+
 
 ### Install
+
 ```bash
 npm install @hotmeshio/hotmesh
 ```
 
-### Start a workflow
-```typescript
-// index.ts
+### Connect to a Database
+
+HotMesh leverages Temporal.io's developer-friendly syntax for authoring workers, workflows, and clients. The `init` and `start` methods should look familiar.
+
+```ts
 import { MemFlow } from '@hotmeshio/hotmesh';
 import { Client as Postgres } from 'pg';
 
 async function main() {
+  // MemFlow will auto-provision the database upon init
   const mf = await MemFlow.init({
     appId: 'my-app',
     engine: {
@@ -49,13 +57,13 @@ async function main() {
     }
   });
 
-  // Kick off a workflow
+  // Start a workflow with an assigned ID and arguments
   const handle = await mf.workflow.start({
-    entity: 'user',
-    workflowName: 'userExample',
-    workflowId: 'jane@hotmesh.com',
-    args: ['Jane'],
-    taskQueue: 'entityqueue'
+    entity: 'research-agent',
+    workflowName: 'researchAgent',
+    workflowId: 'agent-session-jane-001',
+    args: ['What are the long-term impacts of renewable energy subsidies?'],
+    taskQueue: 'agents'
   });
 
   console.log('Result:', await handle.result());
@@ -64,168 +72,53 @@ async function main() {
 main().catch(console.error);
 ```
 
+### System Benefits
+
+* **No Setup Required** – Tables and indexes are provisioned automatically
+* **Shared State** – Every worker shares access to the same entity memory
+* **Coordination by Design** – PostgreSQL handles consistency and isolation
+* **Tenant Isolation** – Each app maintains its own schema
+* **Scalable Defaults** – Partitioned tables and index support included
+
 ---
 
-## 🧠 How Permanent Memory Works
+## Permanent Memory Architecture
 
-* **Entity = persistent JSON record** – each workflow's memory is stored as a JSONB row in your Postgres database
-* **Atomic operations** (`set`, `merge`, `append`, `increment`, `toggle`, `delete`, …)
-* **Transactional** – every update participates in the workflow/DB transaction
-* **Time-travel-safe** – full replay compatibility; side-effect detector guarantees determinism
-* **Hook-friendly** – any worker with the record ID can attach and mutate its slice of the JSON
-* **Index-friendly** - entity data is stored as JSONB; add partial indexes for improved query analysis.
+Every workflow in HotMesh is backed by an "entity": a versioned, JSONB record that tracks its memory and state transitions.
 
-**Example: Adding a Partial Index for Specific Entity Types**
+* **Entities** – Represent long-lived state for a workflow or agent
+* **Commands** – Modify state with methods like `set`, `merge`, `append`, `increment`
+* **Consistency** – All updates are transactional with Postgres
+* **Replay Safety** – Protects against duplicated side effects during re-execution
+* **Partial Indexing** – Optimized querying of fields within large JSON structures
+
+### Example: Partial Index for Premium Users
+
 ```sql
--- Create a partial index for 'user' entities with specific entity values
+-- Index only those user entities that are marked as premium
 CREATE INDEX idx_user_premium ON your_app.jobs (id)
 WHERE entity = 'user' AND (context->>'isPremium')::boolean = true;
 ```
-This index will only be used for queries that match both conditions, making lookups for premium users much faster.
+
+This index improves performance for filtered queries while reducing index size.
 
 ---
 
-## 🔌 Hooks & Entity API – Full Example
+## Durable AI Agents
 
-HotMesh hooks are powerful because they can be called both internally (from within a workflow) and externally (from outside, even after the workflow completes). This means you can:
+Agents often require memory—context that persists between invocations, spans multiple perspectives, or outlives a single process. HotMesh supports that natively.
 
-* Start a workflow that sets up initial state
-* Have the workflow call some hooks internally
-* Let the workflow complete
-* Continue to update the workflow's entity state from the outside via hooks
-* Build long-running processes that evolve over time
+The following example builds a "research agent" that runs sub-flows and self-reflects on the results.
 
-Here's a complete example showing both internal and external hook usage:
+### Research Agent Example
 
-```typescript
-import { MemFlow } from '@hotmeshio/hotmesh';
+#### Main Coordinator Agent
 
-/* ------------ Main workflow ------------ */
-export async function userExample(name: string): Promise<any> {
-  //the entity method provides transactional, replayable access to shared job state 
-  const entity = await MemFlow.workflow.entity();
-
-  //create the initial entity (even arrays are supported)
-  await entity.set({
-    user: { name },
-    hooks: {},
-    metrics: { count: 0 }
-  });
-
-  // Call one hook internally
-  const result1 = await MemFlow.workflow.execHook({
-    taskQueue: 'entityqueue',
-    workflowName: 'hook1',
-    args: [name, 'hook1'],
-    signalId: 'hook1-complete'
-  });
-
-  // merge the result
-  await entity.merge({ hooks: { r1: result1 } });
-  await entity.increment('metrics.count', 1);
-
-  return "The main has completed; the db record persists and can be hydrated; hook in from the outside!";
-}
-
-/* ------------ Hook 1 (hooks have access to methods like sleepFor) ------------ */
-export async function hook1(name: string, kind: string): Promise<any> {
-  await MemFlow.workflow.sleepFor('2 seconds');
-  const res = { kind, processed: true, at: Date.now() };
-  await MemFlow.workflow.signal('hook1-complete', res);
-}
-
-/* ------------ Hook 2 (hooks can access shared job entity) ------------ */
-export async function hook2(name: string, kind: string): Promise<void> {
-  const entity = await MemFlow.workflow.entity();
-  await entity.merge({ user: { lastSeen: new Date().toISOString() } });
-  await MemFlow.workflow.signal('hook2-complete', { ok: true });
-}
-
-/* ------------ Worker/Hook Registration ------------ */
-async function startWorker() {
-  const mf = await MemFlow.init({
-    appId: 'my-app',
-    engine: {
-      connection: {
-        class: Postgres,
-        options: { connectionString: process.env.DATABASE_URL }
-      }
-    }
-  });
-
-  const worker = await mf.worker.create({
-    taskQueue: 'entityqueue',
-    workflow: example
-  });
-
-  await mf.worker.create({
-    taskQueue: 'entityqueue',
-    workflow: hook1
-  });
-
-  await mf.worker.create({
-    taskQueue: 'entityqueue',
-    workflow: hook2
-  });
-
-  console.log('Workers and hooks started and listening...');
-}
-```
-
-### The Power of External Hooks
-
-One of HotMesh's most powerful features is that workflow entities remain accessible even after the main workflow completes. By providing the original workflow ID, any authorized client can:
-
-* Hook into existing workflow entities
-* Update state and trigger new processing
-* Build evolving, long-running processes
-* Enable human-in-the-loop workflows
-* Create AI agents that learn over time
-
-Here's how to hook into an existing workflow from the outside:
-
-```typescript
-/* ------------ External Hook Example ------------ */
-async function externalHookExample() {
-  const client = new MemFlow.Client({
-    appId: 'my-app',
-    engine: {
-      connection: {
-        class: Postgres,
-        options: { connectionString: process.env.DATABASE_URL }
-      }
-    }
-  });
-
-  // Start hook2 externally by providing the original workflow ID
-  await client.workflow.hook({
-    workflowId: 'jane@hotmesh.com', //id of the target workflow
-    taskQueue: 'entityqueue',
-    workflowName: 'hook2',
-    args: [name, 'external-hook']
-  });
-}
-```
-
----
-
-## 🤖 Building Durable AI Agents
-
-HotMesh's permanent memory enables a revolutionary approach to AI agents: **perspective-oriented intelligence**. Instead of monolithic agents, you build **multi-faceted agents** where:
-
-* **Entity state** = the agent's living, evolving context
-* **Hooks** = different perspectives that operate on that context
-* **Child workflows** = specialized co-agents with their own entity types
-* **Shared memory** = enables rich self-reflection and multi-agent collaboration
-
-### Example: A Research Agent with Multiple Perspectives
-
-```typescript
-/* ------------ Main Research Agent ------------ */
+```ts
 export async function researchAgent(query: string): Promise<any> {
   const entity = await MemFlow.workflow.entity();
-  
-  // Initialize agent context
+
+  // Set up shared memory for this agent session
   await entity.set({
     query,
     findings: [],
@@ -234,20 +127,20 @@ export async function researchAgent(query: string): Promise<any> {
     status: 'researching'
   });
 
-  // Spawn perspective hooks that operate on shared context
-  const optimisticView = MemFlow.workflow.execHook({
-    taskQueue: 'perspectives',
+  // Launch perspective hooks in parallel (no need to await here)
+  const optimistic = MemFlow.workflow.execHook({
+    taskQueue: 'agents',
     workflowName: 'optimisticPerspective',
     args: [query]
   });
 
-  const skepticalView = MemFlow.workflow.execHook({
-    taskQueue: 'perspectives', 
+  const skeptical = MemFlow.workflow.execHook({
+    taskQueue: 'agents',
     workflowName: 'skepticalPerspective',
     args: [query]
   });
 
-  // Spawn a fact-checker child agent with its own entity type
+  // Launch a child workflow with its own isolated entity/state
   const factChecker = await MemFlow.workflow.execChild({
     entity: 'fact-checker',
     workflowName: 'factCheckAgent',
@@ -256,121 +149,221 @@ export async function researchAgent(query: string): Promise<any> {
     taskQueue: 'agents'
   });
 
-  // Wait for all perspectives to contribute
-  await Promise.all([optimisticView, skepticalView, factChecker]);
+  // Wait for all views to complete before analyzing
+  await Promise.all([optimistic, skeptical, factChecker]);
 
-  // Self-reflection: analyze conflicting perspectives
+  // Final synthesis: aggregate and compare all perspectives
   await MemFlow.workflow.execHook({
     taskQueue: 'perspectives',
     workflowName: 'synthesizePerspectives',
     args: []
   });
 
-  const finalContext = await entity.get();
-  return finalContext;
+  return await entity.get();
 }
+```
 
-/* ------------ Optimistic Perspective Hook ------------ */
-export async function optimisticPerspective(query: string): Promise<void> {
+#### Hooks: Perspectives
+
+```ts
+// Optimistic hook looks for affirming evidence
+export async function optimisticPerspective(query: string, config: {signal: string}): Promise<void> {
   const entity = await MemFlow.workflow.entity();
-  
-  // Optimistic perspective: look for supporting evidence
   const findings = await searchForSupportingEvidence(query);
-  
-  await entity.merge({
-    perspectives: {
-      optimistic: {
-        findings,
-        confidence: 0.8,
-        bias: 'Tends to emphasize positive evidence'
-      }
-    }
-  });
+  await entity.merge({ perspectives: { optimistic: { findings, confidence: 0.8 }}});
+  //signal the caller to notify all done
+  await MemFlow.workflow.signal(config.signal, {});
 }
 
-/* ------------ Skeptical Perspective Hook ------------ */
-export async function skepticalPerspective(query: string): Promise<void> {
+// Skeptical hook seeks out contradictions and counterpoints
+export async function skepticalPerspective(query: string, config: {signal: string}): Promise<void> {
   const entity = await MemFlow.workflow.entity();
-  
-  // Skeptical perspective: challenge assumptions
   const counterEvidence = await searchForCounterEvidence(query);
-  
-  await entity.merge({
-    perspectives: {
-      skeptical: {
-        counterEvidence,
-        confidence: 0.6,
-        bias: 'Challenges assumptions and seeks contradictory evidence'
-      }
-    }
-  });
+  await entity.merge({ perspectives: { skeptical: { counterEvidence, confidence: 0.6 }}});
+  await MemFlow.workflow.signal(config.signal, {});
 }
+```
 
-/* ------------ Fact-Checker Child Agent ------------ */
+#### Child Agent: Fact Checker
+
+```ts
+// A dedicated child agent with its own entity type and context
 export async function factCheckAgent(query: string): Promise<any> {
-  // This child has its own entity type for specialized fact-checking context
   const entity = await MemFlow.workflow.entity();
-  
-  await entity.set({
-    query,
-    sources: [],
-    verifications: [],
-    credibilityScore: 0
-  });
+  await entity.set({ query, sources: [], verifications: [] });
 
-  // Fact-checker can spawn its own specialized hooks
   await MemFlow.workflow.execHook({
-    taskQueue: 'verification',
+    taskQueue: 'agents',
     workflowName: 'verifySourceCredibility',
     args: [query]
   });
 
   return await entity.get();
 }
+```
 
-/* ------------ Synthesis Perspective Hook ------------ */
-export async function synthesizePerspectives(): Promise<void> {
+#### Synthesis
+
+```ts
+// Synthesis hook aggregates different viewpoints
+export async function synthesizePerspectives(config: {signal: string}): Promise<void> {
   const entity = await MemFlow.workflow.entity();
   const context = await entity.get();
-  
-  // Analyze conflicting perspectives and synthesize
-  const synthesis = await analyzePerspectives(context.perspectives);
-  
+
+  const result = await analyzePerspectives(context.perspectives);
+
   await entity.merge({
     perspectives: {
       synthesis: {
-        finalAssessment: synthesis,
-        confidence: calculateConfidence(context.perspectives),
-        reasoning: 'Balanced analysis of optimistic and skeptical viewpoints'
+        finalAssessment: result,
+        confidence: calculateConfidence(context.perspectives)
       }
     },
     status: 'completed'
   });
+  await MemFlow.workflow.signal(config.signal, {});
 }
 ```
 
-### The Power of Perspective-Oriented Agents
+---
 
-This approach enables agents that can:
+## Building Pipelines with State
 
-* **Question themselves** – different hooks challenge each other's assumptions
-* **Spawn specialized co-agents** – child workflows with their own entity types tackle specific domains
-* **Maintain rich context** – all perspectives contribute to a shared, evolving knowledge base
-* **Scale horizontally** – each perspective can run on different workers
-* **Learn continuously** – entity state accumulates insights across all interactions
-* **Self-reflect** – synthesis hooks analyze conflicting perspectives and improve decision-making
+HotMesh treats pipelines as long-lived records, not ephemeral jobs. Every pipeline run is stateful, resumable, and traceable.
 
-Because every perspective operates on the same durable entity, agents can pause, restart, and evolve their world-model indefinitely while maintaining coherent, multi-faceted intelligence.
+### Setup a Data Pipeline
+
+```ts
+export async function dataPipeline(source: string): Promise<void> {
+  const entity = await MemFlow.workflow.entity();
+
+  // Initial policy and tracking setup
+  await entity.set({
+    source,
+    pipeline: { version: 1, policy: { refreshInterval: '24 hours' } },
+    changeLog: []
+  });
+
+  // Trigger the recurring orchestration pipeline
+  await MemFlow.workflow.execHook({
+    taskQueue: 'pipeline',
+    workflowName: 'runPipeline',
+    args: [true]
+  });
+}
+```
+
+### Orchestration Hook
+
+```ts
+export async function runPipeline(repeat = false): Promise<void> {
+  do {
+    // Perform transformation step
+    await MemFlow.workflow.execHook({
+      taskQueue: 'transform',
+      workflowName: 'cleanData',
+      args: []
+    });
+
+    if (repeat) {
+      // Schedule next execution
+      await MemFlow.workflow.execHook({
+        taskQueue: 'scheduler',
+        workflowName: 'scheduleRefresh',
+        args: []
+      });
+    }
+  } while (repeat)
+}
+
+/**
+ * Hook to clean and transform data
+ */
+export async function cleanData(signalInfo?: { signal: string }): Promise<void> {
+  const entity = await MemFlow.workflow.entity();
+  
+  // Simulate data cleaning
+  await entity.merge({
+    status: 'cleaning',
+    lastCleanedAt: new Date().toISOString()
+  });
+
+  // Add to changelog
+  await entity.append('changeLog', {
+    action: 'clean',
+    timestamp: new Date().toISOString()
+  });
+
+  // Signal completion if called via execHook
+  if (signalInfo?.signal) {
+    await MemFlow.workflow.signal(signalInfo.signal, { 
+      status: 'cleaned',
+      timestamp: new Date().toISOString()
+    });
+  }
+}
+
+/**
+ * Hook to schedule the next refresh based on policy
+ */
+export async function scheduleRefresh(signalInfo?: { signal: string }): Promise<void> {
+  const entity = await MemFlow.workflow.entity();
+  
+  // Get refresh interval from policy
+  const currentEntity = await entity.get();
+  const refreshInterval = currentEntity.pipeline.policy.refreshInterval;
+  
+  // Sleep for the configured interval
+  await MemFlow.workflow.sleepFor(refreshInterval);
+  
+  // Update status after sleep
+  await entity.merge({
+    status: 'ready_for_refresh',
+    nextRefreshAt: new Date().toISOString()
+  });
+
+  // Add to changelog
+  await entity.append('changeLog', {
+    action: 'schedule_refresh',
+    timestamp: new Date().toISOString(),
+    nextRefresh: new Date().toISOString()
+  });
+
+  // Signal completion if called via execHook
+  if (signalInfo?.signal) {
+    await MemFlow.workflow.signal(signalInfo.signal, {
+      status: 'scheduled',
+      nextRefresh: new Date().toISOString()
+    });
+  }
+}
+```
+
+### Trigger from Outside
+
+```ts
+// External systems can trigger a single pipeline run
+export async function triggerRefresh() {
+  const client = new MemFlow.Client({/*...*/});
+
+  await client.workflow.hook({
+    workflowId: 'pipeline-123',
+    taskQueue: 'pipeline',
+    workflowName: 'runPipeline',
+    args: []
+  });
+}
+```
 
 ---
 
-## 📚 Documentation & Links
+## Documentation & Links
 
-* SDK API – [https://hotmeshio.github.io/sdk-typescript](https://hotmeshio.github.io/sdk-typescript)
-* Examples – [https://github.com/hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript)
+* SDK Reference – [hotmeshio.github.io/sdk-typescript](https://hotmeshio.github.io/sdk-typescript)
+* Examples – [github.com/hotmeshio/samples-typescript](https://github.com/hotmeshio/samples-typescript)
 
 ---
 
 ## License
 
-Apache 2.0 – see `LICENSE` for details.
+Apache 2.0 – See `LICENSE` for details.

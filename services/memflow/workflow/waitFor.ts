@@ -49,11 +49,10 @@ export async function waitFor<T>(signalId: string): Promise<T> {
     signalId,
     index: execIndex,
     workflowDimension,
-  };
-  interruptionRegistry.push({
+    type: 'MemFlowWaitForError',
     code: HMSH_CODE_MEMFLOW_WAIT,
-    ...interruptionMessage,
-  });
+  };
+  interruptionRegistry.push(interruptionMessage);
 
   await sleepImmediate();
   throw new MemFlowWaitForError(interruptionMessage);

@@ -47,6 +47,7 @@ export async function sleepFor(duration: string): Promise<number> {
   };
   interruptionRegistry.push({
     code: HMSH_CODE_MEMFLOW_SLEEP,
+    type: 'MemFlowSleepError',
     ...interruptionMessage,
   });
 

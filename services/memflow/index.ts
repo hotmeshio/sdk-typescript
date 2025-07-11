@@ -8,6 +8,7 @@ import { Entity } from './entity';
 import { WorkerService } from './worker';
 import { WorkflowService } from './workflow';
 import { WorkflowHandleService } from './handle';
+import { didInterrupt } from './workflow/interruption';
 
 /**
  * The MemFlow service is a collection of services that
@@ -115,6 +116,14 @@ class MemFlowClass {
    * including: `execChild`, `waitFor`, `sleep`, etc
    */
   static workflow: typeof WorkflowService = WorkflowService;
+
+  /**
+   * Checks if an error is a HotMesh reserved error type that indicates
+   * a workflow interruption rather than a true error condition.
+   * 
+   * @see {@link utils/interruption.didInterrupt} for detailed documentation
+   */
+  static didInterrupt = didInterrupt;
 
   /**
    * Shutdown everything. All connections, workers, and clients will be closed.
