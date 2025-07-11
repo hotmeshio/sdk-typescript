@@ -108,6 +108,7 @@ export async function execChild<T>(options: WorkflowOptions): Promise<T> {
   );
   interruptionRegistry.push({
     code: HMSH_CODE_MEMFLOW_CHILD,
+    type: 'MemFlowChildError',
     ...interruptionMessage,
   });
 

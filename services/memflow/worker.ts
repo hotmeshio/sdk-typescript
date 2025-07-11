@@ -465,6 +465,32 @@ export class WorkerService {
           },
         );
 
+        //if the embedded function has a try/catch, it can interrup the throw
+        // throw here to interrupt the workflow if the embedded function caught and suppressed
+        if (interruptionRegistry.length > 0) {
+          const payload = interruptionRegistry[0];
+          switch (payload.type) {
+            case 'MemFlowWaitForError':
+              throw new MemFlowWaitForError(payload);
+            case 'MemFlowProxyError':
+              throw new MemFlowProxyError(payload);
+            case 'MemFlowChildError':
+              throw new MemFlowChildError(payload);
+            case 'MemFlowSleepError':
+              throw new MemFlowSleepError(payload);
+            case 'MemFlowTimeoutError':
+              throw new MemFlowTimeoutError(payload.message, payload.stack);
+            case 'MemFlowMaxedError':
+              throw new MemFlowMaxedError(payload.message, payload.stack);
+            case 'MemFlowFatalError':
+              throw new MemFlowFatalError(payload.message, payload.stack);
+            case 'MemFlowRetryError':
+              throw new MemFlowRetryError(payload.message, payload.stack);
+            default:
+              throw new MemFlowRetryError(`Unknown interruption type: ${payload.type}`);
+          }
+        }
+
         return {
           code: 200,
           status: StreamStatus.SUCCESS,

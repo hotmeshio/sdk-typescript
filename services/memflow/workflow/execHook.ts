@@ -1,13 +1,14 @@
 import { HookOptions } from './common';
 import { hook } from './hook';
 import { waitFor } from './waitFor';
+import { didInterrupt } from './interruption';
 
 /**
  * Extended hook options that include signal configuration
  */
 export interface ExecHookOptions extends HookOptions {
-  /** Signal ID to send after hook execution */
-  signalId: string;
+  /** Signal ID to send after hook execution; if not provided, a random one will be generated */
+  signalId?: string;
 }
 
 /**
@@ -67,15 +68,23 @@ export interface ExecHookOptions extends HookOptions {
  * ```
  */
 export async function execHook<T>(options: ExecHookOptions): Promise<T> {
-  // Create hook options with signal field added to args
-  const hookOptions: HookOptions = {
-    ...options,
-    args: [...options.args, { signal: options.signalId }]
-  };
+  try {
+    if (!options.signalId) {
+      options.signalId = 'memflow-hook-' + crypto.randomUUID();
+    }
+    const hookOptions: HookOptions = {
+      ...options,
+      args: [...options.args, { signal: options.signalId, $memflow: true }]
+    };
 
-  // Execute the hook with the signal information
-  await hook(hookOptions);
+    // Execute the hook with the signal information
+    await hook(hookOptions);
 
-  // Wait for the signal response and return it
-  return await waitFor<T>(options.signalId);
-} 
+    // Wait for the signal response and return it
+    return await waitFor<T>(options.signalId);
+  } catch (error) {
+    if (didInterrupt(error)) {
+      throw error;
+    }
+  }
+}

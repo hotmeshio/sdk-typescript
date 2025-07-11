@@ -92,6 +92,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
     );
     interruptionRegistry.push({
       code: HMSH_CODE_MEMFLOW_PROXY,
+      type: 'MemFlowProxyError',
       ...interruptionMessage,
     });
     await sleepImmediate();
