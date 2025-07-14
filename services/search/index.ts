@@ -43,6 +43,26 @@ abstract class SearchService<ClientProvider extends ProviderClient> {
   ): Promise<number>;
   abstract sendQuery(query: any): Promise<any>;
   abstract sendIndexedQuery(index: string, query: any[]): Promise<any>;
+
+  // Entity querying methods for JSONB/SQL operations
+  abstract findEntities(
+    entity: string,
+    conditions: Record<string, any>,
+    options?: { limit?: number; offset?: number },
+  ): Promise<any[]>;
+  abstract findEntityById(entity: string, id: string): Promise<any>;
+  abstract findEntitiesByCondition(
+    entity: string,
+    field: string,
+    value: any,
+    operator?: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'IN',
+    options?: { limit?: number; offset?: number },
+  ): Promise<any[]>;
+  abstract createEntityIndex(
+    entity: string,
+    field: string,
+    indexType?: 'btree' | 'gin' | 'gist',
+  ): Promise<void>;
 }
 
 export { SearchService };

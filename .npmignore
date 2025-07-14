@@ -16,3 +16,4 @@
 /jest.config.js
 /tsconfig.json
 /typedoc.json
+/.env

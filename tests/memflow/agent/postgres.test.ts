@@ -1,9 +1,9 @@
+import 'dotenv/config';
 import { Client as Postgres } from 'pg';
 
 import { MemFlow } from '../../../services/memflow';
 import { WorkflowHandleService } from '../../../services/memflow/handle';
 import { ClientService } from '../../../services/memflow/client';
-import { WorkerService } from '../../../services/memflow/worker';
 import { guid } from '../../../modules/utils';
 import { ProviderNativeClient } from '../../../types';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
@@ -14,11 +14,10 @@ import {
 } from '../../$setup/postgres';
 
 import * as workflows from './src/workflows';
-import * as activities from './src/activities';
 
 const { Connection, Client, Worker } = MemFlow;
 
-describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
+describe('MEMFLOW | agent | `AI research agent with OpenAI integration` | Postgres', () => {
   const prefix = 'agent-';
   const namespace = 'prod';
   let client: ClientService;
@@ -32,6 +31,11 @@ describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
     ).getClient();
 
     await dropTables(postgresClient);
+
+    // Check if OpenAI API key is configured
+    if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
+      console.warn('⚠️  OpenAI API key not configured. Tests will use mock responses.');
+    }
   });
 
   afterAll(async () => {
@@ -64,11 +68,12 @@ describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
 
         handle = await client.workflow.start({
           namespace,
-          args: ['What are the implications of artificial intelligence on future work?', 2],
-          taskQueue: 'agent-queue',
+          entity: 'research-agent',
+          args: ['What are the long-term impacts of renewable energy subsidies?'],
+          taskQueue: 'agents',
           workflowName: 'researchAgent',
           workflowId: workflowGuid,
-          expire: 180, // 3 minutes for the complex AI workflow
+          expire: 300, // 5 minutes for complex AI workflow
         });
         expect(handle.workflowId).toBeDefined();
       });
@@ -77,169 +82,114 @@ describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
 
   describe('Worker', () => {
     describe('create', () => {
-      it('should create main research agent worker', async () => {
-        // Register activities before creating worker
-        WorkerService.registerActivities(activities);
-        
+
+      it('should test basic functionality without OpenAI', async () => {
+        // Create a worker for the basic test
         const worker = await Worker.create({
           connection: {
             class: Postgres,
             options: postgres_options,
           },
           namespace,
-          taskQueue: 'agent-queue',
+          taskQueue: 'agents',
+          workflow: workflows.basicTest,
+        });
+        await worker.run();
+    
+        // Start the basic test workflow
+        const testHandle = await client.workflow.start({
+          namespace,
+          entity: 'test-entity',
+          args: ['BasicTest'],
+          taskQueue: 'agents',
+          workflowName: 'basicTest',
+          workflowId: prefix + 'basic-test-' + guid(),
+          expire: 30,
+        });
+    
+        // Wait for the result
+        const response = await testHandle.result();
+        expect(response).toBeDefined();
+        
+        const result = response as any;
+        expect(result.testName).toBe('BasicTest');
+        expect(result.status).toBe('completed');
+        expect(result.operations).toContain('test-started');
+        expect(result.operations).toContain('test-completed');
+        expect(result.completedAt).toBeDefined();
+      });
+    
+      it('should create optimistic perspective hook worker', async () => {
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'agents',
+          workflow: workflows.optimisticPerspective,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+
+      it('should create skeptical perspective hook worker', async () => {
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'agents',
+          workflow: workflows.skepticalPerspective,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+
+      it('should create verification hook worker', async () => {
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'agents',
+          workflow: workflows.verificationHook,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+
+      it('should create synthesis perspective worker', async () => {
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'perspectives',
+          workflow: workflows.synthesizePerspectives,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+
+      it('should create main research agent worker', async () => {
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'agents',
           workflow: workflows.researchAgent,
         });
         await worker.run();
         expect(worker).toBeDefined();
       });
 
-      it('should create research hook worker', async () => {
-        const worker = await Worker.create({
-          connection: {
-            class: Postgres,
-            options: postgres_options,
-          },
-          namespace,
-          taskQueue: 'agent-queue',
-          workflow: workflows.researchHook,
-        });
-        await worker.run();
-        expect(worker).toBeDefined();
-      });
-
-      it('should create analysis hook worker', async () => {
-        const worker = await Worker.create({
-          connection: {
-            class: Postgres,
-            options: postgres_options,
-          },
-          namespace,
-          taskQueue: 'agent-queue',
-          workflow: workflows.analysisHook,
-        });
-        await worker.run();
-        expect(worker).toBeDefined();
-      });
-
-      it('should create decomposition hook worker', async () => {
-        const worker = await Worker.create({
-          connection: {
-            class: Postgres,
-            options: postgres_options,
-          },
-          namespace,
-          taskQueue: 'agent-queue',
-          workflow: workflows.decompositionHook,
-        });
-        await worker.run();
-        expect(worker).toBeDefined();
-      });
-
-      it('should create validation hook worker', async () => {
-        const worker = await Worker.create({
-          connection: {
-            class: Postgres,
-            options: postgres_options,
-          },
-          namespace,
-          taskQueue: 'agent-queue',
-          workflow: workflows.validationHook,
-        });
-        await worker.run();
-        expect(worker).toBeDefined();
-      });
-
-      it('should test infinite loop protection in agent entity', async () => {
-        const worker = await Worker.create({
-          connection: {
-            class: Postgres,
-            options: postgres_options,
-          },
-          namespace,
-          taskQueue: 'agent-queue',
-          workflow: workflows.testInfiniteLoopProtection,
-        });
-        await worker.run();
-
-        // Start the test workflow
-        const testHandle = await client.workflow.start({
-          namespace,
-          args: ['Test question for infinite loop protection'],
-          taskQueue: 'agent-queue',
-          workflowName: 'testInfiniteLoopProtection',
-          workflowId: prefix + 'infinite-loop-test-' + guid(),
-          expire: 30,
-        });
-
-        // Wait for the result
-        const response = await testHandle.result();
-        expect(response).toBeDefined();
-        
-        const result = response as any;
-        expect(result.success).toBe(true);
-        expect(result.message).toBe('Infinite loop protection working correctly');
-        expect(result.error).toContain('MemFlow Hook Error: Potential infinite loop detected!');
-      });
-
-      it('should test simple research agent without recursion', async () => {
-        // Create a simple test workflow
-        const testHandle = await client.workflow.start({
-          namespace,
-          args: ['Simple research question about renewable energy?', 1], // Max depth 1 to prevent recursion
-          taskQueue: 'agent-queue',
-          workflowName: 'researchAgent',
-          workflowId: prefix + 'simple-research-' + guid(),
-          expire: 60,
-        });
-
-        // Wait for the result
-        const response = await testHandle.result();
-        expect(response).toBeDefined();
-        
-        const result = response as any;
-        
-        // Validate basic response structure
-        expect(result).toHaveProperty('success', true);
-        expect(result).toHaveProperty('message');
-        expect(result.message).toContain('Research agent completed analysis');
-        expect(result.message).toContain('renewable energy');
-        
-        // Validate AI analysis results
-        expect(result).toHaveProperty('analysis');
-        expect(result.analysis).toHaveProperty('taskType');
-        expect(result.analysis).toHaveProperty('complexity');
-        expect(result.analysis).toHaveProperty('nextActions');
-        expect(result.analysis.nextActions).toContain('research-hook');
-        
-        // Validate execution plan
-        expect(result).toHaveProperty('plan');
-        expect(result.plan).toHaveProperty('question');
-        expect(result.plan).toHaveProperty('complexity');
-        expect(result.plan).toHaveProperty('hooks');
-        
-        // Validate hook execution
-        expect(result).toHaveProperty('hookResults');
-        expect(Array.isArray(result.hookResults)).toBe(true);
-        expect(result.hookResults.length).toBeGreaterThan(0);
-        
-        // Validate final entity
-        expect(result).toHaveProperty('finalEntity');
-        expect(result.finalEntity).toHaveProperty('originalQuestion');
-        expect(result.finalEntity).toHaveProperty('generation', 0);
-        expect(result.finalEntity).toHaveProperty('status', 'hooks-completed');
-        expect(result.finalEntity).toHaveProperty('metrics');
-        expect(result.finalEntity.metrics).toHaveProperty('totalHooks');
-        expect(result.finalEntity.metrics).toHaveProperty('totalActivities');
-        
-        // Validate summary
-        expect(result).toHaveProperty('summary');
-        expect(result.summary).toHaveProperty('totalHooks');
-        expect(result.summary).toHaveProperty('complexity');
-        expect(result.summary).toHaveProperty('generation', 0);
-      });
-
-      it('should return the complete research agent results with entity evolution', async () => {
+      it('should return the complete research agent results with AI analysis', async () => {
         const response = await handle.result();
         expect(response).toBeDefined();
         expect(typeof response).toBe('object');
@@ -247,110 +197,39 @@ describe('MEMFLOW | agent | `recursive AI research agent` | Postgres', () => {
         const result = response as any;
 
         // Validate main response structure
-        expect(result).toHaveProperty('success', true);
-        expect(result).toHaveProperty('message');
-        expect(result.message).toContain('Research agent completed analysis');
-        expect(result.message).toContain('artificial intelligence');
+        expect(result.query).toBe('What are the long-term impacts of renewable energy subsidies?');
+        expect(result.status).toBe('synthesis-completed');
+        expect(result.startTime).toBeDefined();
         
-        // Validate AI analysis
-        expect(result).toHaveProperty('analysis');
-        expect(result.analysis).toHaveProperty('taskType');
-        expect(result.analysis).toHaveProperty('complexity');
-        expect(result.analysis).toHaveProperty('nextActions');
-        expect(result.analysis).toHaveProperty('generation', 0);
-        expect(result.analysis).toHaveProperty('confidence');
-        expect(result.analysis.confidence).toBeGreaterThan(0.5);
-        
-        // Validate planning results
-        expect(result).toHaveProperty('plan');
-        expect(result.plan).toHaveProperty('question');
-        expect(result.plan).toHaveProperty('complexity');
-        expect(result.plan).toHaveProperty('decomposition');
-        expect(result.plan).toHaveProperty('hooks');
-        expect(result.plan).toHaveProperty('estimatedDepth');
-        
-        // Validate hook execution results
-        expect(result).toHaveProperty('hookResults');
-        expect(Array.isArray(result.hookResults)).toBe(true);
-        expect(result.hookResults.length).toBeGreaterThan(0);
-        
-        // Validate at least one hook result
-        const firstHookResult = result.hookResults[0];
-        expect(firstHookResult).toBeDefined();
-        expect(firstHookResult).toHaveProperty('hookType');
-        expect(firstHookResult).toHaveProperty('status');
-        expect(firstHookResult).toHaveProperty('generation');
-        
-        // Validate final entity structure
-        expect(result).toHaveProperty('finalEntity');
-        expect(result.finalEntity).toHaveProperty('originalQuestion');
-        expect(result.finalEntity.originalQuestion).toContain('artificial intelligence');
-        expect(result.finalEntity).toHaveProperty('generation', 0);
-        expect(result.finalEntity).toHaveProperty('maxDepth', 2);
-        expect(result.finalEntity).toHaveProperty('status', 'hooks-completed');
-        expect(result.finalEntity).toHaveProperty('operations');
-        expect(result.finalEntity).toHaveProperty('metrics');
-        
-        // Validate entity operations
-        expect(Array.isArray(result.finalEntity.operations)).toBe(true);
-        expect(result.finalEntity.operations).toContain('ai-analysis-completed');
-        expect(result.finalEntity.operations).toContain('plan-created');
-        expect(result.finalEntity.operations).toContain('hooks-executed');
-        
-        // Validate entity metrics
-        expect(result.finalEntity.metrics).toHaveProperty('totalHooks');
-        expect(result.finalEntity.metrics).toHaveProperty('totalGenerations');
-        expect(result.finalEntity.metrics).toHaveProperty('totalActivities');
-        expect(result.finalEntity.metrics).toHaveProperty('completedTasks');
-        expect(result.finalEntity.metrics.totalHooks).toBeGreaterThan(0);
-        expect(result.finalEntity.metrics.totalActivities).toBeGreaterThan(0);
-        expect(result.finalEntity.metrics.completedTasks).toBeGreaterThan(0);
-        
-        // Validate summary
-        expect(result).toHaveProperty('summary');
-        expect(result.summary).toHaveProperty('totalHooks');
-        expect(result.summary).toHaveProperty('complexity');
-        expect(result.summary).toHaveProperty('nextActions');
-        expect(result.summary).toHaveProperty('generation', 0);
-        expect(result.summary.totalHooks).toBe(result.hookResults.length);
-        
-        // Validate that analysis and plan are consistent
-        expect(result.analysis.complexity).toBe(result.plan.complexity);
-        expect(result.summary.complexity).toBe(result.analysis.complexity);
-        expect(result.summary.nextActions).toEqual(result.analysis.nextActions);
-        
-        // Validate that entity contains research data if research hook was executed
-        if (result.analysis.nextActions.includes('research-hook')) {
-          expect(result.finalEntity).toHaveProperty('research_0');
-          expect(result.finalEntity.research_0).toHaveProperty('findings');
-          expect(result.finalEntity.research_0).toHaveProperty('sources');
-          expect(result.finalEntity.research_0).toHaveProperty('confidence');
-        }
-        
-        // Validate that entity contains analysis data if analysis hook was executed
-        if (result.analysis.nextActions.includes('analysis-hook')) {
-          expect(result.finalEntity).toHaveProperty('analysis_0');
-          expect(result.finalEntity.analysis_0).toHaveProperty('patterns');
-          expect(result.finalEntity.analysis_0).toHaveProperty('insights');
-          expect(result.finalEntity.analysis_0).toHaveProperty('recommendations');
-        }
-        
-        // If decomposition hook was executed, validate child workflows
-        if (result.analysis.nextActions.includes('decomposition-hook')) {
-          expect(result.finalEntity).toHaveProperty('childWorkflows');
-          expect(Array.isArray(result.finalEntity.childWorkflows)).toBe(true);
-          // Note: childWorkflows may be empty if max depth was reached
-        }
-        
-        console.log('✅ Research Agent Test Results:');
-        console.log(`   Question: "${result.finalEntity.originalQuestion}"`);
-        console.log(`   Complexity: ${result.analysis.complexity}`);
-        console.log(`   Total Hooks: ${result.summary.totalHooks}`);
-        console.log(`   Total Activities: ${result.finalEntity.metrics.totalActivities}`);
-        console.log(`   Operations: ${result.finalEntity.operations.join(', ')}`);
-        console.log(`   Next Actions: ${result.analysis.nextActions.join(', ')}`);
-        
-      }, 60_000); // 60 seconds timeout for complex AI workflow
+        // Validate perspectives structure
+        expect(result.perspectives).toBeDefined();
+        expect(result.perspectives.optimistic).toBeDefined();
+        expect(result.perspectives.optimistic.findings).toBeInstanceOf(Array);
+        expect(result.perspectives.optimistic.confidence).toBe(0.8);
+        expect(result.perspectives.optimistic.completedAt).toBeDefined();
+
+        expect(result.perspectives.skeptical).toBeDefined();
+        expect(result.perspectives.skeptical.counterEvidence).toBeInstanceOf(Array);
+        expect(result.perspectives.skeptical.confidence).toBe(0.6);
+        expect(result.perspectives.skeptical.completedAt).toBeDefined();
+
+        // Validate verification structure
+        expect(result.verification).toBeDefined();
+        expect(result.verification.credibility).toBeDefined();
+        expect(result.verification.credibility.credibleSources).toBeInstanceOf(Array);
+        expect(result.verification.credibility.questionableSources).toBeInstanceOf(Array);
+        expect(result.verification.credibility.verificationMethod).toBeDefined();
+        expect(result.verification.credibility.overallCredibility).toBeGreaterThan(0);
+
+        // Validate synthesis structure
+        expect(result.perspectives.synthesis).toBeDefined();
+        expect(result.perspectives.synthesis.finalAssessment).toBeDefined();
+        expect(result.perspectives.synthesis.finalAssessment.synthesis).toBeDefined();
+        expect(result.perspectives.synthesis.finalAssessment.keyInsights).toBeInstanceOf(Array);
+        expect(result.perspectives.synthesis.finalAssessment.recommendations).toBeInstanceOf(Array);
+        expect(result.perspectives.synthesis.confidence).toBeGreaterThan(0);
+        expect(result.perspectives.synthesis.completedAt).toBeDefined();
+      }, 120_000); // 2 minutes timeout for OpenAI API calls
     });
   });
-});
+}); 

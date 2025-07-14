@@ -20,6 +20,7 @@ import { KeyType } from '../../modules/key';
 import { StreamStatus, StringAnyType } from '../../types';
 
 import { Search } from './search';
+import { Entity } from './entity';
 import { WorkflowHandleService } from './handle';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 

@@ -192,6 +192,7 @@ export const hashModule = (context: KVSQL) => ({
         }
       } else {
         if (replayId) {
+          //todo: return context, not just number 1
           sql = `
             WITH updated_job AS (
               UPDATE ${tableName}

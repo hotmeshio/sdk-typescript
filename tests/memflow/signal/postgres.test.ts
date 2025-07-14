@@ -1,17 +1,12 @@
-import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
 import { MemFlow } from '../../../services/memflow';
 import { WorkflowHandleService } from '../../../services/memflow/handle';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
-import { ProvidersConfig, ProviderNativeClient } from '../../../types/provider';
-import {
-  dropTables,
-  ioredis_options as redis_options,
-  postgres_options,
-} from '../../$setup/postgres';
+import { ProviderNativeClient } from '../../../types/provider';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
+import { ProviderConfig } from '../../../types/provider';
 
 import * as workflows from './src/workflows';
 
@@ -20,19 +15,13 @@ const { Connection, Client, Worker } = MemFlow;
 describe('MEMFLOW | signal | Postgres', () => {
   let handle: WorkflowHandleService;
   let postgresClient: ProviderNativeClient;
+  const connection = { class: Postgres, options: postgres_options };
 
   beforeAll(async () => {
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
     await dropTables(postgresClient);
-
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-    redisConnection.getClient().flushdb();
   });
 
   afterAll(async () => {
@@ -42,14 +31,13 @@ describe('MEMFLOW | signal | Postgres', () => {
 
   describe('Connection', () => {
     describe('connect', () => {
-      it('should echo the Redis config', async () => {
+      it('should echo the config', async () => {
         const connection = (await Connection.connect({
-          store: { class: Postgres, options: postgres_options },
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
-        })) as ProvidersConfig;
+          class: Postgres,
+          options: postgres_options,
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
-        expect(connection.sub).toBeDefined();
+        expect(connection.options).toBeDefined();
       });
     });
   });
@@ -58,11 +46,7 @@ describe('MEMFLOW | signal | Postgres', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         const client = new Client({
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
         });
 
         handle = await client.workflow.start({
@@ -80,11 +64,7 @@ describe('MEMFLOW | signal | Postgres', () => {
     describe('create', () => {
       it('should create and run a worker', async () => {
         const worker = await Worker.create({
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
           taskQueue: 'hello-world',
           workflow: workflows.example,
         });
@@ -104,11 +84,7 @@ describe('MEMFLOW | signal | Postgres', () => {
         //signal by instancing a new client connection
         await sleepFor(1_000);
         const client = new Client({
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
         });
         await client.workflow.signal('hijklmnop', { name: 'WarnCrash' });
 

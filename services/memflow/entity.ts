@@ -91,7 +91,7 @@ export class Entity {
    * const entity = await workflow.entity();
    * await entity.set({ user: { id: 123, name: "John" } });
    */
-  async set(value: any): Promise<any> {
+  async set<T>(value: T): Promise<T> {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
@@ -106,7 +106,7 @@ export class Entity {
       [ssGuid]: '', // Pass replay ID to hash module for transactional replay storage
     });
 
-    return result || value;
+    return result as T;
   }
 
   /**
@@ -142,7 +142,7 @@ export class Entity {
    * const user = await entity.get("user");
    * const email = await entity.get("user.email");
    */
-  async get(path?: string): Promise<any> {
+  async get<T>(path?: string): Promise<T> {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
@@ -172,7 +172,7 @@ export class Entity {
       value = result;
     }
 
-    return value;
+    return value as T;
   }
 
   /**
@@ -197,7 +197,7 @@ export class Entity {
       [ssGuid]: '', // Pass replay ID to hash module
     });
 
-    return newContext;
+    return newContext as any;
   }
 
   /**
@@ -350,22 +350,98 @@ export class Entity {
     return newValue;
   }
 
+  // Static readonly find methods for cross-entity querying (not tied to specific workflow)
+  
   /**
-   * @private
+   * Finds entity records matching complex conditions using JSONB/SQL queries.
+   * This is a readonly operation that queries across all entities of a given type.
+   * 
+   * @example
+   * ```typescript
+   * const results = await Entity.find(
+   *   'user',
+   *   { status: 'active', age: { $gte: 18 } },
+   *   hotMeshClient,
+   *   { limit: 10, offset: 0 }
+   * );
+   * ```
    */
-  private deepMerge(target: any, source: any): any {
-    if (!source) return target;
-    
-    const output = { ...target };
-    
-    Object.keys(source).forEach(key => {
-      if (source[key] instanceof Object && key in target) {
-        output[key] = this.deepMerge(target[key], source[key]);
-      } else {
-        output[key] = source[key];
-      }
-    });
-    
-    return output;
+  static async find(
+    entity: string,
+    conditions: Record<string, any>,
+    hotMeshClient: HotMesh,
+    options?: { limit?: number; offset?: number },
+  ): Promise<any[]> {
+    // Use SearchService for JSONB/SQL querying
+    const searchClient = hotMeshClient.engine.search;
+    return await searchClient.findEntities(entity, conditions, options);
   }
-} 
+
+  /**
+   * Finds a specific entity record by its ID using direct JSONB/SQL queries.
+   * This is the most efficient method for retrieving a single entity record.
+   * 
+   * @example
+   * ```typescript
+   * const user = await Entity.findById('user', 'user123', hotMeshClient);
+   * ```
+   */
+  static async findById(
+    entity: string,
+    id: string,
+    hotMeshClient: HotMesh,
+  ): Promise<any> {
+    // Use SearchService for JSONB/SQL querying
+    const searchClient = hotMeshClient.engine.search;
+    return await searchClient.findEntityById(entity, id);
+  }
+
+  /**
+   * Finds entity records matching a specific field condition using JSONB/SQL queries.
+   * Supports various operators for flexible querying across all entities of a type.
+   * 
+   * @example
+   * ```typescript
+   * const activeUsers = await Entity.findByCondition(
+   *   'user',
+   *   'status',
+   *   'active',
+   *   '=',
+   *   hotMeshClient,
+   *   { limit: 20, offset: 0 }
+   * );
+   * ```
+   */
+  static async findByCondition(
+    entity: string,
+    field: string,
+    value: any,
+    operator: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'IN' = '=',
+    hotMeshClient: HotMesh,
+    options?: { limit?: number; offset?: number },
+  ): Promise<any[]> {
+    // Use SearchService for JSONB/SQL querying
+    const searchClient = hotMeshClient.engine.search;
+    return await searchClient.findEntitiesByCondition(entity, field, value, operator, options);
+  }
+
+  /**
+   * Creates an efficient GIN index for a specific entity field to optimize queries.
+   * 
+   * @example
+   * ```typescript
+   * await Entity.createIndex('user', 'email', hotMeshClient);
+   * await Entity.createIndex('user', 'status', hotMeshClient);
+   * ```
+   */
+  static async createIndex(
+    entity: string,
+    field: string,
+    hotMeshClient: HotMesh,
+    indexType: 'gin' = 'gin',
+  ): Promise<void> {
+    // Use SearchService for index creation
+    const searchClient = hotMeshClient.engine.search;
+    return await searchClient.createEntityIndex(entity, field, indexType);
+  }
+}

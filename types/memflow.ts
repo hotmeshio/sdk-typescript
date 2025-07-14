@@ -319,7 +319,7 @@ type WorkflowOptions = {
   config?: WorkflowConfig;
 
   /**
-   * sets the number of seconds a workflow may exist after completion. As the process engine is an in-memory cache, the default policy is to expire and scrub the job hash as soon as it completes.
+   * sets the number of seconds a workflow may exist after completion. The default policy is to expire the job hash as soon as it completes.
    */
   expire?: number;
 

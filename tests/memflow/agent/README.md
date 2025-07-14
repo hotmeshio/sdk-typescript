@@ -1,90 +1,71 @@
-# MemFlow Agent Test Suite
+# AI Research Agent Test Suite
 
-This test suite demonstrates the **Recursive AI Research Agent** pattern using MemFlow's durable execution and permanent memory capabilities.
+This test suite implements the **Research Agent** use case from the main README, demonstrating how HotMesh can orchestrate AI-powered workflows with permanent memory and multi-perspective analysis.
 
 ## Overview
 
-The agent test showcases how MemFlow can be used to build intelligent, self-organizing workflows that:
+The test suite demonstrates a complete implementation of the research agent pattern from the README, featuring:
 
-1. **Use AI for Decision Making**: Leverage OpenAI (mocked in tests) to analyze questions and determine execution strategies
-2. **Recursively Decompose Tasks**: Break complex questions into simpler sub-questions using child workflows
-3. **Manage Shared Context**: Maintain evolving knowledge across all workflow generations
-4. **Coordinate Multiple Hooks**: Execute specialized hooks (research, analysis, validation) based on AI recommendations
-5. **Track Generational Progress**: Use semaphores to prevent infinite loops and manage recursion depth
+1. **Real OpenAI API Integration**: Uses actual GPT-4.1 API calls for research and analysis
+2. **Multiple Perspectives**: Implements validation, optimistic, and skeptical perspective hooks
+4. **Synthesis**: Aggregates and analyzes different perspectives using AI
+5. **Permanent Memory**: All data persists across workflow executions
 
-## Test Architecture
+## Setup
+
+### Prerequisites
+
+- PostgreSQL database
+- OpenAI API key (GPT-4.1 access)
+- Node.js environment with dotenv support
+
+### Environment Configuration
+
+Create a `.env` file in the project root:
+
+```bash
+# OpenAI API Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+## Test Structure
 
 ### Core Components
 
-- **`researchAgent`**: Main workflow that coordinates the entire research process
-- **`researchHook`**: Gathers and validates information on specific topics
-- **`analysisHook`**: Analyzes and synthesizes collected information
-- **`decompositionHook`**: Breaks down complex questions and spawns child workflows
-- **`validationHook`**: Validates findings and ensures data quality
+#### Main Workflow: `researchAgent`
+- Coordinates the entire research process
+- Launches parallel perspective and verification hooks
+- Manages entity state and operations
+- All hooks share the same entity memory
 
-### Activities (Mocked)
+#### Perspective Hooks
+- **`optimist`**: Searches for supporting evidence using OpenAI
+- **`skeptic`**: Finds counter-evidence and contradictory information
+- **`synthesizer`**: Analyzes and synthesizes all perspectives
+- **`verifyer`**: Verifies source credibility using AI and merges into shared state
 
-- **`openaiAnalyzer`**: Simulates OpenAI API calls for question analysis
-- **`researchPlanner`**: Creates structured decomposition plans
-
-## Use Case: Research Task Decomposition
-
-The agent implements a **Research Task Decomposition System** that:
-
-1. **Receives Complex Questions**: e.g., "What are the implications of artificial intelligence on future work?"
-2. **AI Analysis**: Uses OpenAI to analyze complexity and recommend approach
-3. **Dynamic Hook Execution**: Spawns appropriate hooks based on AI recommendations
-4. **Recursive Decomposition**: If a question is too complex, it spawns child workflows for sub-questions
-5. **Knowledge Aggregation**: All findings are stored in shared context accessible to all generations
-6. **Intelligent Coordination**: Each generation can build upon previous knowledge
-
-## Key Features Demonstrated
-
-### 🤖 Agentic Control
-- AI-driven decision making for task decomposition
-- Dynamic hook selection based on question analysis
-- Adaptive execution paths based on complexity assessment
-
-### 🧠 Shared Contextual Updates
-- Permanent memory that survives across all workflow generations
-- Incremental knowledge building with each hook execution
-- Cross-generational data sharing and learning
-
-### 🔄 Recursive Execution
-- Child workflows can spawn their own child workflows
-- Generation tracking with depth limits to prevent infinite loops
-- Hierarchical knowledge aggregation
-
-### 🛡️ Safety Mechanisms
-- Infinite loop protection with generation semaphores
-- Maximum depth limits for recursive decomposition
-- Error handling and graceful degradation
-
-## Test Scenarios
-
-1. **Basic Research Flow**: Simple questions that don't require decomposition
-2. **Complex Research Flow**: Complex questions that trigger recursive decomposition
-3. **Infinite Loop Protection**: Validates safety mechanisms work correctly
-4. **Context Evolution**: Verifies that shared context evolves properly across executions
+#### Activities (OpenAI Integration)
+- **`searchForSupportingEvidence`**: Finds evidence supporting a query
+- **`searchForCounterEvidence`**: Finds contradictory information
+- **`analyzePerspectives`**: Synthesizes multiple viewpoints
+- **`verifySourceCredibility`**: Evaluates source reliability
 
 ## Running the Tests
 
+### Full Test Suite
 ```bash
-# Run the full agent test suite
-npm test -- tests/memflow/agent/postgres.test.ts
-
-# Run specific test cases
-npm test -- tests/memflow/agent/postgres.test.ts -t "should test simple research agent"
+npm run test:memflow:agent
 ```
 
-## Architecture Benefits
+### Individual Test Components
+```bash
+# Test basic functionality (no OpenAI required)
+NODE_ENV=test jest tests/memflow/agent/postgres.test.ts -t "basic functionality"
 
-This pattern is particularly powerful for:
+# Test with OpenAI integration
+NODE_ENV=test jest tests/memflow/agent/postgres.test.ts -t "complete research agent"
+```
 
-- **Research and Analysis Tasks**: Breaking down complex research questions
-- **Content Generation**: Multi-stage content creation with review and refinement
-- **Data Processing Pipelines**: Intelligent data transformation with decision points
-- **Customer Support**: Multi-step problem resolution with knowledge building
-- **Educational Systems**: Adaptive learning paths based on student progress
+## Mock Mode
 
-The combination of durable execution, permanent memory, and AI-driven decision making creates a robust foundation for building sophisticated agent systems that can pause, resume, scale, and evolve over time.
+If no OpenAI API key is configured, the activities will fall back to mock responses, allowing the test to verify workflow orchestration without external API dependencies.

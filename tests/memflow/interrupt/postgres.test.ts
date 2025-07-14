@@ -1,18 +1,13 @@
-import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
 import { MemFlow } from '../../../services/memflow';
 import { WorkflowHandleService } from '../../../services/memflow/handle';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
-import { ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
-import {
-  dropTables,
-  ioredis_options as redis_options,
-  postgres_options,
-} from '../../$setup/postgres';
+import { ProviderNativeClient } from '../../../types/provider';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
+import { ProviderConfig } from '../../../types/provider';
 
 import * as parentWorkflows from './parent/workflows';
 import * as childWorkflows from './child/workflows';
@@ -21,20 +16,13 @@ const { Connection, Client, Worker } = MemFlow;
 describe('MEMFLOW | interrupt | Postgres', () => {
   let handle: WorkflowHandleService;
   let postgresClient: ProviderNativeClient;
+  const connection = { class: Postgres, options: postgres_options };
 
   beforeAll(async () => {
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
     await dropTables(postgresClient);
-
-    //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-    redisConnection.getClient().flushdb();
   });
 
   afterAll(async () => {
@@ -44,14 +32,13 @@ describe('MEMFLOW | interrupt | Postgres', () => {
 
   describe('Connection', () => {
     describe('connect', () => {
-      it('should echo the Redis config', async () => {
+      it('should echo the config', async () => {
         const connection = (await Connection.connect({
-          store: { class: Postgres, options: postgres_options },
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
-        })) as ProvidersConfig;
+          class: Postgres,
+          options: postgres_options,
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
-        expect(connection.sub).toBeDefined();
+        expect(connection.options).toBeDefined();
       });
     });
   });
@@ -60,11 +47,7 @@ describe('MEMFLOW | interrupt | Postgres', () => {
     describe('start', () => {
       it('should connect a client and start a PARENT workflow execution', async () => {
         const client = new Client({
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
         });
         handle = await client.workflow.start({
           args: ['PARENT'],
@@ -82,11 +65,7 @@ describe('MEMFLOW | interrupt | Postgres', () => {
     describe('create', () => {
       it('should create and run the CHILD workflow worker', async () => {
         const worker = await Worker.create({
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
           taskQueue: 'child-world',
           workflow: childWorkflows.childExample,
           options: {
@@ -99,11 +78,7 @@ describe('MEMFLOW | interrupt | Postgres', () => {
 
       it('should create and run the PARENT workflow worker', async () => {
         const worker = await Worker.create({
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
           taskQueue: 'parent-world',
           workflow: parentWorkflows.parentExample,
           options: {
@@ -115,9 +90,6 @@ describe('MEMFLOW | interrupt | Postgres', () => {
       });
     });
   });
-
-  //add long test, spawn a timout that will throw a 410, await the handle
-  //verify the error code is 410
 
   describe('WorkflowHandle', () => {
     describe('result', () => {
@@ -131,11 +103,7 @@ describe('MEMFLOW | interrupt | Postgres', () => {
         };
         expect(result).toEqual(expectedOutput);
         const client = new Client({
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
         });
         //get a handle to the interrupted workflow
         handle = await client.workflow.getHandle(

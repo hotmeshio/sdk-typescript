@@ -55,5 +55,6 @@ export async function waitFor<T>(signalId: string): Promise<T> {
   interruptionRegistry.push(interruptionMessage);
 
   await sleepImmediate();
+  //if you are seeing this error in the logs, you might have forgotten to `await waitFor(...)`
   throw new MemFlowWaitForError(interruptionMessage);
 }
