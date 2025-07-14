@@ -106,9 +106,9 @@ This index improves performance for filtered queries while reducing index size.
 
 ## Durable AI Agents
 
-Agents often require memory—context that persists between invocations, spans multiple perspectives, or outlives a single process. HotMesh supports that natively.
+Agents often require memory—context that persists between invocations, spans multiple perspectives, or outlives a single process.
 
-The following example builds a "research agent" that runs sub-flows and self-reflects on the results.
+The following example builds a "research agent" that executes hooks with different perspectives and then synthesizes. The data-first approach sets up initial state and then uses temporary hook functions to augment over the lifecycle of the entity record.
 
 ### Research Agent Example
 
@@ -116,56 +116,57 @@ The following example builds a "research agent" that runs sub-flows and self-ref
 
 ```ts
 export async function researchAgent(query: string): Promise<any> {
-  const entity = await MemFlow.workflow.entity();
+  const agent = await MemFlow.workflow.entity();
 
   // Set up shared memory for this agent session
-  await entity.set({
+  const initialState = {
     query,
     findings: [],
     perspectives: {},
     confidence: 0,
-    status: 'researching'
-  });
+    verification: {},
+    status: 'researching',
+    startTime: new Date().toISOString(),
+  }
+  await agent.set<typeof initialState>(initialState);
 
-  // Launch perspective hooks in parallel (no need to await here)
-  const optimistic = MemFlow.workflow.execHook({
+  // Launch perspective hooks in parallel
+  await MemFlow.workflow.execHook({
     taskQueue: 'agents',
     workflowName: 'optimisticPerspective',
-    args: [query]
+    args: [query],
+    signalId: 'optimistic-complete'
   });
 
-  const skeptical = MemFlow.workflow.execHook({
+  await MemFlow.workflow.execHook({
     taskQueue: 'agents',
     workflowName: 'skepticalPerspective',
-    args: [query]
-  });
-
-  // Launch a child workflow with its own isolated entity/state
-  const factChecker = await MemFlow.workflow.execChild({
-    entity: 'fact-checker',
-    workflowName: 'factCheckAgent',
-    workflowId: `fact-check-${Date.now()}`,
     args: [query],
-    taskQueue: 'agents'
+    signalId: 'skeptical-complete'
   });
 
-  // Wait for all views to complete before analyzing
-  await Promise.all([optimistic, skeptical, factChecker]);
+  await MemFlow.workflow.execHook({
+    taskQueue: 'agents',
+    workflowName: 'verificationHook',
+    args: [query],
+    signalId: 'verification-complete'
+  });
 
-  // Final synthesis: aggregate and compare all perspectives
   await MemFlow.workflow.execHook({
     taskQueue: 'perspectives',
     workflowName: 'synthesizePerspectives',
-    args: []
+    args: [],
+    signalId: 'synthesis-complete',
   });
 
-  return await entity.get();
+  // return analysis, verification, and synthesis
+  return await agent.get();
 }
 ```
 
-> 💡 **Developer Note**: A complete implementation of this Research Agent example with tests, OpenAI integration, and multi-perspective analysis can be found in the [test suite](./tests/memflow/agent).
+> 💡 A complete implementation of this Research Agent example with tests, OpenAI integration, and multi-perspective analysis can be found in the [agent test suite](https://github.com/hotmeshio/sdk-typescript/tree/main/tests/memflow/agent).
 
-#### Hooks: Perspectives
+#### Perspective Hooks
 
 ```ts
 // Optimistic hook looks for affirming evidence
@@ -184,27 +185,11 @@ export async function skepticalPerspective(query: string, config: {signal: strin
   await entity.merge({ perspectives: { skeptical: { counterEvidence, confidence: 0.6 }}});
   await MemFlow.workflow.signal(config.signal, {});
 }
+
+// Other hooks...
 ```
 
-#### Child Agent: Fact Checker
-
-```ts
-// A dedicated child agent with its own entity type and context
-export async function factCheckAgent(query: string): Promise<any> {
-  const entity = await MemFlow.workflow.entity();
-  await entity.set({ query, sources: [], verifications: [] });
-
-  await MemFlow.workflow.execHook({
-    taskQueue: 'agents',
-    workflowName: 'verifySourceCredibility',
-    args: [query]
-  });
-
-  return await entity.get();
-}
-```
-
-#### Synthesis
+#### Synthesis Hook
 
 ```ts
 // Synthesis hook aggregates different viewpoints
@@ -231,7 +216,7 @@ export async function synthesizePerspectives(config: {signal: string}): Promise<
 
 ## Building Pipelines with State
 
-HotMesh treats pipelines as long-lived records, not ephemeral jobs. Every pipeline run is stateful, resumable, and traceable.
+HotMesh treats pipelines as long-lived records. Every pipeline run is stateful, resumable, and traceable.
 
 ### Setup a Data Pipeline
 
@@ -357,7 +342,7 @@ export async function triggerRefresh() {
 }
 ```
 
-> 💡 **Developer Note**: A complete implementation of this Pipeline example with OpenAI Vision integration, processing hooks, and document workflow automation can be found in the [test suite](./tests/memflow/pipeline).
+> 💡 A complete implementation of this Pipeline example with OpenAI Vision integration, processing hooks, and document workflow automation can be found in the [pipeline test suite](https://github.com/hotmeshio/sdk-typescript/tree/main/tests/memflow/pipeline).
 
 ---
 
