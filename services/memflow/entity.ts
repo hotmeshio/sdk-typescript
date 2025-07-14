@@ -358,11 +358,47 @@ export class Entity {
    * 
    * @example
    * ```typescript
-   * const results = await Entity.find(
+   * // Basic find with simple conditions
+   * const activeUsers = await Entity.find(
    *   'user',
-   *   { status: 'active', age: { $gte: 18 } },
+   *   { status: 'active', country: 'US' },
+   *   hotMeshClient
+   * );
+   * 
+   * // Complex query with comparison operators
+   * const seniorUsers = await Entity.find(
+   *   'user',
+   *   {
+   *     age: { $gte: 65 },
+   *     status: 'active',
+   *     'preferences.notifications': true
+   *   },
    *   hotMeshClient,
    *   { limit: 10, offset: 0 }
+   * );
+   * 
+   * // Query with multiple conditions and nested objects
+   * const premiumUsers = await Entity.find(
+   *   'user',
+   *   {
+   *     'subscription.type': 'premium',
+   *     'subscription.status': 'active',
+   *     'billing.amount': { $gt: 100 },
+   *     'profile.verified': true
+   *   },
+   *   hotMeshClient,
+   *   { limit: 20 }
+   * );
+   * 
+   * // Array conditions
+   * const taggedPosts = await Entity.find(
+   *   'post',
+   *   {
+   *     'tags': { $in: ['typescript', 'javascript'] },
+   *     'status': 'published',
+   *     'views': { $gte: 1000 }
+   *   },
+   *   hotMeshClient
    * );
    * ```
    */
@@ -383,7 +419,34 @@ export class Entity {
    * 
    * @example
    * ```typescript
+   * // Basic findById usage
    * const user = await Entity.findById('user', 'user123', hotMeshClient);
+   * 
+   * // Example with type checking
+   * interface User {
+   *   id: string;
+   *   name: string;
+   *   email: string;
+   *   preferences: {
+   *     theme: 'light' | 'dark';
+   *     notifications: boolean;
+   *   };
+   * }
+   * 
+   * const typedUser = await Entity.findById<User>('user', 'user456', hotMeshClient);
+   * console.log(typedUser.preferences.theme); // 'light' | 'dark'
+   * 
+   * // Error handling example
+   * try {
+   *   const order = await Entity.findById('order', 'order789', hotMeshClient);
+   *   if (!order) {
+   *     console.log('Order not found');
+   *     return;
+   *   }
+   *   console.log('Order details:', order);
+   * } catch (error) {
+   *   console.error('Error fetching order:', error);
+   * }
    * ```
    */
   static async findById(
@@ -402,13 +465,60 @@ export class Entity {
    * 
    * @example
    * ```typescript
+   * // Basic equality search
    * const activeUsers = await Entity.findByCondition(
    *   'user',
    *   'status',
    *   'active',
    *   '=',
    *   hotMeshClient,
-   *   { limit: 20, offset: 0 }
+   *   { limit: 20 }
+   * );
+   * 
+   * // Numeric comparison
+   * const highValueOrders = await Entity.findByCondition(
+   *   'order',
+   *   'total_amount',
+   *   1000,
+   *   '>=',
+   *   hotMeshClient
+   * );
+   * 
+   * // Pattern matching with LIKE
+   * const gmailUsers = await Entity.findByCondition(
+   *   'user',
+   *   'email',
+   *   '%@gmail.com',
+   *   'LIKE',
+   *   hotMeshClient
+   * );
+   * 
+   * // IN operator for multiple values
+   * const specificProducts = await Entity.findByCondition(
+   *   'product',
+   *   'category',
+   *   ['electronics', 'accessories'],
+   *   'IN',
+   *   hotMeshClient
+   * );
+   * 
+   * // Not equals operator
+   * const nonPremiumUsers = await Entity.findByCondition(
+   *   'user',
+   *   'subscription_type',
+   *   'premium',
+   *   '!=',
+   *   hotMeshClient
+   * );
+   * 
+   * // Date comparison
+   * const recentOrders = await Entity.findByCondition(
+   *   'order',
+   *   'created_at',
+   *   new Date('2024-01-01'),
+   *   '>',
+   *   hotMeshClient,
+   *   { limit: 50 }
    * );
    * ```
    */

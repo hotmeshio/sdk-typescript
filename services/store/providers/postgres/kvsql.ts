@@ -5,7 +5,7 @@ import { ProviderTransaction } from '../../../../types/provider';
 
 import { KVTransaction as Multi } from './kvtransaction';
 import { stringModule } from './kvtypes/string';
-import { hashModule } from './kvtypes/hash';
+import { hashModule } from './kvtypes/hash/index';
 import { listModule } from './kvtypes/list';
 import { zsetModule } from './kvtypes/zset';
 
