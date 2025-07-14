@@ -62,9 +62,6 @@ export async function researchAgent(query: string): Promise<any> {
     signalId: 'skeptical-complete'
   });
 
-  //await Promise.all([optimistic, skeptical]);
-
-  // Launch verification hook to check source credibility
   await MemFlow.workflow.execHook({
     taskQueue: 'agents',
     workflowName: 'verificationHook',
@@ -72,7 +69,6 @@ export async function researchAgent(query: string): Promise<any> {
     signalId: 'verification-complete'
   });
 
-  // Launch synthesis hook to aggregate perspectives against verified sources
   await MemFlow.workflow.execHook({
     taskQueue: 'perspectives',
     workflowName: 'synthesizePerspectives',
