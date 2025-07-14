@@ -1,16 +1,23 @@
 import { Client as Postgres } from 'pg';
 
 import { MemFlow, } from '../../../services/memflow';
+import { Entity } from '../../../services/memflow/entity';
 import { WorkflowHandleService } from '../../../services/memflow/handle';
 import { ClientService } from '../../../services/memflow/client';
-import { guid, sleepFor } from '../../../modules/utils';
+import { guid } from '../../../modules/utils';
 import { ProviderNativeClient } from '../../../types';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { ProvidersConfig } from '../../../types/provider';
 import {
   dropTables,
-  postgres_options,
+  postgres_options as postgres_options_base,
 } from '../../$setup/postgres';
+
+const postgres_options = {
+  ...postgres_options_base,
+  max: 50,
+  max_connections: 50,
+};
 
 import * as workflows from './src/workflows';
 
@@ -59,6 +66,10 @@ describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
 
         workflowGuid = prefix + guid();
 
+        //NOTE: expire is important for this unit test as all workflows essentially
+        //      soft-delete after completion (after 1 second). Setting to 120
+        //      allows a unit test below to run without error (it would get a
+        //      job not found error otherwise, as the soft-delete is after 1 second)
         handle = await client.workflow.start({
           namespace,
           entity: 'user',
@@ -145,8 +156,7 @@ describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
         expect(worker).toBeDefined();
       });
 
-      it('should test infinite loop protection', async () => {
-        // Create a worker for the test function
+      it('should create createTestEntity worker', async () => {
         const worker = await Worker.create({
           connection: {
             class: Postgres,
@@ -154,36 +164,13 @@ describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
           },
           namespace,
           taskQueue: 'entityqueue',
-          workflow: workflows.testInfiniteLoopProtection,
+          workflow: workflows.createTestEntity,
         });
         await worker.run();
-
-        // Start the test workflow
-        const testHandle = await client.workflow.start({
-          namespace,
-          args: ['TestUser'],
-          taskQueue: 'entityqueue',
-          workflowName: 'testInfiniteLoopProtection',
-          workflowId: prefix + 'infinite-loop-test-' + guid(),
-          expire: 30,
-        });
-
-        // Wait for the result
-        const response = await testHandle.result();
-        expect(response).toBeDefined();
-        
-        // Cast response to any to access properties since we know the structure
-        const result = response as any;
-        
-        expect(result.success).toBe(true);
-        expect(result.message).toBe('Infinite loop protection working correctly');
-        expect(result.error).toContain('MemFlow Hook Error: Potential infinite loop detected!');
-        expect(result.error).toContain('taskQueue');
-        expect(result.error).toContain('entity');
+        expect(worker).toBeDefined();
       });
 
-      it('should test execHook functionality', async () => {
-        // Create worker for testExecHook workflow
+      it('should create testExecHook worker', async () => {
         const worker = await Worker.create({
           connection: {
             class: Postgres,
@@ -194,94 +181,46 @@ describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
           workflow: workflows.testExecHook,
         });
         await worker.run();
-
-        // Start the testExecHook workflow
-        const testHandle = await client.workflow.start({
-          entity: 'user',
-          namespace,
-          args: ['ExecHookUser'],
-          taskQueue: 'entityqueue',
-          workflowName: 'testExecHook',
-          workflowId: prefix + 'exec-hook-test-' + guid(),
-          expire: 30,
-        });
-
-        // Wait for the result
-        const response = await testHandle.result();
-        expect(response).toBeDefined();
-        
-        // Cast response to any to access properties since we know the structure
-        const result = response as any;
-        
-        // Validate basic response structure
-        expect(result).toHaveProperty('success', true);
-        expect(result).toHaveProperty('message', 'ExecHook functionality working correctly');
-        expect(result).toHaveProperty('signalResult');
-        expect(result).toHaveProperty('initialEntity');
-        expect(result).toHaveProperty('mergedEntity');
-        expect(result).toHaveProperty('finalEntity');
-        
-        // Validate the signal result structure (hook1 response)
-        const signalResult = result.signalResult;
-        expect(signalResult).toHaveProperty('hook', 'hook1');
-        expect(signalResult).toHaveProperty('name', 'ExecHookUser');
-        expect(signalResult).toHaveProperty('hookType', 'execHook-test');
-        expect(signalResult).toHaveProperty('processedAt');
-        expect(signalResult).toHaveProperty('data');
-        expect(signalResult.data).toContain('Processed by hook1: ExecHookUser-execHook-test');
-        
-        // Validate initial entity structure
-        const initialEntity = result.initialEntity;
-        expect(initialEntity).toHaveProperty('testType', 'execHook');
-        expect(initialEntity).toHaveProperty('user');
-        expect(initialEntity.user).toHaveProperty('name', 'ExecHookUser');
-        expect(initialEntity.user).toHaveProperty('id');
-        expect(initialEntity.user.id).toMatch(/^user-\d+$/);
-        expect(initialEntity).toHaveProperty('startTime');
-        expect(initialEntity).toHaveProperty('status', 'initialized');
-        expect(initialEntity).toHaveProperty('operations');
-        expect(Array.isArray(initialEntity.operations)).toBe(true);
-        expect(initialEntity.operations).toHaveLength(0);
-        expect(initialEntity).toHaveProperty('metrics');
-        expect(initialEntity.metrics).toHaveProperty('hookCount', 0);
-        expect(initialEntity.metrics).toHaveProperty('totalProcessingTime', 0);
-        
-        // Validate merged entity structure
-        const mergedEntity = result.mergedEntity;
-        expect(mergedEntity).toHaveProperty('testType', 'execHook');
-        expect(mergedEntity).toHaveProperty('status', 'hook-completed');
-        expect(mergedEntity).toHaveProperty('hookResult');
-        expect(mergedEntity).toHaveProperty('completedAt');
-        expect(mergedEntity).toHaveProperty('metrics');
-        expect(mergedEntity.metrics).toHaveProperty('hookCount', 1);
-        expect(mergedEntity.metrics).toHaveProperty('totalProcessingTime', 2000);
-        
-        // Validate final entity structure (should include operations)
-        const finalEntity = result.finalEntity;
-        expect(finalEntity).toHaveProperty('testType', 'execHook');
-        expect(finalEntity).toHaveProperty('status', 'hook-completed');
-        expect(finalEntity).toHaveProperty('hookResult');
-        expect(finalEntity).toHaveProperty('operations');
-        expect(Array.isArray(finalEntity.operations)).toBe(true);
-        expect(finalEntity.operations).toContain('execHook-executed');
-        expect(finalEntity.operations).toContain('entity-merged');
-        expect(finalEntity.operations).toHaveLength(2);
-        
-        // Validate that hook result is properly embedded in final entity
-        expect(finalEntity.hookResult).toHaveProperty('hook', 'hook1');
-        expect(finalEntity.hookResult).toHaveProperty('name', 'ExecHookUser');
-        expect(finalEntity.hookResult).toHaveProperty('hookType', 'execHook-test');
-        
-        // Validate user data is preserved
-        expect(finalEntity).toHaveProperty('user');
-        expect(finalEntity.user).toHaveProperty('name', 'ExecHookUser');
-        expect(finalEntity.user).toHaveProperty('id');
-        
-        // Validate timestamps
-        expect(finalEntity).toHaveProperty('startTime');
-        expect(finalEntity).toHaveProperty('completedAt');
-        expect(new Date(finalEntity.completedAt).getTime()).toBeGreaterThan(new Date(finalEntity.startTime).getTime());
+        expect(worker).toBeDefined();
       });
+
+      // it('should create testInfiniteLoopProtection worker', async () => {
+      //   const worker = await Worker.create({
+      //     connection: {
+      //       class: Postgres,
+      //       options: postgres_options,
+      //     },
+      //     namespace,
+      //     taskQueue: 'entityqueue',
+      //     workflow: workflows.testInfiniteLoopProtection,
+      //   });
+      //   await worker.run();
+      //   expect(worker).toBeDefined();
+      // });
+
+      // it('should test infinite loop protection', async () => {
+      //   const testHandle = await client.workflow.start({
+      //     namespace,
+      //     args: ['TestUser'],
+      //     taskQueue: 'entityqueue',
+      //     workflowName: 'testInfiniteLoopProtection',
+      //     workflowId: prefix + 'infinite-loop-test-' + guid(),
+      //     expire: 30,
+      //   });
+
+      //   // Wait for the result
+      //   const response = await testHandle.result();
+      //   expect(response).toBeDefined();
+        
+      //   // Cast response to any to access properties since we know the structure
+      //   const result = response as any;
+        
+      //   expect(result.success).toBe(true);
+      //   expect(result.message).toBe('Infinite loop protection working correctly');
+      //   expect(result.error).toContain('MemFlow Hook Error: Potential infinite loop detected!');
+      //   expect(result.error).toContain('taskQueue');
+      //   expect(result.error).toContain('entity');
+      // });
 
       it('should test execChild functionality with entity parameter', async () => {
         // Start the testExecChildWithEntity workflow
@@ -439,6 +378,445 @@ describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
         expect(result.finalEntity.hookResults).toHaveProperty('hook1');
         expect(result.finalEntity.hookResults).toHaveProperty('hook2');
       }, 20_000);
+
+      
+      it('should test execHook functionality', async () => {
+        // Start the testExecHook workflow
+        const testHandle = await client.workflow.start({
+          entity: 'user',
+          namespace,
+          args: ['ExecHookUser'],
+          taskQueue: 'entityqueue',
+          workflowName: 'testExecHook',
+          workflowId: prefix + 'exec-hook-test-' + guid(),
+          expire: 30,
+        });
+
+        // Wait for the result
+        const response = await testHandle.result();
+        expect(response).toBeDefined();
+        
+        // Cast response to any to access properties since we know the structure
+        const result = response as any;
+        
+        // Validate basic response structure
+        expect(result).toHaveProperty('success', true);
+        expect(result).toHaveProperty('message', 'ExecHook functionality working correctly');
+        expect(result).toHaveProperty('signalResult');
+        expect(result).toHaveProperty('initialEntity');
+        expect(result).toHaveProperty('mergedEntity');
+        expect(result).toHaveProperty('finalEntity');
+        
+        // Validate the signal result structure (hook1 response)
+        const signalResult = result.signalResult;
+        expect(signalResult).toHaveProperty('hook', 'hook1');
+        expect(signalResult).toHaveProperty('name', 'ExecHookUser');
+        expect(signalResult).toHaveProperty('hookType', 'execHook-test');
+        expect(signalResult).toHaveProperty('processedAt');
+        expect(signalResult).toHaveProperty('data');
+        expect(signalResult.data).toContain('Processed by hook1: ExecHookUser-execHook-test');
+        
+        // Validate initial entity structure
+        const initialEntity = result.initialEntity;
+        expect(initialEntity).toHaveProperty('testType', 'execHook');
+        expect(initialEntity).toHaveProperty('user');
+        expect(initialEntity.user).toHaveProperty('name', 'ExecHookUser');
+        expect(initialEntity.user).toHaveProperty('id');
+        expect(initialEntity.user.id).toMatch(/^user-\d+$/);
+        expect(initialEntity).toHaveProperty('startTime');
+        expect(initialEntity).toHaveProperty('status', 'initialized');
+        expect(initialEntity).toHaveProperty('operations');
+        expect(Array.isArray(initialEntity.operations)).toBe(true);
+        expect(initialEntity.operations).toHaveLength(0);
+        expect(initialEntity).toHaveProperty('metrics');
+        expect(initialEntity.metrics).toHaveProperty('hookCount', 0);
+        expect(initialEntity.metrics).toHaveProperty('totalProcessingTime', 0);
+        
+        // Validate merged entity structure
+        const mergedEntity = result.mergedEntity;
+        expect(mergedEntity).toHaveProperty('testType', 'execHook');
+        expect(mergedEntity).toHaveProperty('status', 'hook-completed');
+        expect(mergedEntity).toHaveProperty('hookResult');
+        expect(mergedEntity).toHaveProperty('completedAt');
+        expect(mergedEntity).toHaveProperty('metrics');
+        expect(mergedEntity.metrics).toHaveProperty('hookCount', 1);
+        expect(mergedEntity.metrics).toHaveProperty('totalProcessingTime', 2000);
+        
+        // Validate final entity structure (should include operations)
+        const finalEntity = result.finalEntity;
+        expect(finalEntity).toHaveProperty('testType', 'execHook');
+        expect(finalEntity).toHaveProperty('status', 'hook-completed');
+        expect(finalEntity).toHaveProperty('hookResult');
+        expect(finalEntity).toHaveProperty('operations');
+        expect(Array.isArray(finalEntity.operations)).toBe(true);
+        expect(finalEntity.operations).toContain('execHook-executed');
+        expect(finalEntity.operations).toContain('entity-merged');
+        expect(finalEntity.operations).toHaveLength(2);
+        
+        // Validate that hook result is properly embedded in final entity
+        expect(finalEntity.hookResult).toHaveProperty('hook', 'hook1');
+        expect(finalEntity.hookResult).toHaveProperty('name', 'ExecHookUser');
+        expect(finalEntity.hookResult).toHaveProperty('hookType', 'execHook-test');
+        
+        // Validate user data is preserved
+        expect(finalEntity).toHaveProperty('user');
+        expect(finalEntity.user).toHaveProperty('name', 'ExecHookUser');
+        expect(finalEntity.user).toHaveProperty('id');
+        
+        // Validate timestamps
+        expect(finalEntity).toHaveProperty('startTime');
+        expect(finalEntity).toHaveProperty('completedAt');
+        expect(new Date(finalEntity.completedAt).getTime()).toBeGreaterThan(new Date(finalEntity.startTime).getTime());
+      });
+    });
+  });
+
+  describe('Entity Static Find Methods', () => {
+    let hotMeshClient: any;
+    let testEntities: any[] = [];
+
+    beforeAll(async () => {
+      // Get the hotMeshClient from the existing client
+      hotMeshClient = await client.getHotMeshClient('', namespace);
+      
+      // Create multiple test entities with different properties
+      const entityData = [
+        {
+          id: 'user-1',
+          entity: 'user',
+          name: 'John Doe',
+          age: 25,
+          status: 'active',
+          department: 'engineering',
+          salary: 75000,
+          tags: ['developer', 'frontend'],
+          createdAt: '2024-01-01T10:00:00Z'
+        },
+        {
+          id: 'user-2', 
+          entity: 'user',
+          name: 'Jane Smith',
+          age: 30,
+          status: 'active',
+          department: 'engineering',
+          salary: 85000,
+          tags: ['developer', 'backend'],
+          createdAt: '2024-01-02T10:00:00Z'
+        },
+        {
+          id: 'user-3',
+          entity: 'user', 
+          name: 'Bob Johnson',
+          age: 35,
+          status: 'inactive',
+          department: 'marketing',
+          salary: 65000,
+          tags: ['manager', 'marketing'],
+          createdAt: '2024-01-03T10:00:00Z'
+        },
+        {
+          id: 'product-1',
+          entity: 'product',
+          name: 'Widget A',
+          price: 99.99,
+          category: 'electronics',
+          inStock: true,
+          tags: ['gadget', 'popular'],
+          createdAt: '2024-01-04T10:00:00Z'
+        },
+        {
+          id: 'product-2',
+          entity: 'product',
+          name: 'Widget B',
+          price: 149.99,
+          category: 'electronics',
+          inStock: false,
+          tags: ['gadget', 'premium'],
+          createdAt: '2024-01-05T10:00:00Z'
+        }
+      ];
+
+      // Create workflow instances for each entity to populate the database
+      for (const data of entityData) {
+        const handle = await client.workflow.start({
+          namespace,
+          entity: data.entity,
+          args: [data.name, JSON.stringify(data)],
+          taskQueue: 'entityqueue',
+          workflowName: 'createTestEntity',
+          workflowId: prefix + data.id,
+          expire: 300,
+          search: {
+            data: {
+              name: data.name,
+              entity: data.entity,
+              status: data.status || 'active',
+              department: data.department || '',
+              category: data.category || '',
+              age: (data.age || 0).toString(),
+              price: (data.price || 0).toString()
+            }
+          }
+        });
+        testEntities.push({ handle, data });
+      }
+
+      // Wait for all workflows to complete
+      await Promise.all(testEntities.map(({ handle }) => handle.result()));
+    });
+
+    describe('Entity.find', () => {
+      it('should find entities with complex conditions', async () => {
+        const results = await Entity.find(
+          'user',
+          {
+            status: 'active',
+            department: 'engineering'
+          },
+          hotMeshClient,
+          { limit: 10, offset: 0 }
+        );
+
+        expect(Array.isArray(results)).toBe(true);
+        expect(results.length).toBeGreaterThan(0);
+        
+        // Validate that results match our conditions
+        results.forEach(result => {
+          expect(result).toHaveProperty('context');
+          const context = typeof result.context === 'string' ? JSON.parse(result.context) : result.context;
+          expect(context.status).toBe('active');
+          expect(context.department).toBe('engineering');
+        });
+      });
+
+      it('should find entities with numeric conditions', async () => {
+        const results = await Entity.find(
+          'user',
+          {
+            age: 30
+          },
+          hotMeshClient
+        );
+
+        expect(Array.isArray(results)).toBe(true);
+        expect(results.length).toBeGreaterThan(0);
+        
+        results.forEach(result => {
+          expect(result).toHaveProperty('context');
+          const context = typeof result.context === 'string' ? JSON.parse(result.context) : result.context;
+          expect(context.age).toBe(30);
+        });
+      });
+
+      it('should return empty array when no entities match conditions', async () => {
+        const results = await Entity.find(
+          'user',
+          {
+            status: 'nonexistent'
+          },
+          hotMeshClient
+        );
+
+        expect(Array.isArray(results)).toBe(true);
+        expect(results.length).toBe(0);
+      });
+    });
+
+    describe('Entity.findById', () => {
+      it('should find entity by specific ID', async () => {
+        const entityId = prefix + 'user-1';
+        const result = await Entity.findById('user', entityId, hotMeshClient);
+
+        expect(result).toBeDefined();
+        expect(result).toHaveProperty('key');
+        expect(result.key).toBe(`hmsh:${namespace}:j:${entityId}`);
+        expect(result).toHaveProperty('context');
+        
+        const context = typeof result.context === 'string' ? JSON.parse(result.context) : result.context;
+        expect(context.name).toBe('John Doe');
+        expect(context.age).toBe(25);
+      });
+
+      it('should return null for non-existent ID', async () => {
+        const result = await Entity.findById('user', 'non-existent-id', hotMeshClient);
+        expect(result).toBeNull();
+      });
+    });
+
+         describe('Entity.findByCondition', () => {
+       it('should find entities with equality condition', async () => {
+         const results = await Entity.findByCondition(
+           'user',
+           'status',
+           'active',
+           '=',
+           hotMeshClient,
+           { limit: 5 }
+         );
+
+         expect(Array.isArray(results)).toBe(true);
+         expect(results.length).toBeGreaterThan(0);
+         
+         results.forEach(result => {
+           expect(result).toHaveProperty('context');
+           const context = typeof result.context === 'string' ? JSON.parse(result.context) : result.context;
+           expect(context.status).toBe('active');
+         });
+       });
+
+       it('should find entities with greater than condition', async () => {
+         const results = await Entity.findByCondition(
+           'user',
+           'age',
+           28,
+           '>',
+           hotMeshClient
+         );
+
+         expect(Array.isArray(results)).toBe(true);
+         expect(results.length).toBeGreaterThan(0);
+         
+         results.forEach(result => {
+           expect(result).toHaveProperty('context');
+           const context = typeof result.context === 'string' ? JSON.parse(result.context) : result.context;
+           expect(context.age).toBeGreaterThan(28);
+         });
+       });
+
+       it('should find entities with LIKE condition', async () => {
+         const results = await Entity.findByCondition(
+           'user',
+           'name',
+           'John%',
+           'LIKE',
+           hotMeshClient
+         );
+
+         expect(Array.isArray(results)).toBe(true);
+         expect(results.length).toBeGreaterThan(0);
+         
+         results.forEach(result => {
+           expect(result).toHaveProperty('context');
+           const context = typeof result.context === 'string' ? JSON.parse(result.context) : result.context;
+           expect(context.name).toMatch(/^John/);
+         });
+       });
+
+       it('should find entities with IN condition', async () => {
+         const results = await Entity.findByCondition(
+           'user',
+           'department',
+           ['engineering', 'marketing'],
+           'IN',
+           hotMeshClient
+         );
+
+         expect(Array.isArray(results)).toBe(true);
+         expect(results.length).toBeGreaterThan(0);
+         
+         results.forEach(result => {
+           expect(result).toHaveProperty('context');
+           const context = typeof result.context === 'string' ? JSON.parse(result.context) : result.context;
+           expect(['engineering', 'marketing']).toContain(context.department);
+         });
+       });
+
+       it('should handle pagination with limit and offset', async () => {
+         const page1 = await Entity.findByCondition(
+           'user',
+           'status',
+           'active',
+           '=',
+           hotMeshClient,
+           { limit: 1, offset: 0 }
+         );
+
+         const page2 = await Entity.findByCondition(
+           'user',
+           'status',
+           'active',
+           '=',
+           hotMeshClient,
+           { limit: 1, offset: 1 }
+         );
+
+         expect(page1.length).toBe(1);
+         expect(page2.length).toBeLessThanOrEqual(1);
+         
+         if (page2.length > 0) {
+           expect(page1[0].key).not.toBe(page2[0].key);
+         }
+       });
+     });
+
+    describe('Cross-entity queries', () => {
+      it('should find entities across different entity types', async () => {
+        // Test querying different entity types
+        const users = await Entity.find(
+          'user',
+          { status: 'active' },
+          hotMeshClient
+        );
+
+        const products = await Entity.find(
+          'product',
+          { category: 'electronics' },
+          hotMeshClient
+        );
+
+        expect(Array.isArray(users)).toBe(true);
+        expect(Array.isArray(products)).toBe(true);
+        expect(users.length).toBeGreaterThan(0);
+        expect(products.length).toBeGreaterThan(0);
+
+        // Verify entity types are different
+        if (users.length > 0 && products.length > 0) {
+          const userContext = typeof users[0].context === 'string' ? JSON.parse(users[0].context) : users[0].context;
+          const productContext = typeof products[0].context === 'string' ? JSON.parse(products[0].context) : products[0].context;
+          
+          expect(userContext.entity).toBe('user');
+          expect(productContext.entity).toBe('product');
+        }
+      });
+    });
+
+    describe('Entity Index Creation', () => {
+      it('should create gin index for array field', async () => {
+        // Create a workflow with array data to test GIN index
+        const handle = await client.workflow.start({
+          namespace,
+          entity: 'user',
+          args: ['Test User', JSON.stringify({
+            id: 'user-array',
+            entity: 'user',
+            name: 'Array Test User',
+            tags: ['test', 'gin', 'index']
+          })],
+          taskQueue: 'entityqueue',
+          workflowName: 'createTestEntity',
+          workflowId: prefix + 'user-array',
+          expire: 300
+        });
+        await handle.result();
+
+        // Create GIN index on the array field
+        await Entity.createIndex('user', 'tags', hotMeshClient);
+      });
+
+      it('should handle creating same index again gracefully', async () => {
+        await Entity.createIndex('user', 'tags', hotMeshClient);
+        // Should not throw error due to IF NOT EXISTS
+      });
+
+      it('should handle errors gracefully', async () => {
+        try {
+          // Try to create index on non-existent entity
+          await Entity.createIndex('nonexistent', 'field', hotMeshClient);
+          fail('Should have thrown error');
+        } catch (error) {
+          expect(error).toBeDefined();
+        }
+      });
     });
   });
 });

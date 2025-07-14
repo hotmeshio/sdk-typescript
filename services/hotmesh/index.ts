@@ -41,7 +41,7 @@ import { MAX_DELAY } from '../../modules/enums';
 
 /**
  * HotMesh is a distributed, reentrant process orchestration engine that transforms
- * Redis, Postgres, or NATS into a resilient service mesh capable of running
+ * Postgres into a resilient service mesh capable of running
  * fault-tolerant workflows across multiple services and systems.
  *
  * ## Core Concepts
@@ -54,15 +54,11 @@ import { MAX_DELAY } from '../../modules/enums';
  * **Reentrant Process Engine**: Unlike traditional workflow engines, HotMesh
  * provides built-in retry logic, idempotency, and failure recovery. Your business
  * logic doesn't need to handle timeouts or retries - the engine manages all of that.
- *
- * **Multi-Provider Support**: Supports Redis/ValKey, Postgres, and NATS as backend
- * providers, allowing you to leverage existing infrastructure investments.
- *
+ * 
  * ## Key Features
  *
  * - **Fault Tolerance**: Automatic retry, timeout, and failure recovery
  * - **Distributed Execution**: No single point of failure
- * - **Multi-Provider**: Redis, Postgres, NATS backend support
  * - **YAML-Driven**: Model-driven development with declarative workflow definitions
  * - **OpenTelemetry**: Built-in observability and tracing
  * - **Durable State**: Workflow state persists across system restarts
@@ -89,15 +85,17 @@ import { MAX_DELAY } from '../../modules/enums';
  * @example
  * ```typescript
  * import { HotMesh } from '@hotmeshio/hotmesh';
- * import Redis from 'ioredis';
+ * import { Client as Postgres } from 'pg';
  *
- * // Initialize with Redis backend
+ * // Initialize with Postgres backend
  * const hotMesh = await HotMesh.init({
  *   appId: 'my-app',
  *   engine: {
  *     connection: {
- *       class: Redis,
- *       options: { host: 'localhost', port: 6379 }
+ *       class: Postgres,
+ *       options: {
+ *         connectionString: 'postgresql://user:pass@localhost:5432/db'
+ *       }
  *     }
  *   }
  * });
@@ -222,9 +220,9 @@ import { MAX_DELAY } from '../../modules/enums';
  * await HotMesh.stop();
  * ```
  *
- * @see {@link https://hotmesh.io/docs} - Complete documentation
+ * @see {@link https://docs.hotmesh.io/} - Complete documentation
  * @see {@link https://github.com/hotmeshio/samples-typescript} - Examples and tutorials
- * @see {@link https://zenodo.org/records/12168558} - Academic paper on the architecture
+ * @see {@link https://zenodo.org/records/12168558} - White paper on the architecture
  */
 class HotMesh {
   namespace: string;

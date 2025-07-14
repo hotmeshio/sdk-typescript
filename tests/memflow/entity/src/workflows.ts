@@ -279,6 +279,36 @@ export async function testExecChildWithEntity(userName: string): Promise<any> {
 }
 
 /**
+ * Test function to create entities with test data for querying
+ * This function creates entities with the provided test data for Entity.find() tests
+ */
+export async function createTestEntity(name: string, dataJson: string): Promise<any> {
+  const data = JSON.parse(dataJson);
+  
+  // Create entity and set the provided data
+  const entity = await MemFlow.workflow.entity();
+  
+  // Set the entity data
+  await entity.set(data);
+  
+  // Add some additional metadata
+  await entity.merge({
+    createdAt: new Date().toISOString(),
+    testEntity: true,
+    processed: true
+  });
+  
+  // Get the final entity to return
+  const finalEntity = await entity.get();
+  
+  return {
+    success: true,
+    message: `Test entity created for ${name}`,
+    entity: finalEntity
+  };
+}
+
+/**
  * Child workflow that creates a product entity
  * This workflow runs as a 'product' entity type
  */
@@ -301,7 +331,7 @@ export async function createProduct(createdBy: string, productName: string, pric
     }
   };
   
-  await productEntity.set(productData);
+  await productEntity.set<typeof productData>(productData);
   
   // Simulate some product creation processing
   await MemFlow.workflow.sleepFor('1 second');
@@ -316,7 +346,7 @@ export async function createProduct(createdBy: string, productName: string, pric
   });
   
   // Get final product entity state
-  const finalProductEntity = await productEntity.get();
+  const finalProductEntity = await productEntity.get<typeof productData>();
 
   return {
     success: true,

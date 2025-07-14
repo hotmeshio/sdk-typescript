@@ -1,11 +1,11 @@
 # Quick Start
 
-The examples provided in this guide are the simplest possible flows that can be defined in HotMesh. They are intended to be used as a starting point as you modify portions to fit your use case. Examples are organized as a story, with each example building upon the prior one for better context. But any single example can be used as a starting point if you find it relevant.
+This guide demonstrates how to build sophisticated workflows using HotMesh, progressing from basic flows to complex, conditional, and compositional patterns. Each example builds upon the previous one, showing how to evolve a simple application into a production-ready workflow system.
 
 **Table of Contents**
 - [Setup](#setup)
   - [Install Packages](#install-packages)
-  - [Configure and Initialize Redis](#configure-and-initialize-redis)
+  - [Configure and Initialize Postgres](#configure-and-initialize-postgres)
   - [Configure and Initialize HotMesh](#configure-and-initialize-hotmesh)
   - [Define the Application](#define-the-application)
   - [Deploy the Application](#deploy-the-application)
@@ -28,29 +28,15 @@ Install the HotMesh NPM package.
 npm install @hotmeshio/hotmesh
 ```
 
-Install the `Redis` or `IORedis` NPM package.
-
-```bash
-npm install redis
-```
-
-**OR**
-
-```bash
-npm install ioredis
-```
-
-### Configure and Initialize Redis
-Configure and initialize 3 Redis clients.
-
->The examples in this guide will use the `ioredis` package, but you can use the `redis` package if you prefer. Configure and connect to Redis as is standard for your chosen package.
+### Configure and Initialize Postgres
+Set up your Postgres connection. These examples use the `pg` package, but you can adapt the connection configuration for your database setup.
 
 ```javascript
-import Redis from 'ioredis'; //OR `import * as Redis from 'redis';`
+import { Client as Postgres } from 'pg';
 ```
 
 ### Configure and Initialize HotMesh
-Configure and initialize HotMesh.
+Initialize HotMesh with your database connection:
 
 ```javascript
 import { HotMesh } from '@hotmeshio/hotmesh';
@@ -58,20 +44,22 @@ import { HotMesh } from '@hotmeshio/hotmesh';
 const hotMesh = await HotMesh.init({
   appId: 'abc',
   engine: {
-    redis: {
-      class: Redis,
-      options: { host, port, password, db }
+    connection: {
+      class: Postgres,
+      options: {
+        connectionString: 'postgresql://user:pass@localhost:5432/db'
+      }
     }
   }
 });
 ```
 
-Before running workflows, the application must be *defined*, *deployed*, and *activated*. This is a *one-time activity* that must be called before calling `pub`, `pubsub` and similar application endpoints.
+Before running workflows, applications must be *defined*, *deployed*, and *activated*. This three-step process is performed once before calling workflow endpoints like `pub` and `pubsub`.
 
 ### Define the Application
-This first example isn't technically "workflow", but it does represent the simplest app possible: a single flow with a single activity. It's valid YAML, but the app it defines will terminate as soon as it starts. 
+Start with the simplest possible application: a single flow containing one activity. While this isn't technically a workflow (it terminates immediately), it establishes the foundation for more complex flows.
 
-Begin by saving the following YAML descriptor using a file name of your choosing (e.g., `abc.1.yaml`). This file will be referenced during the *deploy* step, so make sure you know where it's located.
+Save this YAML descriptor as `abc.1.yaml`:
 
 ```yaml
 # abc.1.yaml
@@ -86,24 +74,22 @@ app:
 ```
 
 ### Deploy the Application
-Now that you have a YAML descriptor, you can deploy it to HotMesh using the `deploy` method. This step compiles and saves the YAML descriptor to Redis where any connected engine or worker can access the rules it defines.
+Deploy compiles and stores the YAML descriptor in the database, making it accessible to all connected engines and workers:
 
 ```javascript
 await hotMesh.deploy('./abc.1.yaml');
 ```
 
 ### Activate the Application
-Once the YAML descriptor is *deployed* to Redis, you can *activate* it using the `activate` method. This final step leverages the `sub` Redis channel in the background to coordinate quorum behavior across all running instances. This ensures that the entire fleet will simultaneously reference and execute the targeted YAML version.
+Activation coordinates the entire fleet to simultaneously reference and execute the specified version using the database's notification system:
 
 ```javascript
 await hotMesh.activate('1');
 ```
 
->The flow is now active and available for invocation from any microservice with a connection to HotMesh.
+The flow is now active and ready for invocation. Since this flow contains only a trigger activity, it terminates immediately. The response contains metadata about the execution (job id, status, creation time, etc.) but no data.
 
-Since there are no subsequent activities (this flow only has a single trigger), the flow will terminate immediately and the `response` will only contain `metadata` about the call (e.g., `jid` (job id), `js` (job status), `jc` (job created), etc).
-
->Notice how the `abc.test` topic is used to trigger the flow. This is the same topic that was defined in the YAML descriptor.
+The `abc.test` topic triggers the flow, matching the topic defined in the YAML descriptor:
 
 ```javascript
 const response = await hotMesh.pubsub('abc.test', {});
@@ -111,18 +97,20 @@ console.log(response.metadata);
 ```
 
 ### End-to-End Example
-Here is the entire end-to-end example, including the one-time setup steps to *deploy* and *activate* version 1 of app `abc`.
+Complete setup example showing deployment and activation of version 1:
 
 ```javascript
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 import { HotMesh } from '@hotmeshio/hotmesh';
 
 const hotMesh = await HotMesh.init({
   appId: 'abc',
   engine: {
-    redis: {
-      class: Redis,
-      options: { host, port, password, db }
+    connection: {
+      class: Postgres,
+      options: {
+        connectionString: 'postgresql://user:pass@localhost:5432/db'
+      }
     }
   }
 });
@@ -142,7 +130,7 @@ await hotMesh.pubsub('abc.test');
 ```
 
 ## The Simplest Flow
-Graphs need at least one *transition* to be classified as a "workflow". Notice how the graph now includes a `transitions` section to define the activity transition from `t1` to `a1`. Save this YAML descriptor as `abc.2.yaml`.
+A workflow requires at least one transition between activities. This example adds a `transitions` section to define the flow from trigger `t1` to activity `a1`. Save this YAML descriptor as `abc.2.yaml`:
 
 ```yaml
 # abc.2.yaml
@@ -161,7 +149,7 @@ app:
           - to: a1
 ```
 
-Use HotMesh's **hot deployment** capability to upgrade the `abc` app from version `1` to version `2`.
+Use HotMesh's hot deployment capability to upgrade from version 1 to version 2:
 
 ```javascript
 // continued from prior example
@@ -177,10 +165,10 @@ await hotMesh.activate('2');
 const response2 = await hotMesh.pubsub('abc.test', {});
 ```
 
-From the outside (from the caller's perspective), the flow behavior doesn't appear much different. But behind the scenes, two activities will now run: the `trigger` (t1) and the `activity` (a1). The `trigger` will transition to the `activity`, and the `activity` will transition to the end of the flow.
+The caller experience remains unchanged, but internally two activities now execute: the trigger transitions to the hook activity, which then completes the flow.
 
 ## The Simplest Compositional Flow
-This example shows the simplest *compositional flow* possible (where one flow triggers another). Composition allows for standardization and component re-use. Save this YAML descriptor as `abc.3.yaml`:
+Composition allows one flow to trigger another, enabling standardization and component reuse. This example demonstrates the simplest compositional pattern where flow 1 calls flow 2. Save this YAML descriptor as `abc.3.yaml`:
 
 ```yaml
 # abc.3.yaml
@@ -206,7 +194,7 @@ app:
           type: trigger
 ```
 
-Upgrade the `abc` app from version `2` to version `3` and run another test.
+Upgrade to version 3 and test:
 
 ```javascript
 // continued from prior example
@@ -222,12 +210,12 @@ await hotMesh.activate('3');
 const response3 = await hotMesh.pubsub('abc.test', {});
 ```
 
-From the outside (from the caller's perspective), this flow doesn't appear much different from the prior 2 example flows as it doesn't define any input or output data. But behind the scenes, two flows will run: the first flow will transition from the `trigger` to the `await` activity which will then call the second flow, using the `some.other.topic` topic as the link. The second flow only defines a single `trigger`, so it will terminate immediately after it starts. After flow 2 terminates and returns, the `await` activity will conclude and flow 1 will terminate as well.
+Two flows now execute sequentially: flow 1 transitions from trigger to await activity, which calls flow 2 using the `some.other.topic` topic. Flow 2 executes its trigger and terminates, then flow 1 completes.
 
 ## The Simplest Executable Flow
-This example shows the simplest *executable flow* possible (where actual work is performed by coordinating and executing functions on your network). Notice how activity, `a1` has been defined as a `worker` type. Save this YAML descriptor as `abc.4.yaml`.
+This example introduces actual work execution by defining a `worker` activity. Workers perform computational tasks on your network. Save this YAML descriptor as `abc.4.yaml`:
 
->The `work.do` topic identifies the worker function to execute. This name is arbitrary and should match the semantics of your use case and the topic space you define for your organization.
+The `work.do` topic identifies the worker function to execute. Choose topic names that match your use case and organizational conventions.
 
 ```yaml
 # abc.4.yaml
@@ -247,29 +235,26 @@ app:
           - to: a1
 ```
 
-When a `worker` activity is defined in the YAML, you must likewise register a `worker` function that will perform the work. Here is the updated end-to-end example with the entire evolution of the application from version `1` to version `4`. Notice how the `HotMesh.init` call now registers the worker function, using 3 additional redis connections. Points of presence like this (instances of HotMesh) can declare a HotMesh engine and/or one or more workers. The engine is used to coordinate the flow, while the workers are used to perform the work.
+When defining worker activities, register corresponding worker functions that perform the actual work. The updated initialization now includes worker registration with additional database connections. HotMesh instances can declare engines (for coordination) and/or workers (for execution):
 
 ```javascript
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 import { HotMesh } from '@hotmeshio/hotmesh';
+
+const connection = {
+  class: Postgres,
+  options: {
+    connectionString: 'postgresql://user:pass@localhost:5432/db'
+  }
+};
 
 const hotMesh = await HotMesh.init({
   appId: 'abc',
-
-  engine: {
-    redis: {
-      class: Redis,
-      options: { host, port, password, db }
-    }
-  },
-
+  engine: { connection },
   workers: [
     { 
       topic: 'work.do',
-      redis: {
-        class: Redis,
-        options: { host, port, password, db }
-      }
+      connection,
       callback: async (data: StreamData) => {
         return {
           metadata: { ...data.metadata },
@@ -302,9 +287,9 @@ const response4 = await hotMesh.pubsub('abc.test', {});
 ```
 
 ## The Simplest Executable Data Flow
-This example shows the simplest *executable data flow* possible (where data described using JSON Schema is exchanged between flows, activities, and worker functions). Notice how input and output schemas have been added to the flow along with mapping statements to bind the data. Save this YAML descriptor as `abc.5.yaml`.
+This example demonstrates data exchange using JSON Schema validation and mapping. Input and output schemas define data structure, while mapping statements bind data between activities. Save this YAML descriptor as `abc.5.yaml`:
 
-When executed, this flow will expect a payload with a field named 'a' (the input) and will return a payload with a field named 'b' (the output). The input will be provided to the worker function which will modify it and return the output. This output will be surfaced and returned to the caller as the job data (the job response/output).
+This flow expects input with field 'a' and returns output with field 'b'. The worker function receives the input, transforms it, and returns the output that becomes the job response.
 
 ```yaml
 # abc.5.yaml
@@ -356,29 +341,28 @@ app:
           - to: a1
 ```
 
-Here is the updated end-to-end example with the entire evolution of the application from version `1` to version `5`. Note how the final response for the workflow now includes the output data from the worker function (`hello world`). All variable names are arbitrary (a, b, x, y). Choose names and structures that reflect your use case.
+The complete evolution from version 1 to version 5. The final workflow response now includes output data from the worker function (`hello world`). Variable names (a, b, x, y) are arbitrary - choose names that reflect your use case:
 
 ```javascript
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 import { HotMesh } from '@hotmeshio/hotmesh';
+
+const connection = {
+  class: Postgres,
+  options: {
+    connectionString: 'postgresql://user:pass@localhost:5432/db'
+  }
+};
 
 const hotMesh = await HotMesh.init({
   appId: 'abc',
 
-  engine: {
-    redis: {
-      class: Redis,
-      options: { host, port, password, db }
-    }
-  },
+  engine: { connection },
 
   workers: [
     { 
       topic: 'work.do',
-      redis: {
-        class: Redis,
-        options: { host, port, password, db }
-      }
+      connection,
       callback: async (data: StreamData) => {
         return {
           metadata: { ...data.metadata },
@@ -412,9 +396,9 @@ console.log(response5.data.b); // hello world
 ```
 
 ## The Simplest Parallel Data Flow
-This example shows the simplest *parallel data flow* possible (where data is produced by two parallel worker function). This flow is relativey unchanged from the prior example with the exception of the addition of a second worker function (`a2`). Save this YAML descriptor as `abc.6.yaml`.
+This example demonstrates parallel execution where two worker functions process the same input simultaneously. The flow adds a second worker (`a2`) that runs in parallel with the first. Save this YAML descriptor as `abc.6.yaml`:
 
-When executed, this flow will expect a payload with a field named 'a' (the input) and will return a payload with fields 'b' and 'c' (the output). Both workers will receive the same input data and operate in parallel, each producing a field in the output. The output will be surfaced and returned to the caller as the job data (the job response/output).
+This flow expects input with field 'a' and returns output with fields 'b' and 'c'. Both workers receive identical input data and execute in parallel, each contributing a field to the output.
 
 ```yaml
 # abc.6.yaml
@@ -490,9 +474,9 @@ app:
 ```
 
 ## The Simplest Sequential Data Flow
-This example shows how information produced by one worker function can be provided as input to another. This flow is relativey unchanged from the prior example but does modify the `transitions` section, so that both a1 and a2 execute sequentially so that the output from 'a1' is guaranteed to be available as input to 'a2'.
+This example demonstrates sequential execution where the output of one worker becomes the input to the next. The transitions section is modified so that a1 and a2 execute sequentially, ensuring a1's output is available as input to a2.
 
-When executed, this flow will expect a payload with a field named 'a' (the input) and will return a payload with fields 'b' and 'c' (the output). The input will be provided to the first worker function which will transform the input. The transformed input will then be passed to the second worker function where it will be further modified. Finally, the output of the second worker function will be returned to the caller as the job data (the job response/output).
+This flow expects input with field 'a' and returns output with fields 'b' and 'c'. The input flows through the first worker, gets transformed, then flows through the second worker for additional transformation.
 
 ```yaml
 # abc.7.yaml
@@ -568,29 +552,28 @@ app:
           - to: a2
 ```
 
-Here is the updated end-to-end example with the entire evolution of the application from version `1` to version `7`. Note how the final response for workflow 6 will be `{ b: 'hello world', c: 'hello world'}` while the final response for workflow 7 will be `{ b: 'hello world', c: 'hello world world'}`. This is expected as the output of the first worker function is passed to the second worker function in workflow 7, revealing the additive nature of sequential execution.
+Complete evolution from version 1 to version 7. Note the different outputs: workflow 6 produces `{ b: 'hello world', c: 'hello world'}` while workflow 7 produces `{ b: 'hello world', c: 'hello world world'}`. The sequential execution in workflow 7 demonstrates the additive nature of chained transformations:
 
 ```javascript
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 import { HotMesh } from '@hotmeshio/hotmesh';
+
+const connection = {
+  class: Postgres,
+  options: {
+    connectionString: 'postgresql://user:pass@localhost:5432/db'
+  }
+};
 
 const hotMesh = await HotMesh.init({
   appId: 'abc',
 
-  engine: {
-    redis: {
-      class: Redis,
-      options: { host, port, password, db }
-    }
-  },
+  engine: { connection },
 
   workers: [
     { 
       topic: 'work.do',
-      redis: {
-        class: Redis,
-        options: { host, port, password, db }
-      }
+      connection,
       callback: async (data: StreamData) => {
         return {
           metadata: { ...data.metadata },
@@ -601,10 +584,7 @@ const hotMesh = await HotMesh.init({
 
     { 
       topic: 'work.do.more',
-      redis: {
-        class: Redis,
-        options: { host, port, password, db }
-      }
+      connection,
       callback: async (data: StreamData) => {
         return {
           metadata: { ...data.metadata },
@@ -612,7 +592,6 @@ const hotMesh = await HotMesh.init({
         };
       }
     }
-
   ]
 });
 
@@ -651,7 +630,7 @@ console.log(response7.data.c); // hello world world
 ```
 
 ## The Simplest Compositional Executable Flow
-This example depicts a composed set of 2 flows, passing data from the first flow to the second flow. The second flow calls the same worker function used in prior examples (The function identified by the `work.do` topic) to transform the input before returning it to the first flow.
+This example demonstrates composition with data flow - passing data from one flow to another. The first flow sends data to a second flow, which executes a worker function to transform the data before returning it.
 
 ```yaml
 # abc.8.yaml
@@ -746,7 +725,7 @@ app:
           - to: a2
 ```
 
-Test the output of the composed flow:
+Testing the composed flow:
 
 ```javascript
 // continued from prior example
@@ -763,9 +742,9 @@ console.log(response8.data.b); // hello world
 ```
 
 ## The Simplest Conditional Executable Flow
-This example depicts two sequential workers. The first worker will conditionally run if the input (a) is not equal to `goodbye` or `bye`. The second worker will only run if the output produced by worker `a1` (`a1.output.data.y`) is equal to `hello world`. Refer to the `transitions` section in the following flow for details.
+This example demonstrates conditional execution using transition conditions. The first worker runs conditionally based on input validation, and the second worker runs conditionally based on the first worker's output.
 
->Note how the [@pipes](./data_mapping.md) syntax can be used to design robust comparison expressions for fine-grained control over the execution flow.
+The first worker executes only if the input (a) is not equal to `goodbye` or `bye`. The second worker executes only if the first worker's output (`a1.output.data.y`) equals `hello world`. The transitions section uses [@pipes](./data_mapping.md) syntax for robust comparison expressions:
 
 ```yaml
 # abc.9.yaml
@@ -861,7 +840,10 @@ app:
                       - ['{@conditional.equality}']
 ```
 
-Note how the workflow will output values for fields b and/or c depending upon what is input into field a. If the input is `goodbye` or `bye`, the workflow will only execute the trigger (t1) and then immediately end. If the input is `hello` (and the output produced by `a1` is 'hello world'), then the workflow will also execute activity `a2`.
+The workflow produces different outputs based on the input:
+- Input `goodbye` or `bye`: only trigger executes, workflow ends immediately
+- Input `hello`: both workers execute (a1's output is 'hello world', triggering a2)
+- Other input: only a1 executes (a1's output doesn't match 'hello world', so a2 doesn't run)
 
 ```javascript
 // continued from prior example

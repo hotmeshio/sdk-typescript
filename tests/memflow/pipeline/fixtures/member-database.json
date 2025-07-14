@@ -1,0 +1,82 @@
+{
+  "members": {
+    "MBR-2024-001": {
+      "status": "active",
+      "type": "premium",
+      "joinDate": "2024-01-15",
+      "lastPayment": "2024-01-15",
+      "benefits": ["gym_access", "pool_access", "personal_training"],
+      "address": {
+        "street": "123 Main Street",
+        "city": "Springfield",
+        "state": "IL",
+        "zip": "62701"
+      },
+      "contact": {
+        "phone": "(555) 123-4567",
+        "email": "john.smith@email.com"
+      },
+      "emergencyContact": {
+        "name": "Jane Smith",
+        "phone": "(555) 987-6543"
+      }
+    },
+    "MBR-2024-002": {
+      "status": "expired",
+      "type": "basic",
+      "joinDate": "2023-06-01",
+      "lastPayment": "2023-12-01",
+      "benefits": ["gym_access"],
+      "address": {
+        "street": "456 Oak Avenue",
+        "city": "Springfield",
+        "state": "IL",
+        "zip": "62702"
+      },
+      "contact": {
+        "phone": "(555) 234-5678",
+        "email": "jane.doe@email.com"
+      },
+      "emergencyContact": {
+        "name": "Bob Doe",
+        "phone": "(555) 876-5432"
+      }
+    },
+    "MBR-2024-003": {
+      "status": "active",
+      "type": "family",
+      "joinDate": "2024-02-01",
+      "lastPayment": "2024-02-01",
+      "benefits": ["gym_access", "pool_access", "childcare"],
+      "address": {
+        "street": "789 Pine Road",
+        "city": "Springfield",
+        "state": "IL",
+        "zip": "62703"
+      },
+      "contact": {
+        "phone": "(555) 345-6789",
+        "email": "family@email.com"
+      },
+      "emergencyContact": {
+        "name": "Emergency Contact",
+        "phone": "(555) 765-4321"
+      }
+    }
+  },
+  "validationRules": {
+    "memberIdFormat": "^MBR-\\d{4}-\\d{3}$",
+    "requiredFields": ["memberId", "address"],
+    "addressValidation": {
+      "requiresStreet": true,
+      "requiresCity": true,
+      "requiresState": true,
+      "requiresZip": true
+    }
+  },
+  "processingSLA": {
+    "maxRetries": 1,
+    "retryDelay": 2000,
+    "timeout": 30000
+  }
+} 

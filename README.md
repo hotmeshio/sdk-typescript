@@ -16,11 +16,11 @@ Use HotMesh to:
 
 ## Table of Contents
 
-1. [Quick Start](#-quick-start)
-2. [Permanent Memory Architecture](#-permanent-memory-architecture)
-3. [Durable AI Agents](#-durable-ai-agents)
-4. [Building Pipelines with State](#-building-pipelines-with-state)
-5. [Documentation & Links](#-documentation--links)
+1. [Quick Start](#quick-start)
+2. [Permanent Memory Architecture](#permanent-memory-architecture)
+3. [Durable AI Agents](#durable-ai-agents)
+4. [Building Pipelines with State](#building-pipelines-with-state)
+5. [Documentation & Links](#documentation--links)
 
 ---
 
@@ -162,6 +162,8 @@ export async function researchAgent(query: string): Promise<any> {
   return await entity.get();
 }
 ```
+
+> 💡 **Developer Note**: A complete implementation of this Research Agent example with tests, OpenAI integration, and multi-perspective analysis can be found in the [test suite](./tests/memflow/agent).
 
 #### Hooks: Perspectives
 
@@ -354,6 +356,8 @@ export async function triggerRefresh() {
   });
 }
 ```
+
+> 💡 **Developer Note**: A complete implementation of this Pipeline example with OpenAI Vision integration, processing hooks, and document workflow automation can be found in the [test suite](./tests/memflow/pipeline).
 
 ---
 

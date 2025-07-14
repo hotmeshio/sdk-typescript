@@ -1,17 +1,12 @@
-import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
 import { MemFlow } from '../../../services/memflow';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { ClientService } from '../../../services/memflow/client';
 import { guid, sleepFor } from '../../../modules/utils';
-import { ProviderNativeClient, ProvidersConfig } from '../../../types/provider';
-import {
-  dropTables,
-  ioredis_options as redis_options,
-  postgres_options,
-} from '../../$setup/postgres';
+import { ProviderNativeClient } from '../../../types/provider';
+import { dropTables, postgres_options } from '../../$setup/postgres';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
+import { ProviderConfig } from '../../../types/provider';
 
 import * as workflows from './src/workflows';
 import * as childWorkflows from './child/workflows';
@@ -24,20 +19,13 @@ describe('MEMFLOW | hook & search | Postgres', () => {
   let client: ClientService;
   let workflowGuid: string;
   let postgresClient: ProviderNativeClient;
+  const connection = { class: Postgres, options: postgres_options };
 
   beforeAll(async () => {
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
     await dropTables(postgresClient);
-
-    //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-    redisConnection.getClient().flushdb();
   });
 
   afterAll(async () => {
@@ -46,14 +34,13 @@ describe('MEMFLOW | hook & search | Postgres', () => {
 
   describe('Connection', () => {
     describe('connect', () => {
-      it('should echo the Expanded config', async () => {
+      it('should echo the config', async () => {
         const connection = (await Connection.connect({
-          store: { class: Postgres, options: postgres_options },
-          stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
-        })) as ProvidersConfig;
+          class: Postgres,
+          options: postgres_options,
+        })) as ProviderConfig;
         expect(connection).toBeDefined();
-        expect(connection.sub).toBeDefined();
+        expect(connection.options).toBeDefined();
       });
     });
   });
@@ -62,11 +49,7 @@ describe('MEMFLOW | hook & search | Postgres', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
         client = new Client({
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
         });
         workflowGuid = prefix + guid();
 
@@ -97,11 +80,7 @@ describe('MEMFLOW | hook & search | Postgres', () => {
         const worker = await Worker.create({
           namespace,
           guid: 'parent-worker',
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
           taskQueue: 'hook-world',
           workflow: workflows.example,
 
@@ -130,11 +109,7 @@ describe('MEMFLOW | hook & search | Postgres', () => {
         const worker = await Worker.create({
           namespace,
           guid: 'child-worker',
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
           taskQueue: 'child-world',
           workflow: childWorkflows.childExample,
         });
@@ -146,11 +121,7 @@ describe('MEMFLOW | hook & search | Postgres', () => {
         const worker = await Worker.create({
           namespace,
           guid: 'hook-worker',
-          connection: {
-            store: { class: Postgres, options: postgres_options },
-            stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
-          },
+          connection,
           taskQueue: 'hook-world',
           workflow: workflows.exampleHook,
         });

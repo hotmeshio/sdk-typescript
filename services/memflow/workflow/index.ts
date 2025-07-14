@@ -15,6 +15,7 @@ import { random } from './random';
 import { signal } from './signal';
 import { hook } from './hook';
 import { interrupt } from './interrupt';
+import { didInterrupt } from './interruption';
 import { all } from './all';
 import { sleepFor } from './sleepFor';
 import { waitFor } from './waitFor';
@@ -25,10 +26,6 @@ import { entity } from './entityMethods';
  * The WorkflowService class provides a set of static methods to be used within a workflow function.
  * These methods ensure deterministic replay, persistence of state, and error handling across
  * re-entrant workflow executions.
- *
- * By refactoring the original single-file implementation into submodules,
- * we maintain clear separation of concerns and improved maintainability,
- * while preserving type information and full functionality.
  *
  * @example
  * ```typescript
@@ -67,6 +64,7 @@ export class WorkflowService {
   static random = random;
   static signal = signal;
   static hook = hook;
+  static didInterrupt = didInterrupt;
   static interrupt = interrupt;
   static all = all;
   static sleepFor = sleepFor;
