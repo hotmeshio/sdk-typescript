@@ -35,6 +35,7 @@ describe('FUNCTIONAL | Quorum | Postgres', () => {
 
     const config: HotMeshConfig = {
       appId: appConfig.id,
+      taskQueue: 'default',
       namespace: HMNS,
       logLevel: HMSH_LOGLEVEL,
       engine: {

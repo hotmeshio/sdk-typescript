@@ -79,12 +79,6 @@ type HotMeshEngine = {
   search?: ProviderClient;
 
   /**
-   * redis connection options; replaced with 'connection'
-   * @deprecated
-   */
-  redis?: ProviderConfig;
-
-  /**
    * short-form format for the connection options for the
    * store, stream, sub, and search clients
    */
@@ -125,6 +119,13 @@ type HotMeshEngine = {
    * @default false
    */
   readonly?: boolean;
+
+  /**
+   * Task queue identifier used for connection pooling optimization.
+   * When provided, connections will be reused across providers (store, sub, stream)
+   * that share the same task queue and database configuration.
+   */
+  taskQueue?: string;
 };
 
 type HotMeshWorker = {
@@ -207,6 +208,13 @@ type HotMeshWorker = {
    * from the target stream
    */
   callback: (payload: StreamData) => Promise<StreamDataResponse>;
+
+  /**
+   * Task queue identifier used for connection pooling optimization.
+   * When provided, connections will be reused across providers (store, sub, stream)
+   * that share the same task queue and database configuration.
+   */
+  taskQueue?: string;
 };
 
 type HotMeshConfig = {
@@ -216,6 +224,13 @@ type HotMeshConfig = {
   guid?: string;
   logger?: ILogger;
   logLevel?: LogLevel;
+  /**
+   * Task queue identifier used for connection pooling optimization.
+   * When multiple engines/workers share the same task queue and database configuration,
+   * they will reuse the same connection instead of creating separate ones.
+   * This is particularly useful for PostgreSQL providers to reduce connection overhead.
+   */
+  taskQueue?: string;
   engine?: HotMeshEngine;
   workers?: HotMeshWorker[];
 };

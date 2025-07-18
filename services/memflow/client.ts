@@ -89,7 +89,7 @@ export class ClientService {
    * @private
    */
   getHotMeshClient = async (
-    workflowTopic: string | null,
+    taskQueue: string | null,
     namespace?: string,
   ) => {
     //namespace isolation requires the connection options to be hashed
@@ -109,6 +109,7 @@ export class ClientService {
     const readonly = this.connection.readonly ?? undefined;
     let hotMeshClient = HotMesh.init({
       appId: targetNS,
+      taskQueue,
       logLevel: HMSH_LOGLEVEL,
       engine: {
         readonly,
@@ -224,7 +225,7 @@ export class ClientService {
       //hotmesh `topic` is equivalent to `queue+workflowname` pattern in other systems
       const workflowTopic = `${taskQueueName}-${workflowName}`;
       const hotMeshClient = await this.getHotMeshClient(
-        workflowTopic,
+        taskQueueName,
         options.namespace,
       );
       //verify that the stream channel exists before enqueueing
@@ -296,7 +297,8 @@ export class ClientService {
      * ```
      */
     hook: async (options: HookOptions): Promise<string> => {
-      const workflowTopic = `${options.taskQueue ?? options.entity}-${options.entity ?? options.workflowName}`;
+      const taskQueue = options.taskQueue ?? options.entity;
+      const workflowTopic = `${taskQueue}-${options.entity ?? options.workflowName}`;
       const payload = {
         arguments: [...options.args],
         id: options.workflowId,
@@ -311,7 +313,7 @@ export class ClientService {
       };
       //seed search data before entering
       const hotMeshClient = await this.getHotMeshClient(
-        workflowTopic,
+        taskQueue,
         options.namespace,
       );
       const msgId = await hotMeshClient.hook(
@@ -359,7 +361,7 @@ export class ClientService {
     ): Promise<WorkflowHandleService> => {
       const workflowTopic = `${taskQueue}-${workflowName}`;
       const hotMeshClient = await this.getHotMeshClient(
-        workflowTopic,
+        taskQueue,
         namespace,
       );
       return new WorkflowHandleService(
@@ -400,7 +402,7 @@ export class ClientService {
     ): Promise<string[]> => {
       const workflowTopic = `${taskQueue}-${workflowName}`;
       const hotMeshClient = await this.getHotMeshClient(
-        workflowTopic,
+        taskQueue,
         namespace,
       );
       try {

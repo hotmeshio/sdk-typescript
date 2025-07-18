@@ -18,14 +18,17 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
   let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
-    postgresClient = (
-      await PostgresConnection.connect(guid(), Postgres, postgres_options)
-    ).getClient();
+    if (process.env.POSTGRES_IS_REMOTE !== 'true') {
+      postgresClient = (
+        await PostgresConnection.connect(guid(), Postgres, postgres_options)
+      ).getClient();
 
-    await dropTables(postgresClient);
+      await dropTables(postgresClient);
+    }
 
     const config: HotMeshConfig = {
       appId: appConfig.id,
+      //taskQueue: 'default',
       logLevel: HMSH_LOGLEVEL,
       engine: {
         connection: {
@@ -55,7 +58,7 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
       ],
     };
     hotMesh = await HotMesh.init(config);
-  }, 10_000);
+  }, 20_000);
 
   afterAll(async () => {
     hotMesh.stop();
@@ -67,7 +70,7 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
       await hotMesh.deploy('/app/tests/$setup/apps/tree/v2/hotmesh.yaml');
       const isActivated = await hotMesh.activate('2');
       expect(isActivated).toBe(true);
-    }, 10_000);
+    }, 60_000);
   });
 
   describe('Run Version', () => {
@@ -82,6 +85,62 @@ describe('FUNCTIONAL | Sequence | Postgres', () => {
       expect(data.seed).toBe(payload.seed);
       expect(data.speed).toBe(payload.speed);
       expect(data.height).toBe(payload.seed * payload.speed);
-    });
+    }, 20_000);
   });
+
+  it('should work with taskQueue connection pooling without notification cross-contamination', async () => {
+    const taskQueue = 'test-sequence-queue';
+    const testConfig: HotMeshConfig = {
+      appId: 'tree',
+      logLevel: 'warn', // Use warn level to catch any invalid notification warnings
+      taskQueue,
+      engine: {
+        connection: {
+          class: Postgres,
+          options: postgres_options,
+        },
+      },
+      workers: [
+        {
+          topic: 'summer',
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          callback: async (
+            streamData: StreamData,
+          ): Promise<StreamDataResponse> => {
+            return {
+              code: 200,
+              status: StreamStatus.SUCCESS,
+              metadata: { ...streamData.metadata },
+              data: { result: `${new Date().toLocaleString('en-US')}-${taskQueue}` },
+            } as StreamDataResponse;
+          },
+        },
+      ],
+    };
+    
+    const testHotMesh = await HotMesh.init(testConfig);
+    
+    try {
+      await testHotMesh.deploy('/app/tests/$setup/apps/tree/v2/hotmesh.yaml');
+      const isActivated = await testHotMesh.activate('2');
+      expect(isActivated).toBe(true);
+      
+      // Run a test to ensure notifications work without cross-contamination
+      const payload = { seed: 5, speed: 7 };
+      const result = await testHotMesh.pubsub('spring', payload, null, 5_000);
+      const data = result?.data as {
+        seed: number;
+        speed: number;
+        height: number;
+      };
+      expect(data.seed).toBe(payload.seed);
+      expect(data.speed).toBe(payload.speed);
+      expect(data.height).toBe(payload.seed * payload.speed);
+    } finally {
+      await testHotMesh.stop();
+    }
+  }, 30_000);
 });

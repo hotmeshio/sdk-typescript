@@ -161,3 +161,8 @@ export const HMSH_GUID_SIZE = Math.min(
   parseInt(process.env.HMSH_GUID_SIZE, 10) || 22,
   32,
 );
+
+/**
+ * Default task queue name used when no task queue is specified
+ */
+export const DEFAULT_TASK_QUEUE = 'default';

@@ -26,12 +26,14 @@ describe('FUNCTIONAL | Sequence | Postgres+Redis', () => {
 
   beforeAll(async () => {
     // Initialize Postgres and drop tables (and data) from prior tests
-    postgresClient = (
-      await PostgresConnection.connect(guid(), Postgres, postgres_options)
-    ).getClient();
+    if (process.env.POSTGRES_IS_REMOTE !== 'true') {
+      postgresClient = (
+        await PostgresConnection.connect(guid(), Postgres, postgres_options)
+      ).getClient();
 
-    // Drop tables
-    await dropTables(postgresClient);
+      // Drop tables
+      await dropTables(postgresClient);
+    }
 
     //init Redis and flush db (remove data from prior tests)
     const redisConnection = await RedisConnection.connect(

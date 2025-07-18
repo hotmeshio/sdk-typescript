@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import { Client as Postgres } from 'pg';
-import * as path from 'path';
 
 import { MemFlow } from '../../../services/memflow';
 import { WorkflowHandleService } from '../../../services/memflow/handle';
@@ -27,11 +26,12 @@ describe('MEMFLOW | pipeline | `Document Processing Pipeline with OpenAI Vision`
   let handle: WorkflowHandleService;
   
   beforeAll(async () => {
-    postgresClient = (
-      await PostgresConnection.connect(guid(), Postgres, postgres_options)
-    ).getClient();
-
-    await dropTables(postgresClient);
+    if (process.env.POSTGRES_IS_REMOTE !== 'true') {
+      postgresClient = (
+        await PostgresConnection.connect(guid(), Postgres, postgres_options)
+      ).getClient();
+      await dropTables(postgresClient);
+    }
 
     // Check if OpenAI API key is configured
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {

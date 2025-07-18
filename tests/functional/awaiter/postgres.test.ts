@@ -20,10 +20,12 @@ describe('FUNCTIONAL | AWAIT (OR NOT) | Postgres', () => {
   let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
-    postgresClient = (
-      await PostgresConnection.connect(guid(), Postgres, postgres_options)
-    ).getClient();
-    await dropTables(postgresClient);
+    if (process.env.POSTGRES_IS_REMOTE !== 'true') {
+      postgresClient = (
+        await PostgresConnection.connect(guid(), Postgres, postgres_options)
+      ).getClient();
+      await dropTables(postgresClient);
+    }
 
     const redisConnection = await RedisConnection.connect(
       guid(),
@@ -35,6 +37,7 @@ describe('FUNCTIONAL | AWAIT (OR NOT) | Postgres', () => {
     const config: HotMeshConfig = {
       appId: appConfig.id,
       namespace: HMNS,
+      taskQueue: 'default',
       logLevel: HMSH_LOGLEVEL,
       engine: {
         connection: {

@@ -34,7 +34,14 @@ export const KVTables = (context: PostgresStoreService) => ({
     }
 
     try {
-      // Acquire advisory lock
+      // First, check if tables already exist (no lock needed)
+      const tablesExist = await this.checkIfTablesExist(client, appName);
+      if (tablesExist) {
+        // Tables already exist, no need to acquire lock or create tables
+        return;
+      }
+
+      // Tables don't exist, need to acquire lock and create them
       const lockId = this.getAdvisoryLockId(appName);
       const lockResult = await client.query(
         'SELECT pg_try_advisory_lock($1) AS locked',
@@ -45,9 +52,9 @@ export const KVTables = (context: PostgresStoreService) => ({
         // Begin transaction
         await client.query('BEGIN');
 
-        // Check and create tables
-        const tablesExist = await this.checkIfTablesExist(client, appName);
-        if (!tablesExist) {
+        // Double-check tables don't exist (race condition safety)
+        const tablesStillMissing = !(await this.checkIfTablesExist(client, appName));
+        if (tablesStillMissing) {
           await this.createTables(client, appName);
         }
 
@@ -116,14 +123,22 @@ export const KVTables = (context: PostgresStoreService) => ({
       }
 
       try {
+        // Check if tables exist directly (most efficient check)
+        const tablesExist = await this.checkIfTablesExist(client, appName);
+        if (tablesExist) {
+          // Tables now exist, deployment is complete
+          return;
+        }
+
+        // Fallback: check if the lock has been released (indicates completion)
         const lockCheck = await client.query(
           "SELECT NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint) AS unlocked",
           [lockId],
         );
         if (lockCheck.rows[0].unlocked) {
           // Lock has been released, tables should exist now
-          const tablesExist = await this.checkIfTablesExist(client, appName);
-          if (tablesExist) {
+          const tablesExistAfterLock = await this.checkIfTablesExist(client, appName);
+          if (tablesExistAfterLock) {
             return;
           }
         }
