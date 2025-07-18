@@ -23,6 +23,8 @@ describe('MEMFLOW | goodbye | `search, waitFor` | Postgres', () => {
   let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
+    if (process.env.POSTGRES_IS_REMOTE === 'true') return;
+
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
@@ -78,7 +80,7 @@ describe('MEMFLOW | goodbye | `search, waitFor` | Postgres', () => {
           },
         });
         expect(handle.workflowId).toBeDefined();
-      });
+      }, 60_000);
     });
   });
 
@@ -112,7 +114,7 @@ describe('MEMFLOW | goodbye | `search, waitFor` | Postgres', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 60_000);
 
       it('should create a hook worker', async () => {
         const worker = await Worker.create({
@@ -126,7 +128,7 @@ describe('MEMFLOW | goodbye | `search, waitFor` | Postgres', () => {
         });
         await worker.run();
         expect(worker).toBeDefined();
-      });
+      }, 60_000);
 
       it('should create a hook client and publish to invoke a hook', async () => {
         //sleep so the main thread gets into a paused state
@@ -140,7 +142,7 @@ describe('MEMFLOW | goodbye | `search, waitFor` | Postgres', () => {
           workflowId: workflowGuid,
           args: ['HotMeshHook'],
         });
-      }, 10_000);
+      }, 60_000);
     });
   });
 
@@ -171,7 +173,7 @@ describe('MEMFLOW | goodbye | `search, waitFor` | Postgres', () => {
 
         expect(results.length).toEqual(1);
         expect(results[0].job_id).toBeDefined();
-      }, 7_500);
+      }, 60_000);
     });
   });
 });

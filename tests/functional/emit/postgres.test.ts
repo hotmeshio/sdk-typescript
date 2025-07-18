@@ -20,11 +20,13 @@ describe('FUNCTIONAL | EMIT | Postgres', () => {
   let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
-    postgresClient = (
-      await PostgresConnection.connect(guid(), Postgres, postgres_options)
-    ).getClient();
+    if (process.env.POSTGRES_IS_REMOTE !== 'true') {
+      postgresClient = (
+        await PostgresConnection.connect(guid(), Postgres, postgres_options)
+      ).getClient();
 
-    await dropTables(postgresClient);
+      await dropTables(postgresClient);
+    }
 
     const config: HotMeshConfig = {
       appId: appConfig.id,

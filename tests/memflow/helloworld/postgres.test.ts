@@ -25,6 +25,8 @@ describe('MEMFLOW | hello | `Random Hello-World` | Postgres', () => {
   };
 
   beforeAll(async () => {
+    if (process.env.POSTGRES_IS_REMOTE === 'true') return;
+
     // Initialize Postgres and drop tables (and data) from prior tests
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)

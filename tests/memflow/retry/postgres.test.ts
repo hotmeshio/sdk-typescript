@@ -19,9 +19,12 @@ describe('MEMFLOW | retry | Postgres', () => {
   const connection = { class: Postgres, options: postgres_options };
 
   beforeAll(async () => {
+    if (process.env.POSTGRES_IS_REMOTE === 'true') return;
+
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
-    ).getClient();
+      ).getClient();
+
     await dropTables(postgresClient);
   });
 

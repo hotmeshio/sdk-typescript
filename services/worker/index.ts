@@ -60,6 +60,11 @@ class WorkerService {
     const services: WorkerService[] = [];
     if (Array.isArray(config.workers)) {
       for (const worker of config.workers) {
+        // Pass taskQueue from top-level config to worker for connection pooling
+        if (config.taskQueue) {
+          worker.taskQueue = config.taskQueue;
+        }
+        
         await ConnectorService.initClients(worker);
 
         const service = new WorkerService();

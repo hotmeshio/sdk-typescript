@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Permanent-Memory Workflows & AI Agents",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -20,7 +20,7 @@
     "lint:fix": "eslint . --fix --ext .ts",
     "start": "ts-node src/index.ts",
     "test": "NODE_ENV=test jest --detectOpenHandles --forceExit --verbose",
-    "test:await": "NODE_ENV=test jest ./tests/functional/awaiter/*.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:await": "NODE_ENV=test jest ./tests/functional/awaiter/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:compile": "NODE_ENV=test jest ./tests/functional/compile/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:connect": "NODE_ENV=test jest ./tests/unit/services/connector/* --detectOpenHandles --forceExit --verbose",
     "test:connect:ioredis": "NODE_ENV=test jest ./tests/unit/services/connector/providers/ioredis.test.ts --detectOpenHandles --forceExit --verbose",
@@ -59,7 +59,7 @@
     "test:reporter": "NODE_ENV=test jest ./tests/unit/services/reporter/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:reentrant": "NODE_ENV=test jest ./tests/functional/reentrant/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:retry": "NODE_ENV=test jest ./tests/functional/retry/*.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:sequence": "NODE_ENV=test HMSH_LOGLEVEL=info jest ./tests/functional/sequence/*.test.ts --detectOpenHandles --forceExit --verbose",
+    "test:sequence": "NODE_ENV=test HMSH_LOGLEVEL=debug jest ./tests/functional/sequence/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:signal": "NODE_ENV=test jest ./tests/functional/signal/*.test.ts --detectOpenHandles --forceExit --verbose",
     "test:status": "NODE_ENV=test jest ./tests/functional/status/index.test.ts --detectOpenHandles --forceExit --verbose",
     "test:providers": "NODE_ENV=test jest ./tests/functional/*/providers/*/*.test.ts --detectOpenHandles --forceExit --verbose",
@@ -75,7 +75,6 @@
     "test:sub:postgres": "NODE_ENV=test jest ./tests/functional/sub/providers/postgres/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:nats": "NODE_ENV=test jest ./tests/functional/sub/providers/nats/nats.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:meshos": "HMSH_LOGLEVEL=info NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/*.test.ts --forceExit --verbose --detectOpenHandles",
     "test:meshcall": "NODE_ENV=test jest ./tests/meshcall/*.test.ts --forceExit --verbose --detectOpenHandles",
     "test:unit": "NODE_ENV=test jest ./tests/unit/*/*/index.test.ts --detectOpenHandles --forceExit --verbose"
   },

@@ -31,6 +31,7 @@ describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
   let postgresClient: ProviderNativeClient;
   let handle: WorkflowHandleService;
   beforeAll(async () => {
+    if (process.env.POSTGRES_IS_REMOTE === 'true') return;
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
@@ -184,43 +185,43 @@ describe('MEMFLOW | entity | `get, set, merge` | Postgres', () => {
         expect(worker).toBeDefined();
       });
 
-      // it('should create testInfiniteLoopProtection worker', async () => {
-      //   const worker = await Worker.create({
-      //     connection: {
-      //       class: Postgres,
-      //       options: postgres_options,
-      //     },
-      //     namespace,
-      //     taskQueue: 'entityqueue',
-      //     workflow: workflows.testInfiniteLoopProtection,
-      //   });
-      //   await worker.run();
-      //   expect(worker).toBeDefined();
-      // });
+      it('should create testInfiniteLoopProtection worker', async () => {
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'entityqueue',
+          workflow: workflows.testInfiniteLoopProtection,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
 
-      // it('should test infinite loop protection', async () => {
-      //   const testHandle = await client.workflow.start({
-      //     namespace,
-      //     args: ['TestUser'],
-      //     taskQueue: 'entityqueue',
-      //     workflowName: 'testInfiniteLoopProtection',
-      //     workflowId: prefix + 'infinite-loop-test-' + guid(),
-      //     expire: 30,
-      //   });
+      it('should test infinite loop protection', async () => {
+        const testHandle = await client.workflow.start({
+          namespace,
+          args: ['TestUser'],
+          taskQueue: 'entityqueue',
+          workflowName: 'testInfiniteLoopProtection',
+          workflowId: prefix + 'infinite-loop-test-' + guid(),
+          expire: 30,
+        });
 
-      //   // Wait for the result
-      //   const response = await testHandle.result();
-      //   expect(response).toBeDefined();
+        // Wait for the result
+        const response = await testHandle.result();
+        expect(response).toBeDefined();
         
-      //   // Cast response to any to access properties since we know the structure
-      //   const result = response as any;
+        // Cast response to any to access properties since we know the structure
+        const result = response as any;
         
-      //   expect(result.success).toBe(true);
-      //   expect(result.message).toBe('Infinite loop protection working correctly');
-      //   expect(result.error).toContain('MemFlow Hook Error: Potential infinite loop detected!');
-      //   expect(result.error).toContain('taskQueue');
-      //   expect(result.error).toContain('entity');
-      // });
+        expect(result.success).toBe(true);
+        expect(result.message).toBe('Infinite loop protection working correctly');
+        expect(result.error).toContain('MemFlow Hook Error: Potential infinite loop detected!');
+        expect(result.error).toContain('taskQueue');
+        expect(result.error).toContain('entity');
+      });
 
       it('should test execChild functionality with entity parameter', async () => {
         // Start the testExecChildWithEntity workflow

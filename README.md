@@ -1,10 +1,10 @@
 # HotMesh
 
-**🧠 Workflow That Remembers**
+**Workflow That Remembers**
 
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)  ![made with typescript](https://img.shields.io/badge/built%20with-typescript-lightblue.svg)
 
-HotMesh brings a **memory model** to your automation: durable entities that hold context, support concurrency, and evolve across runs. Built on PostgreSQL, it treats your database not just as storage—but as the runtime hub for agents, pipelines, and long-lived processes.
+HotMesh brings a **memory model** to durable functions. Built on PostgreSQL, it treats your database as the runtime hub for agents, pipelines, and long-lived processes.
 
 Use HotMesh to:
 
@@ -130,7 +130,7 @@ export async function researchAgent(query: string): Promise<any> {
   }
   await agent.set<typeof initialState>(initialState);
 
-  // Launch perspective hooks in parallel
+  // Launch perspective hooks
   await MemFlow.workflow.execHook({
     taskQueue: 'agents',
     workflowName: 'optimisticPerspective',
@@ -164,30 +164,8 @@ export async function researchAgent(query: string): Promise<any> {
 }
 ```
 
-> 💡 A complete implementation of this Research Agent example with tests, OpenAI integration, and multi-perspective analysis can be found in the [agent test suite](https://github.com/hotmeshio/sdk-typescript/tree/main/tests/memflow/agent).
 
-#### Perspective Hooks
-
-```ts
-// Optimistic hook looks for affirming evidence
-export async function optimisticPerspective(query: string, config: {signal: string}): Promise<void> {
-  const entity = await MemFlow.workflow.entity();
-  const findings = await searchForSupportingEvidence(query);
-  await entity.merge({ perspectives: { optimistic: { findings, confidence: 0.8 }}});
-  //signal the caller to notify all done
-  await MemFlow.workflow.signal(config.signal, {});
-}
-
-// Skeptical hook seeks out contradictions and counterpoints
-export async function skepticalPerspective(query: string, config: {signal: string}): Promise<void> {
-  const entity = await MemFlow.workflow.entity();
-  const counterEvidence = await searchForCounterEvidence(query);
-  await entity.merge({ perspectives: { skeptical: { counterEvidence, confidence: 0.6 }}});
-  await MemFlow.workflow.signal(config.signal, {});
-}
-
-// Other hooks...
-```
+Let's look at one of these hooks in detail - the synthesis hook that combines all perspectives into a final assessment:
 
 #### Synthesis Hook
 
@@ -210,135 +188,90 @@ export async function synthesizePerspectives(config: {signal: string}): Promise<
   });
   await MemFlow.workflow.signal(config.signal, {});
 }
+
+//other hooks...
 ```
+
+> 💡 A complete implementation of this Research Agent example with tests, OpenAI integration, and multi-perspective analysis can be found in the [agent test suite](https://github.com/hotmeshio/sdk-typescript/tree/main/tests/memflow/agent).
 
 ---
 
 ## Building Pipelines with State
 
-HotMesh treats pipelines as long-lived records. Every pipeline run is stateful, resumable, and traceable.
+HotMesh treats pipelines as long-lived records. Every pipeline run is stateful, resumable, and traceable. Hooks can be re-run at any time, and can be invoked by external callers. Sleep and run on a cadence to keep the pipeline up to date.
 
 ### Setup a Data Pipeline
 
 ```ts
-export async function dataPipeline(source: string): Promise<void> {
-  const entity = await MemFlow.workflow.entity();
+export async function documentProcessingPipeline(): Promise<any> {
+  const pipeline = await MemFlow.workflow.entity();
 
-  // Initial policy and tracking setup
-  await entity.set({
-    source,
-    pipeline: { version: 1, policy: { refreshInterval: '24 hours' } },
-    changeLog: []
-  });
+  // Initialize pipeline state with empty arrays
+  const initialState = {
+    documentId: `doc-${Date.now()}`,
+    status: 'started',
+    startTime: new Date().toISOString(),
+    imageRefs: [],
+    extractedInfo: [],
+    validationResults: [],
+    finalResult: null,
+    processingSteps: [],
+    errors: [],
+    pageSignals: {}
+  };
+  
+  await pipeline.set<typeof initialState>(initialState);
 
-  // Trigger the recurring orchestration pipeline
+  // Step 1: Get list of image file references
+  await pipeline.merge({status: 'loading-images'});
+  await pipeline.append('processingSteps', 'image-load-started');
+  const imageRefs = await activities.loadImagePages();
+  if (!imageRefs || imageRefs.length === 0) {
+    throw new Error('No image references found');
+  }
+  await pipeline.merge({imageRefs});
+  await pipeline.append('processingSteps', 'image-load-completed');
+
+  // Step 2: Launch processing hooks for each page
+  for (const [index, imageRef] of imageRefs.entries()) {
+    const pageNumber = index + 1;
+
+    await MemFlow.workflow.execHook({
+      taskQueue: 'pipeline',
+      workflowName: 'pageProcessingHook',
+      args: [imageRef, pageNumber, initialState.documentId],
+      signalId: `page-${pageNumber}-complete`
+    });
+  };
+
+  // Step 3: Launch validation hook
   await MemFlow.workflow.execHook({
     taskQueue: 'pipeline',
-    workflowName: 'runPipeline',
-    args: [true]
-  });
-}
-```
-
-### Orchestration Hook
-
-```ts
-export async function runPipeline(repeat = false): Promise<void> {
-  do {
-    // Perform transformation step
-    await MemFlow.workflow.execHook({
-      taskQueue: 'transform',
-      workflowName: 'cleanData',
-      args: []
-    });
-
-    if (repeat) {
-      // Schedule next execution
-      await MemFlow.workflow.execHook({
-        taskQueue: 'scheduler',
-        workflowName: 'scheduleRefresh',
-        args: []
-      });
-    }
-  } while (repeat)
-}
-
-/**
- * Hook to clean and transform data
- */
-export async function cleanData(signalInfo?: { signal: string }): Promise<void> {
-  const entity = await MemFlow.workflow.entity();
-  
-  // Simulate data cleaning
-  await entity.merge({
-    status: 'cleaning',
-    lastCleanedAt: new Date().toISOString()
+    workflowName: 'validationHook',
+    args: [initialState.documentId],
+    signalId: 'validation-complete'
   });
 
-  // Add to changelog
-  await entity.append('changeLog', {
-    action: 'clean',
-    timestamp: new Date().toISOString()
-  });
-
-  // Signal completion if called via execHook
-  if (signalInfo?.signal) {
-    await MemFlow.workflow.signal(signalInfo.signal, { 
-      status: 'cleaned',
-      timestamp: new Date().toISOString()
-    });
-  }
-}
-
-/**
- * Hook to schedule the next refresh based on policy
- */
-export async function scheduleRefresh(signalInfo?: { signal: string }): Promise<void> {
-  const entity = await MemFlow.workflow.entity();
-  
-  // Get refresh interval from policy
-  const currentEntity = await entity.get();
-  const refreshInterval = currentEntity.pipeline.policy.refreshInterval;
-  
-  // Sleep for the configured interval
-  await MemFlow.workflow.sleepFor(refreshInterval);
-  
-  // Update status after sleep
-  await entity.merge({
-    status: 'ready_for_refresh',
-    nextRefreshAt: new Date().toISOString()
-  });
-
-  // Add to changelog
-  await entity.append('changeLog', {
-    action: 'schedule_refresh',
-    timestamp: new Date().toISOString(),
-    nextRefresh: new Date().toISOString()
-  });
-
-  // Signal completion if called via execHook
-  if (signalInfo?.signal) {
-    await MemFlow.workflow.signal(signalInfo.signal, {
-      status: 'scheduled',
-      nextRefresh: new Date().toISOString()
-    });
-  }
-}
-```
-
-### Trigger from Outside
-
-```ts
-// External systems can trigger a single pipeline run
-export async function triggerRefresh() {
-  const client = new MemFlow.Client({/*...*/});
-
-  await client.workflow.hook({
-    workflowId: 'pipeline-123',
+  // Step 4: Launch approval hook
+  await MemFlow.workflow.execHook({
     taskQueue: 'pipeline',
-    workflowName: 'runPipeline',
-    args: []
+    workflowName: 'approvalHook',
+    args: [initialState.documentId],
+    signalId: 'approval-complete',
   });
+
+  // Step 5: Launch notification hook
+  await MemFlow.workflow.execHook({
+    taskQueue: 'pipeline',
+    workflowName: 'notificationHook',
+    args: [initialState.documentId],
+    signalId: 'processing-complete',
+  });
+
+  // Step 6: Return final state
+  await pipeline.merge({status: 'completed', completedAt: new Date().toISOString()});
+  await pipeline.append('processingSteps', 'pipeline-completed');
+  return await pipeline.get();
 }
 ```
 
@@ -355,4 +288,4 @@ export async function triggerRefresh() {
 
 ## License
 
-Apache 2.0 – See `LICENSE` for details.
+Apache 2.0 with commercial restrictions – See `LICENSE` for details.

@@ -1,6 +1,6 @@
 # Activity State Tracking
 
-This document explains how HotMesh guarantees activity state management using a 15-digit integer. This mechanism is crucial for monitoring and controlling the activity's lifecycle across two legs (Leg1 and Leg2) and ensures that duplicate activities are never processed. The process further ensures that catastrophic, in-process failures will be automatically resolved with respect to idempotency, makig it possible to build 100% fault-tolerant workflows.
+This document explains how HotMesh guarantees activity state management using a 15-digit integer. This mechanism is crucial for monitoring and controlling the activity's lifecycle across two legs (Leg1 and Leg2), ensures that duplicate activities are never processed, and resolves in-process failures.
 
 ## Overview
 
@@ -24,7 +24,7 @@ The 15-digit integer serves as a semaphore, starting with the value `99900000000
 
 ### Initialization
 
-The parent activity initializes the integer value (`999000000000000`) and saves it to Redis upon saving its own state. The parent then adds the child activity to the proper stream channel for eventual processing.
+The parent activity initializes the integer value (`999000000000000`) and saves it to the store upon saving its own state. The parent then adds the child activity to the proper stream channel for eventual processing.
 
 >Streams are used when executing an activity (such as transitioning to a child activity) as they guarantee that the child activity will be fully created and initialized before the request is marked for deletion. Even if the system has a catastrophic failure, the chain of custody can be guaranteed through the use of streams when the system comes online.
 
@@ -32,7 +32,7 @@ The parent activity initializes the integer value (`999000000000000`) and saves 
 
 When Leg1 begins (when an activity is dequeued from its stream channel), the integer is decremented by 100 trillion:
 
-    HINCRBY -100000000000000
+    incrementBy -100000000000000
 
 Result:
 
@@ -42,7 +42,7 @@ Result:
 
 At the conclusion of Leg1, the integer is decremented by 10 trillion:
 
-    HINCRBY -10000000000000
+    incrementBy -10000000000000
 
 Result:
 
@@ -50,8 +50,8 @@ Result:
 
 ### Error Handling
 
-- If the value upon entering is `799############` (after decrementing the integer), Leg1 began but crashed before completion. The activity will perform the necessary cleanup and re-run the activity.
-- If the value upon entering is `789############` (after decrementing the integer), Leg1 completed successfully and the activity should end. It is likely that the system crashed last time before acking and deleting. Verify transitions succeeded and resolve as necessary.
+- If the value upon entering is `799############` (after decrementing the integer), Leg1 began but failed before standard completion. The activity will re-run the activity.
+- If the value upon entering is `789############` (after decrementing the integer), Leg1 completed successfully and the activity should end. The system failed before acking and deleting.
 
 ## Leg2 Lifecycle
 
@@ -61,7 +61,7 @@ Leg2 supports multiple inputs and repeated responses. A worker can respond with 
 
 On the first Leg2 input, the integer is incremented by 1 million:
 
-    HINCRBY 1000000
+    incrementBy 1000000
 
 Result:
 
@@ -71,7 +71,7 @@ Result:
 
 If the call status is 'pending', the digit is updated to reflect the successful completion of Leg2 but the third digit from the left will be untouched as the activity is pending and Leg2 should not end quite yet:
 
-    HINCRBY 1
+    incrementBy 1
 
 Result:
 
@@ -81,7 +81,7 @@ Result:
 
 If the next message call to Leg2 entry is 'success', the process will begin as before, and the integer will be incremented by 1 million:
 
-    HINCRBY 1000000
+    incrementBy 1000000
 
 Result:
 
@@ -89,13 +89,13 @@ Result:
 
  But because this is not a 'pending' message, the integer should be updated differently, targeting both the dimensional thread counter as well as the third digit from the left that tracks Leg2 status (e.g., `1 - 1000000000 = -999999999`).
 
-    HINCRBY -999999999999
+    incrementBy -999999999999
 
 Result:
 
     888000002000002
 
->If an additional Leg2 call were to be received after this point, the result would be `888000003000002`. However, becuase the third digit is `8`, Leg2 access is not allowed and the system will conclude by decrementing the value it just set and returning immediately, so that the calling worker can mark and delete the stream entry.
+>If an additional Leg2 call were to be received after this point, the result would be `888000003000002`. However, because the third digit is `8`, Leg2 access is not allowed and the system will conclude by decrementing the value it just set and returning immediately, so that the calling worker can mark and delete the stream entry.
 
 ## Conclusion
 

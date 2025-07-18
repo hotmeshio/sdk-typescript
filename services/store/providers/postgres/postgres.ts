@@ -1396,9 +1396,19 @@ class PostgresStoreService extends StoreService<
       // Set up LISTEN for time notifications
       await this.pgClient.query(`LISTEN "${channelName}"`);
       
-      // Set up notification handler
+      // Set up notification handler with channel filtering
       this.pgClient.on('notification', (notification) => {
-        this.handleTimeNotification(notification, timeEventCallback);
+        // Only handle time notifications (channels starting with "time_hooks_")
+        // Ignore sub and stream notifications from other providers
+        if (notification.channel.startsWith('time_hooks_')) {
+          this.handleTimeNotification(notification, timeEventCallback);
+        } else {
+          // This is likely a notification from sub or stream provider, ignore it
+          this.logger.debug('postgres-store-ignoring-non-time-notification', { 
+            channel: notification.channel,
+            payloadPreview: notification.payload.substring(0, 100) 
+          });
+        }
       });
       
       this.logger.debug('postgres-time-scout-notifications-started', {

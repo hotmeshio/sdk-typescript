@@ -33,9 +33,15 @@ class PostgresStreamService extends StreamService<
   namespace: string;
   appId: string;
   logger: ILogger;
-  private notificationConsumers: Map<string, NotificationConsumer> = new Map();
+
+  // Static maps to manage notifications across all instances sharing the same client
+  private static clientNotificationConsumers: Map<PostgresClientType & ProviderClient, Map<string, Map<PostgresStreamService, NotificationConsumer>>> = new Map();
+  private static clientNotificationHandlers: Map<PostgresClientType & ProviderClient, boolean> = new Map();
+  private static clientFallbackPollers: Map<PostgresClientType & ProviderClient, NodeJS.Timeout> = new Map();
+
+  // Instance-level tracking for cleanup
+  private instanceNotificationConsumers: Set<string> = new Set();
   private notificationHandlerBound: (notification: PostgresNotification) => void;
-  private fallbackIntervalId: NodeJS.Timeout | null = null;
 
   constructor(
     streamClient: PostgresClientType & ProviderClient,
@@ -54,9 +60,40 @@ class PostgresStreamService extends StreamService<
     
     // Set up notification handler if supported
     if (this.streamClient.on && this.isNotificationsEnabled()) {
-      this.streamClient.on('notification', this.notificationHandlerBound);
-      this.startFallbackPoller();
+      this.setupClientNotificationHandler();
+      this.startClientFallbackPoller();
     }
+  }
+
+  private setupClientNotificationHandler(): void {
+    // Check if notification handler is already set up for this client
+    if (PostgresStreamService.clientNotificationHandlers.get(this.streamClient)) {
+      return;
+    }
+
+    // Initialize notification consumer map for this client if it doesn't exist
+    if (!PostgresStreamService.clientNotificationConsumers.has(this.streamClient)) {
+      PostgresStreamService.clientNotificationConsumers.set(this.streamClient, new Map());
+    }
+
+    // Set up the notification handler for this client
+    this.streamClient.on('notification', this.handleNotification.bind(this));
+    
+    // Mark this client as having a notification handler
+    PostgresStreamService.clientNotificationHandlers.set(this.streamClient, true);
+  }
+
+  private startClientFallbackPoller(): void {
+    // Check if fallback poller already exists for this client
+    if (PostgresStreamService.clientFallbackPollers.has(this.streamClient)) {
+      return;
+    }
+
+    const fallbackIntervalId = setInterval(() => {
+      this.checkForMissedMessages();
+    }, this.getFallbackInterval());
+
+    PostgresStreamService.clientFallbackPollers.set(this.streamClient, fallbackIntervalId);
   }
 
   private isNotificationsEnabled(): boolean {
@@ -71,45 +108,42 @@ class PostgresStreamService extends StreamService<
     return this.config?.postgres?.notificationTimeout || 5000; // Default: 5 seconds
   }
 
-  private startFallbackPoller(): void {
-    if (this.fallbackIntervalId) {
-      clearInterval(this.fallbackIntervalId);
-    }
-
-    this.fallbackIntervalId = setInterval(() => {
-      this.checkForMissedMessages();
-    }, this.getFallbackInterval());
-  }
-
   private async checkForMissedMessages(): Promise<void> {
     const now = Date.now();
+    const clientNotificationConsumers = PostgresStreamService.clientNotificationConsumers.get(this.streamClient);
     
-    for (const [key, consumer] of this.notificationConsumers.entries()) {
-      if (consumer.isListening && now - consumer.lastFallbackCheck > this.getFallbackInterval()) {
-        try {
-          const messages = await this.fetchMessages(
-            consumer.streamName,
-            consumer.groupName,
-            consumer.consumerName,
-            { batchSize: 10, enableBackoff: false, maxRetries: 1 }
-          );
-          
-          if (messages.length > 0) {
-            this.logger.debug('postgres-stream-fallback-messages', {
+    if (!clientNotificationConsumers) {
+      return;
+    }
+    
+    for (const [consumerKey, instanceMap] of clientNotificationConsumers.entries()) {
+      for (const [instance, consumer] of instanceMap.entries()) {
+        if (consumer.isListening && now - consumer.lastFallbackCheck > this.getFallbackInterval()) {
+          try {
+            const messages = await instance.fetchMessages(
+              consumer.streamName,
+              consumer.groupName,
+              consumer.consumerName,
+              { batchSize: 10, enableBackoff: false, maxRetries: 1 }
+            );
+            
+            if (messages.length > 0) {
+              instance.logger.debug('postgres-stream-fallback-messages', {
+                streamName: consumer.streamName,
+                groupName: consumer.groupName,
+                messageCount: messages.length
+              });
+              consumer.callback(messages);
+            }
+            
+            consumer.lastFallbackCheck = now;
+          } catch (error) {
+            instance.logger.error('postgres-stream-fallback-error', {
               streamName: consumer.streamName,
               groupName: consumer.groupName,
-              messageCount: messages.length
+              error
             });
-            consumer.callback(messages);
           }
-          
-          consumer.lastFallbackCheck = now;
-        } catch (error) {
-          this.logger.error('postgres-stream-fallback-error', {
-            streamName: consumer.streamName,
-            groupName: consumer.groupName,
-            error
-          });
         }
       }
     }
@@ -117,6 +151,21 @@ class PostgresStreamService extends StreamService<
 
   private handleNotification(notification: PostgresNotification): void {
     try {
+      // Only handle stream notifications (channels starting with "stream_")
+      // Ignore pub/sub notifications from sub provider which use different channel names
+      if (!notification.channel.startsWith('stream_')) {
+        // This is likely a pub/sub notification from the sub provider, ignore it
+        this.logger.debug('postgres-stream-ignoring-sub-notification', { 
+          channel: notification.channel,
+          payloadPreview: notification.payload.substring(0, 100) 
+        });
+        return;
+      }
+
+      this.logger.debug('postgres-stream-processing-notification', { 
+        channel: notification.channel 
+      });
+
       const payload = JSON.parse(notification.payload);
       const { stream_name, group_name } = payload;
       
@@ -126,11 +175,22 @@ class PostgresStreamService extends StreamService<
       }
 
       const consumerKey = this.getConsumerKey(stream_name, group_name);
-      const consumer = this.notificationConsumers.get(consumerKey);
+      const clientNotificationConsumers = PostgresStreamService.clientNotificationConsumers.get(this.streamClient);
       
-      if (consumer && consumer.isListening) {
-        // Trigger immediate message fetch for this consumer
-        this.fetchAndDeliverMessages(consumer);
+      if (!clientNotificationConsumers) {
+        return;
+      }
+
+      const instanceMap = clientNotificationConsumers.get(consumerKey);
+      if (!instanceMap) {
+        return;
+      }
+
+      // Trigger immediate message fetch for all instances with this consumer
+      for (const [instance, consumer] of instanceMap.entries()) {
+        if (consumer.isListening) {
+          instance.fetchAndDeliverMessages(consumer);
+        }
       }
     } catch (error) {
       this.logger.error('postgres-stream-notification-parse-error', {
@@ -360,8 +420,20 @@ class PostgresStreamService extends StreamService<
     const consumerKey = this.getConsumerKey(streamName, groupName);
     const channelName = getNotificationChannelName(streamName, groupName);
     
-    // Set up LISTEN if not already listening
-    if (!this.notificationConsumers.has(consumerKey)) {
+    // Get or create notification consumer map for this client
+    let clientNotificationConsumers = PostgresStreamService.clientNotificationConsumers.get(this.streamClient);
+    if (!clientNotificationConsumers) {
+      clientNotificationConsumers = new Map();
+      PostgresStreamService.clientNotificationConsumers.set(this.streamClient, clientNotificationConsumers);
+    }
+
+    // Get or create instance map for this consumer key
+    let instanceMap = clientNotificationConsumers.get(consumerKey);
+    if (!instanceMap) {
+      instanceMap = new Map();
+      clientNotificationConsumers.set(consumerKey, instanceMap);
+      
+      // Set up LISTEN for this channel (only once per channel across all instances)
       try {
         const listenStart = Date.now();
         await this.streamClient.query(`LISTEN "${channelName}"`);
@@ -383,19 +455,25 @@ class PostgresStreamService extends StreamService<
       }
     }
 
-    // Register or update consumer
-    this.notificationConsumers.set(consumerKey, {
+    // Register or update consumer for this instance
+    const consumer: NotificationConsumer = {
       streamName,
       groupName,
       consumerName,
       callback,
       isListening: true,
       lastFallbackCheck: Date.now()
-    });
+    };
+    
+    instanceMap.set(this, consumer);
+    
+    // Track this consumer for cleanup
+    this.instanceNotificationConsumers.add(consumerKey);
 
     this.logger.debug('postgres-stream-notification-setup-complete', {
       streamName,
       groupName,
+      instanceCount: instanceMap.size,
       setupDuration: Date.now() - startTime
     });
 
@@ -436,17 +514,28 @@ class PostgresStreamService extends StreamService<
 
   async stopNotificationConsumer(streamName: string, groupName: string): Promise<void> {
     const consumerKey = this.getConsumerKey(streamName, groupName);
-    const consumer = this.notificationConsumers.get(consumerKey);
+    const clientNotificationConsumers = PostgresStreamService.clientNotificationConsumers.get(this.streamClient);
     
+    if (!clientNotificationConsumers) {
+      return;
+    }
+
+    const instanceMap = clientNotificationConsumers.get(consumerKey);
+    if (!instanceMap) {
+      return;
+    }
+
+    const consumer = instanceMap.get(this);
     if (consumer) {
       consumer.isListening = false;
-      this.notificationConsumers.delete(consumerKey);
+      instanceMap.delete(this);
       
-      // If no more consumers for this channel, stop listening
-      const hasOtherConsumers = Array.from(this.notificationConsumers.values())
-        .some(c => c.streamName === streamName && c.groupName === groupName);
+      // Remove from instance tracking
+      this.instanceNotificationConsumers.delete(consumerKey);
       
-      if (!hasOtherConsumers) {
+      // If no more instances for this consumer key, stop listening and clean up
+      if (instanceMap.size === 0) {
+        clientNotificationConsumers.delete(consumerKey);
         const channelName = getNotificationChannelName(streamName, groupName);
         try {
           await this.streamClient.query(`UNLISTEN "${channelName}"`);
@@ -715,26 +804,66 @@ class PostgresStreamService extends StreamService<
 
   // Cleanup method to be called when shutting down
   async cleanup(): Promise<void> {
-    // Stop fallback poller
-    if (this.fallbackIntervalId) {
-      clearInterval(this.fallbackIntervalId);
-      this.fallbackIntervalId = null;
+    // Clean up this instance's notification consumers
+    const clientNotificationConsumers = PostgresStreamService.clientNotificationConsumers.get(this.streamClient);
+    if (clientNotificationConsumers) {
+      // Remove this instance from all consumer maps
+      for (const consumerKey of this.instanceNotificationConsumers) {
+        const instanceMap = clientNotificationConsumers.get(consumerKey);
+        if (instanceMap) {
+          const consumer = instanceMap.get(this);
+          if (consumer) {
+            consumer.isListening = false;
+            instanceMap.delete(this);
+            
+            // If no more instances for this consumer, stop listening
+            if (instanceMap.size === 0) {
+              clientNotificationConsumers.delete(consumerKey);
+              const channelName = getNotificationChannelName(consumer.streamName, consumer.groupName);
+              try {
+                await this.streamClient.query(`UNLISTEN "${channelName}"`);
+                this.logger.debug('postgres-stream-cleanup-unlisten', {
+                  streamName: consumer.streamName,
+                  groupName: consumer.groupName,
+                  channelName
+                });
+              } catch (error) {
+                this.logger.error('postgres-stream-cleanup-unlisten-error', {
+                  streamName: consumer.streamName,
+                  groupName: consumer.groupName,
+                  channelName,
+                  error
+                });
+              }
+            }
+          }
+        }
+      }
     }
 
-    // Remove notification handler
-    if (this.streamClient.removeAllListeners) {
-      this.streamClient.removeAllListeners('notification');
-    } else if (this.streamClient.off) {
-      this.streamClient.off('notification', this.notificationHandlerBound);
-    }
+    // Clear instance tracking
+    this.instanceNotificationConsumers.clear();
 
-    // Stop all consumers and unlisten from channels
-    const consumers = Array.from(this.notificationConsumers.entries());
-    for (const [key, consumer] of consumers) {
-      await this.stopNotificationConsumer(consumer.streamName, consumer.groupName);
-    }
+    // If no more consumers exist for this client, clean up static resources
+    if (clientNotificationConsumers && clientNotificationConsumers.size === 0) {
+      // Remove client from static maps
+      PostgresStreamService.clientNotificationConsumers.delete(this.streamClient);
+      PostgresStreamService.clientNotificationHandlers.delete(this.streamClient);
+      
+      // Stop fallback poller for this client
+      const fallbackIntervalId = PostgresStreamService.clientFallbackPollers.get(this.streamClient);
+      if (fallbackIntervalId) {
+        clearInterval(fallbackIntervalId);
+        PostgresStreamService.clientFallbackPollers.delete(this.streamClient);
+      }
 
-    this.notificationConsumers.clear();
+      // Remove notification handler
+      if (this.streamClient.removeAllListeners) {
+        this.streamClient.removeAllListeners('notification');
+      } else if (this.streamClient.off && this.notificationHandlerBound) {
+        this.streamClient.off('notification', this.notificationHandlerBound);
+      }
+    }
   }
 }
 

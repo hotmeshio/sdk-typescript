@@ -12,7 +12,7 @@ import { LoggerService } from '../../logger';
  * @returns The delay in seconds until the next cron job execution (minimum 5 seconds).
  */
 class CronHandler {
-  static logger: ILogger = new LoggerService('hotmesh', 'meshos');
+  static logger: ILogger = new LoggerService('hotmesh', 'cron');
 
   nextDelay(cronExpression: string): number {
     try {

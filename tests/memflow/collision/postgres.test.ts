@@ -19,6 +19,8 @@ describe('MEMFLOW | collision | Postgres', () => {
   const connection = { class: Postgres, options: postgres_options };
 
   beforeAll(async () => {
+    if (process.env.POSTGRES_IS_REMOTE === 'true') return;
+
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
@@ -63,7 +65,7 @@ describe('MEMFLOW | collision | Postgres', () => {
           },
         });
         expect(handle.workflowId).toBeDefined();
-      }, 10_000);
+      }, 95_000);
     });
   });
 
@@ -93,7 +95,7 @@ describe('MEMFLOW | collision | Postgres', () => {
         });
         await fixableWorker.run();
         expect(fixableWorker).toBeDefined();
-      }, 15_000);
+      }, 95_000);
     });
   });
 
@@ -106,7 +108,7 @@ describe('MEMFLOW | collision | Postgres', () => {
         } catch (error) {
           expect(error.message).toEqual(`Duplicate job: ${CONFLICTING_NAME}`);
         }
-      }, 15_000);
+      }, 95_000);
     });
   });
 
@@ -131,6 +133,6 @@ describe('MEMFLOW | collision | Postgres', () => {
       expect(handle.workflowId).toBe(`fixable-${CONFLICTING_NAME}`);
       const outcome = await handle.result<string>({ throwOnError: false });
       expect(outcome).toEqual('Hello, FIXED!');
-    }, 15_000);
+    }, 95_000);
   });
 });

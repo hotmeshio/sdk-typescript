@@ -96,6 +96,7 @@ export class WorkerService {
     const hotMeshClient = HotMesh.init({
       logLevel: options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
+      taskQueue: config.taskQueue,
       engine: {
         connection: { ...config?.connection },
       },
@@ -273,6 +274,7 @@ export class WorkerService {
     const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid ? `${config.guid}XA` : undefined,
+      taskQueue: config.taskQueue,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
       engine: { connection: providerConfig },
@@ -372,6 +374,7 @@ export class WorkerService {
     const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid,
+      taskQueue: config.taskQueue,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
       engine: { connection: providerConfig },

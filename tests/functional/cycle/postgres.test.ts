@@ -15,13 +15,15 @@ describe('FUNCTIONAL | Activity Cycles | Postgres', () => {
   let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
-    // Initialize Postgres
-    postgresClient = (
-      await PostgresConnection.connect(guid(), Postgres, postgres_options)
-    ).getClient();
+    if (process.env.POSTGRES_IS_REMOTE !== 'true') {
+      // Initialize Postgres
+      postgresClient = (
+        await PostgresConnection.connect(guid(), Postgres, postgres_options)
+      ).getClient();
 
-    // Drop tables
-    await dropTables(postgresClient);
+      // Drop tables
+      await dropTables(postgresClient);
+    }
 
     //init HotMesh
     const hmshConfig: HotMeshConfig = {

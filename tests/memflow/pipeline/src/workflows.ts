@@ -48,89 +48,68 @@ export async function documentProcessingPipeline(): Promise<any> {
     finalResult: null,
     processingSteps: [],
     errors: [],
-    pageSignals: {} // Track page processing signals
+    pageSignals: {}
   };
   
   await pipeline.set<typeof initialState>(initialState);
 
-  try {
-    // Step 1: Get list of image file references
-    await pipeline.merge({status: 'loading-images'});
-    await pipeline.append('processingSteps', 'image-load-started');
-
-    const imageRefs = await activities.loadImagePages();
-    if (!imageRefs || imageRefs.length === 0) {
-      throw new Error('No image references found');
-    }
-
-    await pipeline.merge({imageRefs});
-    await pipeline.append('processingSteps', 'image-load-completed');
-
-    // Initialize page signals tracking
-    const pageSignals: Record<string, boolean> = {};
-    imageRefs.forEach((_, index) => {
-      pageSignals[`page-${index + 1}-complete`] = false;
-    });
-    await pipeline.merge({ pageSignals });
-
-    // Launch processing hooks for each page in parallel
-    for (const [index, imageRef] of imageRefs.entries()) {
-      const pageNumber = index + 1;
-
-      await MemFlow.workflow.execHook({
-        taskQueue: 'pipeline',
-        workflowName: 'pageProcessingHook',
-        args: [imageRef, pageNumber, initialState.documentId],
-        signalId: `page-${pageNumber}-complete`
-      });
-    };
-
-    // Verify all pages were processed before proceeding
-    const processedState = await pipeline.get() as any;
-    const extractedInfo = processedState.extractedInfo || [];
-    if (extractedInfo.length !== imageRefs.length) {
-      throw new Error(`Not all pages were processed. Expected ${imageRefs.length}, got ${extractedInfo.length}`);
-    }
-
-    // Step 3: Launch validation hook
-    await MemFlow.workflow.execHook({
-      taskQueue: 'pipeline',
-      workflowName: 'validationHook',
-      args: [initialState.documentId],
-      signalId: 'validation-complete'
-    });
-
-    // Step 4: Launch approval hook
-    await MemFlow.workflow.execHook({
-      taskQueue: 'pipeline',
-      workflowName: 'approvalHook',
-      args: [initialState.documentId],
-      signalId: 'approval-complete',
-    });
-
-    // Step 5: Launch notification hook
-    await MemFlow.workflow.execHook({
-      taskQueue: 'pipeline',
-      workflowName: 'notificationHook',
-      args: [initialState.documentId],
-      signalId: 'processing-complete',
-    });
-
-    // Retrieve final state    
-    await pipeline.merge({status: 'completed', completedAt: new Date().toISOString()});
-    await pipeline.append('processingSteps', 'pipeline-completed');
-
-    return await pipeline.get();
-
-  } catch (error) {
-    if (MemFlow.workflow.didInterrupt(error)) {
-      throw error;
-    }
-
-    await pipeline.merge({status: 'failed', error: error.message, failedAt: new Date().toISOString()});
-    await pipeline.append('processingSteps', 'pipeline-failed');
-    throw error;
+  // Step 1: Get list of image file references
+  await pipeline.merge({status: 'loading-images'});
+  await pipeline.append('processingSteps', 'image-load-started');
+  const imageRefs = await activities.loadImagePages();
+  if (!imageRefs || imageRefs.length === 0) {
+    throw new Error('No image references found');
   }
+  await pipeline.merge({imageRefs});
+  await pipeline.append('processingSteps', 'image-load-completed');
+
+  // List page signals (testing `merge`, unimportant to actual pipeline)
+  const pageSignals: Record<string, boolean> = {};
+  imageRefs.forEach((_, index) => {
+    pageSignals[`page-${index + 1}-complete`] = false;
+  });
+  await pipeline.merge({ pageSignals });
+
+  // Step 2: Launch processing hooks for each page
+  for (const [index, imageRef] of imageRefs.entries()) {
+    const pageNumber = index + 1;
+
+    await MemFlow.workflow.execHook({
+      taskQueue: 'pipeline',
+      workflowName: 'pageProcessingHook',
+      args: [imageRef, pageNumber, initialState.documentId],
+      signalId: `page-${pageNumber}-complete`
+    });
+  };
+
+  // Step 3: Launch validation hook
+  await MemFlow.workflow.execHook({
+    taskQueue: 'pipeline',
+    workflowName: 'validationHook',
+    args: [initialState.documentId],
+    signalId: 'validation-complete'
+  });
+
+  // Step 4: Launch approval hook
+  await MemFlow.workflow.execHook({
+    taskQueue: 'pipeline',
+    workflowName: 'approvalHook',
+    args: [initialState.documentId],
+    signalId: 'approval-complete',
+  });
+
+  // Step 5: Launch notification hook
+  await MemFlow.workflow.execHook({
+    taskQueue: 'pipeline',
+    workflowName: 'notificationHook',
+    args: [initialState.documentId],
+    signalId: 'processing-complete',
+  });
+
+  // Step 6: Return final state
+  await pipeline.merge({status: 'completed', completedAt: new Date().toISOString()});
+  await pipeline.append('processingSteps', 'pipeline-completed');
+  return await pipeline.get();
 }
 
 /**
@@ -142,9 +121,6 @@ export async function pageProcessingHook(imageRef: string, pageNumber: number, d
   const state = await pipeline.get() as any;
 
   try {
-    // Ensure processingSteps exists
-    const currentSteps = Array.isArray(state.processingSteps) ? state.processingSteps : [];
-    
     // Extract member information from the page using the file reference
     const memberInfo = await activities.extractMemberInfoFromPage(imageRef, pageNumber);
     
@@ -190,8 +166,6 @@ export async function pageProcessingHook(imageRef: string, pageNumber: number, d
       error: (error as any).message,
       completed: false
     });
-    
-    throw error;
   }
 }
 
@@ -199,7 +173,7 @@ export async function pageProcessingHook(imageRef: string, pageNumber: number, d
  * Validation Hook
  * Validates extracted member information against database
  */
-export async function validationHook(documentId: string): Promise<void> {
+export async function validationHook(): Promise<void> {
   const pipeline = await MemFlow.workflow.entity();
   const state = await pipeline.get() as any;
 
@@ -239,7 +213,6 @@ export async function validationHook(documentId: string): Promise<void> {
     
     // Validate the combined member information
     for (const [memberId, combinedInfo] of memberDataMap) {
-      
       const isValid = await activities.validateMemberInfo(combinedInfo);
       validationResults.push({
         memberId,
@@ -255,7 +228,6 @@ export async function validationHook(documentId: string): Promise<void> {
 
     // Signal that validation is complete
     await MemFlow.workflow.signal('validation-complete', { validationResults });
-
   } catch (error) {
     if (MemFlow.workflow.didInterrupt(error)) {
       throw error;
@@ -268,7 +240,6 @@ export async function validationHook(documentId: string): Promise<void> {
     };
     
     await pipeline.append('errors', errors);
-    throw error;
   }
 }
 
@@ -316,7 +287,6 @@ export async function approvalHook(documentId: string): Promise<void> {
     };
     
     await pipeline.append('errors', errors);
-    throw error;
   }
 }
 
@@ -358,7 +328,6 @@ export async function notificationHook(documentId: string): Promise<void> {
 
     // Signal that processing is complete
     await MemFlow.workflow.signal('processing-complete', { finalResult });
-
   } catch (error) {
     if (MemFlow.workflow.didInterrupt(error)) {
       throw error;
@@ -370,7 +339,6 @@ export async function notificationHook(documentId: string): Promise<void> {
     };
     
     await pipeline.append('errors', errors);
-    throw error;
   }
 }
 

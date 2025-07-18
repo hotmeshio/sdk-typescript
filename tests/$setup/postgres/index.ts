@@ -10,6 +10,8 @@ export const postgres_options = {
   database: config.POSTGRES_DB,
   password: config.POSTGRES_PASSWORD,
   port: config.POSTGRES_PORT,
+  ssl: config.POSTGRES_SSL,
+  pool_mode: 'session',
 };
 
 //NOTE include ioredis_options, redis_options, nats_options.

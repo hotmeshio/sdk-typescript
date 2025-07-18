@@ -10,8 +10,6 @@ import { WorkerService as Worker } from './services/memflow/worker';
 import { WorkflowService as workflow } from './services/memflow/workflow';
 import { WorkflowHandleService as WorkflowHandle } from './services/memflow/handle';
 import { proxyActivities } from './services/memflow/workflow/proxyActivities';
-import { MeshData } from './services/meshdata';
-import { MeshOS } from './services/meshos';
 import * as Errors from './modules/errors';
 import * as Utils from './modules/utils';
 import * as Enums from './modules/enums';
@@ -34,9 +32,7 @@ export {
   HotMesh,
   HotMeshConfig,
   MeshCall,
-  MeshData,
   MemFlow,
-  MeshOS,
 
   //MemFlow Submodules
   Client,

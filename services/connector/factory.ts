@@ -33,12 +33,14 @@ export class ConnectorService {
    */
   static async connectClient(
     ProviderConfig: ProviderConfig,
+    taskQueue?: string,
   ): Promise<ProviderNativeClient> {
     const target: { client?: ProviderNativeClient } = {};
     await ConnectorService.initClient(
       ProviderConfig,
       target as HotMeshEngine | HotMeshWorker,
       'client',
+      taskQueue,
     );
     return target.client;
   }
@@ -60,15 +62,19 @@ export class ConnectorService {
         sub: { ...connection },
       };
     }
+
+    // Extract taskQueue from target for connection pooling
+    const taskQueue = target.taskQueue;
+
     // Expanded form
     if (connection.store) {
-      await ConnectorService.initClient(connection.store, target, 'store');
+      await ConnectorService.initClient(connection.store, target, 'store', taskQueue);
     }
     if (connection.stream) {
-      await ConnectorService.initClient(connection.stream, target, 'stream');
+      await ConnectorService.initClient(connection.stream, target, 'stream', taskQueue);
     }
     if (connection.sub) {
-      await ConnectorService.initClient(connection.sub, target, 'sub');
+      await ConnectorService.initClient(connection.sub, target, 'sub', taskQueue);
       // use store for publishing events if same as subscription
       if (connection.sub.class !== connection.store.class) {
         //initialize a separate client for publishing events, using
@@ -78,7 +84,7 @@ export class ConnectorService {
           options: { ...connection.sub.options },
           provider: connection.sub.provider,
         };
-        await ConnectorService.initClient(connection.pub, target, 'pub');
+        await ConnectorService.initClient(connection.pub, target, 'pub', taskQueue);
       }
     }
   }
@@ -91,6 +97,7 @@ export class ConnectorService {
     ProviderConfig: ProviderConfig,
     target: HotMeshEngine | HotMeshWorker,
     field: string,
+    taskQueue?: string,
   ) {
     if (target[field]) {
       return;
@@ -132,8 +139,10 @@ export class ConnectorService {
       case 'postgres':
         //if connecting as a poolClient for subscription, auto connect the client
         const bAutoConnect = field === 'sub';
-        clientInstance = await PostgresConnection.connect(
+        // Use taskQueue-based connection pooling for PostgreSQL
+        clientInstance = await PostgresConnection.getOrCreateTaskQueueConnection(
           id,
+          taskQueue,
           providerClass as PostgresClassType,
           options as PostgresClientOptions,
           { connect: bAutoConnect, provider: providerName },

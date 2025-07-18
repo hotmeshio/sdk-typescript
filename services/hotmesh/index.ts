@@ -37,7 +37,7 @@ import {
   StreamDataResponse,
   StreamStatus,
 } from '../../types/stream';
-import { MAX_DELAY } from '../../modules/enums';
+import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
 
 /**
  * HotMesh is a distributed, reentrant process orchestration engine that transforms
@@ -328,6 +328,10 @@ class HotMesh {
       if (config.engine.connection.readonly) {
         config.engine.readonly = true;
       }
+      
+      // Initialize task queue for engine
+      config.engine.taskQueue = this.initTaskQueue(config.engine.taskQueue, config.taskQueue);
+      
       await ConnectorService.initClients(config.engine);
       this.engine = await EngineService.init(
         this.namespace,
@@ -368,6 +372,13 @@ class HotMesh {
    * @private
    */
   async doWork(config: HotMeshConfig, logger: ILogger) {
+    // Initialize task queues for workers
+    if (config.workers) {
+      for (const worker of config.workers) {
+        worker.taskQueue = this.initTaskQueue(worker.taskQueue, config.taskQueue);
+      }
+    }
+    
     this.workers = await WorkerService.init(
       this.namespace,
       this.appId,
@@ -375,6 +386,28 @@ class HotMesh {
       config,
       logger,
     );
+  }
+
+  /**
+   * Initialize task queue with proper precedence:
+   * 1. Use component-specific queue if set (engine/worker)
+   * 2. Use global config queue if set
+   * 3. Use default queue as fallback
+   * @private
+   */
+  private initTaskQueue(componentQueue?: string, globalQueue?: string): string {
+    // Component-specific queue takes precedence
+    if (componentQueue) {
+      return componentQueue;
+    }
+    
+    // Global config queue is next
+    if (globalQueue) {
+      return globalQueue;
+    }
+    
+    // Default queue as fallback
+    return DEFAULT_TASK_QUEUE;
   }
 
   // ************* PUB/SUB METHODS *************

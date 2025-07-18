@@ -16,6 +16,8 @@ describe('MEMFLOW | baseline | Postgres', () => {
   let postgresClient: ProviderNativeClient;
 
   beforeAll(async () => {
+    if (process.env.POSTGRES_IS_REMOTE === 'true') return;
+
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
