@@ -75,7 +75,6 @@
     "test:sub:postgres": "NODE_ENV=test jest ./tests/functional/sub/providers/postgres/postgres.test.ts --detectOpenHandles --forceExit --verbose",
     "test:sub:nats": "NODE_ENV=test jest ./tests/functional/sub/providers/nats/nats.test.ts --detectOpenHandles --forceExit --verbose",
     "test:trigger": "NODE_ENV=test jest ./tests/unit/services/activities/trigger.test.ts --detectOpenHandles --forceExit --verbose",
-    "test:meshos": "HMSH_LOGLEVEL=info NODE_ENV=test HMSH_IS_CLUSTER=true jest ./tests/meshos/*.test.ts --forceExit --verbose --detectOpenHandles",
     "test:meshcall": "NODE_ENV=test jest ./tests/meshcall/*.test.ts --forceExit --verbose --detectOpenHandles",
     "test:unit": "NODE_ENV=test jest ./tests/unit/*/*/index.test.ts --detectOpenHandles --forceExit --verbose"
   },

@@ -1,10 +1,10 @@
 # HotMesh
 
-**🧠 Workflow That Remembers**
+**Workflow That Remembers**
 
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)  ![made with typescript](https://img.shields.io/badge/built%20with-typescript-lightblue.svg)
 
-HotMesh brings a **memory model** to durable functions. Built on PostgreSQL, it treats your database not just as storage—but as the runtime hub for agents, pipelines, and long-lived processes.
+HotMesh brings a **memory model** to durable functions. Built on PostgreSQL, it treats your database as the runtime hub for agents, pipelines, and long-lived processes.
 
 Use HotMesh to:
 

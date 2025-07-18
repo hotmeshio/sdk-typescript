@@ -103,20 +103,6 @@ export {
   JobStatus,
   PartialJobState,
 } from './job';
-export {
-  DB,
-  Profile,
-  Namespaces,
-  Entity,
-  EntityInstanceTypes,
-  SubClassInstance,
-  AllSubclassInstances,
-  SubclassType,
-  Namespace,
-  Instance,
-  Instances,
-  Profiles,
-} from './manifest';
 export { MappingStatements } from './map';
 export {
   Pipe,
@@ -146,13 +132,6 @@ export {
   MeshCallInterruptParams,
   MeshCallFlushParams,
 } from './meshcall';
-export {
-  CallOptions,
-  MeshDataWorkflowOptions,
-  ConnectOptions,
-  ConnectionInput,
-  ExecInput,
-} from './meshdata';
 export {
   PostgresClassType,
   PostgresClientOptions,

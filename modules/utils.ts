@@ -148,17 +148,6 @@ export const polyfill = {
   providerConfig(obj: any): any {
     return obj?.connection ?? obj?.redis ?? obj?.connections;
   },
-
-  /**
-   * NOTE: `redisClass and redisOptions` input parameters are deprecated; use `connection` for all configuration inputs
-   */
-  meshDataConfig(obj: {
-    connection?: Partial<ProviderConfig | ProvidersConfig>;
-    redisClass?: any;
-    redisOptions?: StringAnyType;
-  }): Partial<ProviderConfig> | Partial<ProvidersConfig> {
-    return { ...obj.connection };
-  },
 };
 
 /**
