@@ -36,6 +36,8 @@ import {
 import { Search } from './search';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 
+import { MemFlow } from './index';
+
 /**
  * The *Worker* service Registers worker functions and connects them to the mesh,
  * using the target backend provider/s (Redis, Postgres, NATS, etc).
@@ -311,14 +313,11 @@ export class WorkerService {
           data: { response: pojoResponse },
         };
       } catch (err) {
-        this.activityRunner.engine.logger.error(
-          'memflow-worker-activity-err',
-          {
-            name: err.name,
-            message: err.message,
-            stack: err.stack,
-          },
-        );
+        this.activityRunner.engine.logger.error('memflow-worker-activity-err', {
+          name: err.name,
+          message: err.message,
+          stack: err.stack,
+        });
         if (
           !(err instanceof MemFlowTimeoutError) &&
           !(err instanceof MemFlowMaxedError) &&
@@ -461,10 +460,24 @@ export class WorkerService {
         );
         context.set('replay', replay);
         context.set('cursor', cursor); // if != 0, more remain
+
+        // Execute workflow with interceptors
         const workflowResponse = await asyncLocalStorage.run(
           context,
           async () => {
-            return await workflowFunction.apply(this, workflowInput.arguments);
+            // Get the interceptor service
+            const interceptorService = MemFlow.getInterceptorService();
+
+            // Create the workflow execution function
+            const execWorkflow = async () => {
+              return await workflowFunction.apply(
+                this,
+                workflowInput.arguments,
+              );
+            };
+
+            // Execute the workflow through the interceptor chain
+            return await interceptorService.executeChain(context, execWorkflow);
           },
         );
 
@@ -490,7 +503,9 @@ export class WorkerService {
             case 'MemFlowRetryError':
               throw new MemFlowRetryError(payload.message, payload.stack);
             default:
-              throw new MemFlowRetryError(`Unknown interruption type: ${payload.type}`);
+              throw new MemFlowRetryError(
+                `Unknown interruption type: ${payload.type}`,
+              );
           }
         }
 
@@ -606,8 +621,7 @@ export class WorkerService {
               code: err.code,
               index: err.index,
               message: JSON.stringify(msg),
-              maximumAttempts:
-                err.maximumAttempts || HMSH_MEMFLOW_MAX_ATTEMPTS,
+              maximumAttempts: err.maximumAttempts || HMSH_MEMFLOW_MAX_ATTEMPTS,
               maximumInterval:
                 err.maximumInterval || s(HMSH_MEMFLOW_MAX_INTERVAL),
               originJobId: err.originJobId,

@@ -22,7 +22,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     options?: HSetOptions,
   ): SqlResult {
     const tableName = context.tableForKey(key, 'hash');
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context',
+    );
     const params = [];
     let sql = '';
 
@@ -101,7 +103,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     options?: HSetOptions,
   ): SqlResult {
     const tableName = context.tableForKey(key, 'hash');
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:merge');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context:merge',
+    );
     const params = [];
     let sql = '';
 
@@ -177,7 +181,12 @@ export function createJsonbOperations(context: HashContext['context']) {
           )
           SELECT new_value FROM updated_job
         `;
-        params.push(key, fields['@context:merge'], replayId, deriveType(replayId));
+        params.push(
+          key,
+          fields['@context:merge'],
+          replayId,
+          deriveType(replayId),
+        );
       } else {
         sql = `
           UPDATE ${tableName}
@@ -240,7 +249,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     const tableName = context.tableForKey(key, 'hash');
     const path = fields['@context:delete'];
     const pathParts = path.split('.');
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:delete');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context:delete',
+    );
     const params = [];
     let sql = '';
 
@@ -317,7 +328,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     const tableName = context.tableForKey(key, 'hash');
     const { path, value } = JSON.parse(fields['@context:append']);
     const pathParts = path.split('.');
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:append');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context:append',
+    );
     const params = [];
     let sql = '';
 
@@ -344,7 +357,13 @@ export function createJsonbOperations(context: HashContext['context']) {
         )
         SELECT new_value FROM updated_job
       `;
-      params.push(key, pathParts, JSON.stringify([value]), replayId, deriveType(replayId));
+      params.push(
+        key,
+        pathParts,
+        JSON.stringify([value]),
+        replayId,
+        deriveType(replayId),
+      );
     } else {
       sql = `
         UPDATE ${tableName}
@@ -371,7 +390,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     const tableName = context.tableForKey(key, 'hash');
     const { path, value } = JSON.parse(fields['@context:prepend']);
     const pathParts = path.split('.');
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:prepend');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context:prepend',
+    );
     const params = [];
     let sql = '';
 
@@ -398,7 +419,13 @@ export function createJsonbOperations(context: HashContext['context']) {
         )
         SELECT new_value FROM updated_job
       `;
-      params.push(key, pathParts, JSON.stringify([value]), replayId, deriveType(replayId));
+      params.push(
+        key,
+        pathParts,
+        JSON.stringify([value]),
+        replayId,
+        deriveType(replayId),
+      );
     } else {
       sql = `
         UPDATE ${tableName}
@@ -425,7 +452,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     const tableName = context.tableForKey(key, 'hash');
     const { path, index } = JSON.parse(fields['@context:remove']);
     const pathParts = path.split('.');
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:remove');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context:remove',
+    );
     const params = [];
     let sql = '';
 
@@ -493,7 +522,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     const tableName = context.tableForKey(key, 'hash');
     const { path, value } = JSON.parse(fields['@context:increment']);
     const pathParts = path.split('.');
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:increment');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context:increment',
+    );
     const params = [];
     let sql = '';
 
@@ -547,7 +578,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     const tableName = context.tableForKey(key, 'hash');
     const path = fields['@context:toggle'];
     const pathParts = path.split('.');
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:toggle');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context:toggle',
+    );
     const params = [];
     let sql = '';
 
@@ -601,7 +634,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     const tableName = context.tableForKey(key, 'hash');
     const { path, value } = JSON.parse(fields['@context:setIfNotExists']);
     const pathParts = path.split('.');
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:setIfNotExists');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context:setIfNotExists',
+    );
     const params = [];
     let sql = '';
 
@@ -627,7 +662,13 @@ export function createJsonbOperations(context: HashContext['context']) {
         )
         SELECT new_value FROM updated_job
       `;
-      params.push(key, pathParts, JSON.stringify(value), replayId, deriveType(replayId));
+      params.push(
+        key,
+        pathParts,
+        JSON.stringify(value),
+        replayId,
+        deriveType(replayId),
+      );
     } else {
       sql = `
         UPDATE ${tableName}
@@ -651,7 +692,9 @@ export function createJsonbOperations(context: HashContext['context']) {
     options?: HSetOptions,
   ): SqlResult {
     const tableName = context.tableForKey(key, 'hash');
-    const getField = Object.keys(fields).find(k => k.startsWith('@context:get:'));
+    const getField = Object.keys(fields).find((k) =>
+      k.startsWith('@context:get:'),
+    );
     const pathKey = getField.replace('@context:get:', '');
     const pathParts = JSON.parse(fields[getField]);
     const params = [];
@@ -687,7 +730,9 @@ export function createJsonbOperations(context: HashContext['context']) {
   ): SqlResult {
     const tableName = context.tableForKey(key, 'hash');
     const path = fields['@context:get'];
-    const replayId = Object.keys(fields).find(k => k.includes('-') && k !== '@context:get');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@context:get',
+    );
     const params = [];
     let sql = '';
 

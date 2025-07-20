@@ -5,15 +5,15 @@ import { asyncLocalStorage } from '../../modules/storage';
 
 /**
  * The Entity module provides methods for reading and writing
- * JSONB data to a workflow's entity. The instance methods 
- * exposed by this class are available for use from within 
+ * JSONB data to a workflow's entity. The instance methods
+ * exposed by this class are available for use from within
  * a running workflow.
- * 
+ *
  * @example
  * ```typescript
  * //entityWorkflow.ts
  * import { workflow } from '@hotmeshio/hotmesh';
- * 
+ *
  * export async function entityExample(): Promise<void> {
  *   const entity = await workflow.entity();
  *   await entity.set({ user: { id: 123 } });
@@ -69,7 +69,7 @@ export class Entity {
     this.searchSessionId = searchSessionId;
     this.hotMeshClient = hotMeshClient;
     this.search = hotMeshClient.engine.search;
-    
+
     // Get workflow dimension from async local storage
     const store = asyncLocalStorage.getStore();
     this.workflowDimension = store?.get('workflowDimension') ?? '';
@@ -86,7 +86,7 @@ export class Entity {
 
   /**
    * Sets the entire entity object. This replaces any existing entity.
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * await entity.set({ user: { id: 123, name: "John" } });
@@ -95,7 +95,7 @@ export class Entity {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    
+
     if (ssGuid in replay) {
       return JSON.parse(replay[ssGuid]);
     }
@@ -111,7 +111,7 @@ export class Entity {
 
   /**
    * Deep merges the provided object with the existing entity
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * await entity.merge({ user: { email: "john@example.com" } });
@@ -120,7 +120,7 @@ export class Entity {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    
+
     if (ssGuid in replay) {
       return JSON.parse(replay[ssGuid]);
     }
@@ -136,7 +136,7 @@ export class Entity {
 
   /**
    * Gets a value from the entity by path
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * const user = await entity.get("user");
@@ -177,7 +177,7 @@ export class Entity {
 
   /**
    * Deletes a value from the entity by path
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * await entity.delete("user.email");
@@ -186,7 +186,7 @@ export class Entity {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    
+
     if (ssGuid in replay) {
       return JSON.parse(replay[ssGuid]);
     }
@@ -202,7 +202,7 @@ export class Entity {
 
   /**
    * Appends a value to an array at the specified path
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * await entity.append("items", { id: 1, name: "New Item" });
@@ -211,7 +211,7 @@ export class Entity {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    
+
     if (ssGuid in replay) {
       return JSON.parse(replay[ssGuid]);
     }
@@ -227,7 +227,7 @@ export class Entity {
 
   /**
    * Prepends a value to an array at the specified path
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * await entity.prepend("items", { id: 0, name: "First Item" });
@@ -236,7 +236,7 @@ export class Entity {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    
+
     if (ssGuid in replay) {
       return JSON.parse(replay[ssGuid]);
     }
@@ -252,7 +252,7 @@ export class Entity {
 
   /**
    * Removes an item from an array at the specified path and index
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * await entity.remove("items", 0); // Remove first item
@@ -261,7 +261,7 @@ export class Entity {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    
+
     if (ssGuid in replay) {
       return JSON.parse(replay[ssGuid]);
     }
@@ -277,16 +277,16 @@ export class Entity {
 
   /**
    * Increments a numeric value at the specified path
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * await entity.increment("counter", 5);
    */
-  async increment(path: string, value: number = 1): Promise<number> {
+  async increment(path: string, value = 1): Promise<number> {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    
+
     if (ssGuid in replay) {
       return JSON.parse(replay[ssGuid]);
     }
@@ -302,7 +302,7 @@ export class Entity {
 
   /**
    * Toggles a boolean value at the specified path
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * await entity.toggle("settings.enabled");
@@ -311,7 +311,7 @@ export class Entity {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    
+
     if (ssGuid in replay) {
       return JSON.parse(replay[ssGuid]);
     }
@@ -327,7 +327,7 @@ export class Entity {
 
   /**
    * Sets a value at the specified path only if it doesn't already exist
-   * 
+   *
    * @example
    * const entity = await workflow.entity();
    * await entity.setIfNotExists("user.id", 123);
@@ -336,7 +336,7 @@ export class Entity {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    
+
     if (ssGuid in replay) {
       return JSON.parse(replay[ssGuid]);
     }
@@ -351,11 +351,11 @@ export class Entity {
   }
 
   // Static readonly find methods for cross-entity querying (not tied to specific workflow)
-  
+
   /**
    * Finds entity records matching complex conditions using JSONB/SQL queries.
    * This is a readonly operation that queries across all entities of a given type.
-   * 
+   *
    * @example
    * ```typescript
    * // Basic find with simple conditions
@@ -364,7 +364,7 @@ export class Entity {
    *   { status: 'active', country: 'US' },
    *   hotMeshClient
    * );
-   * 
+   *
    * // Complex query with comparison operators
    * const seniorUsers = await Entity.find(
    *   'user',
@@ -376,7 +376,7 @@ export class Entity {
    *   hotMeshClient,
    *   { limit: 10, offset: 0 }
    * );
-   * 
+   *
    * // Query with multiple conditions and nested objects
    * const premiumUsers = await Entity.find(
    *   'user',
@@ -389,7 +389,7 @@ export class Entity {
    *   hotMeshClient,
    *   { limit: 20 }
    * );
-   * 
+   *
    * // Array conditions
    * const taggedPosts = await Entity.find(
    *   'post',
@@ -416,12 +416,12 @@ export class Entity {
   /**
    * Finds a specific entity record by its ID using direct JSONB/SQL queries.
    * This is the most efficient method for retrieving a single entity record.
-   * 
+   *
    * @example
    * ```typescript
    * // Basic findById usage
    * const user = await Entity.findById('user', 'user123', hotMeshClient);
-   * 
+   *
    * // Example with type checking
    * interface User {
    *   id: string;
@@ -432,10 +432,10 @@ export class Entity {
    *     notifications: boolean;
    *   };
    * }
-   * 
+   *
    * const typedUser = await Entity.findById<User>('user', 'user456', hotMeshClient);
    * console.log(typedUser.preferences.theme); // 'light' | 'dark'
-   * 
+   *
    * // Error handling example
    * try {
    *   const order = await Entity.findById('order', 'order789', hotMeshClient);
@@ -462,7 +462,7 @@ export class Entity {
   /**
    * Finds entity records matching a specific field condition using JSONB/SQL queries.
    * Supports various operators for flexible querying across all entities of a type.
-   * 
+   *
    * @example
    * ```typescript
    * // Basic equality search
@@ -474,7 +474,7 @@ export class Entity {
    *   hotMeshClient,
    *   { limit: 20 }
    * );
-   * 
+   *
    * // Numeric comparison
    * const highValueOrders = await Entity.findByCondition(
    *   'order',
@@ -483,7 +483,7 @@ export class Entity {
    *   '>=',
    *   hotMeshClient
    * );
-   * 
+   *
    * // Pattern matching with LIKE
    * const gmailUsers = await Entity.findByCondition(
    *   'user',
@@ -492,7 +492,7 @@ export class Entity {
    *   'LIKE',
    *   hotMeshClient
    * );
-   * 
+   *
    * // IN operator for multiple values
    * const specificProducts = await Entity.findByCondition(
    *   'product',
@@ -501,7 +501,7 @@ export class Entity {
    *   'IN',
    *   hotMeshClient
    * );
-   * 
+   *
    * // Not equals operator
    * const nonPremiumUsers = await Entity.findByCondition(
    *   'user',
@@ -510,7 +510,7 @@ export class Entity {
    *   '!=',
    *   hotMeshClient
    * );
-   * 
+   *
    * // Date comparison
    * const recentOrders = await Entity.findByCondition(
    *   'order',
@@ -532,12 +532,18 @@ export class Entity {
   ): Promise<any[]> {
     // Use SearchService for JSONB/SQL querying
     const searchClient = hotMeshClient.engine.search;
-    return await searchClient.findEntitiesByCondition(entity, field, value, operator, options);
+    return await searchClient.findEntitiesByCondition(
+      entity,
+      field,
+      value,
+      operator,
+      options,
+    );
   }
 
   /**
    * Creates an efficient GIN index for a specific entity field to optimize queries.
-   * 
+   *
    * @example
    * ```typescript
    * await Entity.createIndex('user', 'email', hotMeshClient);

@@ -73,7 +73,8 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
           } else if (code === HMSH_CODE_MEMFLOW_TIMEOUT) {
             throw new MemFlowTimeoutError(message, stack);
           } else {
-            // Non-fatal error
+            // For any other error code, throw a MemFlowFatalError to stop the workflow
+            throw new MemFlowFatalError(message, stack);
           }
         }
         return result.$error as T;

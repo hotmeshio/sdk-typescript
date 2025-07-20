@@ -29,7 +29,11 @@ export class RouterConfigManager {
     }
   }
 
-  static setDefaults(config: RouterConfig): RouterConfig & { reclaimDelay: number; reclaimCount: number; readonly: boolean } {
+  static setDefaults(config: RouterConfig): RouterConfig & {
+    reclaimDelay: number;
+    reclaimCount: number;
+    readonly: boolean;
+  } {
     return {
       ...config,
       reclaimDelay: config.reclaimDelay || HMSH_XCLAIM_DELAY_MS,
@@ -54,4 +58,4 @@ export {
   MAX_STREAM_BACKOFF,
   INITIAL_STREAM_BACKOFF,
   MAX_STREAM_RETRIES,
-}; 
+};

@@ -28,7 +28,8 @@ class PostgresConnection extends AbstractConnection<
   protected static connectionInstances: Set<PostgresClientType> = new Set();
 
   //track connections by taskQueue + database config for reuse
-  protected static taskQueueConnections: Map<string, PostgresConnection> = new Map();
+  protected static taskQueueConnections: Map<string, PostgresConnection> =
+    new Map();
 
   /**
    * Get comprehensive connection statistics for monitoring taskQueue pooling effectiveness
@@ -43,17 +44,19 @@ class PostgresConnection extends AbstractConnection<
       reusedCount: number;
     }>;
   } {
-    const taskQueueDetails = Array.from(this.taskQueueConnections.entries()).map(([key, connection]) => ({
+    const taskQueueDetails = Array.from(
+      this.taskQueueConnections.entries(),
+    ).map(([key, connection]) => ({
       key,
       connectionId: connection.getConnectionId() || 'unknown',
-      reusedCount: (connection as any).reusedCount || 0
+      reusedCount: (connection as any).reusedCount || 0,
     }));
 
     return {
       totalPoolClients: this.poolClientInstances.size,
       totalConnections: this.connectionInstances.size,
       taskQueueConnections: this.taskQueueConnections.size,
-      taskQueueDetails
+      taskQueueDetails,
     };
   }
 
@@ -63,11 +66,11 @@ class PostgresConnection extends AbstractConnection<
   static logConnectionStats(logger?: any): void {
     const stats = this.getConnectionStats();
     const message = `PostgreSQL Connection Stats: ${stats.totalConnections} total connections, ${stats.taskQueueConnections} taskQueue pools, ${stats.totalPoolClients} pool clients`;
-    
+
     if (logger) {
       logger.info('postgres-connection-stats', {
         ...stats,
-        message
+        message,
       });
     } else {
       console.log(message, stats);
@@ -85,9 +88,18 @@ class PostgresConnection extends AbstractConnection<
     poolingEfficiency: number; // percentage of connections that are pooled
   } {
     const stats = this.getConnectionStats();
-    const totalReuses = stats.taskQueueDetails.reduce((sum, detail) => sum + detail.reusedCount, 0);
-    const averageReusesPerPool = stats.taskQueueConnections > 0 ? totalReuses / stats.taskQueueConnections : 0;
-    const poolingEfficiency = stats.totalConnections > 0 ? (stats.taskQueueConnections / stats.totalConnections) * 100 : 0;
+    const totalReuses = stats.taskQueueDetails.reduce(
+      (sum, detail) => sum + detail.reusedCount,
+      0,
+    );
+    const averageReusesPerPool =
+      stats.taskQueueConnections > 0
+        ? totalReuses / stats.taskQueueConnections
+        : 0;
+    const poolingEfficiency =
+      stats.totalConnections > 0
+        ? stats.taskQueueConnections / stats.totalConnections * 100
+        : 0;
 
     return {
       totalConnections: stats.totalConnections,
@@ -224,15 +236,20 @@ class PostgresConnection extends AbstractConnection<
       return await this.connect(id, clientConstructor, options, config);
     }
 
-    const connectionKey = this.createTaskQueueConnectionKey(taskQueue, options, config.provider);
-    
+    const connectionKey = this.createTaskQueueConnectionKey(
+      taskQueue,
+      options,
+      config.provider,
+    );
+
     // Check if we already have a connection for this taskQueue + config
     if (this.taskQueueConnections.has(connectionKey)) {
       const existingConnection = this.taskQueueConnections.get(connectionKey)!;
-      
+
       // Track reuse count for monitoring
-      (existingConnection as any).reusedCount = ((existingConnection as any).reusedCount || 0) + 1;
-      
+      (existingConnection as any).reusedCount =
+        ((existingConnection as any).reusedCount || 0) + 1;
+
       this.logger.debug('postgres-connection-reused', {
         connectionKey,
         taskQueue,
@@ -244,13 +261,18 @@ class PostgresConnection extends AbstractConnection<
     }
 
     // Create new connection and cache it for the taskQueue
-    const newConnection = await this.connect(id, clientConstructor, options, config);
-    
+    const newConnection = await this.connect(
+      id,
+      clientConstructor,
+      options,
+      config,
+    );
+
     // Initialize reuse tracking
     (newConnection as any).reusedCount = 0;
-    
+
     this.taskQueueConnections.set(connectionKey, newConnection);
-    
+
     this.logger.debug('postgres-connection-created-for-taskqueue', {
       connectionKey,
       taskQueue,

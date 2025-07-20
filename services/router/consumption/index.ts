@@ -24,7 +24,9 @@ import {
 import { ProviderClient, ProviderTransaction } from '../../../types/provider';
 import { KeyType } from '../../../modules/key';
 
-export class ConsumptionManager<S extends StreamService<ProviderClient, ProviderTransaction>> {
+export class ConsumptionManager<
+  S extends StreamService<ProviderClient, ProviderTransaction>,
+> {
   private stream: S;
   private logger: ILogger;
   private throttleManager: ThrottleManager;
@@ -34,7 +36,7 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
   private reclaimCount: number;
   private appId: string;
   private role: any;
-  private errorCount: number = 0;
+  private errorCount = 0;
   private counts: { [key: string]: number } = {};
   private hasReachedMaxBackoff: boolean | undefined;
   private router: any;
@@ -102,17 +104,25 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
     this.logger.info(`router-stream-starting`, { group, consumer, stream });
     await this.lifecycleManager.startConsuming(this.router);
     await this.createGroup(stream, group);
-    
+
     // Check if notifications are supported
     const features = this.stream.getProviderSpecificFeatures();
     const supportsNotifications = features.supportsNotifications;
-    
+
     if (supportsNotifications) {
-      this.logger.info(`router-stream-using-notifications`, { group, consumer, stream });
+      this.logger.info(`router-stream-using-notifications`, {
+        group,
+        consumer,
+        stream,
+      });
       this.lifecycleManager.setIsUsingNotifications(true);
       return this.consumeWithNotifications(stream, group, consumer, callback);
     } else {
-      this.logger.info(`router-stream-using-polling`, { group, consumer, stream });
+      this.logger.info(`router-stream-using-polling`, {
+        group,
+        consumer,
+        stream,
+      });
       this.lifecycleManager.setIsUsingNotifications(false);
       return this.consumeWithPolling(stream, group, consumer, callback);
     }
@@ -134,38 +144,47 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
 
       await this.throttleManager.customSleep(); // respect throttle
 
-      if (this.lifecycleManager.isStopped(group, consumer, stream) || this.throttleManager.isPaused()) {
+      if (
+        this.lifecycleManager.isStopped(group, consumer, stream) ||
+        this.throttleManager.isPaused()
+      ) {
         return;
       }
 
       // Process messages - use parallel processing for PostgreSQL
       const features = this.stream.getProviderSpecificFeatures();
       const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications currently
-      
+
       if (isPostgres && messages.length > 1) {
         // Parallel processing for PostgreSQL batches
         this.logger.debug('postgres-stream-parallel-processing', {
           streamName: stream,
           groupName: group,
-          messageCount: messages.length
+          messageCount: messages.length,
         });
-        
+
         const processingStart = Date.now();
         const processingPromises = messages.map(async (message) => {
           if (this.lifecycleManager.isStopped(group, consumer, stream)) {
             return;
           }
-          return this.consumeOne(stream, group, message.id, message.data, callback);
+          return this.consumeOne(
+            stream,
+            group,
+            message.id,
+            message.data,
+            callback,
+          );
         });
-        
+
         // Process all messages in parallel
         await Promise.allSettled(processingPromises);
-        
+
         this.logger.debug('postgres-stream-parallel-processing-complete', {
           streamName: stream,
           groupName: group,
           messageCount: messages.length,
-          processingDuration: Date.now() - processingStart
+          processingDuration: Date.now() - processingStart,
         });
       } else {
         // Sequential processing for other providers or single messages
@@ -173,7 +192,13 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
           if (this.lifecycleManager.isStopped(group, consumer, stream)) {
             return;
           }
-          await this.consumeOne(stream, group, message.id, message.data, callback);
+          await this.consumeOne(
+            stream,
+            group,
+            message.id,
+            message.data,
+            callback,
+          );
         }
       }
 
@@ -196,7 +221,13 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
             if (this.lifecycleManager.isStopped(group, consumer, stream)) {
               return;
             }
-            return this.consumeOne(stream, group, message.id, message.data, callback);
+            return this.consumeOne(
+              stream,
+              group,
+              message.id,
+              message.data,
+              callback,
+            );
           });
           await Promise.allSettled(reclaimPromises);
         } else {
@@ -204,7 +235,13 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
             if (this.lifecycleManager.isStopped(group, consumer, stream)) {
               return;
             }
-            await this.consumeOne(stream, group, message.id, message.data, callback);
+            await this.consumeOne(
+              stream,
+              group,
+              message.id,
+              message.data,
+              callback,
+            );
           }
         }
       }
@@ -227,9 +264,13 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
         group,
         consumer,
       });
-      
+
       // Fall back to polling if notifications fail
-      this.logger.info(`router-stream-fallback-to-polling`, { group, consumer, stream });
+      this.logger.info(`router-stream-fallback-to-polling`, {
+        group,
+        consumer,
+        stream,
+      });
       this.lifecycleManager.setIsUsingNotifications(false);
       return this.consumeWithPolling(stream, group, consumer, callback);
     }
@@ -242,16 +283,16 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ): Promise<void> {
     let lastCheckedPendingMessagesAt = Date.now();
-  
+
     // Track if we've hit maximum backoff. Initially false.
     // When true, we use the fallback mode: single attempt, no backoff, then sleep 3s if empty.
     if (typeof this.hasReachedMaxBackoff === 'undefined') {
       this.hasReachedMaxBackoff = false;
     }
-  
+
     const sleepFor = (ms: number) =>
       new Promise<void>((resolve) => setTimeout(resolve, ms));
-  
+
     const consume = async () => {
       await this.throttleManager.customSleep(); // always respect the global throttle
       if (this.lifecycleManager.isStopped(group, consumer, stream)) {
@@ -260,92 +301,117 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
         setImmediate(consume.bind(this));
         return;
       }
-  
+
       // Randomizer that asymptotes at 150% of `HMSH_BLOCK_TIME_MS`
       const streamDuration =
         HMSH_BLOCK_TIME_MS + Math.round(HMSH_BLOCK_TIME_MS * Math.random());
-  
+
       try {
         let messages: StreamMessage[] = [];
-  
+
         if (!this.hasReachedMaxBackoff) {
           // Normal mode: try with backoff and finite retries
           const features = this.stream.getProviderSpecificFeatures();
           const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications
           const batchSize = isPostgres ? 10 : 1; // Use batch size of 10 for PostgreSQL, 1 for others
-          
-          messages = await this.stream.consumeMessages(stream, group, consumer, {
-            blockTimeout: streamDuration,
-            batchSize,
-            enableBackoff: true,
-            initialBackoff: INITIAL_STREAM_BACKOFF,
-            maxBackoff: MAX_STREAM_BACKOFF,
-            maxRetries: MAX_STREAM_RETRIES,
-          });
+
+          messages = await this.stream.consumeMessages(
+            stream,
+            group,
+            consumer,
+            {
+              blockTimeout: streamDuration,
+              batchSize,
+              enableBackoff: true,
+              initialBackoff: INITIAL_STREAM_BACKOFF,
+              maxBackoff: MAX_STREAM_BACKOFF,
+              maxRetries: MAX_STREAM_RETRIES,
+            },
+          );
         } else {
           // Fallback mode: just try once, no backoff
           const features = this.stream.getProviderSpecificFeatures();
           const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications
           const batchSize = isPostgres ? 10 : 1; // Use batch size of 10 for PostgreSQL, 1 for others
-          
-          messages = await this.stream.consumeMessages(stream, group, consumer, {
-            blockTimeout: streamDuration,
-            batchSize,
-            enableBackoff: false,
-            maxRetries: 1,
-          });
+
+          messages = await this.stream.consumeMessages(
+            stream,
+            group,
+            consumer,
+            {
+              blockTimeout: streamDuration,
+              batchSize,
+              enableBackoff: false,
+              maxRetries: 1,
+            },
+          );
         }
-  
+
         if (this.lifecycleManager.isStopped(group, consumer, stream)) {
           return;
         } else if (this.throttleManager.isPaused()) {
           setImmediate(consume.bind(this));
           return;
         }
-  
+
         if (messages.length > 0) {
           // Reset if we were in fallback mode
           this.hasReachedMaxBackoff = false;
-  
+
           // Process messages - use parallel processing for PostgreSQL
           const features = this.stream.getProviderSpecificFeatures();
           const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications currently
-          
+
           if (isPostgres && messages.length > 1) {
             // Parallel processing for PostgreSQL batches
             this.logger.debug('postgres-stream-parallel-processing-polling', {
               streamName: stream,
               groupName: group,
-              messageCount: messages.length
+              messageCount: messages.length,
             });
-            
+
             const processingStart = Date.now();
             const processingPromises = messages.map(async (message) => {
               if (this.lifecycleManager.isStopped(group, consumer, stream)) {
                 return;
               }
-              return this.consumeOne(stream, group, message.id, message.data, callback);
+              return this.consumeOne(
+                stream,
+                group,
+                message.id,
+                message.data,
+                callback,
+              );
             });
-            
+
             // Process all messages in parallel
             await Promise.allSettled(processingPromises);
-            
-            this.logger.debug('postgres-stream-parallel-processing-polling-complete', {
-              streamName: stream,
-              groupName: group,
-              messageCount: messages.length,
-              processingDuration: Date.now() - processingStart
-            });
+
+            this.logger.debug(
+              'postgres-stream-parallel-processing-polling-complete',
+              {
+                streamName: stream,
+                groupName: group,
+                messageCount: messages.length,
+                processingDuration: Date.now() - processingStart,
+              },
+            );
           } else {
             // Sequential processing for other providers or single messages
             for (const message of messages) {
               if (this.lifecycleManager.isStopped(group, consumer, stream)) {
                 return;
               }
-              await this.consumeOne(stream, group, message.id, message.data, callback);
+              await this.consumeOne(
+                stream,
+                group,
+                message.id,
+                message.data,
+                callback,
+              );
             }
           }
-  
+
           // Check for pending messages if supported and enough time has passed
           const now = Date.now();
           if (
@@ -353,19 +419,29 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
             now - lastCheckedPendingMessagesAt > this.reclaimDelay
           ) {
             lastCheckedPendingMessagesAt = now;
-            const pendingMessages = await this.stream.retryMessages(stream, group, {
-              consumerName: consumer,
-              minIdleTime: this.reclaimDelay,
-              limit: HMSH_XPENDING_COUNT,
-            });
-  
+            const pendingMessages = await this.stream.retryMessages(
+              stream,
+              group,
+              {
+                consumerName: consumer,
+                minIdleTime: this.reclaimDelay,
+                limit: HMSH_XPENDING_COUNT,
+              },
+            );
+
             // Process reclaimed messages (also parallel for PostgreSQL)
             if (isPostgres && pendingMessages.length > 1) {
               const reclaimPromises = pendingMessages.map(async (message) => {
                 if (this.lifecycleManager.isStopped(group, consumer, stream)) {
                   return;
                 }
-                return this.consumeOne(stream, group, message.id, message.data, callback);
+                return this.consumeOne(
+                  stream,
+                  group,
+                  message.id,
+                  message.data,
+                  callback,
+                );
               });
               await Promise.allSettled(reclaimPromises);
             } else {
@@ -373,7 +449,13 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
                 if (this.lifecycleManager.isStopped(group, consumer, stream)) {
                   return;
                 }
-                await this.consumeOne(stream, group, message.id, message.data, callback);
+                await this.consumeOne(
+                  stream,
+                  group,
+                  message.id,
+                  message.data,
+                  callback,
+                );
               }
             }
           }
@@ -391,13 +473,15 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
             // Sleep for MAX_STREAM_BACKOFF ms before trying again
             await sleepFor(MAX_STREAM_BACKOFF);
           }
-  
+
           // Try again after sleeping
           setImmediate(consume.bind(this));
         }
-  
       } catch (error) {
-        if (this.lifecycleManager.getShouldConsume() && process.env.NODE_ENV !== 'test') {
+        if (
+          this.lifecycleManager.getShouldConsume() &&
+          process.env.NODE_ENV !== 'test'
+        ) {
           this.logger.error(`router-stream-error`, {
             error,
             stream,
@@ -413,7 +497,7 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
         }
       }
     };
-  
+
     consume.call(this);
   }
 
@@ -472,12 +556,16 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
   }
 
   // Add batch acknowledgment method for PostgreSQL optimization
-  async ackAndDeleteBatch(stream: string, group: string, ids: string[]): Promise<void> {
+  async ackAndDeleteBatch(
+    stream: string,
+    group: string,
+    ids: string[],
+  ): Promise<void> {
     if (ids.length === 0) return;
-    
+
     const features = this.stream.getProviderSpecificFeatures();
     const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications
-    
+
     if (isPostgres && ids.length > 1) {
       // Batch acknowledgment for PostgreSQL
       await this.stream.ackAndDelete(stream, group, ids);
@@ -495,7 +583,11 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
   ): Promise<string> {
     if (output && typeof output === 'object') {
       if (output.status === 'error') {
-        return await this.errorHandler.handleRetry(input, output, this.publishMessage.bind(this));
+        return await this.errorHandler.handleRetry(
+          input,
+          output,
+          this.publishMessage.bind(this),
+        );
       } else if (typeof output.metadata !== 'object') {
         output.metadata = { ...input.metadata, guid: guid() };
       } else {
@@ -512,4 +604,4 @@ export class ConsumptionManager<S extends StreamService<ProviderClient, Provider
   isStreamMessage(result: any): boolean {
     return Array.isArray(result) && Array.isArray(result[0]);
   }
-} 
+}

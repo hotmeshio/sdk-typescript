@@ -4,30 +4,18 @@
 
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg) ![made with typescript](https://img.shields.io/badge/built%20with-typescript-lightblue.svg)
 
-HotMesh removes the repetitive glue of building durable agents, pipelines, and long‑running workflows. Instead of you designing queues, schedulers, cache layers, and ad‑hoc state stores for each agent or pipeline, HotMesh standardizes the pattern:
-
-* **Entity (Core Memory)**: The authoritative JSONB document + its indexable “surface” fields.
-* **Hooks (Durable Units of Work)**: Re‑entrant, idempotent functions that *maintain* the entity over time.
-* **Workflow (Coordinator)**: The thin orchestration entry that seeds state, spawns hooks, and optionally synthesizes results.
-* **Commands (State Mutation API)**: Atomic `set / merge / append / increment / tag / signal` updates with optimistic invariants handled by Postgres transactions.
-
-You focus on *what should change in memory*; HotMesh handles *how it changes safely and durably.*
+HotMesh removes the repetitive glue of building durable agents, pipelines, and long‑running workflows. You focus on *what should change*; HotMesh handles *how it changes safely and durably.*
 
 ---
 
-## Why It’s Easier with HotMesh
+## Why Choose HotMesh
 
-| Problem You Usually Solve Manually                  | HotMesh Built‑In                          | Impact                                         |
-| --------------------------------------------------- | ----------------------------------------- | ---------------------------------------------- |
-| Designing per‑agent persistence and caches          | Unified JSONB entity + typed accessors    | One memory model across agents/pipelines       |
-| Preventing race conditions on shared state          | Transactional hook writes                 | Safe parallel maintenance                      |
-| Coordinating multi-perspective / multi-step work    | Hook spawning + signals                   | Decomposed work without orchestration glue     |
-| Schema evolution / optional fields                  | Flexible JSONB + selective indexes        | Add / adapt state incrementally                |
-| Querying live pipeline / agent status               | SQL over materialized surfaces            | Operational observability using standard tools |
-| Avoiding duplicate side-effects during retry/replay | Deterministic re‑entry + idempotent hooks | Simplifies error handling                      |
-| Per‑tenant isolation                                | Schema (or prefix) scoping                | Clean multi‑tenant boundary                    |
-| Background progression / fan‑out                    | `execHook` + signals                      | Natural concurrency without queue plumbing     |
 
+- **One memory model** across all your agents and pipelines. No more designing custom persistence for each workflow.
+- **Automatic reliability** with transactional safety, replay protection, and crash recovery built-in.
+- **Natural concurrency** through isolated hooks that can run in parallel without coordination overhead.
+- **Operational transparency** using standard SQL to query live pipeline status and agent memory.
+- **Multi-tenant ready** with clean schema isolation and flexible indexing.
 ---
 
 ## Core Abstractions

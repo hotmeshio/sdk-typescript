@@ -36,4 +36,4 @@ export class RouterTelemetry {
   endStreamSpan(): void {
     this.telemetryService.endStreamSpan();
   }
-} 
+}

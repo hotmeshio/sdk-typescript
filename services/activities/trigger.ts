@@ -20,9 +20,9 @@ import {
 import { JobState, ExtensionType, JobStatus } from '../../types/job';
 import { ProviderTransaction } from '../../types/provider';
 import { StringScalarType } from '../../types/serializer';
+import { MapperService } from '../mapper';
 
 import { Activity } from './activity';
-import { MapperService } from '../mapper';
 
 class Trigger extends Activity {
   config: TriggerActivity;
@@ -299,9 +299,14 @@ class Trigger extends Activity {
     return jobKey ? Pipe.resolve(jobKey, context) : '';
   }
 
-  async setStateNX(status?: number, entity?: string | undefined): Promise<void> {
+  async setStateNX(
+    status?: number,
+    entity?: string | undefined,
+  ): Promise<void> {
     const jobId = this.context.metadata.jid;
-    if (!await this.store.setStateNX(jobId, this.engine.appId, status, entity)) {
+    if (
+      !await this.store.setStateNX(jobId, this.engine.appId, status, entity)
+    ) {
       throw new DuplicateJobError(jobId);
     }
   }

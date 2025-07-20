@@ -88,10 +88,7 @@ export class ClientService {
   /**
    * @private
    */
-  getHotMeshClient = async (
-    taskQueue: string | null,
-    namespace?: string,
-  ) => {
+  getHotMeshClient = async (taskQueue: string | null, namespace?: string) => {
     //namespace isolation requires the connection options to be hashed
     //as multiple intersecting databases can be used by the same service
     //hashing options allows for reuse of the same connection without risk of
@@ -107,7 +104,7 @@ export class ClientService {
 
     //init, but don't await
     const readonly = this.connection.readonly ?? undefined;
-    let hotMeshClient = HotMesh.init({
+    const hotMeshClient = HotMesh.init({
       appId: targetNS,
       taskQueue,
       logLevel: HMSH_LOGLEVEL,
@@ -219,7 +216,9 @@ export class ClientService {
      */
     start: async (options: WorkflowOptions): Promise<WorkflowHandleService> => {
       const taskQueueName = options.taskQueue ?? options.entity;
-      const workflowName = options.taskQueue ? options.workflowName : (options.entity ?? options.workflowName);
+      const workflowName = options.taskQueue
+        ? options.workflowName
+        : options.entity ?? options.workflowName;
       const trc = options.workflowTrace;
       const spn = options.workflowSpan;
       //hotmesh `topic` is equivalent to `queue+workflowname` pattern in other systems
@@ -360,10 +359,7 @@ export class ClientService {
       namespace?: string,
     ): Promise<WorkflowHandleService> => {
       const workflowTopic = `${taskQueue}-${workflowName}`;
-      const hotMeshClient = await this.getHotMeshClient(
-        taskQueue,
-        namespace,
-      );
+      const hotMeshClient = await this.getHotMeshClient(taskQueue, namespace);
       return new WorkflowHandleService(
         hotMeshClient,
         workflowTopic,
@@ -401,10 +397,7 @@ export class ClientService {
       ...query: string[]
     ): Promise<string[]> => {
       const workflowTopic = `${taskQueue}-${workflowName}`;
-      const hotMeshClient = await this.getHotMeshClient(
-        taskQueue,
-        namespace,
-      );
+      const hotMeshClient = await this.getHotMeshClient(taskQueue, namespace);
       try {
         return await this.search(hotMeshClient, index, query);
       } catch (error) {

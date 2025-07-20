@@ -96,7 +96,7 @@ export const HMSH_EXPIRE_JOB_SECONDS =
   parseInt(process.env.HMSH_EXPIRE_JOB_SECONDS, 10) || 1;
 
 // STREAM ROUTER
-export const MAX_STREAM_BACKOFF = 
+export const MAX_STREAM_BACKOFF =
   parseInt(process.env.MAX_STREAM_BACKOFF, 10) || 500;
 export const INITIAL_STREAM_BACKOFF =
   parseInt(process.env.INITIAL_STREAM_BACKOFF, 10) || 250;

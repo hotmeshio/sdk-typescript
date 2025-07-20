@@ -64,7 +64,7 @@ class WorkerService {
         if (config.taskQueue) {
           worker.taskQueue = config.taskQueue;
         }
-        
+
         await ConnectorService.initClients(worker);
 
         const service = new WorkerService();

@@ -1,5 +1,17 @@
-import { HashContext, Multi, SqlResult, HSetOptions, ProviderTransaction, HScanResult } from './types';
-import { isJobsTable, deriveType, processJobsRows, processRegularRows } from './utils';
+import {
+  HashContext,
+  Multi,
+  SqlResult,
+  HSetOptions,
+  ProviderTransaction,
+  HScanResult,
+} from './types';
+import {
+  isJobsTable,
+  deriveType,
+  processJobsRows,
+  processRegularRows,
+} from './utils';
 
 export function createBasicOperations(context: HashContext['context']) {
   return {
@@ -10,7 +22,12 @@ export function createBasicOperations(context: HashContext['context']) {
       multi?: ProviderTransaction,
       entity?: string,
     ): Promise<number> {
-      const { sql, params } = _hset(context, key, { [field]: value }, { nx: true, entity });
+      const { sql, params } = _hset(
+        context,
+        key,
+        { [field]: value },
+        { nx: true, entity },
+      );
       if (multi) {
         (multi as Multi).addCommand(sql, params, 'number');
         return Promise.resolve(0);
@@ -39,12 +56,12 @@ export function createBasicOperations(context: HashContext['context']) {
       } else {
         try {
           const res = await context.pgClient.query(sql, params);
-          
+
           // Check if this is a JSONB operation that returns a value
-          const isJsonbOperation = Object.keys(fields).some(k => 
-            k.startsWith('@context:') && k !== '@context'
+          const isJsonbOperation = Object.keys(fields).some(
+            (k) => k.startsWith('@context:') && k !== '@context',
           );
-          
+
           if (isJsonbOperation && res.rows[0]?.new_value !== undefined) {
             let returnValue;
             try {
@@ -53,10 +70,10 @@ export function createBasicOperations(context: HashContext['context']) {
             } catch {
               returnValue = res.rows[0].new_value;
             }
-            
+
             return returnValue;
           }
-          
+
           return res.rowCount;
         } catch (err) {
           console.error('hset error', err, sql, params);
@@ -83,7 +100,11 @@ export function createBasicOperations(context: HashContext['context']) {
       }
     },
 
-    async hdel(key: string, fields: string[], multi?: unknown): Promise<number> {
+    async hdel(
+      key: string,
+      fields: string[],
+      multi?: unknown,
+    ): Promise<number> {
       // Ensure fields is an array
       if (!Array.isArray(fields)) {
         fields = [fields];
@@ -108,7 +129,7 @@ export function createBasicOperations(context: HashContext['context']) {
       const processRows = (rows: any[]) => {
         const tableName = context.tableForKey(key, 'hash');
         const isJobsTableResult = isJobsTable(tableName);
-        
+
         if (isJobsTableResult) {
           return processJobsRows(rows, fields);
         } else {
@@ -144,7 +165,7 @@ export function createBasicOperations(context: HashContext['context']) {
       const isJobsTableResult = isJobsTable(tableName);
 
       const { sql, params } = _hgetall(context, key);
-      
+
       const processRows = (rows: any[]): Record<string, string> => {
         if (isJobsTableResult) {
           return processJobsRows(rows);
@@ -295,7 +316,11 @@ export function _hset(
   return { sql, params };
 }
 
-export function _hget(context: HashContext['context'], key: string, field: string): SqlResult {
+export function _hget(
+  context: HashContext['context'],
+  key: string,
+  field: string,
+): SqlResult {
   const tableName = context.tableForKey(key, 'hash');
   const isJobsTableResult = isJobsTable(tableName);
   const isStatusField = field === ':';
@@ -341,7 +366,11 @@ export function _hget(context: HashContext['context'], key: string, field: strin
   }
 }
 
-export function _hdel(context: HashContext['context'], key: string, fields: string[]): SqlResult {
+export function _hdel(
+  context: HashContext['context'],
+  key: string,
+  fields: string[],
+): SqlResult {
   const tableName = context.tableForKey(key, 'hash');
   const isJobsTableResult = isJobsTable(tableName);
   const targetTable = isJobsTableResult ? `${tableName}_attributes` : tableName;
@@ -377,7 +406,11 @@ export function _hdel(context: HashContext['context'], key: string, fields: stri
   }
 }
 
-export function _hmget(context: HashContext['context'], key: string, fields: string[]): SqlResult {
+export function _hmget(
+  context: HashContext['context'],
+  key: string,
+  fields: string[],
+): SqlResult {
   const tableName = context.tableForKey(key, 'hash');
   const isJobsTableResult = isJobsTable(tableName);
 
@@ -432,7 +465,10 @@ export function _hmget(context: HashContext['context'], key: string, fields: str
   }
 }
 
-export function _hgetall(context: HashContext['context'], key: string): SqlResult {
+export function _hgetall(
+  context: HashContext['context'],
+  key: string,
+): SqlResult {
   const tableName = context.tableForKey(key, 'hash');
   const isJobsTableResult = isJobsTable(tableName);
 

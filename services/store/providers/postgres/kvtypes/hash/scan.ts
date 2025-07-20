@@ -1,4 +1,10 @@
-import { HashContext, Multi, SqlResult, HScanResult, ProviderTransaction } from './types';
+import {
+  HashContext,
+  Multi,
+  SqlResult,
+  HScanResult,
+  ProviderTransaction,
+} from './types';
 
 export function createScanOperations(context: HashContext['context']) {
   return {

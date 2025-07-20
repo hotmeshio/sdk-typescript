@@ -13,14 +13,14 @@ import {
 /**
  * Checks if an error is a HotMesh reserved error type that indicates
  * a HotMesh interruption rather than a true error condition.
- * 
+ *
  * When this returns true, you can safely return rethrow the error.
  * The workflow engine will handle the interruption automatically.
- * 
+ *
  * @example
  * ```typescript
  * import { MemFlow } from '@hotmeshio/hotmesh';
- * 
+ *
  * try {
  *   await someWorkflowOperation();
  * } catch (error) {
@@ -33,7 +33,7 @@ import {
  *   console.error('Workflow failed:', error);
  * }
  * ```
- * 
+ *
  * @param error - The error to check
  * @returns true if the error is a HotMesh interruption
  */
@@ -49,4 +49,4 @@ export function didInterrupt(error: Error): boolean {
     error instanceof MemFlowWaitForError ||
     error instanceof MemFlowWaitForAllError
   );
-} 
+}

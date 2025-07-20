@@ -3,7 +3,7 @@ import { asyncLocalStorage, WorkerService, Entity } from './common';
 /**
  * Returns an entity session handle for interacting with the workflow's JSONB entity storage.
  * @returns {Promise<Entity>} An entity session for workflow data.
- * 
+ *
  * @example
  * ```typescript
  * const entity = await workflow.entity();
@@ -27,4 +27,4 @@ export async function entity(): Promise<Entity> {
   });
   const entitySessionId = `-entity${workflowDimension}-${execIndex}`;
   return new Entity(workflowId, hotMeshClient, entitySessionId);
-} 
+}

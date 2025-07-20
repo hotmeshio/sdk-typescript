@@ -65,10 +65,7 @@ class PostgresSearchService extends SearchService<
     }
   }
 
-  async setFields(
-    key: string,
-    fields: Record<string, string>,
-  ): Promise<any> {
+  async setFields(key: string, fields: Record<string, string>): Promise<any> {
     try {
       const result = await this.searchClient.hset(key, fields);
       const isGetOperation = '@context:get' in fields;
@@ -199,18 +196,24 @@ class PostgresSearchService extends SearchService<
     try {
       const schemaName = this.searchClient.safeName(this.appId);
       const tableName = `${schemaName}.${this.searchClient.safeName('jobs')}`;
-      
+
       // Build WHERE conditions from the conditions object
       const whereConditions: string[] = [`entity = $1`];
       const params: any[] = [entity];
       let paramIndex = 2;
 
       for (const [key, value] of Object.entries(conditions)) {
-        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        if (
+          typeof value === 'object' &&
+          value !== null &&
+          !Array.isArray(value)
+        ) {
           // Handle MongoDB-style operators like { $gte: 18 }
           for (const [op, opValue] of Object.entries(value)) {
             const sqlOp = this.mongoToSqlOperator(op);
-            whereConditions.push(`(context->>'${key}')::${this.inferType(opValue)} ${sqlOp} $${paramIndex}`);
+            whereConditions.push(
+              `(context->>'${key}')::${this.inferType(opValue)} ${sqlOp} $${paramIndex}`,
+            );
             params.push(opValue);
             paramIndex++;
           }
@@ -241,13 +244,20 @@ class PostgresSearchService extends SearchService<
       }
 
       const result = await this.pgClient.query(sql, params);
-      return result.rows.map(row => ({
+      return result.rows.map((row) => ({
         key: row.key,
-        context: typeof row.context === 'string' ? JSON.parse(row.context || '{}') : (row.context || {}),
+        context:
+          typeof row.context === 'string'
+            ? JSON.parse(row.context || '{}')
+            : row.context || {},
         status: row.status,
       }));
     } catch (error) {
-      this.logger.error(`postgres-find-entities-error`, { entity, conditions, error });
+      this.logger.error(`postgres-find-entities-error`, {
+        entity,
+        conditions,
+        error,
+      });
       throw error;
     }
   }
@@ -256,13 +266,13 @@ class PostgresSearchService extends SearchService<
     try {
       const schemaName = this.searchClient.safeName(this.appId);
       const tableName = `${schemaName}.${this.searchClient.safeName('jobs')}`;
-      
+
       // Use KeyService to mint the job state key
       const fullKey = KeyService.mintKey(HMNS, KeyType.JOB_STATE, {
         appId: this.appId,
-        jobId: id
+        jobId: id,
       });
-      
+
       const sql = `
         SELECT key, context, status, entity
         FROM ${tableName}
@@ -271,7 +281,7 @@ class PostgresSearchService extends SearchService<
       `;
 
       const result = await this.pgClient.query(sql, [entity, fullKey]);
-      
+
       if (result.rows.length === 0) {
         return null;
       }
@@ -279,11 +289,18 @@ class PostgresSearchService extends SearchService<
       const row = result.rows[0];
       return {
         key: row.key,
-        context: typeof row.context === 'string' ? JSON.parse(row.context || '{}') : (row.context || {}),
+        context:
+          typeof row.context === 'string'
+            ? JSON.parse(row.context || '{}')
+            : row.context || {},
         status: row.status,
       };
     } catch (error) {
-      this.logger.error(`postgres-find-entity-by-id-error`, { entity, id, error });
+      this.logger.error(`postgres-find-entity-by-id-error`, {
+        entity,
+        id,
+        error,
+      });
       throw error;
     }
   }
@@ -298,14 +315,14 @@ class PostgresSearchService extends SearchService<
     try {
       const schemaName = this.searchClient.safeName(this.appId);
       const tableName = `${schemaName}.${this.searchClient.safeName('jobs')}`;
-      
+
       const params: any[] = [entity];
       let whereCondition: string;
       let paramIndex = 2;
 
       if (operator === 'IN') {
         // Handle IN operator with arrays
-        const placeholders = Array.isArray(value) 
+        const placeholders = Array.isArray(value)
           ? value.map(() => `$${paramIndex++}`).join(',')
           : `$${paramIndex++}`;
         whereCondition = `context->>'${field}' IN (${placeholders})`;
@@ -345,14 +362,21 @@ class PostgresSearchService extends SearchService<
       }
 
       const result = await this.pgClient.query(sql, params);
-      return result.rows.map(row => ({
+      return result.rows.map((row) => ({
         key: row.key,
-        context: typeof row.context === 'string' ? JSON.parse(row.context || '{}') : (row.context || {}),
+        context:
+          typeof row.context === 'string'
+            ? JSON.parse(row.context || '{}')
+            : row.context || {},
         status: row.status,
       }));
     } catch (error) {
-      this.logger.error(`postgres-find-entities-by-condition-error`, { 
-        entity, field, value, operator, error 
+      this.logger.error(`postgres-find-entities-by-condition-error`, {
+        entity,
+        field,
+        value,
+        operator,
+        error,
       });
       throw error;
     }
@@ -366,7 +390,10 @@ class PostgresSearchService extends SearchService<
     try {
       const schemaName = this.searchClient.safeName(this.appId);
       const tableName = `${schemaName}.${this.searchClient.safeName('jobs')}`;
-      const indexName = `idx_${this.appId}_${entity}_${field}`.replace(/[^a-zA-Z0-9_]/g, '_');
+      const indexName = `idx_${this.appId}_${entity}_${field}`.replace(
+        /[^a-zA-Z0-9_]/g,
+        '_',
+      );
 
       let sql: string;
       if (indexType === 'gin') {
@@ -394,10 +421,18 @@ class PostgresSearchService extends SearchService<
       }
 
       await this.pgClient.query(sql);
-      this.logger.info(`postgres-entity-index-created`, { entity, field, indexType, indexName });
+      this.logger.info(`postgres-entity-index-created`, {
+        entity,
+        field,
+        indexType,
+        indexName,
+      });
     } catch (error) {
-      this.logger.error(`postgres-create-entity-index-error`, { 
-        entity, field, indexType, error 
+      this.logger.error(`postgres-create-entity-index-error`, {
+        entity,
+        field,
+        indexType,
+        error,
       });
       throw error;
     }
@@ -407,13 +442,13 @@ class PostgresSearchService extends SearchService<
 
   private mongoToSqlOperator(mongoOp: string): string {
     const mapping: Record<string, string> = {
-      '$eq': '=',
-      '$ne': '!=',
-      '$gt': '>',
-      '$gte': '>=',
-      '$lt': '<',
-      '$lte': '<=',
-      '$in': 'IN',
+      $eq: '=',
+      $ne: '!=',
+      $gt: '>',
+      $gte: '>=',
+      $lt: '<',
+      $lte: '<=',
+      $in: 'IN',
     };
     return mapping[mongoOp] || '=';
   }

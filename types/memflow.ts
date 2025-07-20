@@ -617,6 +617,86 @@ interface ClientWorkflow {
   ): Promise<string[]>;
 }
 
+/**
+ * Workflow interceptor that can wrap workflow execution in an onion-like pattern.
+ * Each interceptor wraps the next one, with the actual workflow execution at the center.
+ *
+ * Interceptors are executed in the order they are registered. Each interceptor can:
+ * - Perform actions before workflow execution
+ * - Modify or enhance the workflow context
+ * - Handle or transform workflow results
+ * - Catch and handle errors
+ * - Add cross-cutting concerns like logging, metrics, or tracing
+ *
+ * @example
+ * ```typescript
+ * // Simple logging interceptor
+ * const loggingInterceptor: WorkflowInterceptor = {
+ *   async execute(ctx, next) {
+ *     console.log('Before workflow');
+ *     try {
+ *       const result = await next();
+ *       console.log('After workflow');
+ *       return result;
+ *     } catch (err) {
+ *       console.error('Workflow error:', err);
+ *       throw err;
+ *     }
+ *   }
+ * };
+ *
+ * // Register the interceptor
+ * MemFlow.registerInterceptor(loggingInterceptor);
+ * ```
+ */
+export interface WorkflowInterceptor {
+  /**
+   * Called before workflow execution to wrap the workflow in custom logic
+   *
+   * @param ctx - The workflow context map containing workflow metadata and state
+   * @param next - Function to call the next interceptor or the workflow itself
+   * @returns The result of the workflow execution
+   *
+   * @example
+   * ```typescript
+   * // Metrics interceptor implementation
+   * {
+   *   async execute(ctx, next) {
+   *     const workflowName = ctx.get('workflowName');
+   *     const metrics = getMetricsClient();
+   *
+   *     metrics.increment(`workflow.start.${workflowName}`);
+   *     const timer = metrics.startTimer();
+   *
+   *     try {
+   *       const result = await next();
+   *       metrics.increment(`workflow.success.${workflowName}`);
+   *       return result;
+   *     } catch (err) {
+   *       metrics.increment(`workflow.error.${workflowName}`);
+   *       throw err;
+   *     } finally {
+   *       timer.end();
+   *     }
+   *   }
+   * }
+   * ```
+   */
+  execute(ctx: Map<string, any>, next: () => Promise<any>): Promise<any>;
+}
+
+/**
+ * Registry for workflow interceptors that are executed in order
+ * for each workflow execution
+ */
+export interface InterceptorRegistry {
+  /**
+   * Array of registered interceptors that will wrap workflow execution
+   * in the order they were registered (first registered = outermost wrapper)
+   */
+  interceptors: WorkflowInterceptor[];
+}
+
 export {
   ActivityConfig,
   ActivityWorkflowDataType,

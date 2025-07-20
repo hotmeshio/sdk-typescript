@@ -41,7 +41,9 @@ function getChildInterruptPayload(
 
   const parentWorkflowId = workflowId;
   const taskQueueName = options.taskQueue ?? options.entity;
-  const workflowName = options.taskQueue ? options.workflowName : (options.entity ?? options.workflowName);
+  const workflowName = options.taskQueue
+    ? options.workflowName
+    : options.entity ?? options.workflowName;
   const workflowTopic = `${taskQueueName}-${workflowName}`;
   return {
     arguments: [...(options.args || [])],

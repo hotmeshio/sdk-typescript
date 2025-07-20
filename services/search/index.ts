@@ -24,10 +24,7 @@ abstract class SearchService<ClientProvider extends ProviderClient> {
     schema: string[],
   ): Promise<void>;
   abstract listSearchIndexes(): Promise<string[]>;
-  abstract setFields(
-    key: string,
-    fields: Record<string, string>,
-  ): Promise<any>;
+  abstract setFields(key: string, fields: Record<string, string>): Promise<any>;
   abstract updateContext(
     key: string,
     fields: Record<string, string>,

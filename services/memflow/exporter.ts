@@ -56,10 +56,7 @@ class ExporterService {
    * @param dependencyList - the list of dependencies for the job
    * @returns - the inflated job data
    */
-  inflate(
-    jobHash: StringStringType,
-    options: ExportOptions,
-  ): MemFlowJobExport {
+  inflate(jobHash: StringStringType, options: ExportOptions): MemFlowJobExport {
     const timeline: TimelineType[] = [];
     const state: StringAnyType = {};
     const data: StringStringType = {};

@@ -1,5 +1,5 @@
 import { HotMesh } from '../hotmesh';
-import { ContextType } from '../../types/memflow';
+import { ContextType, WorkflowInterceptor } from '../../types/memflow';
 
 import { ClientService } from './client';
 import { ConnectionService } from './connection';
@@ -9,62 +9,173 @@ import { WorkerService } from './worker';
 import { WorkflowService } from './workflow';
 import { WorkflowHandleService } from './handle';
 import { didInterrupt } from './workflow/interruption';
+import { InterceptorService } from './interceptor';
 
 /**
- * The MemFlow service is a collection of services that
- * emulate Temporal's capabilities, but instead are
- * backed by Postgres or Redis/ValKey. The following lifecycle example
- * demonstrates how to start a new workflow, subscribe
- * to the result, and shutdown the system.
+ * The MemFlow service provides a Temporal-compatible workflow framework backed by
+ * Postgres or Redis/ValKey. It offers durable execution, entity-based memory management,
+ * and composable workflows.
  *
- * @example
+ * ## Core Features
+ *
+ * ### 1. Entity-Based Memory Model
+ * Each workflow has a durable JSONB entity that serves as its memory:
  * ```typescript
- * import { Client, Worker, MemFlow, HotMesh } from '@hotmeshio/hotmesh';
- * import { Client as Postgres} from 'pg';
- * import * as workflows from './workflows';
+ * export async function researchAgent(query: string) {
+ *   const agent = await MemFlow.workflow.entity();
  *
- * //1) Initialize the worker
+ *   // Initialize entity state
+ *   await agent.set({
+ *     query,
+ *     findings: [],
+ *     status: 'researching'
+ *   });
+ *
+ *   // Update state atomically
+ *   await agent.merge({ status: 'analyzing' });
+ *   await agent.append('findings', newFinding);
+ * }
+ * ```
+ *
+ * ### 2. Hook Functions & Workflow Coordination
+ * Spawn and coordinate multiple perspectives/phases:
+ * ```typescript
+ * // Launch parallel research perspectives
+ * await MemFlow.workflow.execHook({
+ *   taskQueue: 'research',
+ *   workflowName: 'optimisticView',
+ *   args: [query],
+ *   signalId: 'optimistic-complete'
+ * });
+ *
+ * await MemFlow.workflow.execHook({
+ *   taskQueue: 'research',
+ *   workflowName: 'skepticalView',
+ *   args: [query],
+ *   signalId: 'skeptical-complete'
+ * });
+ *
+ * // Wait for both perspectives
+ * await Promise.all([
+ *   MemFlow.workflow.waitFor('optimistic-complete'),
+ *   MemFlow.workflow.waitFor('skeptical-complete')
+ * ]);
+ * ```
+ *
+ * ### 3. Durable Activities & Proxies
+ * Define and execute durable activities with automatic retry:
+ * ```typescript
+ * const activities = MemFlow.workflow.proxyActivities<{
+ *   analyzeDocument: typeof analyzeDocument;
+ *   validateFindings: typeof validateFindings;
+ * }>({
+ *   activities: { analyzeDocument, validateFindings },
+ *   retryPolicy: {
+ *     maximumAttempts: 3,
+ *     backoffCoefficient: 2
+ *   }
+ * });
+ *
+ * // Activities are durable and automatically retried
+ * const analysis = await activities.analyzeDocument(data);
+ * const validation = await activities.validateFindings(analysis);
+ * ```
+ *
+ * ### 4. Workflow Composition
+ * Build complex workflows through composition:
+ * ```typescript
+ * // Start a child workflow
+ * const childResult = await MemFlow.workflow.execChild({
+ *   taskQueue: 'analysis',
+ *   workflowName: 'detailedAnalysis',
+ *   args: [data],
+ *   // Child workflow config
+ *   config: {
+ *     maximumAttempts: 5,
+ *     backoffCoefficient: 2
+ *   }
+ * });
+ *
+ * // Fire-and-forget child workflow
+ * await MemFlow.workflow.startChild({
+ *   taskQueue: 'notifications',
+ *   workflowName: 'sendUpdates',
+ *   args: [updates]
+ * });
+ * ```
+ *
+ * ### 5. Workflow Interceptors
+ * Add cross-cutting concerns through interceptors that run as durable functions:
+ * ```typescript
+ * // Add audit interceptor that uses MemFlow functions
+ * MemFlow.registerInterceptor({
+ *   async execute(ctx, next) {
+ *     try {
+ *       // Interceptors can use MemFlow functions and participate in replay
+ *       const entity = await MemFlow.workflow.entity();
+ *       await entity.append('auditLog', {
+ *         action: 'started',
+ *         timestamp: new Date().toISOString()
+ *       });
+ *
+ *       // Rate limiting with durable sleep
+ *       await MemFlow.workflow.sleepFor('100 milliseconds');
+ *
+ *       const result = await next();
+ *
+ *       await entity.append('auditLog', {
+ *         action: 'completed',
+ *         timestamp: new Date().toISOString()
+ *       });
+ *
+ *       return result;
+ *     } catch (err) {
+ *       // CRITICAL: Always check for HotMesh interruptions
+ *       if (MemFlow.didInterrupt(err)) {
+ *         throw err; // Rethrow for replay system
+ *       }
+ *       throw err;
+ *     }
+ *   }
+ * });
+ * ```
+ *
+ * ## Basic Usage Example
+ *
+ * ```typescript
+ * import { Client, Worker, MemFlow } from '@hotmeshio/hotmesh';
+ * import { Client as Postgres } from 'pg';
+ *
+ * // Initialize worker
  * await Worker.create({
  *   connection: {
  *     class: Postgres,
- *     options: {
- *       connectionString: 'postgresql://usr:pwd@localhost:5432/db',
- *     }
- *   }
+ *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+ *   },
  *   taskQueue: 'default',
- *   namespace: 'memflow',
- *   workflow: workflows.example,
- *   options: {
- *     backoffCoefficient: 2,
- *     maximumAttempts: 1_000,
- *     maximumInterval: '5 seconds'
- *   }
+ *   workflow: workflows.example
  * });
  *
- * //2) initialize the client
+ * // Initialize client
  * const client = new Client({
  *   connection: {
  *     class: Postgres,
- *     options: {
- *       connectionString: 'postgresql://usr:pwd@localhost:5432/db',
- *     }
+ *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
  *   }
  * });
  *
- * //3) start a new workflow
+ * // Start workflow
  * const handle = await client.workflow.start({
- *   args: ['HotMesh', 'es'],
+ *   args: ['input data'],
  *   taskQueue: 'default',
  *   workflowName: 'example',
- *   workflowId: HotMesh.guid(),
- *   namespace: 'memflow',
+ *   workflowId: MemFlow.guid()
  * });
  *
- * //4) subscribe to the eventual result
- * console.log('\nRESPONSE', await handle.result(), '\n');
- * //logs '¡Hola, HotMesh!'
+ * // Get result
+ * const result = await handle.result();
  *
- * //5) Shutdown (typically on sigint)
+ * // Cleanup
  * await MemFlow.shutdown();
  * ```
  */
@@ -120,10 +231,35 @@ class MemFlowClass {
   /**
    * Checks if an error is a HotMesh reserved error type that indicates
    * a workflow interruption rather than a true error condition.
-   * 
+   *
    * @see {@link utils/interruption.didInterrupt} for detailed documentation
    */
   static didInterrupt = didInterrupt;
+
+  private static interceptorService = new InterceptorService();
+
+  /**
+   * Register a workflow interceptor
+   * @param interceptor The interceptor to register
+   */
+  static registerInterceptor(interceptor: WorkflowInterceptor): void {
+    MemFlowClass.interceptorService.register(interceptor);
+  }
+
+  /**
+   * Clear all registered workflow interceptors
+   */
+  static clearInterceptors(): void {
+    MemFlowClass.interceptorService.clear();
+  }
+
+  /**
+   * Get the interceptor service instance
+   * @internal
+   */
+  static getInterceptorService(): InterceptorService {
+    return MemFlowClass.interceptorService;
+  }
 
   /**
    * Shutdown everything. All connections, workers, and clients will be closed.
