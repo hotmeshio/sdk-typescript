@@ -29,13 +29,15 @@ export class InstanceRegistry {
   }
 }
 
-export class LifecycleManager<S extends StreamService<ProviderClient, ProviderTransaction>> {
-  private shouldConsume: boolean = false;
+export class LifecycleManager<
+  S extends StreamService<ProviderClient, ProviderTransaction>,
+> {
+  private shouldConsume = false;
   private readonly: boolean;
   private topic: string | undefined;
   private logger: ILogger;
   private stream: S;
-  private isUsingNotifications: boolean = false;
+  private isUsingNotifications = false;
 
   constructor(
     readonly: boolean,
@@ -92,7 +94,7 @@ export class LifecycleManager<S extends StreamService<ProviderClient, ProviderTr
       this.topic ? { topic: this.topic } : undefined,
     );
     InstanceRegistry.remove(router);
-    
+
     // If using notifications, properly clean up
     if (this.isUsingNotifications && this.stream.stopNotificationConsumer) {
       try {
@@ -102,4 +104,4 @@ export class LifecycleManager<S extends StreamService<ProviderClient, ProviderTr
       }
     }
   }
-} 
+}

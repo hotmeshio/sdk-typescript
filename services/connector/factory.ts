@@ -68,13 +68,28 @@ export class ConnectorService {
 
     // Expanded form
     if (connection.store) {
-      await ConnectorService.initClient(connection.store, target, 'store', taskQueue);
+      await ConnectorService.initClient(
+        connection.store,
+        target,
+        'store',
+        taskQueue,
+      );
     }
     if (connection.stream) {
-      await ConnectorService.initClient(connection.stream, target, 'stream', taskQueue);
+      await ConnectorService.initClient(
+        connection.stream,
+        target,
+        'stream',
+        taskQueue,
+      );
     }
     if (connection.sub) {
-      await ConnectorService.initClient(connection.sub, target, 'sub', taskQueue);
+      await ConnectorService.initClient(
+        connection.sub,
+        target,
+        'sub',
+        taskQueue,
+      );
       // use store for publishing events if same as subscription
       if (connection.sub.class !== connection.store.class) {
         //initialize a separate client for publishing events, using
@@ -84,7 +99,12 @@ export class ConnectorService {
           options: { ...connection.sub.options },
           provider: connection.sub.provider,
         };
-        await ConnectorService.initClient(connection.pub, target, 'pub', taskQueue);
+        await ConnectorService.initClient(
+          connection.pub,
+          target,
+          'pub',
+          taskQueue,
+        );
       }
     }
   }
@@ -140,13 +160,14 @@ export class ConnectorService {
         //if connecting as a poolClient for subscription, auto connect the client
         const bAutoConnect = field === 'sub';
         // Use taskQueue-based connection pooling for PostgreSQL
-        clientInstance = await PostgresConnection.getOrCreateTaskQueueConnection(
-          id,
-          taskQueue,
-          providerClass as PostgresClassType,
-          options as PostgresClientOptions,
-          { connect: bAutoConnect, provider: providerName },
-        );
+        clientInstance =
+          await PostgresConnection.getOrCreateTaskQueueConnection(
+            id,
+            taskQueue,
+            providerClass as PostgresClassType,
+            options as PostgresClientOptions,
+            { connect: bAutoConnect, provider: providerName },
+          );
         break;
       default:
         throw new Error(`Unknown provider type: ${providerType}`);

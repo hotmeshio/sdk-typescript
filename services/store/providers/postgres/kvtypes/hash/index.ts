@@ -1,6 +1,14 @@
 import { KVSQL } from '../../kvsql';
+
 import { HSetOptions } from './types';
-import { createBasicOperations, _hset, _hget, _hdel, _hmget, _hincrbyfloat } from './basic';
+import {
+  createBasicOperations,
+  _hset,
+  _hget,
+  _hdel,
+  _hmget,
+  _hincrbyfloat,
+} from './basic';
 import { createJsonbOperations } from './jsonb';
 import { createScanOperations, _hscan, _scan } from './scan';
 import { createExpireOperations, _expire } from './expire';
@@ -15,10 +23,10 @@ export const hashModule = (context: KVSQL) => {
   return {
     // Basic operations
     ...basicOps,
-    
+
     // Scan operations
     ...scanOps,
-    
+
     // Expire operations
     ...expireOps,
 
@@ -31,55 +39,105 @@ export const hashModule = (context: KVSQL) => {
     ): Promise<number | any> {
       const tableName = context.tableForKey(key, 'hash');
       const isJobsTableResult = isJobsTable(tableName);
-      
+
       // Handle JSONB operations for jobs tables
       if (isJobsTableResult) {
         // Check for various JSONB operations
         if ('@context' in fields) {
-          const { sql, params } = jsonbOps.handleContextSet(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextSet(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         } else if ('@context:merge' in fields) {
-          const { sql, params } = jsonbOps.handleContextMerge(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextMerge(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         } else if ('@context:delete' in fields) {
-          const { sql, params } = jsonbOps.handleContextDelete(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextDelete(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         } else if ('@context:append' in fields) {
-          const { sql, params } = jsonbOps.handleContextAppend(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextAppend(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         } else if ('@context:prepend' in fields) {
-          const { sql, params } = jsonbOps.handleContextPrepend(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextPrepend(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         } else if ('@context:remove' in fields) {
-          const { sql, params } = jsonbOps.handleContextRemove(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextRemove(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         } else if ('@context:increment' in fields) {
-          const { sql, params } = jsonbOps.handleContextIncrement(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextIncrement(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         } else if ('@context:toggle' in fields) {
-          const { sql, params } = jsonbOps.handleContextToggle(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextToggle(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         } else if ('@context:setIfNotExists' in fields) {
-          const { sql, params } = jsonbOps.handleContextSetIfNotExists(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextSetIfNotExists(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
-        } else if (Object.keys(fields).some(k => k.startsWith('@context:get:'))) {
-          const { sql, params } = jsonbOps.handleContextGetPath(key, fields, options);
+        } else if (
+          Object.keys(fields).some((k) => k.startsWith('@context:get:'))
+        ) {
+          const { sql, params } = jsonbOps.handleContextGetPath(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         } else if ('@context:get' in fields) {
-          const { sql, params } = jsonbOps.handleContextGet(key, fields, options);
+          const { sql, params } = jsonbOps.handleContextGet(
+            key,
+            fields,
+            options,
+          );
           return executeJsonbOperation(sql, params, multi);
         }
       }
-      
+
       // Fall back to basic hset for all other cases
       return basicOps.hset(key, fields, options, multi);
     },
 
     // Private methods for internal use by kvsql
-    _hset: (key: string, fields: Record<string, string>, options?: HSetOptions) => {
+    _hset: (
+      key: string,
+      fields: Record<string, string>,
+      options?: HSetOptions,
+    ) => {
       const tableName = context.tableForKey(key, 'hash');
       const isJobsTableResult = isJobsTable(tableName);
-      
+
       // Handle JSONB operations for jobs tables
       if (isJobsTableResult) {
         if ('@context' in fields) {
@@ -100,13 +158,15 @@ export const hashModule = (context: KVSQL) => {
           return jsonbOps.handleContextToggle(key, fields, options);
         } else if ('@context:setIfNotExists' in fields) {
           return jsonbOps.handleContextSetIfNotExists(key, fields, options);
-        } else if (Object.keys(fields).some(k => k.startsWith('@context:get:'))) {
+        } else if (
+          Object.keys(fields).some((k) => k.startsWith('@context:get:'))
+        ) {
           return jsonbOps.handleContextGetPath(key, fields, options);
         } else if ('@context:get' in fields) {
           return jsonbOps.handleContextGet(key, fields, options);
         }
       }
-      
+
       // Use the imported _hset function
       return _hset(context, key, fields, options);
     },
@@ -143,14 +203,18 @@ export const hashModule = (context: KVSQL) => {
     isJobsTable,
   };
 
-  async function executeJsonbOperation(sql: string, params: any[], multi?: any): Promise<any> {
+  async function executeJsonbOperation(
+    sql: string,
+    params: any[],
+    multi?: any,
+  ): Promise<any> {
     if (multi) {
       (multi as any).addCommand(sql, params, 'any');
       return Promise.resolve(0);
     } else {
       try {
         const res = await context.pgClient.query(sql, params);
-        
+
         if (res.rows[0]?.new_value !== undefined) {
           let returnValue;
           try {
@@ -161,7 +225,7 @@ export const hashModule = (context: KVSQL) => {
           }
           return returnValue;
         }
-        
+
         return res.rowCount || res.rows[0]?.count || 0;
       } catch (err) {
         console.error('JSONB operation error', err, sql, params);

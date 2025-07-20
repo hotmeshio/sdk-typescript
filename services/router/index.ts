@@ -27,7 +27,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
   reclaimCount: number;
   logger: ILogger;
   readonly: boolean;
-  
+
   // Legacy properties for backward compatibility
   errorCount = 0;
   counts: { [key: string]: number } = {};
@@ -37,7 +37,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
   innerPromiseResolve: (() => void) | null = null;
   isSleeping = false;
   sleepTimout: NodeJS.Timeout | null = null;
-  private isUsingNotifications: boolean = false;
+  private isUsingNotifications = false;
 
   // Submodule managers
   private throttleManager: ThrottleManager;
@@ -48,7 +48,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
   constructor(config: RouterConfig, stream: S, logger: ILogger) {
     // Apply configuration defaults
     const enhancedConfig = RouterConfigManager.setDefaults(config);
-    
+
     this.appId = enhancedConfig.appId;
     this.guid = enhancedConfig.guid;
     this.role = enhancedConfig.role;
@@ -114,7 +114,11 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
     streamData: StreamData | StreamDataResponse,
     transaction?: ProviderTransaction,
   ): Promise<string | ProviderTransaction> {
-    return this.consumptionManager.publishMessage(topic, streamData, transaction);
+    return this.consumptionManager.publishMessage(
+      topic,
+      streamData,
+      transaction,
+    );
   }
 
   async customSleep(): Promise<void> {
@@ -127,7 +131,12 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
     consumer: string,
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ): Promise<void> {
-    return this.consumptionManager.consumeMessages(stream, group, consumer, callback);
+    return this.consumptionManager.consumeMessages(
+      stream,
+      group,
+      consumer,
+      callback,
+    );
   }
 
   isStreamMessage(result: any): boolean {
@@ -149,7 +158,13 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
     input: StreamData,
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ): Promise<void> {
-    return this.consumptionManager.consumeOne(stream, group, id, input, callback);
+    return this.consumptionManager.consumeOne(
+      stream,
+      group,
+      id,
+      input,
+      callback,
+    );
   }
 
   async execStreamLeg(

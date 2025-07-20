@@ -172,9 +172,9 @@ export interface StreamConfig {
     partitionInterval?: 'daily' | 'weekly' | 'monthly';
     cleanupInterval?: number;
     // Notification-related configuration
-    enableNotifications?: boolean;  // Default: true
-    notificationFallbackInterval?: number;  // Default: 30000ms (30 seconds)
-    notificationTimeout?: number;  // Default: 5000ms (5 seconds)
+    enableNotifications?: boolean; // Default: true
+    notificationFallbackInterval?: number; // Default: 30000ms (30 seconds)
+    notificationTimeout?: number; // Default: 5000ms (5 seconds)
   };
   nats?: {
     jetstream?: boolean;

@@ -1,13 +1,13 @@
 import { MAX_DELAY } from '../config';
 
 export class ThrottleManager {
-  private throttle: number = 0;
-  private isSleeping: boolean = false;
+  private throttle = 0;
+  private isSleeping = false;
   private sleepPromiseResolve: (() => void) | null = null;
   private innerPromiseResolve: (() => void) | null = null;
   private sleepTimeout: NodeJS.Timeout | null = null;
 
-  constructor(initialThrottle: number = 0) {
+  constructor(initialThrottle = 0) {
     this.throttle = initialThrottle;
   }
 
@@ -80,4 +80,4 @@ export class ThrottleManager {
     this.isSleeping = false;
     this.sleepTimeout = null;
   }
-} 
+}

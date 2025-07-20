@@ -41,7 +41,7 @@ class MemFlowWaitForError extends Error {
   workflowId: string;
   index: number;
   workflowDimension: string; //hook workflowDimension (e.g., ',0,1,0') (use empty string for `null`)
-  type: string = 'MemFlowWaitForError';
+  type = 'MemFlowWaitForError';
   constructor(params: MemFlowWaitForErrorType) {
     super(`WaitFor Interruption`);
     this.signalId = params.signalId;
@@ -65,7 +65,7 @@ class MemFlowProxyError extends Error {
   workflowDimension: string;
   workflowId: string;
   workflowTopic: string;
-  type: string = 'MemFlowProxyError';
+  type = 'MemFlowProxyError';
   constructor(params: MemFlowProxyErrorType) {
     super(`ProxyActivity Interruption`);
     this.arguments = params.arguments;
@@ -101,7 +101,7 @@ class MemFlowChildError extends Error {
   parentWorkflowId: string;
   workflowId: string;
   workflowTopic: string;
-  type: string = 'MemFlowChildError';
+  type = 'MemFlowChildError';
   constructor(params: MemFlowChildErrorType) {
     super(`ExecChild Interruption`);
     this.arguments = params.arguments;
@@ -133,7 +133,7 @@ class MemFlowWaitForAllError extends Error {
   parentWorkflowId: string;
   workflowId: string;
   workflowTopic: string;
-  type: string = 'MemFlowWaitForAllError';
+  type = 'MemFlowWaitForAllError';
   constructor(params: MemFlowWaitForAllErrorType) {
     super(`Collation Interruption`);
     this.items = params.items;
@@ -154,7 +154,7 @@ class MemFlowSleepError extends Error {
   duration: number; //seconds
   index: number;
   workflowDimension: string; //empty string for null
-  type: string = 'MemFlowSleepError';
+  type = 'MemFlowSleepError';
   constructor(params: MemFlowSleepErrorType) {
     super(`SleepFor Interruption`);
     this.duration = params.duration;
@@ -167,7 +167,7 @@ class MemFlowSleepError extends Error {
 
 class MemFlowTimeoutError extends Error {
   code: number;
-  type: string = 'MemFlowTimeoutError';
+  type = 'MemFlowTimeoutError';
   constructor(message: string, stack?: string) {
     super(message);
     if (this.stack) {
@@ -178,7 +178,7 @@ class MemFlowTimeoutError extends Error {
 }
 class MemFlowMaxedError extends Error {
   code: number;
-  type: string = 'MemFlowMaxedError';
+  type = 'MemFlowMaxedError';
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {
@@ -189,7 +189,7 @@ class MemFlowMaxedError extends Error {
 }
 class MemFlowFatalError extends Error {
   code: number;
-  type: string = 'MemFlowFatalError';
+  type = 'MemFlowFatalError';
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {
@@ -200,7 +200,7 @@ class MemFlowFatalError extends Error {
 }
 class MemFlowRetryError extends Error {
   code: number;
-  type: string = 'MemFlowRetryError';
+  type = 'MemFlowRetryError';
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {

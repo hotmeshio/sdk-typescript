@@ -19,8 +19,14 @@ class PostgresSubService extends SubService<
   PostgresClientType & ProviderClient
 > {
   // Static maps to manage subscriptions across all instances sharing the same client
-  private static clientSubscriptions: Map<PostgresClientType & ProviderClient, Map<string, Map<PostgresSubService, SubscriptionCallback>>> = new Map();
-  private static clientHandlers: Map<PostgresClientType & ProviderClient, boolean> = new Map();
+  private static clientSubscriptions: Map<
+    PostgresClientType & ProviderClient,
+    Map<string, Map<PostgresSubService, SubscriptionCallback>>
+  > = new Map();
+  private static clientHandlers: Map<
+    PostgresClientType & ProviderClient,
+    boolean
+  > = new Map();
 
   // Instance-level subscriptions for cleanup
   private instanceSubscriptions: Set<string> = new Set();
@@ -60,17 +66,22 @@ class PostgresSubService extends SubService<
     this.eventClient.on(
       'notification',
       (msg: { channel: string; payload: any }) => {
-        const clientSubscriptions = PostgresSubService.clientSubscriptions.get(this.eventClient);
+        const clientSubscriptions = PostgresSubService.clientSubscriptions.get(
+          this.eventClient,
+        );
         const callbacks = clientSubscriptions?.get(msg.channel);
         if (callbacks && callbacks.size > 0) {
           try {
             const payload = JSON.parse(msg.payload || '{}');
             // Call all callbacks registered for this channel across all SubService instances
-            callbacks.forEach(callback => {
+            callbacks.forEach((callback) => {
               try {
                 callback(msg.channel, payload);
               } catch (err) {
-                this.logger?.error(`Error in subscription callback for ${msg.channel}:`, err);
+                this.logger?.error(
+                  `Error in subscription callback for ${msg.channel}:`,
+                  err,
+                );
               }
             });
           } catch (err) {
@@ -129,10 +140,15 @@ class PostgresSubService extends SubService<
     });
 
     // Get or create subscription map for this client
-    let clientSubscriptions = PostgresSubService.clientSubscriptions.get(this.eventClient);
+    let clientSubscriptions = PostgresSubService.clientSubscriptions.get(
+      this.eventClient,
+    );
     if (!clientSubscriptions) {
       clientSubscriptions = new Map();
-      PostgresSubService.clientSubscriptions.set(this.eventClient, clientSubscriptions);
+      PostgresSubService.clientSubscriptions.set(
+        this.eventClient,
+        clientSubscriptions,
+      );
     }
 
     // Get or create callback array for this channel
@@ -140,18 +156,22 @@ class PostgresSubService extends SubService<
     if (!callbacks) {
       callbacks = new Map();
       clientSubscriptions.set(safeKey, callbacks);
-      
+
       // Start listening to the safe topic (only once per channel across all instances)
       await this.eventClient.query(`LISTEN "${safeKey}"`);
     }
 
     // Add this callback to the list
     callbacks.set(this, callback);
-    
+
     // Track this subscription for cleanup
     this.instanceSubscriptions.add(safeKey);
 
-    this.logger.debug(`postgres-subscribe`, { originalKey, safeKey, totalCallbacks: callbacks.size });
+    this.logger.debug(`postgres-subscribe`, {
+      originalKey,
+      safeKey,
+      totalCallbacks: callbacks.size,
+    });
   }
 
   async unsubscribe(
@@ -164,7 +184,9 @@ class PostgresSubService extends SubService<
       engineId: topic,
     });
 
-    const clientSubscriptions = PostgresSubService.clientSubscriptions.get(this.eventClient);
+    const clientSubscriptions = PostgresSubService.clientSubscriptions.get(
+      this.eventClient,
+    );
     if (!clientSubscriptions) {
       return;
     }
@@ -176,7 +198,7 @@ class PostgresSubService extends SubService<
 
     // Remove callback from this specific instance
     callbacks.delete(this);
-    
+
     // Remove from instance tracking
     this.instanceSubscriptions.delete(safeKey);
 
@@ -185,8 +207,12 @@ class PostgresSubService extends SubService<
       clientSubscriptions.delete(safeKey);
       await this.eventClient.query(`UNLISTEN "${safeKey}"`);
     }
-    
-    this.logger.debug(`postgres-unsubscribe`, { originalKey, safeKey, remainingCallbacks: callbacks.size });
+
+    this.logger.debug(`postgres-unsubscribe`, {
+      originalKey,
+      safeKey,
+      remainingCallbacks: callbacks.size,
+    });
   }
 
   /**
@@ -194,7 +220,9 @@ class PostgresSubService extends SubService<
    * Should be called when the SubService instance is being destroyed.
    */
   async cleanup(): Promise<void> {
-    const clientSubscriptions = PostgresSubService.clientSubscriptions.get(this.eventClient);
+    const clientSubscriptions = PostgresSubService.clientSubscriptions.get(
+      this.eventClient,
+    );
     if (!clientSubscriptions) {
       return;
     }
@@ -203,7 +231,7 @@ class PostgresSubService extends SubService<
       const callbacks = clientSubscriptions.get(safeKey);
       if (callbacks) {
         callbacks.delete(this);
-        
+
         // If no more callbacks exist for this channel, stop listening
         if (callbacks.size === 0) {
           clientSubscriptions.delete(safeKey);
@@ -217,7 +245,7 @@ class PostgresSubService extends SubService<
     }
 
     this.instanceSubscriptions.clear();
-    
+
     // If no more subscriptions exist for this client, remove it from static maps
     if (clientSubscriptions.size === 0) {
       PostgresSubService.clientSubscriptions.delete(this.eventClient);

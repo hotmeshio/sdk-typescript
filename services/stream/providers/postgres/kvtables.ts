@@ -166,7 +166,10 @@ async function createNotificationTriggers(
   `);
 }
 
-export function getNotificationChannelName(streamName: string, groupName: string): string {
+export function getNotificationChannelName(
+  streamName: string,
+  groupName: string,
+): string {
   const channelName = `stream_${streamName}_${groupName}`;
   // PostgreSQL channel names are limited to 63 characters
   return channelName.length > 63 ? channelName.substring(0, 63) : channelName;

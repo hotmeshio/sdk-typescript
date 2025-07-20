@@ -53,7 +53,10 @@ export const KVTables = (context: PostgresStoreService) => ({
         await client.query('BEGIN');
 
         // Double-check tables don't exist (race condition safety)
-        const tablesStillMissing = !(await this.checkIfTablesExist(client, appName));
+        const tablesStillMissing = !(await this.checkIfTablesExist(
+          client,
+          appName,
+        ));
         if (tablesStillMissing) {
           await this.createTables(client, appName);
         }
@@ -137,7 +140,10 @@ export const KVTables = (context: PostgresStoreService) => ({
         );
         if (lockCheck.rows[0].unlocked) {
           // Lock has been released, tables should exist now
-          const tablesExistAfterLock = await this.checkIfTablesExist(client, appName);
+          const tablesExistAfterLock = await this.checkIfTablesExist(
+            client,
+            appName,
+          );
           if (tablesExistAfterLock) {
             return;
           }

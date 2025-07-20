@@ -287,16 +287,20 @@ class TaskService {
       try {
         this.logger.info('task-using-notification-mode', {
           appId: this.store.appId,
-          message: 'Time scout using PostgreSQL LISTEN/NOTIFY mode for efficient task processing'
+          message:
+            'Time scout using PostgreSQL LISTEN/NOTIFY mode for efficient task processing',
         });
         // Use the PostgreSQL store's notification-based approach
-        await (this.store as any).startTimeScoutWithNotifications(timeEventCallback);
+        await (this.store as any).startTimeScoutWithNotifications(
+          timeEventCallback,
+        );
       } catch (error) {
         this.logger.warn('task-notifications-fallback', {
           appId: this.store.appId,
           error: error.message,
           fallbackTo: 'polling',
-          message: 'Notification mode failed - falling back to traditional polling'
+          message:
+            'Notification mode failed - falling back to traditional polling',
         });
         // Fall back to regular polling
         await this.processTimeHooks(timeEventCallback);
@@ -305,7 +309,8 @@ class TaskService {
       this.logger.info('task-using-polling-mode', {
         appId: this.store.appId,
         storeType: this.store.constructor.name,
-        message: 'Time scout using traditional polling mode (notifications not available)'
+        message:
+          'Time scout using traditional polling mode (notifications not available)',
       });
       // Use regular polling for non-PostgreSQL stores
       await this.processTimeHooks(timeEventCallback);
@@ -323,7 +328,9 @@ class TaskService {
    * Check if the store supports notifications
    */
   private supportsNotifications(): boolean {
-    return typeof (this.store as any).startTimeScoutWithNotifications === 'function';
+    return (
+      typeof (this.store as any).startTimeScoutWithNotifications === 'function'
+    );
   }
 }
 

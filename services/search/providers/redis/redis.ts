@@ -156,19 +156,27 @@ class RedisSearchService extends SearchService<RedisRedisClientType> {
 
   // Entity methods - not implemented for Redis (postgres-specific JSONB operations)
   async findEntities(): Promise<any[]> {
-    throw new Error('Entity findEntities not supported in Redis - use PostgreSQL');
+    throw new Error(
+      'Entity findEntities not supported in Redis - use PostgreSQL',
+    );
   }
 
   async findEntityById(): Promise<any> {
-    throw new Error('Entity findEntityById not supported in Redis - use PostgreSQL');
+    throw new Error(
+      'Entity findEntityById not supported in Redis - use PostgreSQL',
+    );
   }
 
   async findEntitiesByCondition(): Promise<any[]> {
-    throw new Error('Entity findEntitiesByCondition not supported in Redis - use PostgreSQL');
+    throw new Error(
+      'Entity findEntitiesByCondition not supported in Redis - use PostgreSQL',
+    );
   }
 
   async createEntityIndex(): Promise<void> {
-    throw new Error('Entity createEntityIndex not supported in Redis - use PostgreSQL');
+    throw new Error(
+      'Entity createEntityIndex not supported in Redis - use PostgreSQL',
+    );
   }
 }
 

@@ -54,7 +54,7 @@ import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
  * **Reentrant Process Engine**: Unlike traditional workflow engines, HotMesh
  * provides built-in retry logic, idempotency, and failure recovery. Your business
  * logic doesn't need to handle timeouts or retries - the engine manages all of that.
- * 
+ *
  * ## Key Features
  *
  * - **Fault Tolerance**: Automatic retry, timeout, and failure recovery
@@ -128,9 +128,9 @@ import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
  * await hotMesh.activate('1');
  *
  * // Execute workflow (fire-and-forget)
- * const jobId = await hotMesh.pub('order.process', { 
+ * const jobId = await hotMesh.pub('order.process', {
  *   orderId: '12345',
- *   amount: 99.99 
+ *   amount: 99.99
  * });
  *
  * // Execute workflow and wait for result
@@ -173,15 +173,15 @@ import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
  * ```typescript
  * // Pause all processing for 5 seconds
  * await hotMesh.throttle({ throttle: 5000 });
- * 
+ *
  * // Emergency stop (pause indefinitely)
  * await hotMesh.throttle({ throttle: -1 });
  * ```
  *
  * **Workflow Interruption**: Gracefully stop running workflows
  * ```typescript
- * await hotMesh.interrupt('order.process', jobId, { 
- *   reason: 'User cancellation' 
+ * await hotMesh.interrupt('order.process', jobId, {
+ *   reason: 'User cancellation'
  * });
  * ```
  *
@@ -198,7 +198,7 @@ import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
  * ```typescript
  * // Check quorum health
  * const members = await hotMesh.rollCall();
- * 
+ *
  * // Coordinate version activation across all instances
  * await hotMesh.activate('2', 1000); // 1 second delay for consensus
  * ```
@@ -215,7 +215,7 @@ import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
  * ```typescript
  * // Stop this instance
  * hotMesh.stop();
- * 
+ *
  * // Stop all instances (typically in signal handlers)
  * await HotMesh.stop();
  * ```
@@ -328,10 +328,13 @@ class HotMesh {
       if (config.engine.connection.readonly) {
         config.engine.readonly = true;
       }
-      
+
       // Initialize task queue for engine
-      config.engine.taskQueue = this.initTaskQueue(config.engine.taskQueue, config.taskQueue);
-      
+      config.engine.taskQueue = this.initTaskQueue(
+        config.engine.taskQueue,
+        config.taskQueue,
+      );
+
       await ConnectorService.initClients(config.engine);
       this.engine = await EngineService.init(
         this.namespace,
@@ -375,10 +378,13 @@ class HotMesh {
     // Initialize task queues for workers
     if (config.workers) {
       for (const worker of config.workers) {
-        worker.taskQueue = this.initTaskQueue(worker.taskQueue, config.taskQueue);
+        worker.taskQueue = this.initTaskQueue(
+          worker.taskQueue,
+          config.taskQueue,
+        );
       }
     }
-    
+
     this.workers = await WorkerService.init(
       this.namespace,
       this.appId,
@@ -400,12 +406,12 @@ class HotMesh {
     if (componentQueue) {
       return componentQueue;
     }
-    
+
     // Global config queue is next
     if (globalQueue) {
       return globalQueue;
     }
-    
+
     // Default queue as fallback
     return DEFAULT_TASK_QUEUE;
   }

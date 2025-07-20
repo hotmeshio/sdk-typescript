@@ -99,20 +99,23 @@ export class ErrorHandler {
   async handleRetry(
     input: StreamData,
     output: StreamDataResponse,
-    publishMessage: (topic: string, streamData: StreamData | StreamDataResponse) => Promise<string>,
+    publishMessage: (
+      topic: string,
+      streamData: StreamData | StreamDataResponse,
+    ) => Promise<string>,
   ): Promise<string> {
     const [shouldRetry, timeout] = this.shouldRetry(input, output);
     if (shouldRetry) {
       await sleepFor(timeout);
-      return await publishMessage(input.metadata.topic, {
+      return (await publishMessage(input.metadata.topic, {
         data: input.data,
         //note: retain guid (this is a retry attempt)
         metadata: { ...input.metadata, try: (input.metadata.try || 0) + 1 },
         policies: input.policies,
-      }) as string;
+      })) as string;
     } else {
       const structuredError = this.structureError(input, output);
-      return await publishMessage(null, structuredError) as string;
+      return (await publishMessage(null, structuredError)) as string;
     }
   }
-} 
+}

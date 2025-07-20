@@ -33,21 +33,29 @@ export async function hook(options: HookOptions): Promise<string> {
     }
 
     // DEFENSIVE CHECK: Prevent infinite loops
-    if (targetTopic === workflowTopic && !options.entity && !options.taskQueue) {
+    if (
+      targetTopic === workflowTopic &&
+      !options.entity &&
+      !options.taskQueue
+    ) {
       throw new Error(
         `MemFlow Hook Error: Potential infinite loop detected!\n\n` +
-        `The hook would target the same workflow topic ('${workflowTopic}') as the current workflow, ` +
-        `creating an infinite loop.\n\n` +
-        `To fix this, provide either:\n` +
-        `1. 'taskQueue' parameter: MemFlow.workflow.hook({ taskQueue: 'your-queue', workflowName: '${options.workflowName}', args: [...] })\n` +
-        `2. 'entity' parameter: MemFlow.workflow.hook({ entity: 'your-entity', args: [...] })\n\n` +
-        `Current workflow topic: ${workflowTopic}\n` +
-        `Target topic would be: ${targetTopic}\n` +
-        `Provided options: ${JSON.stringify({ 
-          workflowName: options.workflowName, 
-          taskQueue: options.taskQueue, 
-          entity: options.entity 
-        }, null, 2)}`
+          `The hook would target the same workflow topic ('${workflowTopic}') as the current workflow, ` +
+          `creating an infinite loop.\n\n` +
+          `To fix this, provide either:\n` +
+          `1. 'taskQueue' parameter: MemFlow.workflow.hook({ taskQueue: 'your-queue', workflowName: '${options.workflowName}', args: [...] })\n` +
+          `2. 'entity' parameter: MemFlow.workflow.hook({ entity: 'your-entity', args: [...] })\n\n` +
+          `Current workflow topic: ${workflowTopic}\n` +
+          `Target topic would be: ${targetTopic}\n` +
+          `Provided options: ${JSON.stringify(
+            {
+              workflowName: options.workflowName,
+              taskQueue: options.taskQueue,
+              entity: options.entity,
+            },
+            null,
+            2,
+          )}`,
       );
     }
 

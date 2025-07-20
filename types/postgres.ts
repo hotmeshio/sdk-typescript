@@ -40,8 +40,14 @@ export interface PostgresClientType {
   query: (text: string, values?: any[]) => Promise<PostgresQueryResultType>;
   end: () => Promise<void>;
   // Notification handling methods
-  on?: (event: 'notification', listener: (notification: PostgresNotification) => void) => void;
-  off?: (event: 'notification', listener: (notification: PostgresNotification) => void) => void;
+  on?: (
+    event: 'notification',
+    listener: (notification: PostgresNotification) => void,
+  ) => void;
+  off?: (
+    event: 'notification',
+    listener: (notification: PostgresNotification) => void,
+  ) => void;
   removeAllListeners?: (event?: string) => void;
   // Include other methods if necessary
 }
