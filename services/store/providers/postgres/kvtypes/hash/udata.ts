@@ -9,6 +9,7 @@ export function createUdataOperations(context: HashContext['context']) {
     handleUdataDelete,
     handleUdataIncrement,
     handleUdataMultiply,
+    handleUdataAll,
   };
 
   function handleUdataSet(
@@ -389,6 +390,53 @@ export function createUdataOperations(context: HashContext['context']) {
         RETURNING value as new_value
       `;
       params.push(key, field, value, 'udata');
+    }
+
+    return { sql, params };
+  }
+
+  function handleUdataAll(
+    key: string,
+    fields: Record<string, string>,
+    options?: HSetOptions,
+  ): SqlResult {
+    const tableName = context.tableForKey(key, 'hash');
+    const replayId = Object.keys(fields).find(
+      (k) => k.includes('-') && k !== '@udata:all',
+    );
+    const params = [];
+    let sql = '';
+
+    if (replayId) {
+      sql = `
+        WITH field_data AS (
+          SELECT jsonb_object_agg(a.field, a.value) as field_values
+          FROM ${tableName} j
+          LEFT JOIN ${tableName}_attributes a ON j.id = a.job_id 
+          WHERE j.key = $1 AND j.is_live
+          AND a.type = 'udata' AND a.field LIKE '\\_%'
+        ),
+        replay_insert AS (
+          INSERT INTO ${tableName}_attributes (job_id, field, value, type)
+          SELECT j.id, $2, field_values::text, $3
+          FROM ${tableName} j, field_data
+          WHERE j.key = $1 AND j.is_live
+          ON CONFLICT (job_id, field) DO UPDATE
+          SET value = EXCLUDED.value
+          RETURNING 1
+        )
+        SELECT field_values as new_value FROM field_data
+      `;
+      params.push(key, replayId, deriveType(replayId));
+    } else {
+      sql = `
+        SELECT jsonb_object_agg(a.field, a.value) as new_value
+        FROM ${tableName} j
+        LEFT JOIN ${tableName}_attributes a ON j.id = a.job_id 
+        WHERE j.key = $1 AND j.is_live
+        AND a.type = 'udata' AND a.field LIKE '\\_%'
+      `;
+      params.push(key);
     }
 
     return { sql, params };

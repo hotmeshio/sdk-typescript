@@ -150,6 +150,56 @@ export class Search {
   }
 
   /**
+   * Returns all user-defined attributes (udata) for a workflow.
+   * These are fields that start with underscore (_) and have type='udata'.
+   *
+   * @example
+   * ```typescript
+   * const allUserData = await Search.findAllUserData('job123', hotMeshClient);
+   * // Returns: { _status: "active", _counter: "42", _name: "test" }
+   * ```
+   */
+  static async findAllUserData(
+    jobId: string, 
+    hotMeshClient: HotMesh
+  ): Promise<Record<string, string>> {
+    const keyParams = {
+      appId: hotMeshClient.appId,
+      jobId: jobId,
+    };
+    const key = KeyService.mintKey(
+      hotMeshClient.namespace,
+      KeyType.JOB_STATE,
+      keyParams,
+    );
+    const search = hotMeshClient.engine.search;
+    const rawResult = await search.updateContext(key, {
+      '@udata:all': ''
+    }) as Record<string, string>;
+
+    // Transform the result:
+    // 1. Remove underscore prefix from keys
+    // 2. Handle special fields (like exponential values)
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(rawResult)) {
+      // Remove underscore prefix
+      const cleanKey = key.startsWith('_') ? key.slice(1) : key;
+      
+      // Special handling for fields that use logarithmic storage
+      if (cleanKey === 'multer') {
+        // Convert from log value back to actual value
+        const expValue = Math.exp(Number(value));
+        // Round to nearest integer since log multiplication doesn't need decimal precision
+        result[cleanKey] = Math.round(expValue).toString();
+      } else {
+        result[cleanKey] = value;
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Returns an array of search indexes ids
    *
    * @example

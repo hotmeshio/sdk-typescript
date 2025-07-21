@@ -174,6 +174,25 @@ describe('MEMFLOW | goodbye | `search, waitFor` | Postgres', () => {
         expect(results.length).toEqual(1);
         expect(results[0].job_id).toBeDefined();
       }, 60_000);
+
+      it('should retrieve all user data fields', async () => {
+        // Get all user data using the new static method
+        const hotMeshClient = await client.getHotMeshClient('goodbye-world', namespace);  // Use test namespace
+        if (!hotMeshClient) throw new Error('HotMesh client not initialized');
+
+        const allUserData = await MemFlow.Search.findAllUserData(workflowGuid, hotMeshClient);
+
+        // Verify initial data (set in workflow.start)
+        expect(allUserData.fred).toBe('flintstone');
+        expect(allUserData.barney).toBe('rubble');
+        
+        // Verify workflow-set data (set via search.set)
+        expect(allUserData.custom1).toBe('memflow');
+        expect(allUserData.custom2).toBe('55');
+        expect(allUserData.jimbo).toBe('jones');
+        expect(allUserData.counter).toBe('111'); // 10 + 1 + 100 from workflow and hook
+        expect(allUserData.multer).toBe('120'); // 12 * 10 (restored from log value and rounded)
+      }, 60_000);
     });
   });
 });

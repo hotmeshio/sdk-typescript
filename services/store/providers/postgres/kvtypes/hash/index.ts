@@ -147,6 +147,9 @@ export const hashModule = (context: KVSQL) => {
         } else if ('@udata:multiply' in fields) {
           const { sql, params } = udataOps.handleUdataMultiply(key, fields, options);
           return executeJsonbOperation(sql, params, multi);
+        } else if ('@udata:all' in fields) {
+          const { sql, params } = udataOps.handleUdataAll(key, fields, options);
+          return executeJsonbOperation(sql, params, multi);
         }
       }
 
@@ -206,6 +209,8 @@ export const hashModule = (context: KVSQL) => {
           return udataOps.handleUdataIncrement(key, fields, options);
         } else if ('@udata:multiply' in fields) {
           return udataOps.handleUdataMultiply(key, fields, options);
+        } else if ('@udata:all' in fields) {
+          return udataOps.handleUdataAll(key, fields, options);
         }
       }
 
