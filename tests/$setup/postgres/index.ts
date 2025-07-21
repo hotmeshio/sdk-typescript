@@ -14,26 +14,6 @@ export const postgres_options = {
   pool_mode: 'session',
 };
 
-//NOTE include ioredis_options, redis_options, nats_options.
-//      postgres sub can be replaced with redis or nats for patterned subscriptions
-
-export const ioredis_options = {
-  host: config.REDIS_HOST,
-  port: config.REDIS_PORT,
-  password: config.REDIS_PASSWORD,
-  db: config.REDIS_DATABASE,
-};
-
-export const redis_options = {
-  socket: {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    tls: false,
-  },
-  password: config.REDIS_PASSWORD,
-  database: config.REDIS_DATABASE,
-};
-
 export const nats_options = {
   servers: config.NATS_SERVERS,
 };

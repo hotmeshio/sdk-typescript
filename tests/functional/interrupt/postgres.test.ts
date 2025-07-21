@@ -1,13 +1,10 @@
-import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { guid } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import {
   dropTables,
-  ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
@@ -25,14 +22,6 @@ describe('FUNCTIONAL | Interrupt', () => {
     ).getClient();
     await dropTables(postgresClient);
 
-    // init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-    redisConnection.getClient().flushdb();
-
     //init/activate HotMesh
     const config: HotMeshConfig = {
       appId: appConfig.id,
@@ -41,7 +30,7 @@ describe('FUNCTIONAL | Interrupt', () => {
         connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
+          sub: { class: Postgres, options: postgres_options },
         },
       },
     };

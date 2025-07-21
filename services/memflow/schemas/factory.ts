@@ -63,7 +63,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               description: the arguments to pass to the flow
               type: array
             workflowTopic:
-              description: the Redis stream topic the worker is listening on
+              description: the stream topic the worker is listening on
               type: string
             backoffCoefficient:
               description: the time multiple in seconds to backoff before retrying

@@ -13,7 +13,7 @@ import { InterceptorService } from './interceptor';
 
 /**
  * The MemFlow service provides a Temporal-compatible workflow framework backed by
- * Postgres or Redis/ValKey. It offers durable execution, entity-based memory management,
+ * Postgres. It offers durable execution, entity-based memory management,
  * and composable workflows.
  *
  * ## Core Features

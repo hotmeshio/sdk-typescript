@@ -95,31 +95,6 @@ export function identifyProvider(provider: any): Providers | null {
     return 'postgres';
   } else if (provider.toString().toLowerCase().includes('nats')) {
     return 'nats';
-  } else if (
-    'defineCommand' in prototype ||
-    Object.keys(prototype).includes('multi')
-  ) {
-    return 'ioredis';
-  } else if (Object.keys(prototype).includes('Multi')) {
-    return 'redis';
-  }
-
-  if (provider.constructor) {
-    if (
-      provider.constructor.name === 'Redis' ||
-      provider.constructor.name === 'EventEmitter'
-    ) {
-      if ('hset' in provider) {
-        return 'ioredis';
-      }
-    } else if (
-      provider.constructor.name === 'ProviderClient' ||
-      provider.constructor.name === 'Commander'
-    ) {
-      if ('HSET' in provider) {
-        return 'redis';
-      }
-    }
   }
 
   let type: Providers | null = null;
@@ -128,10 +103,6 @@ export function identifyProvider(provider: any): Providers | null {
     !isNaN(provider.totalCount) && !isNaN(provider.idleCount)
   ) {
     type = 'postgres';
-  } else if (Object.keys(provider).includes('Pipeline')) {
-    type = 'ioredis';
-  } else if (Object.keys(provider).includes('createClient')) {
-    type = 'redis';
   } else if (prototype.constructor.toString().includes('NatsConnectionImpl')) {
     type = 'nats';
   }
@@ -143,10 +114,10 @@ export function identifyProvider(provider: any): Providers | null {
  */
 export const polyfill = {
   /**
-   * `redis` is deprecated; `connection` is the generic replacement
+   * `connection` is the generic replacement
    */
   providerConfig(obj: any): any {
-    return obj?.connection ?? obj?.redis ?? obj?.connections;
+    return obj?.connection ?? obj?.connections;
   },
 };
 

@@ -2,20 +2,19 @@
 
 **Durable Memory + Coordinated Execution**
 
-![beta release](https://img.shields.io/badge/release-beta-blue.svg) ![made with typescript](https://img.shields.io/badge/built%20with-typescript-lightblue.svg)
+![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-HotMesh removes the repetitive glue of building durable agents, pipelines, and long‑running workflows. You focus on *what should change*; HotMesh handles *how it changes safely and durably.*
+HotMesh removes the repetitive glue of building durable agents, pipelines, and long‑running workflows. You focus on *what* to change; HotMesh handles *how*, safely and durably.
 
 ---
 
 ## Why Choose HotMesh
 
+- **Zero Boilerplate** - Transactional Postgres without the setup hassle
+- **Built-in Durability** - Automatic crash recovery and replay protection
+- **Parallel by Default** - Run hooks concurrently without coordination
+- **SQL-First** - Query pipeline status and agent memory directly
 
-- **One memory model** across all your agents and pipelines. No more designing custom persistence for each workflow.
-- **Automatic reliability** with transactional safety, replay protection, and crash recovery built-in.
-- **Natural concurrency** through isolated hooks that can run in parallel without coordination overhead.
-- **Operational transparency** using standard SQL to query live pipeline status and agent memory.
-- **Multi-tenant ready** with clean schema isolation and flexible indexing.
 ---
 
 ## Core Abstractions
@@ -63,31 +62,6 @@ Thin entrypoints that:
 | `delete`    | Remove field at specified path           | `await e.delete('user.email')` |
 | `get`       | Read value at path (or full entity)      | `await e.get('user.email')` |
 | `signal`    | Mark hook milestone / unlock waiters      | `await MemFlow.workflow.signal('phase-x', data)` |
-
-The Entity module also provides static methods for cross-entity querying:
-
-```typescript
-// Find entities matching conditions
-const activeUsers = await Entity.find('user', { 
-  status: 'active',
-  country: 'US' 
-});
-
-// Find by specific field condition
-const highValueOrders = await Entity.findByCondition(
-  'order',
-  'total_amount',
-  1000,
-  '>=',
-  hotMeshClient
-);
-
-// Find single entity by ID
-const user = await Entity.findById('user', 'user123', hotMeshClient);
-
-// Create optimized index for queries
-await Entity.createIndex('user', 'email', hotMeshClient);
-```
 
 ---
 

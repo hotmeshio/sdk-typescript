@@ -179,7 +179,7 @@ type JobInterruptOptions = {
   suppress?: boolean;
 
   /**
-   * how long to wait in seconds before fully expiring/removing the hash from Redis;
+   * how long to wait in seconds before fully softdeleting the job;
    * the job is inactive, but can remain in the cache indefinitely;
    * @default 1 second.
    */

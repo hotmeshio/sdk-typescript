@@ -1,10 +1,8 @@
-import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { MathHandler } from '../../../services/pipe/functions/math';
 import { JobOutput } from '../../../types/job';
 import {
@@ -15,7 +13,6 @@ import {
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import {
   dropTables,
-  ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
@@ -83,14 +80,6 @@ describe('FUNCTIONAL | Retry | Postgres', () => {
 
     await dropTables(postgresClient);
 
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-
-    redisConnection.getClient().flushdb();
-
     const config: HotMeshConfig = {
       appId: appConfig.id,
       namespace: HMNS,
@@ -100,7 +89,7 @@ describe('FUNCTIONAL | Retry | Postgres', () => {
         connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
+          sub: { class: Postgres, options: postgres_options },
         },
       },
 
@@ -110,7 +99,7 @@ describe('FUNCTIONAL | Retry | Postgres', () => {
           connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: redis_options },
+            sub: { class: Postgres, options: postgres_options },
           },
           callback,
         },

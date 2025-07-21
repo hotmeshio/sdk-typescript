@@ -46,10 +46,6 @@ export class Search {
    * @private
    */
   search: SearchService<any> | null;
-  /**
-   * @private
-   */
-  cachedFields: Record<string, string> = {};
 
   /**
    * @private
@@ -154,6 +150,56 @@ export class Search {
   }
 
   /**
+   * Returns all user-defined attributes (udata) for a workflow.
+   * These are fields that start with underscore (_) and have type='udata'.
+   *
+   * @example
+   * ```typescript
+   * const allUserData = await Search.findAllUserData('job123', hotMeshClient);
+   * // Returns: { _status: "active", _counter: "42", _name: "test" }
+   * ```
+   */
+  static async findAllUserData(
+    jobId: string, 
+    hotMeshClient: HotMesh
+  ): Promise<Record<string, string>> {
+    const keyParams = {
+      appId: hotMeshClient.appId,
+      jobId: jobId,
+    };
+    const key = KeyService.mintKey(
+      hotMeshClient.namespace,
+      KeyType.JOB_STATE,
+      keyParams,
+    );
+    const search = hotMeshClient.engine.search;
+    const rawResult = await search.updateContext(key, {
+      '@udata:all': ''
+    }) as Record<string, string>;
+
+    // Transform the result:
+    // 1. Remove underscore prefix from keys
+    // 2. Handle special fields (like exponential values)
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(rawResult)) {
+      // Remove underscore prefix
+      const cleanKey = key.startsWith('_') ? key.slice(1) : key;
+      
+      // Special handling for fields that use logarithmic storage
+      if (cleanKey === 'multer') {
+        // Convert from log value back to actual value
+        const expValue = Math.exp(Number(value));
+        // Round to nearest integer since log multiplication doesn't need decimal precision
+        result[cleanKey] = Math.round(expValue).toString();
+      } else {
+        result[cleanKey] = value;
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Returns an array of search indexes ids
    *
    * @example
@@ -196,26 +242,33 @@ export class Search {
     if (ssGuid in replay) {
       return Number(replay[ssGuid]);
     }
-    const fields: Record<string, string> = {};
+
+    // Prepare fields to set with udata format
+    let udataFields: Record<string, string> | string[];
     if (typeof args[0] === 'object') {
+      // Object format: { field1: 'value1', field2: 'value2' }
+      udataFields = {};
       for (const [key, value] of Object.entries(args[0])) {
-        delete this.cachedFields[key];
-        fields[this.safeKey(key)] = value.toString();
+        udataFields[this.safeKey(key)] = value.toString();
       }
     } else {
+      // Array format: ['field1', 'value1', 'field2', 'value2']
+      udataFields = [];
       for (let i = 0; i < args.length; i += 2) {
         const keyName = args[i];
-        delete this.cachedFields[keyName];
         const key = this.safeKey(keyName);
         const value = args[i + 1].toString();
-        fields[key] = value;
+        udataFields.push(key, value);
       }
     }
-    const fieldCount = await this.search.setFields(this.jobId, fields);
-    await this.search.setFields(this.jobId, {
-      [ssGuid]: fieldCount.toString(),
+
+    // Use single transactional call to update fields and store replay value
+    const result = await this.search.updateContext(this.jobId, {
+      '@udata:set': JSON.stringify(udataFields),
+      [ssGuid]: '', // Pass replay ID to hash module for transactional replay storage
     });
-    return fieldCount;
+
+    return result as number;
   }
 
   /**
@@ -226,13 +279,23 @@ export class Search {
    * const value = await search.get('field1');
    */
   async get(id: string): Promise<string> {
+    const ssGuid = this.getSearchSessionGuid();
+    const store = asyncLocalStorage.getStore();
+    const replay = store?.get('replay') ?? {};
+
+    if (ssGuid in replay) {
+      // Replay cache stores the field value
+      return replay[ssGuid];
+    }
+
     try {
-      if (id in this.cachedFields) {
-        return this.cachedFields[id];
-      }
-      const value = await this.search.getField(this.jobId, this.safeKey(id));
-      this.cachedFields[id] = value;
-      return value;
+      // Use server-side udata get operation with replay storage
+      const result = await this.search.updateContext(this.jobId, {
+        '@udata:get': this.safeKey(id),
+        [ssGuid]: '', // Pass replay ID to hash module
+      });
+
+      return result || '';
     } catch (error) {
       this.hotMeshClient.logger.error('memflow-search-get-error', {
         error,
@@ -245,28 +308,26 @@ export class Search {
    * Returns the values of all specified fields in the HASH stored at key.
    */
   async mget(...args: string[]): Promise<string[]> {
-    let isCached = true;
-    const values: string[] = [];
-    const safeArgs: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      if (isCached && args[i] in this.cachedFields) {
-        values.push(this.cachedFields[args[i]]);
-      } else {
-        isCached = false;
-      }
-      safeArgs.push(this.safeKey(args[i]));
+    const ssGuid = this.getSearchSessionGuid();
+    const store = asyncLocalStorage.getStore();
+    const replay = store?.get('replay') ?? {};
+
+    if (ssGuid in replay) {
+      // Replay cache stores the field values array
+      const replayValue = replay[ssGuid];
+      return typeof replayValue === 'string' ? replayValue.split('|||') : replayValue;
     }
+
     try {
-      if (isCached) {
-        return values;
-      }
-      const returnValues = await this.search.getFields(this.jobId, safeArgs);
-      returnValues.forEach((value, index) => {
-        if (value !== null) {
-          this.cachedFields[args[index]] = value;
-        }
+      const safeArgs = args.map(arg => this.safeKey(arg));
+      
+      // Use server-side udata mget operation with replay storage
+      const result = await this.search.updateContext(this.jobId, {
+        '@udata:mget': JSON.stringify(safeArgs),
+        [ssGuid]: '', // Pass replay ID to hash module
       });
-      return returnValues;
+
+      return result || [];
     } catch (error) {
       this.hotMeshClient.logger.error('memflow-search-mget-error', {
         error,
@@ -287,23 +348,20 @@ export class Search {
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
-    const safeArgs: string[] = [];
-    for (let i = 0; i < args.length; i++) {
-      const keyName = args[i];
-      delete this.cachedFields[keyName];
-      safeArgs.push(this.safeKey(keyName));
-    }
+    
     if (ssGuid in replay) {
       return Number(replay[ssGuid]);
     }
-    const response = await this.search.deleteFields(this.jobId, safeArgs);
-    const formattedResponse = isNaN(response as unknown as number)
-      ? 0
-      : Number(response);
-    await this.search.setFields(this.jobId, {
-      [ssGuid]: formattedResponse.toString(),
+
+    const safeArgs = args.map(arg => this.safeKey(arg));
+
+    // Use server-side udata delete operation with replay storage
+    const result = await this.search.updateContext(this.jobId, {
+      '@udata:delete': JSON.stringify(safeArgs),
+      [ssGuid]: '', // Pass replay ID to hash module for transactional replay storage
     });
-    return formattedResponse;
+
+    return Number(result || 0);
   }
 
   /**
@@ -316,20 +374,21 @@ export class Search {
    * const count = await search.incr('field1', 1.5);
    */
   async incr(key: string, val: number): Promise<number> {
-    delete this.cachedFields[key];
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
+    
     if (ssGuid in replay) {
       return Number(replay[ssGuid]);
     }
-    const num = await this.search.incrementFieldByFloat(
-      this.jobId,
-      this.safeKey(key),
-      val,
-    );
-    await this.search.setFields(this.jobId, { [ssGuid]: num.toString() });
-    return num;
+
+    // Use server-side udata increment operation with replay storage
+    const result = await this.search.updateContext(this.jobId, {
+      '@udata:increment': JSON.stringify({ field: this.safeKey(key), value: val }),
+      [ssGuid]: '', // Pass replay ID to hash module for transactional replay storage
+    });
+
+    return Number(result);
   }
 
   /**
@@ -342,33 +401,21 @@ export class Search {
    * const product = await search.mult('field1', 1.5);
    */
   async mult(key: string, val: number): Promise<number> {
-    delete this.cachedFields[key];
     const ssGuid = this.getSearchSessionGuid();
     const store = asyncLocalStorage.getStore();
     const replay = store?.get('replay') ?? {};
+    
     if (ssGuid in replay) {
       return Math.exp(Number(replay[ssGuid]));
     }
-    const ssGuidValue = await this.search.incrementFieldByFloat(
-      this.jobId,
-      ssGuid,
-      1,
-    );
-    if (ssGuidValue === 1) {
-      const log = Math.log(val);
-      const logTotal = await this.search.incrementFieldByFloat(
-        this.jobId,
-        this.safeKey(key),
-        log,
-      );
-      await this.search.setFields(this.jobId, {
-        [ssGuid]: logTotal.toString(),
-      });
-      return Math.exp(logTotal);
-    } else {
-      const logTotalStr = await this.search.getField(this.jobId, ssGuid);
-      const logTotal = Number(logTotalStr);
-      return Math.exp(logTotal);
-    }
+
+    // Use server-side udata multiply operation with replay storage
+    const result = await this.search.updateContext(this.jobId, {
+      '@udata:multiply': JSON.stringify({ field: this.safeKey(key), value: val }),
+      [ssGuid]: '', // Pass replay ID to hash module for transactional replay storage
+    });
+
+    // The result is the log value, so we need to exponentiate it
+    return Math.exp(Number(result));
   }
 }

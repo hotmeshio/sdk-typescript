@@ -29,7 +29,7 @@ import { getWorkflowYAML, VERSION } from './schemas/factory';
 /**
  * MeshCall connects any function as an idempotent endpoint.
  * Call functions from anywhere on the network connected to the
- * target backend (Postgres, Redis/ValKey, NATS, etc). Function
+ * target backend (Postgres, NATS, etc). Function
  * responses are cacheable and invocations can be scheduled to
  * run as idempotent cron jobs (this one runs nightly at midnight
  * and uses Postgres as the backend provider).

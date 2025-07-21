@@ -204,22 +204,6 @@ export {
   NatsTransaction,
 } from './nats';
 export {
-  RedisClass,
-  RedisRedisClientType,
-  RedisRedisClientOptions,
-  RedisRedisClassType,
-  IORedisClientType,
-  RedisClient,
-  RedisMulti,
-  RedisRedisMultiType,
-  IORedisClientOptions,
-  IORedisClassType,
-  IORedisMultiType,
-  RedisOptions,
-  isRedisClient,
-  isIORedisClient,
-} from './redis';
-export {
   JSONSchema,
   StringAnyType,
   StringScalarType,

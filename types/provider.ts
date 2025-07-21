@@ -16,7 +16,7 @@ export interface ProviderOptions {
   [key: string]: any;
 }
 
-export type Providers = 'redis' | 'nats' | 'postgres' | 'ioredis';
+export type Providers = 'nats' | 'postgres';
 
 /**
  * A provider transaction is a set of operations that are executed
@@ -67,7 +67,7 @@ export type TransactionResultList = (string | number)[]; // e.g., [3, 2, '0']
 export type ProviderConfig = {
   class: any;
   options: StringAnyType;
-  /* 'redis' (Class) | 'ioredis' (Class) | 'postgres' (Client module) | 'postgres.pool' | 'postgres.poolclient', 'nats' */
+  /* 'postgres' (Client module) | 'postgres.pool' | 'postgres.poolclient', 'nats' */
   provider?: string;
   /**
    * If provided and if true, the engine router instance will

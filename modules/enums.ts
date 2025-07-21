@@ -10,11 +10,6 @@ export const HMSH_LOGLEVEL = (process.env.HMSH_LOGLEVEL as LogLevel) || 'info';
 export const HMSH_TELEMETRY =
   (process.env.HMSH_TELEMETRY as 'info' | 'debug') || 'info';
 /**
- * If Redis, explicitly sets whether the application is running in a cluster. The default is false.
- * @deprecated
- */
-export const HMSH_IS_CLUSTER = process.env.HMSH_IS_CLUSTER === 'true';
-/**
  * Default cleanup time for signal in the db when its associated job is completed.
  */
 export const HMSH_SIGNAL_EXPIRE = 3_600; //seconds

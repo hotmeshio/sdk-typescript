@@ -368,14 +368,7 @@ export class ClientService {
     },
 
     /**
-     * Provides direct access to the SEARCH backend when making
-     * queries. Taskqueues and workflow names are
-     * used to identify the point of presence to use. `...args` is
-     * the tokenized query. When querying Redis/FTSEARCH, the trailing
-     * ...args might be `'@_custom1:memflow'`. For postgres,
-     * the trailing ...args would be: `'_custom', 'memflow'`. In each case,
-     * the query looks for all job data where the field `_custom` is
-     * equal to `memflow`.
+     * Provides direct access to the SEARCH backend
      *
      * @example
      * ```typescript

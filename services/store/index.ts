@@ -172,7 +172,7 @@ abstract class StoreService<
   abstract expireJob(
     jobId: string,
     inSeconds: number,
-    redisMulti?: TransactionProvider,
+    txProvider?: TransactionProvider,
   ): Promise<void>;
   abstract getDependencies(jobId: string): Promise<string[]>;
   abstract delistSignalKey(key: string, target: string): Promise<void>;

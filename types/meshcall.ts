@@ -33,11 +33,6 @@ interface MeshCallConnectParams {
    */
   topic: string;
   /**
-   * Redis configuration; use 'connection' instead of 'redis'
-   * @deprecated
-   */
-  redis?: ProviderConfig;
-  /**
    * Provider configuration
    */
   connection?: ProviderConfig | ProvidersConfig;
@@ -60,11 +55,6 @@ interface MeshCallExecParams {
    * Arguments to pass to the worker function
    */
   args: any[];
-  /**
-   * Redis configuration; use 'connection' instead of 'redis'
-   * @deprecated
-   */
-  redis?: ProviderConfig;
   /**
    * Provider configuration
    */
@@ -95,11 +85,6 @@ interface MeshCallFlushParams {
    * topic assigned to the worker when it was connected
    */
   topic: string;
-  /**
-   * Redis configuration; use 'connection' instead of 'redis'
-   * @deprecated
-   */
-  redis?: ProviderConfig;
   /**
    * Provider configuration
    */
@@ -158,11 +143,6 @@ interface MeshCallCronParams {
    */
   topic: string;
   /**
-   * Redis configuration; use 'connection' instead of 'redis'
-   * @deprecated
-   */
-  redis?: ProviderConfig;
-  /**
    * Provider configuration
    */
   connection?: ProviderConfig | ProvidersConfig;
@@ -206,11 +186,6 @@ interface MeshCallInterruptParams {
    * topic assigned to the cron worker when it was connected
    */
   topic: string;
-  /**
-   * Redis configuration; use 'connection' instead of 'redis'
-   * @deprecated
-   */
-  redis?: ProviderConfig;
   /**
    * Provider configuration
    */

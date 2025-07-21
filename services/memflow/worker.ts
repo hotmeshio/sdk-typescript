@@ -40,7 +40,7 @@ import { MemFlow } from './index';
 
 /**
  * The *Worker* service Registers worker functions and connects them to the mesh,
- * using the target backend provider/s (Redis, Postgres, NATS, etc).
+ * using the target backend provider/s (Postgres, NATS, etc).
  *
  * @example
  * ```typescript

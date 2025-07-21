@@ -47,14 +47,14 @@ class ReporterService {
       end,
       start,
     );
-    const redisKeys = dateTimeSets.map((dateTime) =>
-      this.buildRedisKey(key, dateTime),
+    const keys = dateTimeSets.map((dateTime) =>
+      this.buildKeys(key, dateTime),
     );
-    const rawData = await this.store.getJobStats(redisKeys);
+    const rawData = await this.store.getJobStats(keys);
     const [count, aggregatedData] = this.aggregateData(rawData);
     const statsResponse = this.buildStatsResponse(
       rawData,
-      redisKeys,
+      keys,
       aggregatedData,
       count,
       options,
@@ -153,7 +153,7 @@ class ReporterService {
     }
   }
 
-  private buildRedisKey(key: string, dateTime: string, subTarget = ''): string {
+  private buildKeys(key: string, dateTime: string, subTarget = ''): string {
     return `hmsh:${this.appVersion.id}:s:${key}:${dateTime}${subTarget ? ':' + subTarget : ''}`;
   }
 
@@ -178,7 +178,7 @@ class ReporterService {
 
   private buildStatsResponse(
     rawData: JobStatsRange,
-    redisKeys: string[],
+    keys: string[],
     aggregatedData: AggregatedData,
     count: number,
     options: GetStatsOptions,
@@ -189,7 +189,7 @@ class ReporterService {
     );
     let segments = undefined;
     if (options.sparse !== true) {
-      segments = this.handleSegments(rawData, redisKeys);
+      segments = this.handleSegments(rawData, keys);
     }
     measureKeys.forEach((key) => {
       const measure: Measure = {
@@ -255,7 +255,7 @@ class ReporterService {
     }
     const { key, granularity, range, end, start } = options;
     this.validateOptions(options);
-    let redisKeys: string[] = [];
+    let keys: string[] = [];
     facets.forEach((facet) => {
       const dateTimeSets = this.generateDateTimeSets(
         granularity,
@@ -263,13 +263,13 @@ class ReporterService {
         end,
         start,
       );
-      redisKeys = redisKeys.concat(
+      keys = keys.concat(
         dateTimeSets.map((dateTime) =>
-          this.buildRedisKey(key, dateTime, `index:${facet}`),
+          this.buildKeys(key, dateTime, `index:${facet}`),
         ),
       );
     });
-    const idsData = await this.store.getJobIds(redisKeys, idRange);
+    const idsData = await this.store.getJobIds(keys, idRange);
     const idsResponse = this.buildIdsResponse(idsData, options, facets);
     return idsResponse;
   }
@@ -361,7 +361,7 @@ class ReporterService {
     }
     const { key, granularity, range, end, start } = options;
     this.validateOptions(options);
-    let redisKeys: string[] = [];
+    let keys: string[] = [];
     facets.forEach((facet) => {
       const dateTimeSets = this.generateDateTimeSets(
         granularity,
@@ -369,13 +369,13 @@ class ReporterService {
         end,
         start,
       );
-      redisKeys = redisKeys.concat(
+      keys = keys.concat(
         dateTimeSets.map((dateTime) =>
-          this.buildRedisKey(key, dateTime, `index:${facet}`),
+          this.buildKeys(key, dateTime, `index:${facet}`),
         ),
       );
     });
-    const idsData = await this.store.getJobIds(redisKeys, [0, 1]);
+    const idsData = await this.store.getJobIds(keys, [0, 1]);
     const workerLists = this.buildWorkerLists(idsData);
     return workerLists;
   }

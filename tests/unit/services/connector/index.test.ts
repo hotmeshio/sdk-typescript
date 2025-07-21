@@ -1,30 +1,31 @@
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
 import config from '../../../$setup/config';
 import { ConnectorService } from '../../../../services/connector/factory';
-import { RedisConnection } from '../../../../services/connector/providers/ioredis';
+import { PostgresConnection } from '../../../../services/connector/providers/postgres';
 import { HotMeshEngine, HotMeshWorker } from '../../../../types/hotmesh';
-import { RedisOptions } from '../../../../types/redis';
+import { PostgresClientOptions } from '../../../../types/postgres';
 
 describe('ConnectorService Functional Test', () => {
   let target: HotMeshEngine;
-  const redisOptions: RedisOptions = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
+  const postgresOptions: PostgresClientOptions = {
+    host: config.POSTGRES_HOST,
+    port: config.POSTGRES_PORT,
+    user: config.POSTGRES_USER,
+    password: config.POSTGRES_PASSWORD,
+    database: config.POSTGRES_DB,
   };
-  const RedisClass = Redis;
+  const PostgresClass = Postgres;
 
   beforeEach(() => {
     target = {} as HotMeshEngine;
   });
 
-  it('should initialize Redis clients if not already present', async () => {
+  it('should initialize clients if not already present', async () => {
     const target: HotMeshEngine | HotMeshWorker = {
       connection: {
-        class: RedisClass,
-        options: redisOptions,
+        class: PostgresClass,
+        options: postgresOptions,
       },
       store: undefined,
       stream: undefined,
@@ -37,14 +38,14 @@ describe('ConnectorService Functional Test', () => {
     expect(target.stream).toBeDefined();
     expect(target.sub).toBeDefined();
 
-    // Verify they can actually interact with Redis
+    // Verify they can actually interact with the backend
     await target?.store?.set('testKeyStore', 'testValue');
     const valueStore = await target?.store?.get('testKeyStore');
     expect(valueStore).toBe('testValue');
   });
 
-  // Disconnect from Redis after all tests
+  // Disconnect from Postgres after all tests
   afterAll(async () => {
-    await RedisConnection.disconnectAll();
+    await PostgresConnection.disconnectAll();
   });
 });

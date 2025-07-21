@@ -23,7 +23,7 @@ class PostgresSearchService extends SearchService<
   ) {
     super(searchClient, storeClient);
     this.pgClient = searchClient; //raw pg client (to send raw sql)
-    this.searchClient = new KVSQL( //wrapped pg client (to send as redis commands)
+    this.searchClient = new KVSQL( //wrapped pg client
       searchClient as unknown as PostgresClientType,
       this.namespace,
       this.appId,

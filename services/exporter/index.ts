@@ -17,8 +17,8 @@ import {
 } from '../../types/serializer';
 
 /**
- * Downloads job data from Redis (hscan, hmget, hgetall)
- * Expands process data and includes dependency list
+ * Downloads job data and expands process data and
+ * includes dependency list
  */
 class ExporterService {
   appId: string;
@@ -53,7 +53,7 @@ class ExporterService {
   }
 
   /**
-   * Inflates the key from Redis, 3-character symbol
+   * Inflates the key
    * into a human-readable JSON path, reflecting the
    * tree-like structure of the unidimensional Hash
    */
@@ -62,8 +62,8 @@ class ExporterService {
   }
 
   /**
-   * Inflates the job data from Redis into a JobExport object
-   * @param jobHash - the job data from Redis
+   * Inflates the job data into a JobExport object
+   * @param jobHash - the job data
    * @param dependencyList - the list of dependencies for the job
    * @returns - the inflated job data
    */
@@ -103,10 +103,10 @@ class ExporterService {
   }
 
   /**
-   * Inflates the dependency data from Redis into a JobExport object by
-   * organizing the dimensional isolate in sch a way asto interleave
+   * Inflates the dependency data into a JobExport object by
+   * organizing the dimensional isolate in such a way as to interleave
    * into a story
-   * @param data - the dependency data from Redis
+   * @param data - the dependency data
    * @returns - the organized dependency data
    */
   inflateDependencyData(

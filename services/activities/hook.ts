@@ -1,4 +1,3 @@
-import { HMSH_IS_CLUSTER } from '../../modules/enums';
 import {
   CollationError,
   GenerationalError,
@@ -121,10 +120,7 @@ class Hook extends Activity {
 
   async doHook(telemetry: TelemetryService) {
     const transaction = this.store.transact();
-    //call registerHook separately if in cluster mode
-    //(ok to run this command multiple times if it fails),
-    //but the commands that follow must exec as a transaction
-    await this.registerHook(HMSH_IS_CLUSTER ? undefined : transaction);
+    await this.registerHook(transaction);
     this.mapOutputData();
     this.mapJobData();
     await this.setState(transaction);

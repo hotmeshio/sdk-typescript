@@ -1,5 +1,4 @@
 import { Client as Postgres } from 'pg';
-import Redis from 'ioredis';
 
 import { HotMesh, HotMeshConfig } from '../../index';
 import { JobStatsInput } from '../../types/stats';
@@ -8,7 +7,6 @@ import {
   StreamDataResponse,
   StreamStatus,
 } from '../../types/stream';
-import { RedisConnection } from '../../services/connector/providers/ioredis';
 import { JobOutput } from '../../types/job';
 import { guid, sleepFor } from '../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../modules/enums';
@@ -16,7 +14,6 @@ import { ProviderNativeClient } from '../../types/provider';
 import { PostgresConnection } from '../../services/connector/providers/postgres';
 import {
   dropTables,
-  ioredis_options,
   postgres_options,
 } from '../$setup/postgres';
 
@@ -32,14 +29,6 @@ describe('FUNCTIONAL | HotMesh', () => {
     ).getClient();
 
     await dropTables(postgresClient);
-
-    //flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      ioredis_options,
-    );
-    redisConnection.getClient().flushdb();
   });
 
   afterAll(async () => {
@@ -58,7 +47,7 @@ describe('FUNCTIONAL | HotMesh', () => {
           connection: {
             store: { class: Postgres, options: postgres_options },
             stream: { class: Postgres, options: postgres_options },
-            sub: { class: Redis, options: ioredis_options },
+            sub: { class: Postgres, options: postgres_options },
           },
         },
 
@@ -68,7 +57,7 @@ describe('FUNCTIONAL | HotMesh', () => {
             connection: {
               store: { class: Postgres, options: postgres_options },
               stream: { class: Postgres, options: postgres_options },
-              sub: { class: Redis, options: ioredis_options },
+              sub: { class: Postgres, options: postgres_options },
             },
             callback: async (streamData: StreamData) => {
               const streamDataResponse: StreamDataResponse = {

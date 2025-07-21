@@ -1,35 +1,35 @@
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { guid } from '../../../modules/utils';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import {
   StreamData,
   StreamDataResponse,
   StreamStatus,
 } from '../../../types/stream';
 import config from '../../$setup/config';
+import { dropTables } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Status Codes', () => {
   const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
+    host: config.POSTGRES_HOST,
+    port: config.POSTGRES_PORT,
+    user: config.POSTGRES_USER,
+    password: config.POSTGRES_PASSWORD,
+    database: config.POSTGRES_DB,
   };
   const REASON = 'the account_id field is missing';
   const appConfig = { id: 'def' };
   let hotMesh: HotMesh;
 
   beforeAll(async () => {
-    //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      options,
-    );
-    redisConnection.getClient().flushdb();
+    //init Postgres and flush db
+    const postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, options)
+    ).getClient();
+    await dropTables(postgresClient);
 
     //init HotMesh
     const hmshConfig: HotMeshConfig = {
@@ -37,13 +37,13 @@ describe('FUNCTIONAL | Status Codes', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connection: { class: Redis, options },
+        connection: { class: Postgres, options },
       },
 
       workers: [
         {
           topic: 'work.do',
-          connection: { class: Redis, options },
+          connection: { class: Postgres, options },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {

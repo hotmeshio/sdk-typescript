@@ -1,5 +1,5 @@
 /**
- * The Cache is a key/value store and used to store commonly accessed Redis metadata
+ * The Cache is a key/value store and used to store commonly accessed metadata
  * (mainly the execution rules for the app) to save time accessing them as they
  * are immutable per verison. Rules are only ejected when a new version
  * (a new distributed executable) is deployed to the quorum

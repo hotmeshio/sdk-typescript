@@ -1,30 +1,30 @@
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
 import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { JobOutput } from '../../../types/job';
 import { guid, sleepFor } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import { dropTables } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Hook', () => {
   const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
+    host: config.POSTGRES_HOST,
+    port: config.POSTGRES_PORT,
+    user: config.POSTGRES_USER,
+    password: config.POSTGRES_PASSWORD,
+    database: config.POSTGRES_DB,
   };
   const appConfig = { id: 'hook' };
   let hotMesh: HotMesh;
 
   beforeAll(async () => {
-    //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      options,
-    );
-    redisConnection.getClient().flushdb();
+    //init Postgres and flush db
+    const postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, options)
+    ).getClient();
+    await dropTables(postgresClient);
 
     //init HotMesh
     const hmshConfig: HotMeshConfig = {
@@ -32,7 +32,7 @@ describe('FUNCTIONAL | Hook', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connection: { class: Redis, options },
+        connection: { class: Postgres, options },
       },
     };
 
@@ -98,7 +98,6 @@ describe('FUNCTIONAL | Hook', () => {
       const indexQueryFacets = [`parent_job_id:${parent_job_id}`];
 
       //hookAll will resume all paused jobs that match the query
-      //NOTE: 'targets' is the REDIS address of the index that contains all jobs that match
       const targets = await hotMesh.hookAll(
         'hook.resume',
         { done: true },
