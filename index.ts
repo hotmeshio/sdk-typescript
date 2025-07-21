@@ -16,17 +16,13 @@ import * as Enums from './modules/enums';
 import * as KeyStore from './modules/key';
 import { ConnectorService as Connector } from './services/connector/factory';
 import { PostgresConnection as ConnectorPostgres } from './services/connector/providers/postgres';
-import { RedisConnection as ConnectorIORedis } from './services/connector/providers/ioredis';
-import { RedisConnection as ConnectorRedis } from './services/connector/providers/redis';
 import { NatsConnection as ConnectorNATS } from './services/connector/providers/nats';
 
 export {
   //Provider Connectors
   Connector, //factory
-  ConnectorIORedis,
   ConnectorNATS,
   ConnectorPostgres,
-  ConnectorRedis,
 
   //Top-level Modules
   HotMesh,

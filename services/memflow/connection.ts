@@ -9,8 +9,6 @@ import { ProviderConfig, ProvidersConfig } from '../../types/provider';
  *
  * The config options optionall support a multi-connection setup
  * where the `store` connection explicitly defined along with `stream`, `sub`, etc.
- * For example, Postgres can be used for stream and store while
- * Redis is used for sub.
  */
 export class ConnectionService {
   /**

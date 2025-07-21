@@ -1,35 +1,35 @@
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HMNS } from '../../../modules/key';
 import { guid, sleepFor } from '../../../modules/utils';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import {
   StreamData,
   StreamDataResponse,
   StreamStatus,
 } from '../../../types/stream';
 import config from '../../$setup/config';
+import { dropTables } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | PENDING', () => {
   const appConfig = { id: 'pending', version: '1' };
   const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
+    host: config.POSTGRES_HOST,
+    port: config.POSTGRES_PORT,
+    user: config.POSTGRES_USER,
+    password: config.POSTGRES_PASSWORD,
+    database: config.POSTGRES_DB,
   };
   let hotMesh: HotMesh;
 
   beforeAll(async () => {
-    //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      options,
-    );
-    redisConnection.getClient().flushdb();
+    //init Postgres and flush db
+    const postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, options)
+    ).getClient();
+    await dropTables(postgresClient);
 
     const config: HotMeshConfig = {
       appId: appConfig.id,
@@ -37,13 +37,13 @@ describe('FUNCTIONAL | PENDING', () => {
       logLevel: HMSH_LOGLEVEL,
 
       engine: {
-        connection: { class: Redis, options },
+        connection: { class: Postgres, options },
       },
 
       workers: [
         {
           topic: 'pending.test.worker',
-          connection: { class: Redis, options },
+          connection: { class: Postgres, options },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {
@@ -77,7 +77,7 @@ describe('FUNCTIONAL | PENDING', () => {
       const status = await hotMesh.getStatus(jobId);
       expect(status).toBe(-1); //pending jobs are set to -1
 
-      //wait longer than 2 seconds to ensure redis scrubs the job
+      //wait longer than 2 seconds to ensure job is scrubbed
       await sleepFor(2_250);
       try {
         await hotMesh.getStatus(jobId);

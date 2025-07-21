@@ -38,7 +38,7 @@
                 "type": "array"
               },
               "workflowTopic": {
-                "description": "the Redis stream topic the worker is listening on",
+                "description": "the stream topic the worker is listening on",
                 "type": "string"
               },
               "backoffCoefficient": {

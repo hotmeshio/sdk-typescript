@@ -26,4 +26,4 @@ Gain insight into HotMesh's monitoring, exception handling, and alarm configurat
 HotMesh is a distributed orchestration engine. Refer to the [Distributed Orchestration Guide](./distributed_orchestration.md) for a high-level overview of the approach.
 
 ## Distributed Orchestration | System Design
-HotMesh is more than Redis and TypeScript. The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).
+The theory that underlies the architecture is applicable to any number of data storage and streaming backends: [A Message-Oriented Approach to Decentralized Process Orchestration](https://zenodo.org/records/12168558).

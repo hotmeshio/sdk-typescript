@@ -1,8 +1,8 @@
-import Redis from 'ioredis';
+import { Client as Postgres } from 'pg';
 
 import config from '../../$setup/config';
 import { HotMesh, HotMeshConfig } from '../../../index';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
+import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import {
   StreamData,
   StreamDataResponse,
@@ -10,38 +10,38 @@ import {
 } from '../../../types/stream';
 import { guid } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
+import { dropTables } from '../../$setup/postgres';
 
 describe('FUNCTIONAL | Parallel', () => {
   const appConfig = { id: 'tree' };
   const options = {
-    host: config.REDIS_HOST,
-    port: config.REDIS_PORT,
-    password: config.REDIS_PASSWORD,
-    db: config.REDIS_DATABASE,
+    host: config.POSTGRES_HOST,
+    port: config.POSTGRES_PORT,
+    user: config.POSTGRES_USER,
+    password: config.POSTGRES_PASSWORD,
+    database: config.POSTGRES_DB,
   };
   let hotMesh: HotMesh;
 
   beforeAll(async () => {
-    //init Redis and flush db
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      options,
-    );
-    redisConnection.getClient().flushdb();
+    //init Postgres and flush db
+    const postgresClient = (
+      await PostgresConnection.connect(guid(), Postgres, options)
+    ).getClient();
+    await dropTables(postgresClient);
 
     //init/activate HotMesh (test both `engine` and `worker` roles)
     const config: HotMeshConfig = {
       appId: appConfig.id,
       logLevel: HMSH_LOGLEVEL,
       engine: {
-        connection: { class: Redis, options },
+        connection: { class: Postgres, options },
       },
       workers: [
         {
           //worker activity in the YAML file declares 'summer' as the topic
           topic: 'summer',
-          connection: { class: Redis, options },
+          connection: { class: Postgres, options },
           callback: async (
             streamData: StreamData,
           ): Promise<StreamDataResponse> => {

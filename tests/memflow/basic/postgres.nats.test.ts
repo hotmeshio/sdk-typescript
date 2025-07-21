@@ -34,7 +34,7 @@ describe('MEMFLOW | baseline | Postgres+NATS', () => {
 
   describe('Connection', () => {
     describe('connect', () => {
-      it('should echo the Redis config', async () => {
+      it('should echo the Postgres config', async () => {
         const connection = (await Connection.connect({
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },

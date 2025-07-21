@@ -145,8 +145,6 @@ export type RouterConfig = {
 };
 
 export type StreamProviderType =
-  | 'redis'
-  | 'ioredis'
   | 'postgres'
   | 'nats'
   | 'sqs';
@@ -161,11 +159,6 @@ export interface StreamConfig {
   timeout?: number;
 
   // Provider-specific configurations
-  redis?: {
-    claimTimeout?: number;
-    blockingTimeout?: number;
-    minIdleTime?: number;
-  };
   postgres?: {
     pollInterval?: number;
     vacuumInterval?: number;

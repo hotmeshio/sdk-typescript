@@ -4,12 +4,6 @@ dotenv.config();
 const env = process.env.NODE_ENV || 'development';
 
 const baseConfig = {
-  // Redis Configuration
-  REDIS_DATABASE: 0,
-  REDIS_PORT: 6379,
-  REDIS_HOST: 'redis',
-  REDIS_PASSWORD: 'key_admin',
-
   // PostgreSQL Configuration to connect to local docker-compose postgres instance
   //  (override with .env if targeting a remote postgres instance)
   POSTGRES_PORT: process.env.POSTGRES_PORT || 5432,

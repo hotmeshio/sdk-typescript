@@ -34,7 +34,6 @@ class NatsSubService extends SubService<NatsClientType & ProviderClient> {
   }
 
   transact(): ProviderTransaction {
-    // NATS does not support transactions like Redis.
     // Return an empty object or throw an error if not supported.
     return {} as ProviderTransaction;
   }

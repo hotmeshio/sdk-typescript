@@ -1,16 +1,13 @@
-import Redis from 'ioredis';
 import { Client as Postgres } from 'pg';
 
 import { HotMesh, HotMeshConfig } from '../../../index';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { HMNS } from '../../../modules/key';
 import { guid } from '../../../modules/utils';
-import { RedisConnection } from '../../../services/connector/providers/ioredis';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { ProviderNativeClient } from '../../../types/provider';
 import {
   dropTables,
-  ioredis_options as redis_options,
   postgres_options,
 } from '../../$setup/postgres';
 
@@ -26,14 +23,6 @@ describe('FUNCTIONAL | AWAIT (OR NOT) | Postgres', () => {
       ).getClient();
       await dropTables(postgresClient);
     }
-
-    const redisConnection = await RedisConnection.connect(
-      guid(),
-      Redis,
-      redis_options,
-    );
-    redisConnection.getClient().flushdb();
-
     const config: HotMeshConfig = {
       appId: appConfig.id,
       namespace: HMNS,
@@ -43,7 +32,7 @@ describe('FUNCTIONAL | AWAIT (OR NOT) | Postgres', () => {
         connection: {
           store: { class: Postgres, options: postgres_options },
           stream: { class: Postgres, options: postgres_options },
-          sub: { class: Redis, options: redis_options },
+          sub: { class: Postgres, options: postgres_options },
         },
       },
     };

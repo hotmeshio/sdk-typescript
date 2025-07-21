@@ -32,7 +32,7 @@ class CompilerService {
   }
 
   /**
-   * verifies and plans the deployment of an app to Redis; the app is not deployed yet
+   * verifies and plans the deployment of an app to the DB; the app is not deployed yet
    * @param path
    */
   async plan(mySchemaOrPath: string): Promise<HotMeshManifest> {
@@ -62,7 +62,7 @@ class CompilerService {
   }
 
   /**
-   * deploys an app to Redis but does NOT activate it.
+   * deploys an app to the DB but does NOT activate it.
    */
   async deploy(mySchemaOrPath: string): Promise<HotMeshManifest> {
     try {
@@ -80,11 +80,11 @@ class CompilerService {
       const validator = new Validator(schema);
       validator.validate(this.store);
 
-      // 3) deploy the schema (segment, optimize, etc; save to Redis)
+      // 3) deploy the schema (segment, optimize, etc; save to the DB)
       const deployer = new Deployer(schema);
       await deployer.deploy(this.store, this.stream);
 
-      // 4) save the app version to Redis (so it can be activated later)
+      // 4) save the app version to the DB (so it can be activated later)
       await this.store.setApp(schema.app.id, schema.app.version);
       return schema;
     } catch (err) {

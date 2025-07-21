@@ -72,10 +72,7 @@ class PostgresStoreService extends StoreService<
     super(storeClient);
     //Instead of directly referencing the 'pg' package and methods like 'query',
     //  the PostgresStore wraps the 'pg' client in a class that implements
-    //  the Redis client interface. This allows the same methods to be called
-    //  that were used when authoring the Redis client store provider.
-    //In general, this.storeClient will behave like Redis, but will
-    //  use the 'pg' package and will read/write to a Postgres database.
+    //  an entity/attribute interface.
     this.pgClient = storeClient as unknown as PostgresClientType;
     this.storeClient = new KVSQL(
       storeClient as unknown as PostgresClientType,
@@ -125,7 +122,6 @@ class PostgresStoreService extends StoreService<
     value: string | number,
     transaction?: ProviderTransaction,
   ): Promise<any> {
-    //default call signature uses 'ioredis' NPM Package format
     return await this.kvsql(transaction).zadd(
       key,
       Number(score),
@@ -519,7 +515,7 @@ class PostgresStoreService extends StoreService<
   }
 
   hGetAllResult(result: any) {
-    //default response signature uses 'redis' NPM Package format
+    //default response signature
     return result;
   }
 

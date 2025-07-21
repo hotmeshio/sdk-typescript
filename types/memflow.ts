@@ -111,7 +111,7 @@ type WorkflowContext = {
   raw: StreamData;
 
   /**
-   * the HotMesh connection configuration (io/redis NPM package reference and login credentials)
+   * the HotMesh connection configuration
    */
   connection: Connection;
 
@@ -122,7 +122,8 @@ type WorkflowContext = {
 };
 
 /**
- * The schema for the full-text-search (RediSearch) index.
+ * The schema for the full-text-search
+ * @deprecated
  */
 export type WorkflowSearchSchema = Record<
   string,
@@ -304,7 +305,7 @@ type WorkflowOptions = {
   workflowSpan?: string;
 
   /**
-   * the full-text-search (RediSearch) options for the workflow
+   * the full-text-search
    */
   search?: WorkflowSearchOptions;
 
@@ -501,7 +502,7 @@ type FindWhereOptions = {
 };
 
 type FindJobsOptions = {
-  /** The workflow name; include an asterisk for wilcard search; refer to Redis SCAN for the allowed format */
+  /** The workflow name; include an asterisk for wilcard search */
   match?: string;
 
   /**

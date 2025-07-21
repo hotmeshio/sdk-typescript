@@ -165,7 +165,6 @@ class TaskService {
         }
       } catch (err) {
         //most common reasons: deleted job not found; container stopping; test stopping
-        //less common: redis/cluster down; retry with fallback (5s max main reassignment)
         this.logger.warn('task-process-timehooks-error', err);
         await sleepFor(1_000 * this.errorCount++);
         if (this.errorCount < 5) {

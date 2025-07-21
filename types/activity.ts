@@ -68,11 +68,7 @@ interface TriggerActivityStats {
   key?: { [key: string]: unknown } | string;
   /**
    * @deprecated
-   * return 'infinity' to disable; default behavior
-   * is to always segment keys by time to ensure
-   * indexes (Redis LIST) never grow unbounded
-   * as a default behavior; for now, 5m is default
-   * and infinity can be set to override
+   * return 'infinity' to disable
    */
   granularity?: string;
   /**

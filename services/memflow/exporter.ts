@@ -51,8 +51,8 @@ class ExporterService {
   }
 
   /**
-   * Inflates the job data from Redis into a MemFlowJobExport object
-   * @param jobHash - the job data from Redis
+   * Inflates the job data into a MemFlowJobExport object
+   * @param jobHash - the job data
    * @param dependencyList - the list of dependencies for the job
    * @returns - the inflated job data
    */
@@ -119,7 +119,7 @@ class ExporterService {
   }
 
   /**
-   * Inflates the key from Redis, 3-character symbol
+   * Inflates the key
    * into a human-readable JSON path, reflecting the
    * tree-like structure of the unidimensional Hash
    * @private

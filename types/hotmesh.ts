@@ -163,12 +163,6 @@ type HotMeshWorker = {
   search?: ProviderClient;
 
   /**
-   * redis connection options; replaced with 'connection'
-   * @deprecated
-   */
-  redis?: ProviderConfig;
-
-  /**
    * short-form format for the connection options for the
    * store, stream, sub, and search clients
    */

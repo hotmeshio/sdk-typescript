@@ -32,7 +32,7 @@ describe('MEMFLOW | baseline | Postgres', () => {
 
   describe('Connection', () => {
     describe('connect', () => {
-      it('should echo the Redis config', async () => {
+      it('should echo the Postgres config', async () => {
         const connection = (await Connection.connect({
           class: Postgres,
           options: postgres_options,

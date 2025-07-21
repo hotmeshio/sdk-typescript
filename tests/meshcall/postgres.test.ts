@@ -88,7 +88,7 @@ describe('MESHCALL | Postgres', () => {
         expect(response.hello.payload).toBe('HotMesh');
       });
 
-      it('should use the cached response (Redis HMGET)', async () => {
+      it('should use the cached response', async () => {
         const response = await MeshCall.exec<{ hello: { payload: string } }>({
           args: [{ payload: 'HotMesh' }],
           topic: 'my.function',

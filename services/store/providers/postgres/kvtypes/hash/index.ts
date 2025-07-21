@@ -10,6 +10,7 @@ import {
   _hincrbyfloat,
 } from './basic';
 import { createJsonbOperations } from './jsonb';
+import { createUdataOperations } from './udata';
 import { createScanOperations, _hscan, _scan } from './scan';
 import { createExpireOperations, _expire } from './expire';
 import { isJobsTable } from './utils';
@@ -17,6 +18,7 @@ import { isJobsTable } from './utils';
 export const hashModule = (context: KVSQL) => {
   const basicOps = createBasicOperations(context);
   const jsonbOps = createJsonbOperations(context);
+  const udataOps = createUdataOperations(context);
   const scanOps = createScanOperations(context);
   const expireOps = createExpireOperations(context);
 
@@ -125,6 +127,29 @@ export const hashModule = (context: KVSQL) => {
         }
       }
 
+      // Handle udata operations for search fields
+      if (isJobsTableResult) {
+        if ('@udata:set' in fields) {
+          const { sql, params } = udataOps.handleUdataSet(key, fields, options);
+          return executeJsonbOperation(sql, params, multi);
+        } else if ('@udata:get' in fields) {
+          const { sql, params } = udataOps.handleUdataGet(key, fields, options);
+          return executeJsonbOperation(sql, params, multi);
+        } else if ('@udata:mget' in fields) {
+          const { sql, params } = udataOps.handleUdataMget(key, fields, options);
+          return executeJsonbOperation(sql, params, multi);
+        } else if ('@udata:delete' in fields) {
+          const { sql, params } = udataOps.handleUdataDelete(key, fields, options);
+          return executeJsonbOperation(sql, params, multi);
+        } else if ('@udata:increment' in fields) {
+          const { sql, params } = udataOps.handleUdataIncrement(key, fields, options);
+          return executeJsonbOperation(sql, params, multi);
+        } else if ('@udata:multiply' in fields) {
+          const { sql, params } = udataOps.handleUdataMultiply(key, fields, options);
+          return executeJsonbOperation(sql, params, multi);
+        }
+      }
+
       // Fall back to basic hset for all other cases
       return basicOps.hset(key, fields, options, multi);
     },
@@ -164,6 +189,23 @@ export const hashModule = (context: KVSQL) => {
           return jsonbOps.handleContextGetPath(key, fields, options);
         } else if ('@context:get' in fields) {
           return jsonbOps.handleContextGet(key, fields, options);
+        }
+      }
+
+      // Handle udata operations for search fields
+      if (isJobsTableResult) {
+        if ('@udata:set' in fields) {
+          return udataOps.handleUdataSet(key, fields, options);
+        } else if ('@udata:get' in fields) {
+          return udataOps.handleUdataGet(key, fields, options);
+        } else if ('@udata:mget' in fields) {
+          return udataOps.handleUdataMget(key, fields, options);
+        } else if ('@udata:delete' in fields) {
+          return udataOps.handleUdataDelete(key, fields, options);
+        } else if ('@udata:increment' in fields) {
+          return udataOps.handleUdataIncrement(key, fields, options);
+        } else if ('@udata:multiply' in fields) {
+          return udataOps.handleUdataMultiply(key, fields, options);
         }
       }
 
