@@ -21,7 +21,7 @@ class PostgresSubService extends SubService<
   // Static maps to manage subscriptions across all instances sharing the same client
   private static clientSubscriptions: Map<
     PostgresClientType & ProviderClient,
-    Map<string, Map<PostgresSubService, SubscriptionCallback>>
+    Map<string, Map<string, SubscriptionCallback>>
   > = new Map();
   private static clientHandlers: Map<
     PostgresClientType & ProviderClient,
@@ -29,7 +29,8 @@ class PostgresSubService extends SubService<
   > = new Map();
 
   // Instance-level subscriptions for cleanup
-  private instanceSubscriptions: Set<string> = new Set();
+  private instanceSubscriptions: Map<string, string> = new Map(); // topic -> callbackKey mapping
+  private instanceId: string = crypto.randomUUID();
 
   constructor(
     eventClient: PostgresClientType & ProviderClient,
@@ -73,8 +74,11 @@ class PostgresSubService extends SubService<
         if (callbacks && callbacks.size > 0) {
           try {
             const payload = JSON.parse(msg.payload || '{}');
-            // Call all callbacks registered for this channel across all SubService instances
-            callbacks.forEach((callback) => {
+            // Collect callbacks first to avoid modification during iteration
+            const callbackArray = Array.from(callbacks.entries());
+            
+            // Call all callbacks
+            callbackArray.forEach(([callbackKey, callback], index) => {
               try {
                 callback(msg.channel, payload);
               } catch (err) {
@@ -161,15 +165,19 @@ class PostgresSubService extends SubService<
       await this.eventClient.query(`LISTEN "${safeKey}"`);
     }
 
-    // Add this callback to the list
-    callbacks.set(this, callback);
+    // Generate unique callback key to avoid overwrites
+    const callbackKey = `${this.instanceId}-${Date.now()}-${Math.random()}`;
+    
+    // Add this callback to the list with unique key
+    callbacks.set(callbackKey, callback);
 
     // Track this subscription for cleanup
-    this.instanceSubscriptions.add(safeKey);
-
+    this.instanceSubscriptions.set(safeKey, callbackKey);
+    
     this.logger.debug(`postgres-subscribe`, {
       originalKey,
       safeKey,
+      callbackKey,
       totalCallbacks: callbacks.size,
     });
   }
@@ -192,12 +200,14 @@ class PostgresSubService extends SubService<
     }
 
     const callbacks = clientSubscriptions.get(safeKey);
-    if (!callbacks || callbacks.size === 0) {
+    const callbackKey = this.instanceSubscriptions.get(safeKey);
+    
+    if (!callbacks || callbacks.size === 0 || !callbackKey) {
       return;
     }
 
-    // Remove callback from this specific instance
-    callbacks.delete(this);
+    // Remove callback using the tracked unique key
+    callbacks.delete(callbackKey);
 
     // Remove from instance tracking
     this.instanceSubscriptions.delete(safeKey);
@@ -211,6 +221,7 @@ class PostgresSubService extends SubService<
     this.logger.debug(`postgres-unsubscribe`, {
       originalKey,
       safeKey,
+      callbackKey,
       remainingCallbacks: callbacks.size,
     });
   }
@@ -227,10 +238,10 @@ class PostgresSubService extends SubService<
       return;
     }
 
-    for (const safeKey of this.instanceSubscriptions) {
+    for (const [safeKey, callbackKey] of this.instanceSubscriptions) {
       const callbacks = clientSubscriptions.get(safeKey);
       if (callbacks) {
-        callbacks.delete(this);
+        callbacks.delete(callbackKey);
 
         // If no more callbacks exist for this channel, stop listening
         if (callbacks.size === 0) {
