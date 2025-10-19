@@ -47,21 +47,24 @@ export async function researchAgent(query: string): Promise<any> {
   }
   await agent.set<typeof initialState>(initialState);
 
-  // Launch perspective hooks in parallel
-  await MemFlow.workflow.execHook({
-    taskQueue: 'agents',
-    workflowName: 'optimisticPerspective',
-    args: [query],
-    signalId: 'optimistic-complete'
-  });
+  // Run independent research perspectives in parallel
+  await Promise.all([
+    MemFlow.workflow.execHook({
+      taskQueue: 'agents',
+      workflowName: 'optimisticPerspective',
+      args: [query],
+      signalId: 'optimistic-complete'
+    }),
 
-  await MemFlow.workflow.execHook({
-    taskQueue: 'agents',
-    workflowName: 'skepticalPerspective',
-    args: [query],
-    signalId: 'skeptical-complete'
-  });
+    MemFlow.workflow.execHook({
+      taskQueue: 'agents',
+      workflowName: 'skepticalPerspective',
+      args: [query],
+      signalId: 'skeptical-complete'
+    })
+  ]);
 
+  // Verify sources after research completes
   await MemFlow.workflow.execHook({
     taskQueue: 'agents',
     workflowName: 'verificationHook',
