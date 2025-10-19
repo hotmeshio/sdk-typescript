@@ -47,21 +47,26 @@ export async function researchAgent(query: string): Promise<any> {
   }
   await agent.set<typeof initialState>(initialState);
 
-  // Run independent research perspectives in parallel
-  await Promise.all([
-    MemFlow.workflow.execHook({
-      taskQueue: 'agents',
-      workflowName: 'optimisticPerspective',
-      args: [query],
-      signalId: 'optimistic-complete'
-    }),
-
-    MemFlow.workflow.execHook({
-      taskQueue: 'agents',
-      workflowName: 'skepticalPerspective',
-      args: [query],
-      signalId: 'skeptical-complete'
-    })
+  // Run independent research perspectives in parallel using batch execution
+  await MemFlow.workflow.execHookBatch([
+    {
+      key: 'optimistic',
+      options: {
+        taskQueue: 'agents',
+        workflowName: 'optimisticPerspective',
+        args: [query],
+        signalId: 'optimistic-complete'
+      }
+    },
+    {
+      key: 'skeptical',
+      options: {
+        taskQueue: 'agents',
+        workflowName: 'skepticalPerspective',
+        args: [query],
+        signalId: 'skeptical-complete'
+      }
+    }
   ]);
 
   // Verify sources after research completes
@@ -104,6 +109,7 @@ export async function optimisticPerspective(query: string): Promise<void> {
   });
 
   // Signal completion //memory is shared, so entity already updated
+  console.log('optimistic-complete', 'optimistic-complete');
   await MemFlow.workflow.signal('optimistic-complete', {});
 }
 
@@ -128,6 +134,7 @@ export async function skepticalPerspective(query: string): Promise<void> {
   });
 
   // Signal completion //memory is shared, so entity already updated
+  console.log('skeptical-complete', 'skeptical-complete');
   await MemFlow.workflow.signal('skeptical-complete', {});
 }
 

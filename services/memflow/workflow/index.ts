@@ -9,6 +9,7 @@ import { enrich } from './enrich';
 import { emit } from './emit';
 import { execChild, executeChild, startChild } from './execChild';
 import { execHook } from './execHook';
+import { execHookBatch } from './execHookBatch';
 import { proxyActivities } from './proxyActivities';
 import { search } from './searchMethods';
 import { random } from './random';
@@ -58,6 +59,7 @@ export class WorkflowService {
   static executeChild = executeChild;
   static startChild = startChild;
   static execHook = execHook;
+  static execHookBatch = execHookBatch;
   static proxyActivities = proxyActivities;
   static search = search;
   static entity = entity;
