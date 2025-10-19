@@ -109,7 +109,6 @@ export async function optimisticPerspective(query: string): Promise<void> {
   });
 
   // Signal completion //memory is shared, so entity already updated
-  console.log('optimistic-complete', 'optimistic-complete');
   await MemFlow.workflow.signal('optimistic-complete', {});
 }
 
@@ -134,7 +133,6 @@ export async function skepticalPerspective(query: string): Promise<void> {
   });
 
   // Signal completion //memory is shared, so entity already updated
-  console.log('skeptical-complete', 'skeptical-complete');
   await MemFlow.workflow.signal('skeptical-complete', {});
 }
 
