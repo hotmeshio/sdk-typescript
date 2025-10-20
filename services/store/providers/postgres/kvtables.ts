@@ -331,9 +331,34 @@ export const KVTables = (context: PostgresStoreService) => ({
                 field TEXT NOT NULL,
                 value TEXT,
                 type ${schemaName}.type_enum NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 PRIMARY KEY (job_id, field),
                 FOREIGN KEY (job_id) REFERENCES ${fullTableName} (id) ON DELETE CASCADE
               ) PARTITION BY HASH (job_id);
+            `);
+
+            // Create trigger function for updating updated_at only for mutable types
+            await client.query(`
+              CREATE OR REPLACE FUNCTION ${schemaName}.update_attributes_updated_at()
+              RETURNS TRIGGER AS $$
+              BEGIN
+                  IF NEW.type IN ('udata', 'jdata', 'hmark', 'jmark') AND 
+                     (OLD.value IS NULL OR NEW.value <> OLD.value) THEN
+                      NEW.updated_at = NOW();
+                  END IF;
+                  RETURN NEW;
+              END;
+              $$ LANGUAGE plpgsql;
+            `);
+
+            // Create trigger for updated_at updates
+            await client.query(`
+              DROP TRIGGER IF EXISTS trg_update_attributes_updated_at ON ${attributesTableName};
+              CREATE TRIGGER trg_update_attributes_updated_at
+                  BEFORE UPDATE ON ${attributesTableName}
+                  FOR EACH ROW
+                  EXECUTE FUNCTION ${schemaName}.update_attributes_updated_at();
             `);
 
             // Create partitions for attributes table

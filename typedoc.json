@@ -22,6 +22,7 @@
     "services/memflow/workflow/entityMethods.ts",
     "services/memflow/workflow/execChild.ts",
     "services/memflow/workflow/execHook.ts",
+    "services/memflow/workflow/execHookBatch.ts",
     "services/memflow/workflow/hook.ts",
     "services/memflow/workflow/index.ts",
     "services/memflow/workflow/interrupt.ts",
