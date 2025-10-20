@@ -1,289 +1,189 @@
 # HotMesh
 
-**Durable Memory + Coordinated Execution**
+**Integrate AI automation into your current stack — without breaking it**
 
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-HotMesh removes the repetitive glue of building durable agents, pipelines, and long‑running workflows. You focus on *what* to change; HotMesh handles *how*, safely and durably.
-
----
-
-## Why Choose HotMesh
-
-- **Zero Boilerplate** - Transactional Postgres without the setup hassle
-- **Built-in Durability** - Automatic crash recovery and replay protection
-- **Parallel by Default** - Run hooks concurrently without coordination
-- **SQL-First** - Query pipeline status and agent memory directly
-
----
-
-## Core Abstractions
-
-### 1. Entities
-
-Durable JSONB documents representing *process memory*. Each entity:
-
-* Has a stable identity (`workflowId` / logical key).
-* Evolves via atomic commands.
-* Is versioned implicitly by transactional history.
-* Can be partially indexed for targeted query performance.
-
-> **Design Note:** Treat entity shape as *contractual surface* + *freeform interior*. Index only the minimal surface required for lookups or dashboards.
-
-### 2. Hooks
-
-Re‑entrant, idempotent, interruptible units of work that *maintain* an entity. Hooks can:
-
-* Start, stop, or be re‑invoked without corrupting state.
-* Run concurrently (Postgres ensures isolation on write).
-* Emit signals to let coordinators or sibling hooks know a perspective / phase completed.
-
-### 3. Workflow Coordinators
-
-Thin entrypoints that:
-
-* Seed initial entity state.
-* Fan out perspective / phase hooks.
-* Optionally synthesize or finalize.
-* Return a snapshot (often the final entity state) — *the workflow result is just memory*.
-
-### 4. Commands (Entity Mutation Primitives)
-
-| Command     | Purpose                                   | Example                                          |
-| ----------- | ----------------------------------------- | ------------------------------------------------ |
-| `set`       | Replace full value (first write or reset) | `await e.set({ user: { id: 123, name: "John" } })` |
-| `merge`     | Deep JSON merge                           | `await e.merge({ user: { email: "john@example.com" } })` |
-| `append`    | Append to an array field                  | `await e.append('items', { id: 1, name: "New Item" })` |
-| `prepend`   | Add to start of array field              | `await e.prepend('items', { id: 0, name: "First Item" })` |
-| `remove`    | Remove item from array by index          | `await e.remove('items', 0)` |
-| `increment` | Numeric counters / progress               | `await e.increment('counter', 5)` |
-| `toggle`    | Toggle boolean value                      | `await e.toggle('settings.enabled')` |
-| `setIfNotExists` | Set value only if path doesn't exist | `await e.setIfNotExists('user.id', 123)` |
-| `delete`    | Remove field at specified path           | `await e.delete('user.email')` |
-| `get`       | Read value at path (or full entity)      | `await e.get('user.email')` |
-| `signal`    | Mark hook milestone / unlock waiters      | `await MemFlow.workflow.signal('phase-x', data)` |
-
----
-
-## Table of Contents
-
-1. [Quick Start](#quick-start)
-2. [Memory Architecture](#memory-architecture)
-3. [Durable AI Agents](#durable-ai-agents)
-4. [Stateful Pipelines](#stateful-pipelines)
-5. [Indexing Strategy](#indexing-strategy)
-6. [Operational Notes](#operational-notes)
-7. [Documentation & Links](#documentation--links)
-
----
-
-## Quick Start
-
-### Install
+HotMesh modernizes existing business systems by introducing a durable workflow layer that connects AI, automation, and human-in-the-loop steps — **without replacing your current stack**.
+Each process runs with persistent memory in Postgres, surviving retries, crashes, and human delays.
 
 ```bash
 npm install @hotmeshio/hotmesh
 ```
 
-### Minimal Setup
-```ts
-import { MemFlow } from '@hotmeshio/hotmesh';
-import { Client as Postgres } from 'pg';
+---
 
-async function main() {
-  // Auto-provisions required tables/index scaffolding on first run
-  const mf = await MemFlow.init({
-    appId: 'my-app',
-    engine: {
-      connection: {
-        class: Postgres,
-        options: { connectionString: process.env.DATABASE_URL }
-      }
-    }
-  });
+## What It Solves
 
-  // Start a durable research agent (entity-backed workflow)
-  const handle = await mf.workflow.start({
-    entity: 'research-agent',
-    workflowName: 'researchAgent',
-    workflowId: 'agent-session-jane-001',
-    args: ['Long-term impacts of renewable energy subsidies'],
-    taskQueue: 'agents'
-  });
+Modernization often stalls where systems meet people and AI.
+HotMesh builds a **durable execution bridge** across those seams — linking your database, APIs, RPA, and AI agents into one recoverable process.
 
-  console.log('Final Memory Snapshot:', await handle.result());
-}
-
-main().catch(console.error);
-```
-
-### Value Checklist (What You Did *Not* Have To Do)
-- Create tables / migrations
-- Define per-agent caches
-- Implement optimistic locking
-- Build a queue fan‑out mechanism
-- Hand-roll replay protection
+* **AI that can fail safely** — retries, resumable state, and confidence tracking
+* **Human steps that don’t block** — pause for days, resume instantly
+* **Legacy systems that stay connected** — SQL and RPA coexist seamlessly
+* **Full visibility** — query workflows and outcomes directly in SQL
 
 ---
 
-## Memory Architecture
-Each workflow = **1 durable entity**. Hooks are stateless functions *shaped by* that entity's evolving JSON. You can inspect or modify it at any time using ordinary SQL or the provided API.
+## Core Model
 
-### Programmatic Indexing
+### Entity — the Business Process Record
+
+Every workflow writes to a durable JSON document in Postgres called an **Entity**.
+It becomes the shared memory between APIs, RPA jobs, LLM agents, and human operators.
+
 ```ts
-// Create index for premium research agents
-await MemFlow.Entity.createIndex('research-agent', 'isPremium', hotMeshClient);
+const e = await MemFlow.workflow.entity();
 
-// Find premium agents needing verification
-const agents = await MemFlow.Entity.find('research-agent', {
-  isPremium: true,
-  needsVerification: true
-}, hotMeshClient);
+// initialize from a source event
+await e.set({
+  caseId: "A42",
+  stage: "verification",
+  retries: 0,
+  notes: []
+});
+
+// AI step adds structured output
+await e.merge({
+  aiSummary: { result: "Verified coverage", confidence: 0.93 },
+  stage: "approval",
+});
+
+// human operator review
+await e.append("notes", { reviewer: "ops1", comment: "ok to proceed" });
+
+// maintain counters
+await e.increment("retries", 1);
+
+// retrieve current process state
+const data = await e.get();
 ```
 
-### Direct SQL Access
+**Minimal surface contract**
+
+| Command       | Purpose                            |
+| ------------- | ---------------------------------- |
+| `set()`       | Initialize workflow state          |
+| `merge()`     | Update any JSON path               |
+| `append()`    | Add entries to lists (logs, notes) |
+| `increment()` | Maintain counters or metrics       |
+| `get()`       | Retrieve current state             |
+
+Entities are stored in plain SQL tables, directly queryable:
+
 ```sql
--- Same index via SQL (more control over index type/conditions)
-CREATE INDEX idx_research_agents_premium ON my_app.jobs (id)
-WHERE entity = 'research-agent' AND (context->>'isPremium')::boolean = true;
-
--- Ad hoc query example
-SELECT id, context->>'status' as status, context->>'confidence' as confidence
+SELECT id, context->>'stage', context->'aiSummary'->>'result'
 FROM my_app.jobs
-WHERE entity = 'research-agent'
-  AND (context->>'isPremium')::boolean = true
-  AND (context->>'confidence')::numeric > 0.8;
+WHERE entity = 'claims-review'
+  AND context->>'stage' != 'complete';
 ```
-
-**Guidelines:**
-1. *Model intent, not mechanics.* Keep ephemeral calculation artifacts minimal; store derived values only if reused.
-2. *Index sparingly.* Each index is a write amplification cost. Start with 1–2 selective partial indexes.
-3. *Keep arrays append‑only where possible.* Supports audit and replay semantics cheaply.
-4. *Choose your tool:* Use Entity methods for standard queries, raw SQL for complex analytics or custom indexes.
 
 ---
 
-## Durable AI Agents
-Agents become simpler: the *agent* is the memory record; hooks supply perspectives, verification, enrichment, or lifecycle progression.
+### Hook — Parallel Work Units
 
-### Coordinator (Research Agent)
+Hooks are stateless functions that operate on the shared Entity.
+Each hook executes independently (API, RPA, or AI), retrying automatically until success.
+
 ```ts
-export async function researchAgent(query: string) {
-  const entity = await MemFlow.workflow.entity();
-
-  const initial = {
-    query,
-    findings: [],
-    perspectives: {},
-    confidence: 0,
-    verification: {},
-    status: 'researching',
-    startTime: new Date().toISOString()
-  };
-  await entity.set<typeof initial>(initial);
-
-  // Fan-out perspectives
-  await MemFlow.workflow.execHook({ taskQueue: 'agents', workflowName: 'optimisticPerspective', args: [query], signalId: 'optimistic-complete' });
-  await MemFlow.workflow.execHook({ taskQueue: 'agents', workflowName: 'skepticalPerspective', args: [query], signalId: 'skeptical-complete' });
-  await MemFlow.workflow.execHook({ taskQueue: 'agents', workflowName: 'verificationHook', args: [query], signalId: 'verification-complete' });
-  await MemFlow.workflow.execHook({ taskQueue: 'agents', workflowName: 'synthesizePerspectives', args: [], signalId: 'synthesis-complete' });
-
-  return await entity.get();
-}
+await MemFlow.workflow.execHook({
+  workflowName: "verifyCoverage",
+  args: ["A42"]
+});
 ```
 
-### Synthesis Hook
-```ts
-export async function synthesizePerspectives({ signal }: { signal: string }) {
-  const e = await MemFlow.workflow.entity();
-  const ctx = await e.get();
+To run independent work in parallel, use a **batch execution** pattern:
 
-  const synthesized = await analyzePerspectives(ctx.perspectives);
-  await e.merge({
-    perspectives: {
-      synthesis: {
-        finalAssessment: synthesized,
-        confidence: calculateConfidence(ctx.perspectives)
+```ts
+// Run independent research perspectives in parallel using batch execution
+await MemFlow.workflow.execHookBatch([
+  {
+    key: 'optimistic',
+    options: {
+      taskQueue: 'agents',
+      workflowName: 'optimisticPerspective',
+      args: [query],
+      signalId: 'optimistic-complete'
+    }
+  },
+  {
+    key: 'skeptical',
+    options: {
+      taskQueue: 'agents',
+      workflowName: 'skepticalPerspective',
+      args: [query],
+      signalId: 'skeptical-complete'
+    }
+  }
+]);
+```
+
+Each hook runs in its own recoverable context, allowing AI, API, and RPA agents to operate independently while writing to the same durable Entity.
+
+---
+
+## Example — AI-Assisted Claims Review
+
+```ts
+export async function claimsWorkflow(caseId: string) {
+  const e = await MemFlow.workflow.entity();
+  await e.set({ caseId, stage: "intake", approved: false });
+
+  // Run verification and summarization in parallel
+  await MemFlow.workflow.execHookBatch([
+    {
+      key: 'verifyCoverage',
+      options: {
+        taskQueue: 'agents',
+        workflowName: 'verifyCoverage',
+        args: [caseId],
+        signalId: 'verify-complete'
       }
     },
-    status: 'completed'
-  });
-  await MemFlow.workflow.signal(signal, {});
+    {
+      key: 'generateSummary',
+      options: {
+        taskQueue: 'agents',
+        workflowName: 'generateSummary',
+        args: [caseId],
+        signalId: 'summary-complete'
+      }
+    }
+  ]);
+
+  // Wait for human sign-off
+  const approval = await MemFlow.workflow.waitFor("human-approval");
+  await e.merge({ approved: approval === true, stage: "complete" });
+
+  return await e.get();
 }
 ```
 
-> **Pattern:** Fan-out hooks that write *adjacent* subtrees (e.g., `perspectives.optimistic`, `perspectives.skeptical`). A final hook merges a compact synthesis object. Avoid cross-hook mutation of the same nested branch.
+This bridges:
+
+* an existing insurance or EHR system (status + audit trail)
+* LLM agents for data validation and summarization
+* a human reviewer for final sign-off
+
+—all within one recoverable workflow record.
 
 ---
 
-## Stateful Pipelines
-Pipelines are identical in structure to agents: a coordinator seeds memory; phase hooks advance state; the entity is the audit trail.
+## Why It Fits Integration Work
 
-### Document Processing Pipeline (Coordinator)
-```ts
-export async function documentProcessingPipeline() {
-  const pipeline = await MemFlow.workflow.entity();
+HotMesh is purpose-built for **incremental modernization**.
 
-  const initial = {
-    documentId: `doc-${Date.now()}`,
-    status: 'started',
-    startTime: new Date().toISOString(),
-    imageRefs: [],
-    extractedInfo: [],
-    validationResults: [],
-    finalResult: null,
-    processingSteps: [],
-    errors: [],
-    pageSignals: {}
-  };
-  await pipeline.set<typeof initial>(initial);
-
-  await pipeline.merge({ status: 'loading-images' });
-  await pipeline.append('processingSteps', 'image-load-started');
-  const imageRefs = await activities.loadImagePages();
-  if (!imageRefs?.length) throw new Error('No image references found');
-  await pipeline.merge({ imageRefs });
-  await pipeline.append('processingSteps', 'image-load-completed');
-
-  // Page hooks
-  for (const [i, ref] of imageRefs.entries()) {
-    const page = i + 1;
-    await MemFlow.workflow.execHook({
-      taskQueue: 'pipeline',
-      workflowName: 'pageProcessingHook',
-      args: [ref, page, initial.documentId],
-      signalId: `page-${page}-complete`
-    });
-  }
-
-  // Validation
-  await MemFlow.workflow.execHook({ taskQueue: 'pipeline', workflowName: 'validationHook', args: [initial.documentId], signalId: 'validation-complete' });
-  // Approval
-  await MemFlow.workflow.execHook({ taskQueue: 'pipeline', workflowName: 'approvalHook', args: [initial.documentId], signalId: 'approval-complete' });
-  // Notification
-  await MemFlow.workflow.execHook({ taskQueue: 'pipeline', workflowName: 'notificationHook', args: [initial.documentId], signalId: 'processing-complete' });
-
-  await pipeline.merge({ status: 'completed', completedAt: new Date().toISOString() });
-  await pipeline.append('processingSteps', 'pipeline-completed');
-  return await pipeline.get();
-}
-```
-
-**Operational Characteristics:**
-- *Replay Friendly*: Each hook can be retried; pipeline memory records invariant progress markers (`processingSteps`).
-- *Parallelizable*: Pages fan out naturally without manual queue wiring.
-- *Auditable*: Entire lifecycle captured in a single evolving JSON record.
-
----
-
-## Documentation & Links
-* **SDK Reference** – https://hotmeshio.github.io/sdk-typescript
-* **Agent Example Tests** – https://github.com/hotmeshio/sdk-typescript/tree/main/tests/memflow/agent
-* **Pipeline Example Tests** – https://github.com/hotmeshio/sdk-typescript/tree/main/tests/memflow/pipeline
-* **Sample Projects** – https://github.com/hotmeshio/samples-typescript
+| Need                          | What HotMesh Provides                    |
+| ----------------------------- | ---------------------------------------- |
+| Tie AI into legacy apps       | Durable SQL bridge with full visibility  |
+| Keep human review steps       | Wait-for-signal workflows                |
+| Handle unstable APIs          | Built-in retries and exponential backoff |
+| Trace process across systems  | Unified JSON entity per workflow         |
+| Store long-running AI results | Durable state for agents and automations |
 
 ---
 
 ## License
-Apache 2.0 with commercial restrictions* – see `LICENSE`.
->*NOTE: It's open source with one commercial exception: Build, sell, and share solutions made with HotMesh. But don't white-label the orchestration core and repackage it as your own workflow-as-a-service.
+
+Apache 2.0 — free to build, integrate, and deploy.
+Do not resell the core engine as a hosted service.
