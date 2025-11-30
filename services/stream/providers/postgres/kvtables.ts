@@ -1,3 +1,8 @@
+import {
+  HMSH_DEPLOYMENT_DELAY,
+  HMSH_DEPLOYMENT_PAUSE,
+} from '../../../../modules/enums';
+import { sleepFor } from '../../../../modules/utils';
 import { ILogger } from '../../../logger';
 
 export async function deploySchema(
@@ -5,13 +10,24 @@ export async function deploySchema(
   appId: string,
   logger: ILogger,
 ): Promise<void> {
-  const client =
-    'connect' in streamClient && 'release' in streamClient
-      ? await streamClient.connect()
-      : streamClient;
-  const releaseClient = 'release' in streamClient;
+  const isPool =
+    streamClient?.totalCount !== undefined &&
+    streamClient?.idleCount !== undefined;
+  const client = isPool ? await streamClient.connect() : streamClient;
+  const releaseClient = isPool;
 
   try {
+    const schemaName = appId.replace(/[^a-zA-Z0-9_]/g, '_');
+    const tableName = `${schemaName}.streams`;
+
+    // First, check if tables already exist (no lock needed)
+    const tablesExist = await checkIfTablesExist(client, schemaName, tableName);
+    if (tablesExist) {
+      // Tables already exist, no need to acquire lock or create tables
+      return;
+    }
+
+    // Tables don't exist, need to acquire lock and create them
     const lockId = getAdvisoryLockId(appId);
     const lockResult = await client.query(
       'SELECT pg_try_advisory_lock($1) AS locked',
@@ -19,24 +35,50 @@ export async function deploySchema(
     );
 
     if (lockResult.rows[0].locked) {
-      await client.query('BEGIN');
-      const schemaName = appId.replace(/[^a-zA-Z0-9_]/g, '_');
-      const tableName = `${schemaName}.streams`;
+      try {
+        await client.query('BEGIN');
 
-      await createTables(client, schemaName, tableName);
-      await createNotificationTriggers(client, schemaName, tableName);
+        // Double-check tables don't exist (race condition safety)
+        const tablesStillMissing = !(await checkIfTablesExist(
+          client,
+          schemaName,
+          tableName,
+        ));
+        if (tablesStillMissing) {
+          await createTables(client, schemaName, tableName);
+          await createNotificationTriggers(client, schemaName, tableName);
+        }
 
-      await client.query('COMMIT');
-      await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
+        await client.query('COMMIT');
+      } finally {
+        await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
+      }
     } else {
-      throw new Error('Table deployment in progress by another process.');
+      // Release the client before waiting (if it's a pool connection)
+      if (releaseClient && client.release) {
+        await client.release();
+      }
+
+      // Wait for the deploy process to complete
+      await waitForTablesCreation(
+        streamClient,
+        lockId,
+        schemaName,
+        tableName,
+        logger,
+      );
+      return; // Already released client, don't release again in finally
     }
   } catch (error) {
     logger.error('Error deploying schema', { error });
     throw error;
   } finally {
-    if (releaseClient) {
-      await client.release();
+    if (releaseClient && client.release) {
+      try {
+        await client.release();
+      } catch {
+        // Client may have been released already
+      }
     }
   }
 }
@@ -52,6 +94,74 @@ function hashStringToInt(str: string): number {
     hash |= 0; // Convert to 32-bit integer
   }
   return Math.abs(hash);
+}
+
+async function checkIfTablesExist(
+  client: any,
+  schemaName: string,
+  tableName: string,
+): Promise<boolean> {
+  const result = await client.query(`SELECT to_regclass('${tableName}') AS t`);
+  return result.rows[0].t !== null;
+}
+
+async function waitForTablesCreation(
+  streamClient: any,
+  lockId: number,
+  schemaName: string,
+  tableName: string,
+  logger: ILogger,
+): Promise<void> {
+  let retries = 0;
+  const maxRetries = Math.round(HMSH_DEPLOYMENT_DELAY / HMSH_DEPLOYMENT_PAUSE);
+
+  while (retries < maxRetries) {
+    await sleepFor(HMSH_DEPLOYMENT_PAUSE);
+
+    const isPool =
+      streamClient?.totalCount !== undefined &&
+      streamClient?.idleCount !== undefined;
+    const client = isPool ? await streamClient.connect() : streamClient;
+
+    try {
+      // Check if tables exist directly (most efficient check)
+      const tablesExist = await checkIfTablesExist(
+        client,
+        schemaName,
+        tableName,
+      );
+      if (tablesExist) {
+        // Tables now exist, deployment is complete
+        return;
+      }
+
+      // Fallback: check if the lock has been released (indicates completion)
+      const lockCheck = await client.query(
+        "SELECT NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint) AS unlocked",
+        [lockId],
+      );
+      if (lockCheck.rows[0].unlocked) {
+        // Lock has been released, tables should exist now
+        const tablesExistAfterLock = await checkIfTablesExist(
+          client,
+          schemaName,
+          tableName,
+        );
+        if (tablesExistAfterLock) {
+          return;
+        }
+      }
+    } finally {
+      if (isPool && client.release) {
+        await client.release();
+      }
+    }
+
+    retries++;
+  }
+
+  logger.error('stream-table-create-timeout', { schemaName, tableName });
+  throw new Error('Timeout waiting for stream table creation');
 }
 
 async function createTables(

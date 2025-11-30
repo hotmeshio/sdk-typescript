@@ -803,9 +803,17 @@ class EngineService {
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
     const subscriptionCallback: SubscriptionCallback = async (
       topic: string,
-      message: { topic: string; job: JobOutput },
+      message: { topic: string; job: JobOutput; _ref?: boolean },
     ) => {
-      callback(message.topic, message.job);
+      let jobOutput = message.job;
+      // If _ref is true, payload was too large - fetch full job data via getState
+      if (message._ref && message.job?.metadata) {
+        jobOutput = await this.getState(
+          message.job.metadata.tpc,
+          message.job.metadata.jid,
+        );
+      }
+      callback(message.topic, jobOutput);
     };
     return await this.subscribe.subscribe(
       KeyType.QUORUM,
@@ -826,9 +834,17 @@ class EngineService {
   async psub(wild: string, callback: JobMessageCallback): Promise<void> {
     const subscriptionCallback: SubscriptionCallback = async (
       topic: string,
-      message: { topic: string; job: JobOutput },
+      message: { topic: string; job: JobOutput; _ref?: boolean },
     ) => {
-      callback(message.topic, message.job);
+      let jobOutput = message.job;
+      // If _ref is true, payload was too large - fetch full job data via getState
+      if (message._ref && message.job?.metadata) {
+        jobOutput = await this.getState(
+          message.job.metadata.tpc,
+          message.job.metadata.jid,
+        );
+      }
+      callback(message.topic, jobOutput);
     };
     return await this.subscribe.psubscribe(
       KeyType.QUORUM,

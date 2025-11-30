@@ -55,6 +55,7 @@ import { PostgresClientType } from '../../../../types';
 
 import { KVSQL } from './kvsql';
 import { KVTables } from './kvtables';
+import { getTimeNotifySql } from './time-notify';
 
 class PostgresStoreService extends StoreService<
   ProviderClient,
@@ -1348,14 +1349,8 @@ class PostgresStoreService extends StoreService<
     const client = this.pgClient;
 
     try {
-      // Read the SQL template and replace schema placeholder
-      const fs = await import('fs');
-      const path = await import('path');
-      const sqlTemplate = fs.readFileSync(
-        path.join(__dirname, 'time-notify.sql'),
-        'utf8',
-      );
-      const sql = sqlTemplate.replace(/{schema}/g, schemaName);
+      // Get the SQL with schema placeholder replaced
+      const sql = getTimeNotifySql(schemaName);
 
       // Execute the entire SQL as one statement (functions contain $$ blocks with semicolons)
       await client.query(sql);

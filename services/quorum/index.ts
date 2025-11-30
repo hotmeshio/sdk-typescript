@@ -156,7 +156,26 @@ class QuorumService {
       } else if (message.type === 'work') {
         self.engine.processWebHooks();
       } else if (message.type === 'job') {
-        self.engine.routeToSubscribers(message.topic, message.job);
+        let jobOutput = message.job;
+        // If _ref is true, payload was too large - fetch full job data via getState
+        if (message._ref && message.job?.metadata) {
+          try {
+            jobOutput = await self.engine.getState(
+              message.job.metadata.tpc,
+              message.job.metadata.jid,
+            );
+            self.logger.debug('quorum-job-ref-resolved', {
+              jid: message.job.metadata.jid,
+            });
+          } catch (err) {
+            self.logger.error('quorum-job-ref-error', {
+              jid: message.job.metadata.jid,
+              error: err,
+            });
+            return; // Can't route without job data
+          }
+        }
+        self.engine.routeToSubscribers(message.topic, jobOutput);
       } else if (message.type === 'cron') {
         self.engine.processTimeHooks();
       } else if (message.type === 'rollcall') {

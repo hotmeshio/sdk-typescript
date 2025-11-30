@@ -161,3 +161,11 @@ export const HMSH_GUID_SIZE = Math.min(
  * Default task queue name used when no task queue is specified
  */
 export const DEFAULT_TASK_QUEUE = 'default';
+
+/**
+ * PostgreSQL NOTIFY payload limit. If a job message exceeds this size,
+ * a reference message is sent instead and the subscriber fetches via getState.
+ * PostgreSQL hard limit is 8000 bytes; default 7500 provides safety margin.
+ */
+export const HMSH_NOTIFY_PAYLOAD_LIMIT =
+  parseInt(process.env.HMSH_NOTIFY_PAYLOAD_LIMIT, 10) || 7500;
