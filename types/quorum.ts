@@ -108,6 +108,8 @@ export interface JobMessage extends QuorumMessageBase {
   entity?: string;
   topic: string; //this comes from the 'publishes' field in the YAML
   job: JobOutput;
+  /** if true, job.data is null due to payload size - subscriber should fetch via getState */
+  _ref?: boolean;
 }
 
 export interface ThrottleMessage extends QuorumMessageBase {

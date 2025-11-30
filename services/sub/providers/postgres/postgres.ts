@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 
+import { HMSH_NOTIFY_PAYLOAD_LIMIT } from '../../../../modules/enums';
 import {
   KeyService,
   KeyStoreParams,
@@ -274,8 +275,39 @@ class PostgresSubService extends SubService<
       appId,
       engineId: topic,
     });
+
+    let messageToPublish = message;
+    let payload = JSON.stringify(message);
+
+    // PostgreSQL NOTIFY has a payload limit. If job message exceeds limit,
+    // send a reference message instead - subscriber will fetch via getState.
+    if (
+      payload.length > HMSH_NOTIFY_PAYLOAD_LIMIT &&
+      message.type === 'job' &&
+      message.job?.metadata
+    ) {
+      const { jid, tpc, app, js } = message.job.metadata;
+      messageToPublish = {
+        type: 'job',
+        topic: message.topic,
+        job: {
+          metadata: { jid, tpc, app, js },
+          data: null,
+        },
+        _ref: true,
+      };
+      payload = JSON.stringify(messageToPublish);
+      this.logger.debug('postgres-publish-ref', {
+        originalKey,
+        safeKey,
+        originalSize: JSON.stringify(message).length,
+        refSize: payload.length,
+        jid,
+      });
+    }
+
     // Publish the message using the safe topic
-    const payload = JSON.stringify(message).replace(/'/g, "''");
+    payload = payload.replace(/'/g, "''");
     await this.storeClient.query(`NOTIFY "${safeKey}", '${payload}'`);
     this.logger.debug(`postgres-publish`, { originalKey, safeKey });
     return true;
