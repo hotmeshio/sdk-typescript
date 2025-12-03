@@ -594,13 +594,10 @@ abstract class RedisStoreBase<
     } else {
       delete hashData[':'];
     }
-    // Only call hset if there are fields to set
-    if (Object.keys(hashData).length > 0) {
-      await (transaction || this.storeClient)[this.commands.hset](
-        hashKey,
-        hashData,
-      );
-    }
+    await (transaction || this.storeClient)[this.commands.hset](
+      hashKey,
+      hashData,
+    );
     return jobId;
   }
 
