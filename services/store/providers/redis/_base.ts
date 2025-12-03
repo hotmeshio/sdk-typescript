@@ -588,7 +588,7 @@ abstract class RedisStoreBase<
     const symVals = await this.getSymbolValues();
     this.serializer.resetSymbols(symKeys, symVals, dIds);
 
-    const hashData = await this.serializer.packageAsync(state, symbolNames);
+    const hashData = this.serializer.package(state, symbolNames);
     if (status !== null) {
       hashData[':'] = status.toString();
     } else {
@@ -658,7 +658,7 @@ abstract class RedisStoreBase<
     if (atLeast1) {
       const symVals = await this.getSymbolValues();
       this.serializer.resetSymbols(symKeys, symVals, dIds);
-      const state = await this.serializer.unpackageAsync(jobData, symbolNames);
+      const state = this.serializer.unpackage(jobData, symbolNames);
       let status = 0;
       if (state[':']) {
         status = Number(state[':']);
@@ -705,7 +705,7 @@ abstract class RedisStoreBase<
     this.serializer.resetSymbols(symKeys, symVals, dIds);
 
     const payload = { [collationKey]: amount.toString() };
-    const hashData = await this.serializer.packageAsync(payload, symbolNames);
+    const hashData = this.serializer.package(payload, symbolNames);
     const targetId = Object.keys(hashData)[0];
     return await (transaction || this.storeClient)[this.commands.hincrbyfloat](
       jobKey,
@@ -1207,7 +1207,7 @@ abstract class RedisStoreBase<
         });
 
         const payload = { [errKey]: amount.toString() };
-        const hashData = await this.serializer.packageAsync(payload, symbolNames);
+        const hashData = this.serializer.package(payload, symbolNames);
         const errSymbol = Object.keys(hashData)[0];
         await this.storeClient[this.commands.hset](jobKey, errSymbol, err);
       }
