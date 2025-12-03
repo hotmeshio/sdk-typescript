@@ -16,7 +16,7 @@ export interface ProviderOptions {
   [key: string]: any;
 }
 
-export type Providers = 'nats' | 'postgres';
+export type Providers = 'nats' | 'postgres' | 'redis' | 'ioredis';
 
 /**
  * A provider transaction is a set of operations that are executed
