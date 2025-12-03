@@ -13,6 +13,10 @@ export const HMSH_TELEMETRY =
  * Default cleanup time for signal in the db when its associated job is completed.
  */
 export const HMSH_SIGNAL_EXPIRE = 3_600; //seconds
+/**
+ * Determines if the system is running in cluster mode (for Redis cluster support).
+ */
+export const HMSH_IS_CLUSTER = process.env.HMSH_IS_CLUSTER === 'true';
 
 // HOTMESH STATUS CODES
 export const HMSH_CODE_SUCCESS = 200;
@@ -169,3 +173,12 @@ export const DEFAULT_TASK_QUEUE = 'default';
  */
 export const HMSH_NOTIFY_PAYLOAD_LIMIT =
   parseInt(process.env.HMSH_NOTIFY_PAYLOAD_LIMIT, 10) || 7500;
+
+/**
+ * Serializer compression threshold. When a stringified object exceeds this size
+ * in bytes, it will be gzipped and base64 encoded (with /b prefix) to reduce
+ * Redis hash storage size. Default 100 bytes - small enough to catch most
+ * workflow state but compression only applies if it actually reduces size.
+ */
+export const HMSH_SERIALIZER_COMPRESSION_THRESHOLD =
+  parseInt(process.env.HMSH_SERIALIZER_COMPRESSION_THRESHOLD, 10) || 100_000_000;

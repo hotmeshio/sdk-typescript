@@ -3,8 +3,13 @@ import { ILogger } from '../logger';
 import { NatsClientType } from '../../types/nats';
 import { PostgresClientType } from '../../types/postgres';
 import { ProviderClient } from '../../types/provider';
+import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
+
+import { RedisSubService } from './providers/redis/redis';
 import { PostgresSubService } from './providers/postgres/postgres';
 import { NatsSubService } from './providers/nats/nats';
+import { IORedisSubService } from './providers/redis/ioredis';
+
 import { SubService } from './index';
 
 class SubServiceFactory {
@@ -24,10 +29,20 @@ class SubServiceFactory {
         providerSubClient as NatsClientType & ProviderClient,
         providerPubClient as NatsClientType & ProviderClient,
       );
+    } else if (providerType === 'redis') {
+      service = new RedisSubService(
+        providerSubClient as RedisRedisClientType,
+        providerPubClient as RedisRedisClientType,
+      );
     } else if (providerType === 'postgres') {
       service = new PostgresSubService(
         providerSubClient as PostgresClientType & ProviderClient,
         providerPubClient as PostgresClientType & ProviderClient,
+      );
+    } else {
+      service = new IORedisSubService(
+        providerSubClient as IORedisClientType,
+        providerPubClient as IORedisClientType,
       );
     }
     await service.init(namespace, appId, engineId, logger);

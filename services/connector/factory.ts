@@ -1,22 +1,32 @@
 import { guid, identifyProvider, polyfill } from '../../modules/utils';
 import { HotMeshEngine, HotMeshWorker } from '../../types/hotmesh';
 import { ProviderConfig, ProviderNativeClient } from '../../types/provider';
+import {
+  RedisRedisClassType,
+  RedisRedisClientOptions,
+  IORedisClassType,
+  IORedisClientOptions,
+} from '../../types/redis';
 import { NatsClassType, NatsClientOptions } from '../../types/nats';
 import { PostgresClassType, PostgresClientOptions } from '../../types/postgres';
 
+import { RedisConnection as IORedisConnection } from './providers/ioredis';
 import { NatsConnection } from './providers/nats';
 import { PostgresConnection } from './providers/postgres';
+import { RedisConnection } from './providers/redis';
 
 import { AbstractConnection } from './index';
 
 export class ConnectorService {
   static async disconnectAll(): Promise<void> {
+    await RedisConnection.disconnectAll();
+    await IORedisConnection.disconnectAll();
     await PostgresConnection.disconnectAll();
     await NatsConnection.disconnectAll();
   }
 
   /**
-   * Connect to a provider (postgres, nats) and return the native
+   * Connect to a provider (redis, nats, postgres) and return the native
    * client. Connections are handled by the engine and worker routers at
    * initialization, but the factory method provided here is useful
    * for testing provider configurations.
@@ -116,12 +126,36 @@ export class ConnectorService {
     const options = ProviderConfig.options;
     const providerName =
       ProviderConfig.provider || identifyProvider(providerClass); //e.g. 'postgres.poolclient'
+    
+    if (!providerName) {
+      throw new Error(
+        `Unable to identify provider type. Please explicitly set the 'provider' field in your connection config. ` +
+        `Received class: ${providerClass?.constructor?.name || 'unknown'}`
+      );
+    }
+    
     const providerType = providerName.split('.')[0]; //e.g. 'postgres'
 
     let clientInstance: AbstractConnection<any, any>;
     const id = guid();
 
     switch (providerType) {
+      case 'redis':
+        clientInstance = await RedisConnection.connect(
+          id,
+          providerClass as RedisRedisClassType,
+          options as RedisRedisClientOptions,
+          { provider: providerName },
+        );
+        break;
+      case 'ioredis':
+        clientInstance = await IORedisConnection.connect(
+          id,
+          providerClass as IORedisClassType,
+          options as IORedisClientOptions,
+          { provider: providerName },
+        );
+        break;
       case 'nats':
         clientInstance = await NatsConnection.connect(
           id,
