@@ -252,6 +252,7 @@ export {
 } from './stats';
 export {
   ReclaimedMessageType,
+  RetryPolicy,
   RouterConfig,
   StreamCode,
   StreamConfig,
@@ -266,6 +267,7 @@ export {
   StreamRole,
   StreamStats,
   StreamStatus,
+  PublishMessageConfig,
 } from './stream';
 export {
   context,

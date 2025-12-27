@@ -81,6 +81,34 @@ export class ConsumptionManager<
     const code = streamData?.code || '200';
     this.counts[code] = (this.counts[code] || 0) + 1;
 
+    // Extract retry policy from child workflow (590) and activity (591) message data
+    // ONLY if values differ from YAML defaults (10, 3/5, 120)
+    // If they're defaults, let old retry mechanism (policies.retry) handle it
+    const codeNum = typeof code === 'number' ? code : parseInt(code, 10);
+    if ((codeNum === 590 || codeNum === 591) && streamData.data) {
+      const data = streamData.data as any;
+      const backoff = data.backoffCoefficient;
+      const attempts = data.maximumAttempts;
+      const maxInterval = typeof data.maximumInterval === 'string' 
+        ? parseInt(data.maximumInterval) 
+        : data.maximumInterval;
+      
+      // Only extract if values are NOT the YAML defaults
+      // YAML defaults: backoffCoefficient=10, maximumAttempts=3 or 5, maximumInterval=120
+      const hasNonDefaultBackoff = backoff != null && backoff !== 10;
+      const hasNonDefaultAttempts = attempts != null && attempts !== 3 && attempts !== 5;
+      const hasNonDefaultInterval = maxInterval != null && maxInterval !== 120;
+      
+      if (hasNonDefaultBackoff || hasNonDefaultAttempts || hasNonDefaultInterval) {
+        // Has custom values from config - add _streamRetryConfig
+        (streamData as any)._streamRetryConfig = {
+          max_retry_attempts: attempts,
+          backoff_coefficient: backoff,
+          maximum_interval_seconds: maxInterval,
+        };
+      }
+    }
+
     const stream = this.stream.mintKey(KeyType.STREAMS, { topic });
     const responses = await this.stream.publishMessages(
       stream,
@@ -583,10 +611,20 @@ export class ConsumptionManager<
   ): Promise<string> {
     if (output && typeof output === 'object') {
       if (output.status === 'error') {
+        // Extract retry policy from stream message config
+        const retryPolicy = (input as any)._streamRetryConfig 
+          ? {
+              maximumAttempts: (input as any)._streamRetryConfig.max_retry_attempts,
+              backoffCoefficient: (input as any)._streamRetryConfig.backoff_coefficient,
+              maximumInterval: (input as any)._streamRetryConfig.maximum_interval_seconds,
+            }
+          : undefined;
+        
         return await this.errorHandler.handleRetry(
           input,
           output,
           this.publishMessage.bind(this),
+          retryPolicy,
         );
       } else if (typeof output.metadata !== 'object') {
         output.metadata = { ...input.metadata, guid: guid() };

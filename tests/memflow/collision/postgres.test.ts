@@ -108,7 +108,7 @@ describe('MEMFLOW | collision | Postgres', () => {
         } catch (error) {
           expect(error.message).toEqual(`Duplicate job: ${CONFLICTING_NAME}`);
         }
-      }, 95_000);
+      }, 25_000);
     });
   });
 
@@ -133,6 +133,6 @@ describe('MEMFLOW | collision | Postgres', () => {
       expect(handle.workflowId).toBe(`fixable-${CONFLICTING_NAME}`);
       const outcome = await handle.result<string>({ throwOnError: false });
       expect(outcome).toEqual('Hello, FIXED!');
-    }, 95_000);
+    }, 25_000);
   });
 });
