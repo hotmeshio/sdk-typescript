@@ -47,6 +47,8 @@ export {
   WorkflowSearchSchema,
   WorkflowDataType,
   WorkflowOptions,
+  WorkflowInterceptor,
+  InterceptorRegistry,
 } from './memflow';
 export {
   MemFlowChildErrorType,

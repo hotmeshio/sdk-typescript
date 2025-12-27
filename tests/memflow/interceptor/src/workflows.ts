@@ -3,6 +3,7 @@ import * as activities from './activities';
 import { MemFlowProxyError } from '../../../../modules/errors';
 
 // Set up proxied activities with NO retries for testing
+// Using default (workflow-derived) activity queue
 const { processData, validateData, recordResult } = MemFlow.workflow.proxyActivities<typeof activities>({
   activities,
   retryPolicy: {
@@ -113,6 +114,41 @@ export async function durableInterceptorExample(name: string): Promise<any> {
     }
     
     // Handle actual errors
+    await entity.merge({ 
+      status: 'failed',
+      error: err.message
+    });
+    throw err;
+  }
+}
+
+// NEW: Workflow that demonstrates interceptor with proxy activities
+export async function interceptorWithActivities(name: string): Promise<any> {
+  const entity = await MemFlow.workflow.entity();
+  
+  try {
+    // Set initial state
+    await entity.set({
+      name,
+      status: 'started',
+      operations: [],
+      interceptorCalls: []
+    });
+
+    // The interceptor will call proxy activities before and after this workflow
+    // The activities called by the interceptor use the global queue
+    await entity.append('operations', 'workflow-executed');
+    await entity.merge({ 
+      status: 'completed',
+      result: `Workflow completed: ${name}`
+    });
+
+    return await entity.get();
+  } catch (err) {
+    if (MemFlow.workflow.didInterrupt(err)) {
+      throw err;
+    }
+    
     await entity.merge({ 
       status: 'failed',
       error: err.message

@@ -1,6 +1,9 @@
 import {
   HMSH_CODE_MEMFLOW_ALL,
   HMSH_CODE_MEMFLOW_RETRYABLE,
+  HMSH_CODE_MEMFLOW_TIMEOUT,
+  HMSH_CODE_MEMFLOW_MAXED,
+  HMSH_CODE_MEMFLOW_FATAL,
   HMSH_MEMFLOW_EXP_BACKOFF,
   HMSH_MEMFLOW_MAX_INTERVAL,
   HMSH_MEMFLOW_MAX_ATTEMPTS,
@@ -185,6 +188,236 @@ export class WorkerService {
   }
 
   /**
+   * Register activity workers for a task queue. Activities are invoked via message queue,
+   * so they can run on different servers from workflows.
+   * 
+   * The task queue name gets `-activity` appended automatically for the worker topic.
+   * For example, `taskQueue: 'payment'` creates a worker listening on `payment-activity`.
+   * 
+   * @param config - Worker configuration (connection, namespace, taskQueue)
+   * @param activities - Activity functions to register
+   * @param activityTaskQueue - Task queue name (without `-activity` suffix).
+   *                            Defaults to `config.taskQueue` if not provided.
+   * 
+   * @returns Promise<HotMesh> The initialized activity worker
+   * 
+   * @example
+   * ```typescript
+   * // Activity worker (can be on separate server)
+   * import { MemFlow } from '@hotmeshio/hotmesh';
+   * import { Client as Postgres } from 'pg';
+   * 
+   * const activities = {
+   *   async processPayment(amount: number): Promise<string> {
+   *     return `Processed $${amount}`;
+   *   },
+   *   async sendEmail(to: string, subject: string): Promise<void> {
+   *     // Send email
+   *   }
+   * };
+   * 
+   * await MemFlow.registerActivityWorker({
+   *   connection: {
+   *     class: Postgres,
+   *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+   *   },
+   *   taskQueue: 'payment'  // Listens on 'payment-activity'
+   * }, activities, 'payment');
+   * ```
+   * 
+   * @example
+   * ```typescript
+   * // Workflow worker (can be on different server)
+   * async function orderWorkflow(orderId: string, amount: number) {
+   *   const { processPayment, sendEmail } = MemFlow.workflow.proxyActivities<{
+   *     processPayment: (amount: number) => Promise<string>;
+   *     sendEmail: (to: string, subject: string) => Promise<void>;
+   *   }>({
+   *     taskQueue: 'payment',
+   *     retryPolicy: { maximumAttempts: 3 }
+   *   });
+   * 
+   *   const result = await processPayment(amount);
+   *   await sendEmail('customer@example.com', 'Order confirmed');
+   *   return result;
+   * }
+   * 
+   * await MemFlow.Worker.create({
+   *   connection: {
+   *     class: Postgres,
+   *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+   *   },
+   *   taskQueue: 'orders',
+   *   workflow: orderWorkflow
+   * });
+   * ```
+   * 
+   * @example
+   * ```typescript
+   * // Shared activity pool for interceptors
+   * await MemFlow.registerActivityWorker({
+   *   connection: {
+   *     class: Postgres,
+   *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+   *   },
+   *   taskQueue: 'shared'
+   * }, { auditLog, collectMetrics }, 'shared');
+   * 
+   * const interceptor: WorkflowInterceptor = {
+   *   async execute(ctx, next) {
+   *     const { auditLog } = MemFlow.workflow.proxyActivities<{
+   *       auditLog: (id: string, action: string) => Promise<void>;
+   *     }>({
+   *       taskQueue: 'shared',
+   *       retryPolicy: { maximumAttempts: 3 }
+   *     });
+   *     await auditLog(ctx.get('workflowId'), 'started');
+   *     return next();
+   *   }
+   * };
+   * ```
+   */
+  static async registerActivityWorker(
+    config: Partial<WorkerConfig>,
+    activities: any,
+    activityTaskQueue?: string,
+  ): Promise<HotMesh> {
+    // Register activities globally in the registry
+    WorkerService.registerActivities(activities);
+    
+    // Use provided activityTaskQueue or fall back to config.taskQueue
+    const taskQueue = activityTaskQueue || config.taskQueue || 'memflow-activities';
+    
+    // Append '-activity' suffix for the worker topic
+    const activityTopic = `${taskQueue}-activity`;
+    
+    const targetNamespace = config?.namespace ?? APP_ID;
+    const optionsHash = WorkerService.hashOptions(config?.connection);
+    const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
+
+    // Return existing worker if already initialized (idempotent)
+    if (WorkerService.instances.has(targetTopic)) {
+      return await WorkerService.instances.get(targetTopic);
+    }
+
+    // Create activity worker that listens on '{taskQueue}-activity' topic
+    const hotMeshWorker = await HotMesh.init({
+      guid: config.guid ? `${config.guid}XA` : undefined,
+      taskQueue,
+      logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
+      appId: targetNamespace,
+      engine: { connection: config.connection },
+      workers: [
+        {
+          topic: activityTopic,
+          connection: config.connection,
+          callback: WorkerService.createActivityCallback(),
+        },
+      ],
+    });
+
+    WorkerService.instances.set(targetTopic, hotMeshWorker);
+    return hotMeshWorker;
+  }
+
+  /**
+   * Create an activity callback function that can be used by activity workers
+   * @private
+   */
+  static createActivityCallback(): (payload: StreamData) => Promise<StreamDataResponse> {
+    return async (data: StreamData): Promise<StreamDataResponse> => {
+      try {
+        //always run the activity function when instructed; return the response
+        const activityInput = data.data as unknown as ActivityWorkflowDataType;
+        const activityName = activityInput.activityName;
+        const activityFunction = WorkerService.activityRegistry[activityName];
+        
+        if (!activityFunction) {
+          throw new Error(`Activity '${activityName}' not found in registry`);
+        }
+        
+        const pojoResponse = await activityFunction.apply(
+          null,
+          activityInput.arguments,
+        );
+
+        return {
+          status: StreamStatus.SUCCESS,
+          metadata: { ...data.metadata },
+          data: { response: pojoResponse },
+        };
+      } catch (err) {
+        // Log error (note: we don't have access to this.activityRunner here)
+        console.error('memflow-worker-activity-err', {
+          name: err.name,
+          message: err.message,
+          stack: err.stack,
+        });
+        
+        if (
+          !(err instanceof MemFlowTimeoutError) &&
+          !(err instanceof MemFlowMaxedError) &&
+          !(err instanceof MemFlowFatalError)
+        ) {
+          //use code 599 as a proxy for all retryable errors
+          // (basically anything not 596, 597, 598)
+          return {
+            status: StreamStatus.SUCCESS,
+            code: 599,
+            metadata: { ...data.metadata },
+            data: {
+              $error: {
+                message: err.message,
+                stack: err.stack,
+                code: HMSH_CODE_MEMFLOW_RETRYABLE,
+              },
+            },
+          };
+        } else if (err instanceof MemFlowTimeoutError) {
+          return {
+            status: StreamStatus.SUCCESS,
+            code: 596,
+            metadata: { ...data.metadata },
+            data: {
+              $error: {
+                message: err.message,
+                stack: err.stack,
+                code: HMSH_CODE_MEMFLOW_TIMEOUT,
+              },
+            },
+          };
+        } else if (err instanceof MemFlowMaxedError) {
+          return {
+            status: StreamStatus.SUCCESS,
+            code: 597,
+            metadata: { ...data.metadata },
+            data: {
+              $error: {
+                message: err.message,
+                stack: err.stack,
+                code: HMSH_CODE_MEMFLOW_MAXED,
+              },
+            },
+          };
+        } else if (err instanceof MemFlowFatalError) {
+          return {
+            status: StreamStatus.SUCCESS,
+            code: 598,
+            metadata: { ...data.metadata },
+            data: {
+              $error: {
+                message: err.message,
+                stack: err.stack,
+                code: HMSH_CODE_MEMFLOW_FATAL,
+              },
+            },
+          };
+        }
+      }
+    };
+  }
+
+  /**
    * Connects a worker to the mesh.
    *
    * @example
@@ -274,6 +507,12 @@ export class WorkerService {
     const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
+    
+    // Return existing worker if already initialized
+    if (WorkerService.instances.has(targetTopic)) {
+      return await WorkerService.instances.get(targetTopic);
+    }
+    
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid ? `${config.guid}XA` : undefined,
       taskQueue: config.taskQueue,

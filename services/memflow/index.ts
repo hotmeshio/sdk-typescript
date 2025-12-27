@@ -1,5 +1,6 @@
 import { HotMesh } from '../hotmesh';
 import { ContextType, WorkflowInterceptor } from '../../types/memflow';
+import { guid } from '../../modules/utils';
 
 import { ClientService } from './client';
 import { ConnectionService } from './connection';
@@ -65,6 +66,7 @@ import { InterceptorService } from './interceptor';
  * ### 3. Durable Activities & Proxies
  * Define and execute durable activities with automatic retry:
  * ```typescript
+ * // Default: activities use workflow's task queue
  * const activities = MemFlow.workflow.proxyActivities<{
  *   analyzeDocument: typeof analyzeDocument;
  *   validateFindings: typeof validateFindings;
@@ -81,7 +83,29 @@ import { InterceptorService } from './interceptor';
  * const validation = await activities.validateFindings(analysis);
  * ```
  *
- * ### 4. Workflow Composition
+ * ### 4. Explicit Activity Registration
+ * Register activity workers explicitly before workflows start:
+ * ```typescript
+ * // Register shared activity pool for interceptors
+ * await MemFlow.registerActivityWorker({
+ *   connection: {
+ *     class: Postgres,
+ *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+ *   },
+ *   taskQueue: 'shared-activities'
+ * }, sharedActivities, 'shared-activities');
+ *
+ * // Register custom activity pool for specific use cases
+ * await MemFlow.registerActivityWorker({
+ *   connection: {
+ *     class: Postgres,
+ *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+ *   },
+ *   taskQueue: 'priority-activities'
+ * }, priorityActivities, 'priority-activities');
+ * ```
+ *
+ * ### 5. Workflow Composition
  * Build complex workflows through composition:
  * ```typescript
  * // Start a child workflow
@@ -104,29 +128,34 @@ import { InterceptorService } from './interceptor';
  * });
  * ```
  *
- * ### 5. Workflow Interceptors
+ * ### 6. Workflow Interceptors
  * Add cross-cutting concerns through interceptors that run as durable functions:
  * ```typescript
- * // Add audit interceptor that uses MemFlow functions
+ * // First register shared activity worker for interceptors
+ * await MemFlow.registerActivityWorker({
+ *   connection: {
+ *     class: Postgres,
+ *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+ *   },
+ *   taskQueue: 'interceptor-activities'
+ * }, { auditLog }, 'interceptor-activities');
+ * 
+ * // Add audit interceptor that uses activities with explicit taskQueue
  * MemFlow.registerInterceptor({
  *   async execute(ctx, next) {
  *     try {
- *       // Interceptors can use MemFlow functions and participate in replay
- *       const entity = await MemFlow.workflow.entity();
- *       await entity.append('auditLog', {
- *         action: 'started',
- *         timestamp: new Date().toISOString()
+ *       // Interceptors use explicit taskQueue to prevent per-workflow queues
+ *       const { auditLog } = MemFlow.workflow.proxyActivities<typeof activities>({
+ *         activities: { auditLog },
+ *         taskQueue: 'interceptor-activities', // Explicit shared queue
+ *         retryPolicy: { maximumAttempts: 3 }
  *       });
  *
- *       // Rate limiting with durable sleep
- *       await MemFlow.workflow.sleepFor('100 milliseconds');
+ *       await auditLog(ctx.get('workflowId'), 'started');
  *
  *       const result = await next();
  *
- *       await entity.append('auditLog', {
- *         action: 'completed',
- *         timestamp: new Date().toISOString()
- *       });
+ *       await auditLog(ctx.get('workflowId'), 'completed');
  *
  *       return result;
  *     } catch (err) {
@@ -145,6 +174,16 @@ import { InterceptorService } from './interceptor';
  * ```typescript
  * import { Client, Worker, MemFlow } from '@hotmeshio/hotmesh';
  * import { Client as Postgres } from 'pg';
+ * import * as activities from './activities';
+ *
+ * // (Optional) Register shared activity workers for interceptors
+ * await MemFlow.registerActivityWorker({
+ *   connection: {
+ *     class: Postgres,
+ *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+ *   },
+ *   taskQueue: 'shared-activities'
+ * }, sharedActivities, 'shared-activities');
  *
  * // Initialize worker
  * await Worker.create({
@@ -221,6 +260,50 @@ class MemFlowClass {
   static Worker: typeof WorkerService = WorkerService;
 
   /**
+   * Register activity workers for a task queue. Activities execute via message queue
+   * and can run on different servers from workflows.
+   * 
+   * @example
+   * ```typescript
+   * // Activity worker
+   * const activities = {
+   *   async processPayment(amount: number) { return `Processed $${amount}`; },
+   *   async sendEmail(to: string, msg: string) { /* ... *\/ }
+   * };
+   * 
+   * await MemFlow.registerActivityWorker({
+   *   connection: {
+   *     class: Postgres,
+   *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+   *   },
+   *   taskQueue: 'payment'
+   * }, activities, 'payment');
+   * 
+   * // Workflow worker (can be on different server)
+   * async function orderWorkflow(amount: number) {
+   *   const { processPayment, sendEmail } = MemFlow.workflow.proxyActivities<{
+   *     processPayment: (amount: number) => Promise<string>;
+   *     sendEmail: (to: string, msg: string) => Promise<void>;
+   *   }>({
+   *     taskQueue: 'payment',
+   *     retryPolicy: { maximumAttempts: 3 }
+   *   });
+   *   
+   *   const result = await processPayment(amount);
+   *   await sendEmail('customer@example.com', result);
+   *   return result;
+   * }
+   * 
+   * await MemFlow.Worker.create({
+   *   connection: { class: Postgres, options: { connectionString: '...' } },
+   *   taskQueue: 'orders',
+   *   workflow: orderWorkflow
+   * });
+   * ```
+   */
+  static registerActivityWorker = WorkerService.registerActivityWorker;
+
+  /**
    * The MemFlow `workflow` service is functionally
    * equivalent to the Temporal `Workflow` service
    * with additional methods for managing workflows,
@@ -260,6 +343,11 @@ class MemFlowClass {
   static getInterceptorService(): InterceptorService {
     return MemFlowClass.interceptorService;
   }
+
+  /**
+   * Generate a unique identifier for workflow IDs
+   */
+  static guid = guid;
 
   /**
    * Shutdown everything. All connections, workers, and clients will be closed.

@@ -13,6 +13,7 @@ import {
 } from '../../$setup/postgres';
 
 import * as workflows from './src/workflows';
+import * as activities from './src/activities';
 
 const { Connection, Client, Worker } = MemFlow;
 
@@ -362,6 +363,393 @@ describe('MEMFLOW | interceptor | Postgres', () => {
         // The entity executionCount will always be 1 due to replay behavior - that's correct!
         // What matters is that the interceptor executed multiple times, proving the interruption/replay pattern works
         expect(result.executionCount).toBe(1);
+      }, 60_000);
+    });
+
+    describe('interceptor with proxy activities', () => {
+      it('should allow interceptors to call proxy activities using explicit shared queue', async () => {
+        // First, register a shared activity worker for interceptors
+        await MemFlow.registerActivityWorker({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'shared-interceptor-activities'
+        }, activities, 'shared-interceptor-activities');
+
+        // Create an interceptor that uses proxy activities with explicit taskQueue
+        const activityInterceptor: WorkflowInterceptor = {
+          async execute(ctx, next) {
+            try {
+              const workflowId = ctx.get('workflowId');
+              
+              // Use proxy activities in the interceptor with EXPLICIT taskQueue
+              // This prevents per-workflow queue creation
+              const { auditLog, metricsCollect } = MemFlow.workflow.proxyActivities<typeof activities>({
+                activities,
+                taskQueue: 'shared-interceptor-activities', // Explicit shared queue
+                retryPolicy: {
+                  maximumAttempts: 3,
+                  throwOnError: true
+                }
+              });
+              
+              // Call activity before workflow execution
+              await auditLog(workflowId, 'workflow-started');
+              
+              const startTime = Date.now();
+              const result = await next();
+              const duration = Date.now() - startTime;
+              
+              // Call activity after workflow execution
+              await metricsCollect(workflowId, 'duration', duration);
+              await auditLog(workflowId, 'workflow-completed');
+              
+              return result;
+            } catch (err) {
+              // Always check for interruptions
+              if (MemFlow.didInterrupt(err)) {
+                throw err;
+              }
+              throw err;
+            }
+          }
+        };
+
+        // Clear and register the activity interceptor
+        MemFlow.clearInterceptors();
+        MemFlow.registerInterceptor(activityInterceptor);
+
+        // Create worker for the workflow
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'interceptor-activity-test',
+          workflow: workflows.interceptorWithActivities,
+        });
+        await worker.run();
+
+        // Start workflow with unique ID
+        const workflowGuid = prefix + 'activity-interceptor-' + guid();
+        workflowGuids.push(workflowGuid);
+        
+        const handle = await client.workflow.start({
+          namespace,
+          args: ['ActivityTest'],
+          taskQueue: 'interceptor-activity-test',
+          workflowName: 'interceptorWithActivities',
+          workflowId: workflowGuid,
+        });
+
+        // Get result
+        const result = await handle.result() as any;
+
+        // Verify workflow completed successfully
+        expect(result).toEqual(expect.objectContaining({
+          status: 'completed',
+          name: 'ActivityTest',
+          operations: ['workflow-executed'],
+          result: 'Workflow completed: ActivityTest'
+        }));
+      }, 60_000);
+    });
+
+    describe('explicit activity registration', () => {
+      it('should support explicit activity worker registration with custom queue', async () => {
+        // Register a custom activity worker with a specific task queue
+        await MemFlow.registerActivityWorker({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'custom-activity-queue'
+        }, activities, 'custom-activity-queue');
+
+        // Create a workflow that uses the custom activity queue
+        const customActivityWorkflow = async (name: string): Promise<any> => {
+          const entity = await MemFlow.workflow.entity();
+          
+          await entity.set({
+            name,
+            status: 'started',
+            operations: []
+          });
+
+          try {
+            // Use activities from the custom queue
+            const { processData, validateData } = MemFlow.workflow.proxyActivities<typeof activities>({
+              activities,
+              taskQueue: 'custom-activity-queue', // Custom queue
+              retryPolicy: {
+                maximumAttempts: 1,
+                throwOnError: true
+              }
+            });
+
+            await validateData(name);
+            await entity.append('operations', 'validated');
+
+            const processed = await processData(name);
+            await entity.append('operations', 'processed');
+            await entity.merge({ 
+              status: 'completed',
+              result: processed
+            });
+
+            return await entity.get();
+          } catch (err) {
+            if (MemFlow.didInterrupt(err)) {
+              throw err;
+            }
+            await entity.merge({ status: 'failed', error: err.message });
+            throw err;
+          }
+        };
+
+        // Clear interceptors
+        MemFlow.clearInterceptors();
+
+        // Create worker for the workflow
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'custom-queue-test',
+          workflow: customActivityWorkflow,
+        });
+        await worker.run();
+
+        // Start workflow with unique ID
+        const workflowGuid = prefix + 'custom-queue-' + guid();
+        workflowGuids.push(workflowGuid);
+        
+        const handle = await client.workflow.start({
+          namespace,
+          args: ['CustomQueueTest'],
+          taskQueue: 'custom-queue-test',
+          workflowName: 'customActivityWorkflow',
+          workflowId: workflowGuid,
+        });
+
+        // Get result
+        const result = await handle.result() as any;
+
+        // Verify workflow completed successfully with custom queue activities
+        expect(result).toEqual(expect.objectContaining({
+          status: 'completed',
+          name: 'CustomQueueTest',
+          operations: ['validated', 'processed'],
+          result: 'Processed: CustomQueueTest'
+        }));
+      }, 60_000);
+
+      it('should support multiple activity workers with different queues', async () => {
+        // Register multiple activity workers with different queues
+        await MemFlow.registerActivityWorker({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'queue-a'
+        }, activities, 'queue-a');
+
+        await MemFlow.registerActivityWorker({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'queue-b'
+        }, activities, 'queue-b');
+
+        // Create a workflow that uses both queues
+        const multiQueueWorkflow = async (name: string): Promise<any> => {
+          const entity = await MemFlow.workflow.entity();
+          
+          await entity.set({
+            name,
+            status: 'started',
+            operations: []
+          });
+
+          try {
+            // Use activities from queue A
+            const queueA = MemFlow.workflow.proxyActivities<typeof activities>({
+              activities,
+              taskQueue: 'queue-a',
+              retryPolicy: { maximumAttempts: 1, throwOnError: true }
+            });
+
+            // Use activities from queue B
+            const queueB = MemFlow.workflow.proxyActivities<typeof activities>({
+              activities,
+              taskQueue: 'queue-b',
+              retryPolicy: { maximumAttempts: 1, throwOnError: true }
+            });
+
+            const resultA = await queueA.processData(name);
+            await entity.append('operations', 'queue-a-called');
+
+            const resultB = await queueB.interceptorActivity(resultA);
+            await entity.append('operations', 'queue-b-called');
+
+            await entity.merge({ 
+              status: 'completed',
+              resultA,
+              resultB
+            });
+
+            return await entity.get();
+          } catch (err) {
+            if (MemFlow.didInterrupt(err)) {
+              throw err;
+            }
+            await entity.merge({ status: 'failed', error: err.message });
+            throw err;
+          }
+        };
+
+        // Clear interceptors
+        MemFlow.clearInterceptors();
+
+        // Create worker for the workflow
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'multi-queue-test',
+          workflow: multiQueueWorkflow,
+        });
+        await worker.run();
+
+        // Start workflow with unique ID
+        const workflowGuid = prefix + 'multi-queue-' + guid();
+        workflowGuids.push(workflowGuid);
+        
+        const handle = await client.workflow.start({
+          namespace,
+          args: ['MultiQueueTest'],
+          taskQueue: 'multi-queue-test',
+          workflowName: 'multiQueueWorkflow',
+          workflowId: workflowGuid,
+        });
+
+        // Get result
+        const result = await handle.result() as any;
+
+        // Verify workflow completed successfully using both queues
+        expect(result).toEqual(expect.objectContaining({
+          status: 'completed',
+          name: 'MultiQueueTest',
+          operations: ['queue-a-called', 'queue-b-called'],
+          resultA: 'Processed: MultiQueueTest',
+          resultB: 'Interceptor processed: Processed: MultiQueueTest'
+        }));
+      }, 60_000);
+
+      it('should support remote activity registration (no activities field in proxyActivities)', async () => {
+        // Simulate remote activity registration
+        // In production, this would happen on a different server
+        await MemFlow.registerActivityWorker({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'remote-activities'
+        }, activities, 'remote-activities');
+
+        // Create a workflow that references activities WITHOUT importing them
+        const remoteActivityWorkflow = async (name: string): Promise<any> => {
+          const entity = await MemFlow.workflow.entity();
+          
+          await entity.set({
+            name,
+            status: 'started',
+            operations: []
+          });
+
+          try {
+            // Reference activities by name ONLY - no 'activities' field!
+            // This works because activities are pre-registered remotely
+            const { processData, validateData } = MemFlow.workflow.proxyActivities<{
+              processData: (data: string) => Promise<string>;
+              validateData: (data: string) => Promise<boolean>;
+            }>({
+              taskQueue: 'remote-activities',  // Only taskQueue, no activities!
+              retryPolicy: {
+                maximumAttempts: 1,
+                throwOnError: true
+              }
+            });
+
+            await validateData(name);
+            await entity.append('operations', 'validated-remote');
+
+            const processed = await processData(name);
+            await entity.append('operations', 'processed-remote');
+            await entity.merge({ 
+              status: 'completed',
+              result: processed
+            });
+
+            return await entity.get();
+          } catch (err) {
+            if (MemFlow.didInterrupt(err)) {
+              throw err;
+            }
+            await entity.merge({ status: 'failed', error: err.message });
+            throw err;
+          }
+        };
+
+        // Clear interceptors
+        MemFlow.clearInterceptors();
+
+        // Create worker for the workflow
+        const worker = await Worker.create({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'remote-queue-test',
+          workflow: remoteActivityWorkflow,
+        });
+        await worker.run();
+
+        // Start workflow with unique ID
+        const workflowGuid = prefix + 'remote-activity-' + guid();
+        workflowGuids.push(workflowGuid);
+        
+        const handle = await client.workflow.start({
+          namespace,
+          args: ['RemoteActivityTest'],
+          taskQueue: 'remote-queue-test',
+          workflowName: 'remoteActivityWorkflow',
+          workflowId: workflowGuid,
+        });
+
+        // Get result
+        const result = await handle.result() as any;
+
+        // Verify workflow completed successfully using remote activities
+        expect(result).toEqual(expect.objectContaining({
+          status: 'completed',
+          name: 'RemoteActivityTest',
+          operations: ['validated-remote', 'processed-remote'],
+          result: 'Processed: RemoteActivityTest'
+        }));
       }, 60_000);
     });
   });
