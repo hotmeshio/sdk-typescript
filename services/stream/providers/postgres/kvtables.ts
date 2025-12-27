@@ -182,6 +182,9 @@ async function createTables(
       reserved_at TIMESTAMPTZ,
       reserved_by TEXT,
       expired_at TIMESTAMPTZ,
+      max_retry_attempts INT DEFAULT 3,
+      backoff_coefficient NUMERIC DEFAULT 10,
+      maximum_interval_seconds INT DEFAULT 120,
       PRIMARY KEY (stream_name, id)
     ) PARTITION BY HASH (stream_name);
   `);
@@ -193,6 +196,19 @@ async function createTables(
       PARTITION OF ${tableName}
       FOR VALUES WITH (modulus 8, remainder ${i});
     `);
+  }
+
+  // Migrate existing tables: add retry policy columns if they don't exist
+  try {
+    await client.query(`
+      ALTER TABLE ${tableName} 
+      ADD COLUMN IF NOT EXISTS max_retry_attempts INT DEFAULT 3,
+      ADD COLUMN IF NOT EXISTS backoff_coefficient NUMERIC DEFAULT 10,
+      ADD COLUMN IF NOT EXISTS maximum_interval_seconds INT DEFAULT 120;
+    `);
+  } catch (error) {
+    // Columns might already exist, which is fine
+    console.warn('Retry policy columns may already exist:', error.message);
   }
 
   // Index for active messages

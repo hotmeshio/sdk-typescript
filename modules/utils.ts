@@ -351,6 +351,65 @@ export const s = (input: string): number => {
 };
 
 /**
+ * Normalizes retry policy configuration to a consistent format.
+ * Converts maximumInterval to seconds and applies defaults.
+ * 
+ * @param policy - Retry policy to normalize
+ * @param defaults - Default values to use if not specified
+ * @returns Normalized retry policy with numeric values
+ * 
+ * @example
+ * ```typescript
+ * const normalized = normalizeRetryPolicy({
+ *   maximumAttempts: 5,
+ *   backoffCoefficient: 2,
+ *   maximumInterval: '300s',
+ * });
+ * // Returns: { max_retry_attempts: 5, backoff_coefficient: 2, maximum_interval_seconds: 300 }
+ * ```
+ */
+export function normalizeRetryPolicy(
+  policy?: import('../types/stream').RetryPolicy,
+  defaults = {
+    maximumAttempts: 3,
+    backoffCoefficient: 10,
+    maximumInterval: 120,
+  }
+): {
+  max_retry_attempts: number;
+  backoff_coefficient: number;
+  maximum_interval_seconds: number;
+} {
+  if (!policy) {
+    return {
+      max_retry_attempts: defaults.maximumAttempts,
+      backoff_coefficient: defaults.backoffCoefficient,
+      maximum_interval_seconds: defaults.maximumInterval,
+    };
+  }
+
+  const maxAttempts = policy.maximumAttempts ?? defaults.maximumAttempts;
+  const backoffCoeff = policy.backoffCoefficient ?? defaults.backoffCoefficient;
+  
+  let maxIntervalSeconds: number;
+  if (policy.maximumInterval !== undefined) {
+    if (typeof policy.maximumInterval === 'string') {
+      maxIntervalSeconds = s(policy.maximumInterval);
+    } else {
+      maxIntervalSeconds = policy.maximumInterval;
+    }
+  } else {
+    maxIntervalSeconds = defaults.maximumInterval;
+  }
+
+  return {
+    max_retry_attempts: maxAttempts,
+    backoff_coefficient: backoffCoeff,
+    maximum_interval_seconds: maxIntervalSeconds,
+  };
+}
+
+/**
  * @private
  */
 export const parseStreamMessage = (message: string): StreamData => {

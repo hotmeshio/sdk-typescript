@@ -57,13 +57,14 @@ import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
  *
  * ## Key Features
  *
- * - **Fault Tolerance**: Automatic retry, timeout, and failure recovery
+ * - **Fault Tolerance**: Automatic retry with exponential backoff and configurable policies
  * - **Distributed Execution**: No single point of failure
  * - **YAML-Driven**: Model-driven development with declarative workflow definitions
  * - **OpenTelemetry**: Built-in observability and tracing
  * - **Durable State**: Workflow state persists across system restarts
  * - **Pattern Matching**: Pub/sub with wildcard pattern support
  * - **Throttling**: Dynamic flow control and backpressure management
+ * - **Retry Policies**: PostgreSQL-native retry configuration with exponential backoff
  *
  * ## Architecture
  *
@@ -275,7 +276,12 @@ class HotMesh {
    * similarly to the engine, but as an array with
    * multiple worker objects.
    *
-   * @example
+   * ## Retry Policy Configuration
+   *
+   * HotMesh supports robust retry policies with exponential backoff for PostgreSQL.
+   * Configure retry behavior at the stream level for automatic fault tolerance.
+   *
+   * @example Basic Configuration
    * ```typescript
    * const config: HotMeshConfig = {
    *   appId: 'myapp',
@@ -291,6 +297,61 @@ class HotMesh {
    * };
    * const hotMesh = await HotMesh.init(config);
    * ```
+   *
+   * @example With Retry Policy (PostgreSQL)
+   * ```typescript
+   * import { HotMesh } from '@hotmeshio/hotmesh';
+   * import { Client as Postgres } from 'pg';
+   *
+   * const hotMesh = await HotMesh.init({
+   *   appId: 'my-app',
+   *   engine: {
+   *     connection: {
+   *       stream: {
+   *         class: Postgres,
+   *         options: { connectionString: 'postgresql://...' },
+   *         // Default retry policy for all streams
+   *         retryPolicy: {
+   *           maximumAttempts: 5,      // Retry up to 5 times
+   *           backoffCoefficient: 2,   // Exponential: 2^0, 2^1, 2^2...
+   *           maximumInterval: '300s'  // Cap delay at 5 minutes
+   *         }
+   *       }
+   *     }
+   *   },
+   *   workers: [{
+   *     topic: 'order.process',
+   *     connection: {
+   *       stream: {
+   *         class: Postgres,
+   *         options: { connectionString: 'postgresql://...' },
+   *         // Worker-specific retry policy
+   *         retryPolicy: {
+   *           maximumAttempts: 10,
+   *           backoffCoefficient: 1.5,
+   *           maximumInterval: '600s'
+   *         }
+   *       }
+   *     },
+   *     callback: async (data) => {
+   *       // Your business logic here
+   *       // Failures will automatically retry with exponential backoff
+   *       return { status: 'success', data: processedData };
+   *     }
+   *   }]
+   * });
+   * ```
+   *
+   * **Retry Policy Options**:
+   * - `maximumAttempts` - Maximum retry attempts before failure (default: 3)
+   * - `backoffCoefficient` - Base for exponential backoff calculation (default: 10)
+   * - `maximumInterval` - Maximum delay between retries in seconds or duration string (default: '120s')
+   *
+   * **Retry Delays**: For `backoffCoefficient: 2`, delays are: 2s, 4s, 8s, 16s, 32s...
+   * capped at `maximumInterval`.
+   *
+   * **Note**: Retry policies are stored in PostgreSQL columns for efficient querying and
+   * observability. Each retry creates a new message, preserving message immutability.
    */
   static async init(config: HotMeshConfig) {
     const instance = new HotMesh();

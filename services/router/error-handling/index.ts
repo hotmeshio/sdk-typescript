@@ -11,25 +11,48 @@ import {
   StreamError,
   StreamStatus,
   StreamDataType,
+  RetryPolicy,
 } from '../../../types/stream';
 
 export class ErrorHandler {
   shouldRetry(
     input: StreamData,
     output: StreamDataResponse,
+    retryPolicy?: RetryPolicy,
   ): [boolean, number] {
-    //const isUnhandledEngineError = output.code === 500;
+    const tryCount = input.metadata.try || 0;
+    
+    // Priority 1: Use structured retry policy (from stream columns or config)
+    if (retryPolicy) {
+      const maxAttempts = retryPolicy.maximumAttempts || 3;
+      const backoffCoeff = retryPolicy.backoffCoefficient || 10;
+      const maxInterval = typeof retryPolicy.maximumInterval === 'string'
+        ? parseInt(retryPolicy.maximumInterval)
+        : (retryPolicy.maximumInterval || 120);
+      
+      if (tryCount < maxAttempts) {
+        // Exponential backoff: min(coefficient^try, maxInterval)
+        const backoffSeconds = Math.min(
+          Math.pow(backoffCoeff, tryCount),
+          maxInterval
+        );
+        return [true, backoffSeconds * 1000]; // Convert to milliseconds
+      }
+      return [false, 0];
+    }
+    
+    // Priority 2: Use message-level policies (existing behavior)
     const policies = input.policies?.retry;
     const errorCode = output.code.toString();
     const policy = policies?.[errorCode];
     const maxRetries = policy?.[0];
-    const tryCount = Math.min(input.metadata.try || 0, HMSH_MAX_RETRIES);
-    //only possible values for maxRetries are 1, 2, 3
-    //only possible values for tryCount are 0, 1, 2
-    if (maxRetries > tryCount) {
+    const cappedTryCount = Math.min(tryCount, HMSH_MAX_RETRIES);
+    
+    if (maxRetries > cappedTryCount) {
       // 10ms, 100ms, or 1000ms delays between system retries
-      return [true, Math.pow(10, tryCount + 1)];
+      return [true, Math.pow(10, cappedTryCount + 1)];
     }
+    
     return [false, 0];
   }
 
@@ -103,16 +126,25 @@ export class ErrorHandler {
       topic: string,
       streamData: StreamData | StreamDataResponse,
     ) => Promise<string>,
+    retryPolicy?: RetryPolicy,
   ): Promise<string> {
-    const [shouldRetry, timeout] = this.shouldRetry(input, output);
+    const [shouldRetry, timeout] = this.shouldRetry(input, output, retryPolicy);
     if (shouldRetry) {
       await sleepFor(timeout);
-      return (await publishMessage(input.metadata.topic, {
+      
+      // Create new message with incremented try count
+      const newMessage: any = {
         data: input.data,
-        //note: retain guid (this is a retry attempt)
         metadata: { ...input.metadata, try: (input.metadata.try || 0) + 1 },
         policies: input.policies,
-      })) as string;
+      };
+      
+      // Propagate retry config to new message (for immutable pattern)
+      if ((input as any)._streamRetryConfig) {
+        newMessage._streamRetryConfig = (input as any)._streamRetryConfig;
+      }
+      
+      return (await publishMessage(input.metadata.topic, newMessage)) as string;
     } else {
       const structuredError = this.structureError(input, output);
       return (await publishMessage(null, structuredError)) as string;

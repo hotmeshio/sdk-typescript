@@ -1,5 +1,44 @@
 import { ProviderTransaction } from './provider';
 
+/**
+ * Structured retry policy configuration for stream messages.
+ * Controls retry behavior with exponential backoff.
+ * 
+ * @example
+ * ```typescript
+ * const retryPolicy: RetryPolicy = {
+ *   maximumAttempts: 5,
+ *   backoffCoefficient: 2,
+ *   maximumInterval: '300s',
+ * };
+ * // Results in delays: 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s, 300s (capped)
+ * ```
+ */
+export interface RetryPolicy {
+  /**
+   * Maximum number of retry attempts before the message fails.
+   * @default 3
+   * @example 5
+   */
+  maximumAttempts?: number;
+
+  /**
+   * Base coefficient for exponential backoff calculation.
+   * Retry delay = min(backoffCoefficient ^ attemptNumber, maximumInterval)
+   * @default 10
+   * @example 2
+   */
+  backoffCoefficient?: number;
+
+  /**
+   * Maximum interval between retries in seconds or as a duration string.
+   * Caps the exponential backoff to prevent excessive delays.
+   * @default "120s"
+   * @example "60s" or 60
+   */
+  maximumInterval?: string | number;
+}
+
 /** Represents a policy for retrying stream operations based on error codes */
 export interface StreamRetryPolicy {
   /**
@@ -96,6 +135,16 @@ export interface StreamData {
   code?: number;
   /** Error stack trace */
   stack?: string;
+  /**
+   * Internal retry configuration propagated from PostgreSQL columns.
+   * Used to maintain retry policy across message recreation cycles.
+   * @internal
+   */
+  _streamRetryConfig?: {
+    max_retry_attempts: number;
+    backoff_coefficient: number;
+    maximum_interval_seconds: number;
+  };
 }
 
 /** Extends StreamData for responses, allowing for inheritance of the base properties */
@@ -158,6 +207,21 @@ export interface StreamConfig {
   batchSize?: number;
   timeout?: number;
 
+  /**
+   * Default retry policy for all streams in this app.
+   * Can be overridden per message using PublishMessageConfig.
+   * 
+   * @example
+   * ```typescript
+   * {
+   *   maximumAttempts: 5,
+   *   backoffCoefficient: 2,
+   *   maximumInterval: '300s',
+   * }
+   * ```
+   */
+  retryPolicy?: RetryPolicy;
+
   // Provider-specific configurations
   postgres?: {
     pollInterval?: number;
@@ -188,6 +252,11 @@ export interface StreamMessage {
   id: string;
   data: StreamData;
   metadata?: StreamMessageMetadata;
+  /**
+   * Retry policy configuration for this message.
+   * Populated from database columns when available.
+   */
+  retryPolicy?: RetryPolicy;
 }
 
 export interface StreamMessageMetadata {
@@ -217,8 +286,25 @@ export interface StreamStats {
 /**
  * When publishing a message to the stream, the configuration
  * can include a transaction object to execute the operation
- * atomically.
+ * atomically and/or a retry policy to control retry behavior.
  */
 export interface PublishMessageConfig {
   transaction?: ProviderTransaction;
+  
+  /**
+   * Retry policy for this specific message.
+   * Overrides stream-level and app-level defaults.
+   * 
+   * @example
+   * ```typescript
+   * await streamService.publishMessages('my-topic', [msg], {
+   *   retryPolicy: {
+   *     maximumAttempts: 10,
+   *     backoffCoefficient: 2,
+   *     maximumInterval: '600s',
+   *   }
+   * });
+   * ```
+   */
+  retryPolicy?: RetryPolicy;
 }

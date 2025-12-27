@@ -1,6 +1,6 @@
 import { ILogger } from '../../../logger';
 import { KeyService, KeyType } from '../../../../modules/key';
-import { parseStreamMessage, sleepFor } from '../../../../modules/utils';
+import { parseStreamMessage, sleepFor, normalizeRetryPolicy } from '../../../../modules/utils';
 import { StreamService } from '../../index';
 import { KeyStoreParams, StringAnyType } from '../../../../types';
 import {
@@ -360,7 +360,7 @@ class PostgresStreamService extends StreamService<
     messages: string[],
     options?: PublishMessageConfig,
   ): Promise<string[] | ProviderTransaction> {
-    const { sql, params } = this._publishMessages(streamName, messages);
+    const { sql, params } = this._publishMessages(streamName, messages, options);
     if (
       options?.transaction &&
       typeof options.transaction.addCommand === 'function'
@@ -393,16 +393,82 @@ class PostgresStreamService extends StreamService<
   _publishMessages(
     streamName: string,
     messages: string[],
+    options?: PublishMessageConfig,
   ): { sql: string; params: any[] } {
     const tableName = this.getTableName();
     const groupName = streamName.endsWith(':') ? 'ENGINE' : 'WORKER';
-    const insertValues = messages
-      .map((_, idx) => `($1, $2, $${idx + 3})`)
-      .join(', ');
+    
+    // Parse messages to extract retry config
+    const parsedMessages = messages.map(msg => {
+      const data = JSON.parse(msg);
+      const retryConfig = data._streamRetryConfig;
+      
+      // Remove from message payload (stored in columns instead)
+      delete data._streamRetryConfig;
+      
+      // Determine if this message has explicit retry config
+      const hasExplicitConfig = (retryConfig && 'max_retry_attempts' in retryConfig) || options?.retryPolicy;
+      
+      let normalizedPolicy = null;
+      if (retryConfig && 'max_retry_attempts' in retryConfig) {
+        normalizedPolicy = retryConfig;
+      } else if (options?.retryPolicy) {
+        normalizedPolicy = normalizeRetryPolicy(options.retryPolicy, {
+          maximumAttempts: 3,
+          backoffCoefficient: 10,
+          maximumInterval: 120,
+        });
+      }
+      
+      return {
+        message: JSON.stringify(data),
+        hasExplicitConfig,
+        retryPolicy: normalizedPolicy,
+      };
+    });
+    
+    const params: any[] = [streamName, groupName];
+    let valuesClauses: string[] = [];
+    let insertColumns: string;
+    
+    // Check if ALL messages have explicit config or ALL don't
+    const allHaveConfig = parsedMessages.every(pm => pm.hasExplicitConfig);
+    const noneHaveConfig = parsedMessages.every(pm => !pm.hasExplicitConfig);
+    
+    if (noneHaveConfig) {
+      // Omit retry columns entirely - let DB defaults apply
+      insertColumns = '(stream_name, group_name, message)';
+      parsedMessages.forEach((pm, idx) => {
+        const base = idx * 1;
+        valuesClauses.push(`($1, $2, $${base + 3})`);
+        params.push(pm.message);
+      });
+    } else {
+      // Include retry columns
+      insertColumns = '(stream_name, group_name, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds)';
+      parsedMessages.forEach((pm, idx) => {
+        const base = idx * 4;
+        if (pm.hasExplicitConfig) {
+          valuesClauses.push(`($1, $2, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`);
+          params.push(
+            pm.message,
+            pm.retryPolicy.max_retry_attempts,
+            pm.retryPolicy.backoff_coefficient,
+            pm.retryPolicy.maximum_interval_seconds
+          );
+        } else {
+          // This message doesn't have config but others do - use DEFAULT keyword
+          valuesClauses.push(`($1, $2, $${base + 3}, DEFAULT, DEFAULT, DEFAULT)`);
+          params.push(pm.message);
+        }
+      });
+    }
 
     return {
-      sql: `INSERT INTO ${tableName} (stream_name, group_name, message) VALUES ${insertValues} RETURNING id`,
-      params: [streamName, groupName, ...messages],
+      sql: `INSERT INTO ${tableName} ${insertColumns}
+        VALUES ${valuesClauses.join(', ')} 
+        RETURNING id`,
+      params,
     };
   }
 
@@ -657,14 +723,38 @@ class PostgresStreamService extends StreamService<
              LIMIT $3
              FOR UPDATE SKIP LOCKED
            )
-           RETURNING id, message`,
+           RETURNING id, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds`,
           [streamName, groupName, batchSize, consumerName],
         );
 
-        const messages: StreamMessage[] = res.rows.map((row: any) => ({
-          id: row.id.toString(),
-          data: parseStreamMessage(row.message),
-        }));
+        const messages: StreamMessage[] = res.rows.map((row: any) => {
+          const data = parseStreamMessage(row.message);
+          
+          // Inject retry policy only if not using default values
+          // Default values indicate old retry mechanism should be used (policies.retry)
+          const hasDefaultRetryPolicy = 
+            (row.max_retry_attempts === 3 || row.max_retry_attempts === 5) &&
+            parseFloat(row.backoff_coefficient) === 10 &&
+            row.maximum_interval_seconds === 120;
+          
+          if (row.max_retry_attempts !== null && !hasDefaultRetryPolicy) {
+            data._streamRetryConfig = {
+              max_retry_attempts: row.max_retry_attempts,
+              backoff_coefficient: parseFloat(row.backoff_coefficient),
+              maximum_interval_seconds: row.maximum_interval_seconds,
+            };
+          }
+          
+          return {
+            id: row.id.toString(),
+            data,
+            retryPolicy: (row.max_retry_attempts !== null && !hasDefaultRetryPolicy) ? {
+              maximumAttempts: row.max_retry_attempts,
+              backoffCoefficient: parseFloat(row.backoff_coefficient),
+              maximumInterval: row.maximum_interval_seconds,
+            } : undefined,
+          };
+        });
 
         if (messages.length > 0 || !enableBackoff) {
           return messages;
