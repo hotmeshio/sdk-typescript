@@ -560,6 +560,39 @@ type ActivityConfig = {
   /** Configuration for specific activities, type not yet specified */
   activities?: any;
 
+  /**
+   * Optional explicit task queue for activities.
+   * 
+   * **Default Behavior (no taskQueue specified):**
+   * Activities use the workflow's task queue + "-activity" suffix.
+   * Example: workflow "my-workflow" → activity queue "my-workflow-activity"
+   * 
+   * **Explicit Task Queue (when specified):**
+   * Activities use the specified task queue + "-activity" suffix.
+   * Useful for:
+   * - Shared activity pools across multiple workflows
+   * - Interceptors (prevents per-workflow queue creation)
+   * - Isolated activity worker pools
+   * 
+   * @example
+   * ```typescript
+   * // Default: uses workflow's task queue (backward compatible)
+   * const activities = MemFlow.workflow.proxyActivities<typeof activities>({
+   *   activities,
+   *   retryPolicy: { maximumAttempts: 3 }
+   * });
+   * // If workflow taskQueue is "orders", uses "orders-activity"
+   * 
+   * // Explicit: shared queue for interceptors (prevents explosion)
+   * const { auditLog } = MemFlow.workflow.proxyActivities<typeof activities>({
+   *   activities: { auditLog },
+   *   taskQueue: 'shared-activities', // Uses "shared-activities-activity"
+   *   retryPolicy: { maximumAttempts: 3 }
+   * });
+   * ```
+   */
+  taskQueue?: string;
+
   /** Retry policy configuration for activities */
   retryPolicy?: {
     /** Maximum number of retry attempts, default is 5 (HMSH_MEMFLOW_MAX_ATTEMPTS) */

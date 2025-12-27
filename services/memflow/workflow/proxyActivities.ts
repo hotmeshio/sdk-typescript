@@ -7,7 +7,6 @@ import {
   MemFlowMaxedError,
   MemFlowTimeoutError,
   MemFlowProxyError,
-  MemFlowRetryError,
   HMSH_CODE_MEMFLOW_FATAL,
   HMSH_CODE_MEMFLOW_MAXED,
   HMSH_CODE_MEMFLOW_TIMEOUT,
@@ -31,7 +30,13 @@ function getProxyInterruptPayload(
 ): MemFlowProxyErrorType {
   const { workflowDimension, workflowId, originJobId, workflowTopic, expire } =
     context;
-  const activityTopic = `${workflowTopic}-activity`;
+  
+  // Use explicitly provided taskQueue, otherwise derive from workflow (original behavior)
+  // This keeps backward compatibility while allowing explicit global/custom queues
+  const activityTopic = options?.taskQueue 
+    ? `${options.taskQueue}-activity`
+    : `${workflowTopic}-activity`;
+    
   const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
   let maximumInterval: number;
   if (options?.retryPolicy?.maximumInterval) {
@@ -102,15 +107,89 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
 }
 
 /**
- * Provides a proxy for defined activities, ensuring deterministic replay and retry.
+ * Create proxies for activity functions with automatic retry and deterministic replay.
+ * Activities execute via message queue, so they can run on different servers.
+ * 
+ * Without `taskQueue`, activities use the workflow's task queue (e.g., `my-workflow-activity`).
+ * With `taskQueue`, activities use the specified queue (e.g., `payment-activity`).
+ * 
+ * The `activities` parameter is optional. If activities are already registered via
+ * `registerActivityWorker()`, you can reference them by providing just the `taskQueue`
+ * and a TypeScript interface.
+ * 
  * @template ACT
- * @param {ActivityConfig} [options] - Optional activity config (includes retryPolicy).
- * @returns {ProxyType<ACT>} A proxy to call activities as if local, but durably managed by the workflow.
+ * @param {ActivityConfig} [options] - Activity configuration
+ * @param {any} [options.activities] - (Optional) Activity functions to register inline
+ * @param {string} [options.taskQueue] - (Optional) Task queue name (without `-activity` suffix)
+ * @param {object} [options.retryPolicy] - Retry configuration
+ * @returns {ProxyType<ACT>} Proxy for calling activities with durability and retry
+ * 
+ * @example
+ * ```typescript
+ * // Inline registration (activities in same codebase)
+ * const activities = MemFlow.workflow.proxyActivities<typeof activities>({
+ *   activities: { processData, validateData },
+ *   retryPolicy: { maximumAttempts: 3 }
+ * });
+ * 
+ * await activities.processData('input');
+ * ```
+ * 
+ * @example
+ * ```typescript
+ * // Reference pre-registered activities (can be on different server)
+ * interface PaymentActivities {
+ *   processPayment: (amount: number) => Promise<string>;
+ *   sendEmail: (to: string, subject: string) => Promise<void>;
+ * }
+ * 
+ * const { processPayment, sendEmail } = 
+ *   MemFlow.workflow.proxyActivities<PaymentActivities>({
+ *     taskQueue: 'payment',
+ *     retryPolicy: { maximumAttempts: 3 }
+ *   });
+ * 
+ * const result = await processPayment(100.00);
+ * await sendEmail('user@example.com', 'Payment processed');
+ * ```
+ * 
+ * @example
+ * ```typescript
+ * // Shared activities in interceptor
+ * const interceptor: WorkflowInterceptor = {
+ *   async execute(ctx, next) {
+ *     const { auditLog } = MemFlow.workflow.proxyActivities<{
+ *       auditLog: (id: string, action: string) => Promise<void>;
+ *     }>({
+ *       taskQueue: 'shared',
+ *       retryPolicy: { maximumAttempts: 3 }
+ *     });
+ *     
+ *     await auditLog(ctx.get('workflowId'), 'started');
+ *     const result = await next();
+ *     await auditLog(ctx.get('workflowId'), 'completed');
+ *     return result;
+ *   }
+ * };
+ * ```
+ * 
+ * @example
+ * ```typescript
+ * // Custom task queue for specific activities
+ * const highPriority = MemFlow.workflow.proxyActivities<typeof activities>({
+ *   activities: { criticalProcess },
+ *   taskQueue: 'high-priority',
+ *   retryPolicy: { maximumAttempts: 5 }
+ * });
+ * ```
  */
 export function proxyActivities<ACT>(options?: ActivityConfig): ProxyType<ACT> {
+  // Register activities if provided (optional - may already be registered remotely)
   if (options?.activities) {
     WorkerService.registerActivities(options.activities);
   }
+  
+  // Create proxy for all registered activities
   const proxy: any = {};
   const keys = Object.keys(WorkerService.activityRegistry);
   if (keys.length) {

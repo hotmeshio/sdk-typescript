@@ -25,4 +25,18 @@ export async function alwaysFailValidation(): Promise<boolean> {
 export async function recordResult(result: string): Promise<void> {
   // Simulate some async work
   await new Promise(resolve => setTimeout(resolve, 100));
+}
+
+// NEW: Activities for testing interceptor proxy activity calls
+export async function auditLog(workflowId: string, action: string): Promise<string> {
+  return `Audit: ${action} for workflow ${workflowId}`;
+}
+
+export async function metricsCollect(workflowId: string, metric: string, value: number): Promise<void> {
+  // Simulate metrics collection
+  await new Promise(resolve => setTimeout(resolve, 50));
+}
+
+export async function interceptorActivity(message: string): Promise<string> {
+  return `Interceptor processed: ${message}`;
 } 
