@@ -301,8 +301,8 @@ describe('FUNCTIONAL | Retry | IORedis', () => {
       try {
         await hotMesh.pubsub('calculate', payload);
       } catch (error) {
-        expect(error.message).toBe(UNRECOVERABLE_ERROR.message);
-        expect(error.code).toBe(UNRECOVERABLE_ERROR.code);
+        expect(error.error.message).toBe(UNRECOVERABLE_ERROR.message);
+        expect(error.error.code).toBe(UNRECOVERABLE_ERROR.code);
         expect(error.job_id).not.toBeNull();
         const jobMetaData = await hotMesh.getState('calculate', error.job_id);
         expect(jobMetaData?.metadata.err).not.toBeNull();

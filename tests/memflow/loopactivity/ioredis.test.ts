@@ -48,6 +48,20 @@ describe('MEMFLOW | loopactivity | IORedis', () => {
     });
   });
 
+  describe('Worker', () => {
+    describe('create', () => {
+      it('should create and run a worker', async () => {
+        const worker = await Worker.create({
+          connection: { class: Redis, options },
+          taskQueue: 'loop-world',
+          workflow: workflows.example,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+    });
+  });
+
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
@@ -61,20 +75,6 @@ describe('MEMFLOW | loopactivity | IORedis', () => {
           expire: 120, //ensures the failed workflows aren't scrubbed too soon (so they can be reviewed)
         });
         expect(handle.workflowId).toBeDefined();
-      });
-    });
-  });
-
-  describe('Worker', () => {
-    describe('create', () => {
-      it('should create and run a worker', async () => {
-        const worker = await Worker.create({
-          connection: { class: Redis, options },
-          taskQueue: 'loop-world',
-          workflow: workflows.example,
-        });
-        await worker.run();
-        expect(worker).toBeDefined();
       });
     });
   });

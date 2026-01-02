@@ -27,6 +27,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
   reclaimCount: number;
   logger: ILogger;
   readonly: boolean;
+  retryPolicy: import('../../types/stream').RetryPolicy | undefined;
 
   // Legacy properties for backward compatibility
   errorCount = 0;
@@ -58,6 +59,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
     this.reclaimCount = enhancedConfig.reclaimCount;
     this.logger = logger;
     this.readonly = enhancedConfig.readonly;
+    this.retryPolicy = enhancedConfig.retryPolicy;
 
     // Initialize submodule managers
     this.throttleManager = new ThrottleManager(enhancedConfig.throttle);
@@ -79,6 +81,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
       this.appId,
       this.role,
       this,
+      this.retryPolicy,
     );
 
     this.resetThrottleState();

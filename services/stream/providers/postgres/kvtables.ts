@@ -101,8 +101,16 @@ async function checkIfTablesExist(
   schemaName: string,
   tableName: string,
 ): Promise<boolean> {
-  const result = await client.query(`SELECT to_regclass('${tableName}') AS t`);
-  return result.rows[0].t !== null;
+  // Check both streams table exists AND roles table (from store provider)
+  // The roles table is created by the store provider and is used for scout role coordination
+  const result = await client.query(
+    `SELECT 
+       to_regclass($1) AS streams_table,
+       to_regclass($2) AS roles_table`,
+    [tableName, `${schemaName}.roles`]
+  );
+  return result.rows[0].streams_table !== null && 
+         result.rows[0].roles_table !== null;
 }
 
 async function waitForTablesCreation(
@@ -185,6 +193,8 @@ async function createTables(
       max_retry_attempts INT DEFAULT 3,
       backoff_coefficient NUMERIC DEFAULT 10,
       maximum_interval_seconds INT DEFAULT 120,
+      visible_at TIMESTAMPTZ DEFAULT NOW(),
+      retry_attempt INT DEFAULT 0,
       PRIMARY KEY (stream_name, id)
     ) PARTITION BY HASH (stream_name);
   `);
@@ -198,30 +208,17 @@ async function createTables(
     `);
   }
 
-  // Migrate existing tables: add retry policy columns if they don't exist
-  try {
-    await client.query(`
-      ALTER TABLE ${tableName} 
-      ADD COLUMN IF NOT EXISTS max_retry_attempts INT DEFAULT 3,
-      ADD COLUMN IF NOT EXISTS backoff_coefficient NUMERIC DEFAULT 10,
-      ADD COLUMN IF NOT EXISTS maximum_interval_seconds INT DEFAULT 120;
-    `);
-  } catch (error) {
-    // Columns might already exist, which is fine
-    console.warn('Retry policy columns may already exist:', error.message);
-  }
-
-  // Index for active messages
+  // Index for active messages (includes visible_at for visibility timeout support)
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_streams_active_messages 
-    ON ${tableName} (group_name, stream_name, reserved_at, id)
+    ON ${tableName} (group_name, stream_name, reserved_at, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
 
-  // Optimized index for the simplified fetchMessages query
+  // Optimized index for the simplified fetchMessages query (includes visible_at)
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_streams_message_fetch 
-    ON ${tableName} (stream_name, group_name, id)
+    ON ${tableName} (stream_name, group_name, visible_at, id)
     WHERE expired_at IS NULL;
   `);
 
@@ -251,7 +248,7 @@ async function createNotificationTriggers(
   schemaName: string,
   tableName: string,
 ): Promise<void> {
-  // Create the notification function
+  // Create the notification function for INSERT events
   await client.query(`
     CREATE OR REPLACE FUNCTION ${schemaName}.notify_new_stream_message()
     RETURNS TRIGGER AS $$
@@ -259,23 +256,25 @@ async function createNotificationTriggers(
       channel_name TEXT;
       payload JSON;
     BEGIN
-      -- Create channel name: stream_{stream_name}_{group_name}
-      -- Truncate if too long (PostgreSQL channel names limited to 63 chars)
-      channel_name := 'stream_' || NEW.stream_name || '_' || NEW.group_name;
-      IF length(channel_name) > 63 THEN
-        channel_name := left(channel_name, 63);
+      -- Only notify if message is immediately visible
+      -- Messages with visibility timeout will be notified when they become visible
+      IF NEW.visible_at <= NOW() THEN
+        -- Create channel name: stream_{stream_name}_{group_name}
+        -- Truncate if too long (PostgreSQL channel names limited to 63 chars)
+        channel_name := 'stream_' || NEW.stream_name || '_' || NEW.group_name;
+        IF length(channel_name) > 63 THEN
+          channel_name := left(channel_name, 63);
+        END IF;
+        
+        -- Create minimal payload with only required fields
+        payload := json_build_object(
+          'stream_name', NEW.stream_name,
+          'group_name', NEW.group_name
+        );
+        
+        -- Send notification
+        PERFORM pg_notify(channel_name, payload::text);
       END IF;
-      
-      -- Create payload with message details
-      payload := json_build_object(
-        'id', NEW.id,
-        'stream_name', NEW.stream_name,
-        'group_name', NEW.group_name,
-        'created_at', extract(epoch from NEW.created_at)
-      );
-      
-      -- Send notification
-      PERFORM pg_notify(channel_name, payload::text);
       
       RETURN NEW;
     END;
@@ -289,6 +288,48 @@ async function createNotificationTriggers(
       AFTER INSERT ON ${tableName}
       FOR EACH ROW
       EXECUTE FUNCTION ${schemaName}.notify_new_stream_message();
+  `);
+
+  // Create helper function to notify about messages with expired visibility timeouts
+  // This is called periodically by the router scout for responsive retry processing
+  await client.query(`
+    CREATE OR REPLACE FUNCTION ${schemaName}.notify_visible_messages()
+    RETURNS INTEGER AS $$
+    DECLARE
+      msg RECORD;
+      channel_name TEXT;
+      payload JSON;
+      notification_count INTEGER := 0;
+    BEGIN
+      -- Find all distinct streams with messages that are now visible
+      -- Router will drain all messages when notified, so we just notify each channel once
+      FOR msg IN 
+        SELECT DISTINCT stream_name, group_name
+        FROM ${tableName}
+        WHERE visible_at <= NOW()
+          AND reserved_at IS NULL
+          AND expired_at IS NULL
+        LIMIT 100  -- Prevent overwhelming the system
+      LOOP
+        -- Create channel name (same logic as INSERT trigger)
+        channel_name := 'stream_' || msg.stream_name || '_' || msg.group_name;
+        IF length(channel_name) > 63 THEN
+          channel_name := left(channel_name, 63);
+        END IF;
+        
+        -- Send minimal notification with only required fields
+        payload := json_build_object(
+          'stream_name', msg.stream_name,
+          'group_name', msg.group_name
+        );
+        
+        PERFORM pg_notify(channel_name, payload::text);
+        notification_count := notification_count + 1;
+      END LOOP;
+      
+      RETURN notification_count;
+    END;
+    $$ LANGUAGE plpgsql;
   `);
 }
 

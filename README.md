@@ -1,189 +1,405 @@
 # HotMesh
 
-**Integrate AI automation into your current stack — without breaking it**
-
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-HotMesh modernizes existing business systems by introducing a durable workflow layer that connects AI, automation, and human-in-the-loop steps — **without replacing your current stack**.
-Each process runs with persistent memory in Postgres, surviving retries, crashes, and human delays.
+Transform Postgres into a distributed orchestration engine. No central server. Just your database and client code.
+
+**Table of Contents**
+- [What is HotMesh?](#what-is-hotmesh)
+- [Core Use Cases](#core-use-cases)
+- [Quick Example: If/Else Workflow](#quick-example-ifelse-workflow)
+  - [MemFlow Approach (Temporal-Compatible)](#memflow-approach-temporal-compatible)
+  - [HotMesh Approach (Functional YAML)](#hotmesh-approach-functional-yaml)
+- [The Power of Transpilation](#the-power-of-transpilation)
+- [Key Features](#key-features)
+- [Installation](#installation)
+- [Getting Started](#getting-started)
+- [Why HotMesh?](#why-hotmesh)
+- [Advanced Capabilities](#advanced-capabilities)
+- [Use Cases](#use-cases)
+- [License](#license)
+
+## What is HotMesh?
+
+HotMesh converts any Postgres database into a workflow orchestration system—no servers, no infrastructure, just intelligent coordination through database streams.
+
+## Core Use Cases
+
+### 1. Pipeline Database
+Transform Postgres into a durable pipeline processor. Orchestrate long-running, multi-step pipelines transactionally and durably.
+
+### 2. Temporal You Own
+Get all the power of Temporal without the infrastructure. HotMesh includes MemFlow, a complete Temporal-compatible API that runs directly on your Postgres database. No app server required.
+
+### 3. Distributed State Machine
+Build resilient, stateful applications where every component can fail and recover. HotMesh manages state transitions, retries, and coordination through durable database streams.
+
+### 4. Workflow-as-Code Platform
+Choose your style: procedural workflows with MemFlow's Temporal API, or functional workflows with HotMesh's YAML syntax.
+
+## Quick Example: If/Else Workflow
+
+### MemFlow Approach (Temporal-Compatible)
+
+First, define your activities in a separate file (standard TypeScript functions):
+
+```typescript
+// activities.ts
+export async function checkInventory(itemId: string): Promise<number> {
+  // Query inventory database
+  return getInventoryCount(itemId);
+}
+
+export async function reserveItem(itemId: string, quantity: number): Promise<string> {
+  // Reserve item in inventory
+  return createReservation(itemId, quantity);
+}
+
+export async function notifyBackorder(itemId: string): Promise<void> {
+  // Send backorder notification
+  await sendBackorderEmail(itemId);
+}
+```
+
+Define your workflow (it orchestrates the activities):
+
+```typescript
+// workflows.ts
+import { MemFlow } from '@hotmeshio/hotmesh';
+import * as activities from './activities';
+
+export async function orderWorkflow(itemId: string, requestedQty: number) {
+  const { checkInventory, reserveItem, notifyBackorder } = MemFlow.workflow.proxyActivities<typeof activities>({
+    taskQueue: 'inventory-tasks',
+    retryPolicy: {
+      maximumAttempts: 3,
+      backoffCoefficient: 2,
+      maximumInterval: '300s'
+    }
+  });
+  
+  const availableQty = await checkInventory(itemId);
+  
+  if (availableQty >= requestedQty) {
+    return await reserveItem(itemId, requestedQty);
+  } else {
+    await notifyBackorder(itemId);
+    return 'backordered';
+  }
+}
+```
+
+Then register your workers and execute:
+
+```typescript
+// main.ts
+import { MemFlow } from '@hotmeshio/hotmesh';
+import { Client as Postgres } from 'pg';
+import * as activities from './activities';
+import { orderWorkflow } from './workflows';
+
+const connection = {
+  class: Postgres,
+  options: { connectionString: 'postgresql://localhost:5432/mydb' }
+};
+
+// Register activity worker
+await MemFlow.registerActivityWorker({
+  connection,
+  taskQueue: 'inventory-tasks'
+}, activities, 'inventory-activities');
+
+// Create workflow worker
+await MemFlow.Worker.create({
+  connection,
+  taskQueue: 'orders',
+  workflow: orderWorkflow
+});
+
+// Execute workflow
+const client = new MemFlow.Client({ connection });
+
+const handle = await client.workflow.start({
+  args: ['item-123', 5],
+  taskQueue: 'orders',
+  workflowName: 'orderWorkflow',
+  workflowId: 'order-456'
+});
+
+const result = await handle.result();
+console.log(result); // 'reservation-789' or 'backordered'
+```
+
+### HotMesh Approach (Functional YAML)
+
+The same workflow and activities can be expressed using HotMesh's declarative YAML syntax. First, define the workflow graph:
+
+```yaml
+# order.yaml
+app:
+  id: orders
+  version: '1'
+  graphs:
+    - subscribes: order.requested
+      
+      input:
+        schema:
+          type: object
+          properties:
+            itemId:
+              type: string
+            requestedQty:
+              type: number
+      
+      output:
+        schema:
+          type: object
+          properties:
+            result:
+              type: string
+      
+      activities:
+        trigger:
+          type: trigger
+        
+        checkInventory:
+          type: worker
+          topic: inventory.check
+          input:
+            maps:
+              itemId: '{trigger.output.data.itemId}'
+          output:
+            schema:
+              type: object
+              properties:
+                availableQty:
+                  type: number
+        
+        reserveItem:
+          type: worker
+          topic: inventory.reserve
+          input:
+            maps:
+              itemId: '{trigger.output.data.itemId}'
+              quantity: '{trigger.output.data.requestedQty}'
+          output:
+            schema:
+              type: object
+              properties:
+                reservationId:
+                  type: string
+          job:
+            maps:
+              result: '{$self.output.data.reservationId}'
+        
+        notifyBackorder:
+          type: worker
+          topic: inventory.backorder.notify
+          input:
+            maps:
+              itemId: '{trigger.output.data.itemId}'
+          job:
+            maps:
+              result: 'backordered'
+      
+      transitions:
+        trigger:
+          - to: checkInventory
+        
+        checkInventory:
+          - to: reserveItem
+            conditions:
+              match:
+                - expected: true
+                  actual:
+                    '@pipe':
+                      - ['{checkInventory.output.data.availableQty}', '{trigger.output.data.requestedQty}']
+                      - ['{@conditional.gte}']
+          
+          - to: notifyBackorder
+            conditions:
+              match:
+                - expected: false
+                  actual:
+                    '@pipe':
+                      - ['{checkInventory.output.data.availableQty}', '{trigger.output.data.requestedQty}']
+                      - ['{@conditional.gte}']
+```
+
+Then bind the same activities to worker topics and deploy:
+
+```typescript
+// main.ts (uses same activities.ts)
+import { HotMesh } from '@hotmeshio/hotmesh';
+import { Client as Postgres } from 'pg';
+import * as activities from './activities';
+
+const connection = {
+  class: Postgres,
+  options: { connectionString: 'postgresql://localhost:5432/mydb' }
+};
+
+const retryPolicy = {
+  maximumAttempts: 3,
+  backoffCoefficient: 2,
+  maximumInterval: '300s'
+};
+
+const hotMesh = await HotMesh.init({
+  appId: 'orders',
+  engine: { connection },
+  workers: [
+    {
+      topic: 'inventory.check',
+      connection,
+      retryPolicy,
+      callback: async (data) => {
+        const availableQty = await activities.checkInventory(data.data.itemId);
+        return {
+          metadata: { ...data.metadata },
+          data: { availableQty }
+        };
+      }
+    },
+    {
+      topic: 'inventory.reserve',
+      connection,
+      retryPolicy,
+      callback: async (data) => {
+        const reservationId = await activities.reserveItem(
+          data.data.itemId, 
+          data.data.quantity
+        );
+        return {
+          metadata: { ...data.metadata },
+          data: { reservationId }
+        };
+      }
+    },
+    {
+      topic: 'inventory.backorder.notify',
+      connection,
+      retryPolicy,
+      callback: async (data) => {
+        await activities.notifyBackorder(data.data.itemId);
+        return { metadata: { ...data.metadata } };
+      }
+    }
+  ]
+});
+
+// Deploy and activate
+await hotMesh.deploy('./order.yaml');
+await hotMesh.activate('1');
+
+// Execute workflow
+const result = await hotMesh.pubsub('order.requested', {
+  itemId: 'item-123',
+  requestedQty: 5
+});
+
+console.log(result.data.result); // 'reservation-789' or 'backordered'
+```
+
+## The Power of Transpilation
+
+Notice how both approaches implement the same logic:
+- Check inventory availability
+- If available: reserve the item
+- If not: send backorder notification
+
+MemFlow's procedural code can transpile to HotMesh's functional YAML. The mesh of engines executes either representation identically.
+
+## Key Features
+
+### Zero Infrastructure
+- No workflow servers to manage
+- No separate state stores
+- No additional databases
+- Just Postgres and your application code
+
+### Built-in Resilience
+- Automatic retries with exponential backoff
+- Durable execution through database streams
+- Crash recovery without data loss
+- Hot deployments with zero downtime
+
+### Complete Flexibility
+- Choose procedural (MemFlow) or functional (HotMesh) style
+- Mix and match approaches in the same system
+- Seamless interoperability between styles
+- Full Temporal API compatibility with MemFlow
+
+### Distributed by Design
+- Every database client is part of the mesh
+- Automatic load distribution
+- No single points of failure
+- Scale by adding database connections
+
+## Installation
 
 ```bash
 npm install @hotmeshio/hotmesh
 ```
 
----
+## Getting Started
 
-## What It Solves
+1. **Connect to Postgres**
+   ```typescript
+   const connection = {
+     class: Postgres,
+     options: { connectionString: 'postgresql://localhost:5432/mydb' }
+   };
+   ```
 
-Modernization often stalls where systems meet people and AI.
-HotMesh builds a **durable execution bridge** across those seams — linking your database, APIs, RPA, and AI agents into one recoverable process.
+2. **Initialize HotMesh**
+   ```typescript
+   const hotMesh = await HotMesh.init({
+     appId: 'myapp',
+     engine: { connection }
+   });
+   ```
 
-* **AI that can fail safely** — retries, resumable state, and confidence tracking
-* **Human steps that don’t block** — pause for days, resume instantly
-* **Legacy systems that stay connected** — SQL and RPA coexist seamlessly
-* **Full visibility** — query workflows and outcomes directly in SQL
+3. **Deploy workflows** (YAML or code)
+4. **Bind workers** to handle tasks
+5. **Execute workflows** through simple pub/sub
 
----
+## Why HotMesh?
 
-## Core Model
+Workflow systems tend to force a choice between two models:
 
-### Entity — the Business Process Record
+* **Choreography**: Distributed by design, but difficult to reason about, observe, and debug
+* **Orchestration**: Easier to model and visualize, but dependent on centralized infrastructure
 
-Every workflow writes to a durable JSON document in Postgres called an **Entity**.
-It becomes the shared memory between APIs, RPA jobs, LLM agents, and human operators.
+HotMesh removes the need to choose. It preserves the explicit structure of orchestration while operating in a fully distributed way. Workflow state lives in the database, and participating clients act as peers in the execution mesh.
 
-```ts
-const e = await MemFlow.workflow.entity();
+## Advanced Capabilities
 
-// initialize from a source event
-await e.set({
-  caseId: "A42",
-  stage: "verification",
-  retries: 0,
-  notes: []
-});
+- **Long-running workflows**: Durable sleep, wait conditions
+- **Workflow composition**: Parent/child workflows, sub-workflows
+- **Entity management**: Built-in JSONB state management
+- **Interceptors**: Cross-cutting concerns as durable functions
+- **Observability**: OpenTelemetry integration
+- **Time travel**: Replay workflows from any point
+- **Targeted throttling**: Control message flow rate for workers
+- **Hot deployments**: Update workflows without downtime
 
-// AI step adds structured output
-await e.merge({
-  aiSummary: { result: "Verified coverage", confidence: 0.93 },
-  stage: "approval",
-});
+## Use Cases
 
-// human operator review
-await e.append("notes", { reviewer: "ops1", comment: "ok to proceed" });
-
-// maintain counters
-await e.increment("retries", 1);
-
-// retrieve current process state
-const data = await e.get();
-```
-
-**Minimal surface contract**
-
-| Command       | Purpose                            |
-| ------------- | ---------------------------------- |
-| `set()`       | Initialize workflow state          |
-| `merge()`     | Update any JSON path               |
-| `append()`    | Add entries to lists (logs, notes) |
-| `increment()` | Maintain counters or metrics       |
-| `get()`       | Retrieve current state             |
-
-Entities are stored in plain SQL tables, directly queryable:
-
-```sql
-SELECT id, context->>'stage', context->'aiSummary'->>'result'
-FROM my_app.jobs
-WHERE entity = 'claims-review'
-  AND context->>'stage' != 'complete';
-```
+- **Data Pipelines**: ETL, data processing, analytics workflows
+- **Business Processes**: Order management, approval flows, onboarding
+- **AI Agents**: Multi-step reasoning, tool orchestration, memory management
+- **Microservice Orchestration**: Saga patterns, distributed transactions
+- **Event Processing**: Complex event handling, stream processing
+- **Batch Jobs**: Scheduled tasks, recurring workflows
 
 ---
 
-### Hook — Parallel Work Units
-
-Hooks are stateless functions that operate on the shared Entity.
-Each hook executes independently (API, RPA, or AI), retrying automatically until success.
-
-```ts
-await MemFlow.workflow.execHook({
-  workflowName: "verifyCoverage",
-  args: ["A42"]
-});
-```
-
-To run independent work in parallel, use a **batch execution** pattern:
-
-```ts
-// Run independent research perspectives in parallel using batch execution
-await MemFlow.workflow.execHookBatch([
-  {
-    key: 'optimistic',
-    options: {
-      taskQueue: 'agents',
-      workflowName: 'optimisticPerspective',
-      args: [query],
-      signalId: 'optimistic-complete'
-    }
-  },
-  {
-    key: 'skeptical',
-    options: {
-      taskQueue: 'agents',
-      workflowName: 'skepticalPerspective',
-      args: [query],
-      signalId: 'skeptical-complete'
-    }
-  }
-]);
-```
-
-Each hook runs in its own recoverable context, allowing AI, API, and RPA agents to operate independently while writing to the same durable Entity.
-
----
-
-## Example — AI-Assisted Claims Review
-
-```ts
-export async function claimsWorkflow(caseId: string) {
-  const e = await MemFlow.workflow.entity();
-  await e.set({ caseId, stage: "intake", approved: false });
-
-  // Run verification and summarization in parallel
-  await MemFlow.workflow.execHookBatch([
-    {
-      key: 'verifyCoverage',
-      options: {
-        taskQueue: 'agents',
-        workflowName: 'verifyCoverage',
-        args: [caseId],
-        signalId: 'verify-complete'
-      }
-    },
-    {
-      key: 'generateSummary',
-      options: {
-        taskQueue: 'agents',
-        workflowName: 'generateSummary',
-        args: [caseId],
-        signalId: 'summary-complete'
-      }
-    }
-  ]);
-
-  // Wait for human sign-off
-  const approval = await MemFlow.workflow.waitFor("human-approval");
-  await e.merge({ approved: approval === true, stage: "complete" });
-
-  return await e.get();
-}
-```
-
-This bridges:
-
-* an existing insurance or EHR system (status + audit trail)
-* LLM agents for data validation and summarization
-* a human reviewer for final sign-off
-
-—all within one recoverable workflow record.
-
----
-
-## Why It Fits Integration Work
-
-HotMesh is purpose-built for **incremental modernization**.
-
-| Need                          | What HotMesh Provides                    |
-| ----------------------------- | ---------------------------------------- |
-| Tie AI into legacy apps       | Durable SQL bridge with full visibility  |
-| Keep human review steps       | Wait-for-signal workflows                |
-| Handle unstable APIs          | Built-in retries and exponential backoff |
-| Trace process across systems  | Unified JSON entity per workflow         |
-| Store long-running AI results | Durable state for agents and automations |
-
----
+**Retain your process data. Learn from your process data.**
 
 ## License
 
-Apache 2.0 — free to build, integrate, and deploy.
-Do not resell the core engine as a hosted service.
+HotMesh is licensed under the Apache License, Version 2.0.
+
+You may use, modify, and distribute HotMesh in accordance with the license, including as part of your own applications and services. However, offering HotMesh itself as a standalone, hosted commercial orchestration service (or a substantially similar service) requires prior written permission from the authors.
+

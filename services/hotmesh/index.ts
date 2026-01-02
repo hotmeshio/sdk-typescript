@@ -16,6 +16,7 @@ import {
 } from '../../types/job';
 import { HotMeshConfig, HotMeshManifest } from '../../types/hotmesh';
 import { JobExport } from '../../types/exporter';
+import { ProviderConfig, ProvidersConfig } from '../../types/provider';
 import {
   JobMessageCallback,
   QuorumMessage,
@@ -36,24 +37,13 @@ import {
   StreamData,
   StreamDataResponse,
   StreamStatus,
+  RetryPolicy,
 } from '../../types/stream';
 import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
 
 /**
- * HotMesh is a distributed, reentrant process orchestration engine that transforms
- * Postgres into a resilient service mesh capable of running
+ * HotMesh transforms Postgres into a durable workflow orchestration engine capable of running
  * fault-tolerant workflows across multiple services and systems.
- *
- * ## Core Concepts
- *
- * **Distributed Quorum Architecture**: HotMesh operates as a distributed quorum
- * where multiple engine and worker instances coordinate using CQRS principles.
- * Each member reads from assigned topic queues and writes results to other queues,
- * creating emergent workflow orchestration without a central controller.
- *
- * **Reentrant Process Engine**: Unlike traditional workflow engines, HotMesh
- * provides built-in retry logic, idempotency, and failure recovery. Your business
- * logic doesn't need to handle timeouts or retries - the engine manages all of that.
  *
  * ## Key Features
  *
@@ -307,31 +297,27 @@ class HotMesh {
    *   appId: 'my-app',
    *   engine: {
    *     connection: {
-   *       stream: {
-   *         class: Postgres,
-   *         options: { connectionString: 'postgresql://...' },
-   *         // Default retry policy for all streams
-   *         retryPolicy: {
-   *           maximumAttempts: 5,      // Retry up to 5 times
-   *           backoffCoefficient: 2,   // Exponential: 2^0, 2^1, 2^2...
-   *           maximumInterval: '300s'  // Cap delay at 5 minutes
-   *         }
-   *       }
+   *       class: Postgres,
+   *       options: { connectionString: 'postgresql://...' }
+   *     },
+   *     // Default retry policy for engine streams
+   *     retryPolicy: {
+   *       maximumAttempts: 5,      // Retry up to 5 times
+   *       backoffCoefficient: 2,   // Exponential: 2^0, 2^1, 2^2...
+   *       maximumInterval: '300s'  // Cap delay at 5 minutes
    *     }
    *   },
    *   workers: [{
    *     topic: 'order.process',
    *     connection: {
-   *       stream: {
-   *         class: Postgres,
-   *         options: { connectionString: 'postgresql://...' },
-   *         // Worker-specific retry policy
-   *         retryPolicy: {
-   *           maximumAttempts: 10,
-   *           backoffCoefficient: 1.5,
-   *           maximumInterval: '600s'
-   *         }
-   *       }
+   *       class: Postgres,
+   *       options: { connectionString: 'postgresql://...' }
+   *     },
+   *     // Worker-specific retry policy
+   *     retryPolicy: {
+   *       maximumAttempts: 10,
+   *       backoffCoefficient: 1.5,
+   *       maximumInterval: '600s'
    *     },
    *     callback: async (data) => {
    *       // Your business logic here
@@ -390,6 +376,11 @@ class HotMesh {
         config.engine.readonly = true;
       }
 
+      // Apply retry policy to stream connection if provided
+      if (config.engine.retryPolicy) {
+        this.applyRetryPolicy(config.engine.connection, config.engine.retryPolicy);
+      }
+
       // Initialize task queue for engine
       config.engine.taskQueue = this.initTaskQueue(
         config.engine.taskQueue,
@@ -439,6 +430,11 @@ class HotMesh {
     // Initialize task queues for workers
     if (config.workers) {
       for (const worker of config.workers) {
+        // Apply retry policy to stream connection if provided
+        if (worker.retryPolicy) {
+          this.applyRetryPolicy(worker.connection, worker.retryPolicy);
+        }
+
         worker.taskQueue = this.initTaskQueue(
           worker.taskQueue,
           config.taskQueue,
@@ -475,6 +471,25 @@ class HotMesh {
 
     // Default queue as fallback
     return DEFAULT_TASK_QUEUE;
+  }
+
+  /**
+   * Apply retry policy to the stream connection within a ProviderConfig or ProvidersConfig.
+   * Handles both short-form (ProviderConfig) and long-form (ProvidersConfig) connection configs.
+   * @private
+   */
+  private applyRetryPolicy(
+    connection: ProviderConfig | ProvidersConfig,
+    retryPolicy: RetryPolicy,
+  ): void {
+    // Check if this is ProvidersConfig (has 'stream' property)
+    if ('stream' in connection && connection.stream) {
+      // Long-form: apply to the stream sub-config
+      connection.stream.retryPolicy = retryPolicy;
+    } else {
+      // Short-form: apply directly to the connection
+      (connection as ProviderConfig).retryPolicy = retryPolicy;
+    }
   }
 
   // ************* PUB/SUB METHODS *************

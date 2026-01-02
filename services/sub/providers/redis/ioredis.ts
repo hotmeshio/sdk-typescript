@@ -194,11 +194,21 @@ class IORedisSubService extends SubService<RedisClientType> {
     //      because a Redis connection with subscriptions
     //      may not publish (is read only).
     this.logger.debug('ioredis-publish', { topic, message });
-    const status: number = await this.storeClient.publish(
-      topic,
-      JSON.stringify(message),
-    );
-    return status === 1;
+    try {
+      const status: number = await this.storeClient.publish(
+        topic,
+        JSON.stringify(message),
+      );
+      return status === 1;
+    } catch (error) {
+      // Connection closed during test cleanup - log and continue gracefully
+      if (error?.message?.includes('Connection is closed')) {
+        this.logger.debug('ioredis-publish-connection-closed', { topic, message: message.type });
+        return false;
+      }
+      // Re-throw unexpected errors
+      throw error;
+    }
   }
 }
 

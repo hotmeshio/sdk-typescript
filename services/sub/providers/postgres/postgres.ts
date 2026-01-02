@@ -216,7 +216,18 @@ class PostgresSubService extends SubService<
     // Stop listening to the safe topic if no more callbacks exist
     if (callbacks.size === 0) {
       clientSubscriptions.delete(safeKey);
-      await this.eventClient.query(`UNLISTEN "${safeKey}"`);
+      
+      // Check if client is still connected before attempting to unlisten
+      if (!(this.eventClient as any)._ending && !(this.eventClient as any)._ended) {
+        try {
+          await this.eventClient.query(`UNLISTEN "${safeKey}"`);
+        } catch (err) {
+          // Silently handle errors if client was closed during operation
+          if (!err?.message?.includes('closed') && !err?.message?.includes('queryable')) {
+            this.logger?.error(`Error unlistening from ${safeKey}:`, err);
+          }
+        }
+      }
     }
 
     this.logger.debug(`postgres-unsubscribe`, {
@@ -271,6 +282,13 @@ class PostgresSubService extends SubService<
     appId: string,
     topic?: string,
   ): Promise<boolean> {
+    // Check if client is still connected before attempting to publish
+    // This prevents "Client was closed and is not queryable" errors during cleanup
+    if ((this.storeClient as any)._ending || (this.storeClient as any)._ended) {
+      this.logger?.debug('postgres-publish-skipped-closed-client', { appId, topic });
+      return false;
+    }
+
     const [originalKey, safeKey] = this.mintSafeKey(keyType, {
       appId,
       engineId: topic,
@@ -307,10 +325,24 @@ class PostgresSubService extends SubService<
     }
 
     // Publish the message using the safe topic
-    payload = payload.replace(/'/g, "''");
-    await this.storeClient.query(`NOTIFY "${safeKey}", '${payload}'`);
-    this.logger.debug(`postgres-publish`, { originalKey, safeKey });
-    return true;
+    try {
+      payload = payload.replace(/'/g, "''");
+      await this.storeClient.query(`NOTIFY "${safeKey}", '${payload}'`);
+      this.logger.debug(`postgres-publish`, { originalKey, safeKey });
+      return true;
+    } catch (err) {
+      // Handle gracefully if client was closed during operation
+      if (err?.message?.includes('closed') || err?.message?.includes('queryable')) {
+        this.logger?.debug('postgres-publish-failed-closed-client', { 
+          originalKey, 
+          safeKey,
+          error: err.message 
+        });
+        return false;
+      }
+      // Re-throw other errors
+      throw err;
+    }
   }
 
   async psubscribe(): Promise<void> {

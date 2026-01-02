@@ -30,10 +30,16 @@ export class ErrorHandler {
         ? parseInt(retryPolicy.maximumInterval)
         : (retryPolicy.maximumInterval || 120);
       
-      if (tryCount < maxAttempts) {
-        // Exponential backoff: min(coefficient^try, maxInterval)
+      // Check if we can retry (next attempt would be attempt #tryCount+2, must be <= maxAttempts)
+      // tryCount=0 is 1st attempt, tryCount=1 is 2nd attempt, etc.
+      // So after tryCount, we've made (tryCount + 1) attempts
+      // We can retry if (tryCount + 1) < maxAttempts
+      if ((tryCount + 1) < maxAttempts) {
+        // Exponential backoff: min(coefficient^(try+1), maxInterval)
+        // First retry (after try=0): coefficient^1
+        // Second retry (after try=1): coefficient^2, etc.
         const backoffSeconds = Math.min(
-          Math.pow(backoffCoeff, tryCount),
+          Math.pow(backoffCoeff, tryCount + 1),
           maxInterval
         );
         return [true, backoffSeconds * 1000]; // Convert to milliseconds
@@ -130,7 +136,11 @@ export class ErrorHandler {
   ): Promise<string> {
     const [shouldRetry, timeout] = this.shouldRetry(input, output, retryPolicy);
     if (shouldRetry) {
-      await sleepFor(timeout);
+      // Only sleep if no retryPolicy (legacy behavior for backward compatibility)
+      // With retryPolicy, use visibility timeout instead of in-memory sleep
+      if (!retryPolicy) {
+        await sleepFor(timeout);
+      }
       
       // Create new message with incremented try count
       const newMessage: any = {
@@ -143,6 +153,15 @@ export class ErrorHandler {
       if ((input as any)._streamRetryConfig) {
         newMessage._streamRetryConfig = (input as any)._streamRetryConfig;
       }
+      
+      // Add visibility delay for production-ready retry with retryPolicy
+      if (retryPolicy && timeout > 0) {
+        newMessage._visibilityDelayMs = timeout;
+      }
+      
+      // Track retry attempt count in database
+      const currentAttempt = (input as any)._retryAttempt || 0;
+      newMessage._retryAttempt = currentAttempt + 1;
       
       return (await publishMessage(input.metadata.topic, newMessage)) as string;
     } else {

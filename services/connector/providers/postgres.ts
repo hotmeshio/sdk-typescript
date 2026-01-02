@@ -177,7 +177,10 @@ class PostgresConnection extends AbstractConnection<
       this.disconnecting = true;
       await this.disconnectPoolClients();
       await this.disconnectConnections();
+      // Clear taskQueue connections cache when disconnecting all
       this.taskQueueConnections.clear();
+      // Clear the base class instances cache to allow reconnection with same IDs
+      this.instances.clear();
       this.disconnecting = false;
     }
   }

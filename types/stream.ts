@@ -145,6 +145,18 @@ export interface StreamData {
     backoff_coefficient: number;
     maximum_interval_seconds: number;
   };
+  /**
+   * Visibility delay in milliseconds for retry with visibility timeout.
+   * When set, the message will be invisible until the delay expires.
+   * @internal
+   */
+  _visibilityDelayMs?: number;
+  /**
+   * Current retry attempt count from database.
+   * Tracks how many times this message has been retried.
+   * @internal
+   */
+  _retryAttempt?: number;
 }
 
 /** Extends StreamData for responses, allowing for inheritance of the base properties */
@@ -191,6 +203,8 @@ export type RouterConfig = {
   reclaimCount?: number;
   /** if true, will not process stream messages; default true */
   readonly?: boolean;
+  /** Retry policy for worker messages. Applied when worker callback throws an error */
+  retryPolicy?: RetryPolicy;
 };
 
 export type StreamProviderType =
@@ -307,4 +321,23 @@ export interface PublishMessageConfig {
    * ```
    */
   retryPolicy?: RetryPolicy;
+}
+
+/**
+ * Notification consumer configuration for PostgreSQL stream provider.
+ * Manages notification-based message consumption with fallback polling.
+ */
+export interface NotificationConsumer {
+  /** Name of the stream being consumed */
+  streamName: string;
+  /** Name of the consumer group */
+  groupName: string;
+  /** Unique name identifying this consumer */
+  consumerName: string;
+  /** Callback function invoked when messages are available */
+  callback: (messages: StreamMessage[]) => void;
+  /** Whether this consumer is actively listening for notifications */
+  isListening: boolean;
+  /** Timestamp of the last fallback check (used for periodic polling) */
+  lastFallbackCheck: number;
 }

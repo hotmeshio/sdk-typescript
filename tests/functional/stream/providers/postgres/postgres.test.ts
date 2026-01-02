@@ -35,10 +35,19 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       })
     ).getClient();
 
-    dropTables(postgresClient);
+    await dropTables(postgresClient);
   });
 
   beforeEach(async () => {
+    // Clean up the previous service instance if it exists
+    if (postgresStreamService) {
+      try {
+        await postgresStreamService.cleanup();
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
+
     // Initialize PostgresStreamService
     postgresStreamService = new PostgresStreamService(
       postgresClient as PostgresClientType & ProviderClient,
@@ -52,6 +61,17 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       await postgresStreamService.deleteStream('*');
     } catch (error) {
       // Stream might not exist; ignore error
+    }
+  });
+
+  afterEach(async () => {
+    // Ensure cleanup happens after each test
+    if (postgresStreamService) {
+      try {
+        await postgresStreamService.cleanup();
+      } catch (error) {
+        // Ignore cleanup errors
+      }
     }
   });
 
@@ -384,7 +404,9 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       // The stale message should be picked up by Consumer B
       expect(consumedMessagesB).toHaveLength(1);
       expect(consumedMessagesB[0].id).toBe(consumedMessagesA[0].id);
-      expect(consumedMessagesB[0].data).toEqual(parseStreamMessage(message[0]));
+      // Account for _retryAttempt field injected by postgres stream service
+      const expectedData = { ...parseStreamMessage(message[0]), _retryAttempt: 0 };
+      expect(consumedMessagesB[0].data).toEqual(expectedData);
     });
   });
 
@@ -402,6 +424,559 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
         maxMessageSize: 1024 * 1024,
         maxBatchSize: 256,
       });
+    });
+  });
+
+  describe('Visibility Timeout/Delay', () => {
+    beforeEach(async () => {
+      await postgresStreamService.createStream(TEST_STREAM);
+      await postgresStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
+    });
+
+    it('should not consume messages with future visibility delay', async () => {
+      // Create message with visibility delay (internal field)
+      const messageData = {
+        id: 1,
+        data: 'delayed-message',
+        _visibilityDelayMs: 2000, // 2 second delay
+      };
+      const messages = [JSON.stringify(messageData)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Try to consume immediately - should get nothing
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { batchSize: 10 },
+      );
+
+      expect(consumed).toHaveLength(0);
+    });
+
+    it('should consume messages after visibility delay expires', async () => {
+      // Create message with short visibility delay
+      const messageData = {
+        id: 2,
+        data: 'delayed-message-2',
+        _visibilityDelayMs: 1000, // 1 second delay
+      };
+      const messages = [JSON.stringify(messageData)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Wait for visibility delay to expire
+      await sleepFor(1500);
+
+      // Now should be able to consume
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { batchSize: 10 },
+      );
+
+      expect(consumed).toHaveLength(1);
+      expect(consumed[0].data.data).toBe('delayed-message-2');
+    });
+
+    it('should handle mixed visibility delays correctly', async () => {
+      // Publish messages with different visibility delays
+      const messages = [
+        JSON.stringify({ id: 1, data: 'immediate' }), // No delay
+        JSON.stringify({ id: 2, data: 'delayed-3s', _visibilityDelayMs: 3000 }), // 3 second delay
+        JSON.stringify({ id: 3, data: 'delayed-1s', _visibilityDelayMs: 1000 }), // 1 second delay
+      ];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Immediate consumption - should only get immediate message
+      const firstBatch = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { batchSize: 10 },
+      );
+      expect(firstBatch).toHaveLength(1);
+      expect(firstBatch[0].data.data).toBe('immediate');
+      await postgresStreamService.ackAndDelete(TEST_STREAM, TEST_GROUP, [firstBatch[0].id]);
+
+      // Wait 1.5 seconds - should get 1s delayed message
+      await sleepFor(1500);
+      const secondBatch = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { batchSize: 10 },
+      );
+      expect(secondBatch).toHaveLength(1);
+      expect(secondBatch[0].data.data).toBe('delayed-1s');
+      await postgresStreamService.ackAndDelete(TEST_STREAM, TEST_GROUP, [secondBatch[0].id]);
+
+      // Wait another 2 seconds - should get 3s delayed message
+      await sleepFor(2000);
+      const thirdBatch = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        { batchSize: 10 },
+      );
+      expect(thirdBatch).toHaveLength(1);
+      expect(thirdBatch[0].data.data).toBe('delayed-3s');
+    });
+  });
+
+  describe('Retry Policy Configuration', () => {
+    beforeEach(async () => {
+      await postgresStreamService.createStream(TEST_STREAM);
+      await postgresStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
+    });
+
+    it('should publish and consume message with custom retry policy', async () => {
+      // Create message with custom retry policy
+      const messageData = {
+        id: 1,
+        data: 'message-with-retry',
+        _streamRetryConfig: {
+          max_retry_attempts: 5,
+          backoff_coefficient: 2.0,
+          maximum_interval_seconds: 60,
+        },
+      };
+      const messages = [JSON.stringify(messageData)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Consume the message
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+      );
+
+      expect(consumed).toHaveLength(1);
+      expect(consumed[0].retryPolicy).toBeDefined();
+      expect(consumed[0].retryPolicy?.maximumAttempts).toBe(5);
+      expect(consumed[0].retryPolicy?.backoffCoefficient).toBe(2.0);
+      expect(consumed[0].retryPolicy?.maximumInterval).toBe(60);
+    });
+
+    it('should not inject retry policy for default values', async () => {
+      // Create message without custom retry policy (uses defaults)
+      const messageData = { id: 1, data: 'message-default-retry' };
+      const messages = [JSON.stringify(messageData)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Consume the message
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+      );
+
+      expect(consumed).toHaveLength(1);
+      expect(consumed[0].retryPolicy).toBeUndefined();
+      expect(consumed[0].data._streamRetryConfig).toBeUndefined();
+    });
+
+    it('should handle retry policy via publishMessages options', async () => {
+      const messages = [JSON.stringify({ id: 1, data: 'test' })];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages, {
+        retryPolicy: {
+          maximumAttempts: 7,
+          backoffCoefficient: 1.5,
+          maximumInterval: 90,
+        },
+      });
+
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+      );
+
+      expect(consumed).toHaveLength(1);
+      expect(consumed[0].retryPolicy).toBeDefined();
+      expect(consumed[0].retryPolicy?.maximumAttempts).toBe(7);
+      expect(consumed[0].retryPolicy?.backoffCoefficient).toBe(1.5);
+      expect(consumed[0].retryPolicy?.maximumInterval).toBe(90);
+    });
+  });
+
+  describe('Notification-Based Consumption', () => {
+    beforeEach(async () => {
+      await postgresStreamService.createStream(TEST_STREAM);
+      await postgresStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
+    });
+
+    it('should receive notifications when messages are published', async () => {
+      const receivedMessages: any[] = [];
+      let resolveTest: () => void;
+      const testPromise = new Promise<void>((resolve) => {
+        resolveTest = resolve;
+      });
+
+      // Set up notification consumer
+      await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        {
+          enableNotifications: true,
+          notificationCallback: (messages) => {
+            receivedMessages.push(...messages);
+            if (receivedMessages.length >= 2) {
+              resolveTest();
+            }
+          },
+        },
+      );
+
+      // Give setup time to complete
+      await sleepFor(100);
+
+      // Publish messages - should trigger notifications
+      const messages = [msg(1), msg(2)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Wait for callback to be triggered
+      await Promise.race([
+        testPromise,
+        sleepFor(5000).then(() => {
+          throw new Error('Timeout waiting for notifications');
+        }),
+      ]);
+
+      expect(receivedMessages).toHaveLength(2);
+      // Check that we received both messages (order may vary due to initial fetch)
+      const ids = receivedMessages.map(m => (m.data as any).id).sort();
+      expect(ids).toEqual([1, 2]);
+    }, 10000);
+
+    it('should stop receiving notifications after cleanup', async () => {
+      const receivedMessages: any[] = [];
+
+      // Set up notification consumer
+      await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        {
+          enableNotifications: true,
+          notificationCallback: (messages) => {
+            receivedMessages.push(...messages);
+          },
+        },
+      );
+
+      await sleepFor(100);
+
+      // Publish first message
+      await postgresStreamService.publishMessages(TEST_STREAM, [msg(1)]);
+      await sleepFor(200);
+
+      // Stop the consumer
+      await postgresStreamService.stopNotificationConsumer(TEST_STREAM, TEST_GROUP);
+      await sleepFor(100);
+
+      const countBefore = receivedMessages.length;
+
+      // Publish another message - should NOT trigger callback
+      await postgresStreamService.publishMessages(TEST_STREAM, [msg(2)]);
+      await sleepFor(200);
+
+      // Count should not have increased
+      expect(receivedMessages.length).toBe(countBefore);
+    }, 10000);
+  });
+
+  describe('Stream Trimming Operations', () => {
+    beforeEach(async () => {
+      await postgresStreamService.createStream(TEST_STREAM);
+      await postgresStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
+    });
+
+    it('should trim stream by max length', async () => {
+      // Publish 5 messages
+      const messages = [msg(1), msg(2), msg(3), msg(4), msg(5)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Verify all messages exist
+      let depth = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBe(5);
+
+      // Trim to keep only 3 messages (expire oldest 2)
+      const trimmed = await postgresStreamService.trimStream(TEST_STREAM, {
+        maxLen: 3,
+      });
+
+      expect(trimmed).toBe(2);
+
+      // Verify only 3 messages remain (getStreamDepth excludes expired)
+      depth = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBe(3);
+    });
+
+    it('should trim stream by max age', async () => {
+      // Publish messages
+      const messages = [msg(1), msg(2)];
+      await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Wait 1 second
+      await sleepFor(1000);
+
+      // Publish more messages
+      await postgresStreamService.publishMessages(TEST_STREAM, [msg(3)]);
+
+      // Trim messages older than 500ms
+      const trimmed = await postgresStreamService.trimStream(TEST_STREAM, {
+        maxAge: 500,
+      });
+
+      // First 2 messages should be trimmed
+      expect(trimmed).toBeGreaterThanOrEqual(2);
+
+      // Verify only newest message remains (getStreamDepth excludes expired)
+      const depth = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBe(1);
+    });
+
+    it('should trim stream by both maxLen and maxAge', async () => {
+      // Publish 3 messages
+      await postgresStreamService.publishMessages(TEST_STREAM, [msg(1), msg(2), msg(3)]);
+
+      // Wait
+      await sleepFor(1000);
+
+      // Publish 2 more messages
+      await postgresStreamService.publishMessages(TEST_STREAM, [msg(4), msg(5)]);
+
+      // Trim: keep max 4 messages AND expire messages older than 500ms
+      // Note: Both operations run, so old messages are trimmed, then if >4 remain, oldest are trimmed
+      const trimmed = await postgresStreamService.trimStream(TEST_STREAM, {
+        maxLen: 4,
+        maxAge: 500,
+      });
+
+      // Should trim at least the 3 old messages
+      expect(trimmed).toBeGreaterThanOrEqual(3);
+
+      // After maxAge trim: 2 messages remain (the new ones)
+      // maxLen=4 won't trim anything since we only have 2
+      const depth = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBeLessThanOrEqual(2);
+    });
+  });
+
+  describe('Message Deletion Operations', () => {
+    beforeEach(async () => {
+      await postgresStreamService.createStream(TEST_STREAM);
+      await postgresStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
+    });
+
+    it('should soft delete messages', async () => {
+      // Publish messages
+      const messages = [msg(1), msg(2), msg(3)];
+      const messageIds = await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Verify messages exist
+      let depth = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBe(3);
+
+      // Delete specific messages
+      const deletedCount = await postgresStreamService.deleteMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        messageIds.slice(0, 2) as string[],
+      );
+
+      expect(deletedCount).toBe(2);
+
+      // Verify depth decreased (getStreamDepth excludes expired)
+      depth = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBe(1);
+    });
+
+    it('should not consume soft-deleted messages', async () => {
+      const messages = [msg(1)];
+      const messageIds = await postgresStreamService.publishMessages(TEST_STREAM, messages);
+
+      // Delete the message immediately (before consuming)
+      await postgresStreamService.deleteMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        messageIds as string[],
+      );
+
+      // Try to consume - should get nothing since message is deleted
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+      );
+      expect(consumed).toHaveLength(0);
+
+      // Verify depth is 0
+      const depth = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBe(0);
+    });
+  });
+
+  describe('Cleanup and Resource Management', () => {
+    it('should properly cleanup resources', async () => {
+      const testStream = 'cleanup-test-stream';
+      await postgresStreamService.createStream(testStream);
+      await postgresStreamService.createConsumerGroup(testStream, TEST_GROUP);
+
+      // Set up notification consumer
+      const receivedMessages: any[] = [];
+      await postgresStreamService.consumeMessages(
+        testStream,
+        TEST_GROUP,
+        TEST_CONSUMER,
+        {
+          enableNotifications: true,
+          notificationCallback: (messages) => {
+            receivedMessages.push(...messages);
+          },
+        },
+      );
+
+      await sleepFor(100);
+
+      // Cleanup
+      await postgresStreamService.cleanup();
+
+      // Verify cleanup occurred (no errors thrown)
+      expect(true).toBe(true);
+    });
+  });
+
+  describe('Retry Attempt Tracking', () => {
+    beforeEach(async () => {
+      await postgresStreamService.createStream(TEST_STREAM);
+      await postgresStreamService.createConsumerGroup(TEST_STREAM, TEST_GROUP);
+    });
+
+    afterEach(async () => {
+      // Clean up any remaining messages
+      try {
+        await postgresStreamService.deleteStream(TEST_STREAM);
+      } catch (error) {
+        // Ignore
+      }
+    });
+
+    it('should track retry attempts in messages', async () => {
+      // Publish message with retry attempt and a minimal visibility delay
+      // (retry_attempt column only inserted when visibilityDelayMs > 0)
+      const messageData = {
+        id: 1,
+        data: 'retry-test',
+        _retryAttempt: 2,
+        _visibilityDelayMs: 1, // Must be > 0 to trigger retry_attempt column
+      };
+      const messages = [JSON.stringify(messageData)];
+      const publishedIds = await postgresStreamService.publishMessages(TEST_STREAM, messages);
+      
+      expect(publishedIds).toHaveLength(1);
+
+      // Small delay to ensure message is visible
+      await sleepFor(10);
+
+      // Verify message exists before consuming
+      const depth = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBe(1);
+
+      // Consume the message
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+      );
+
+      expect(consumed).toHaveLength(1);
+      expect(consumed[0].data._retryAttempt).toBe(2);
+    });
+
+    it('should default retry attempt to 0 for new messages', async () => {
+      // Simple message without retry config - uses DB default (0)
+      const messages = [msg(1)];
+      const publishedIds = await postgresStreamService.publishMessages(TEST_STREAM, messages);
+      
+      expect(publishedIds).toHaveLength(1);
+
+      // Verify message exists
+      const depth = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      expect(depth).toBe(1);
+
+      const consumed = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        TEST_GROUP,
+        TEST_CONSUMER,
+      );
+
+      expect(consumed).toHaveLength(1);
+      // When no retry config/visibility delay, retry_attempt defaults to 0 in DB
+      // and gets injected into the message data on consumption
+      expect(consumed[0].data._retryAttempt).toBe(0);
+    });
+  });
+
+  describe('Multiple Consumer Groups', () => {
+    beforeEach(async () => {
+      await postgresStreamService.createStream(TEST_STREAM);
+      await postgresStreamService.createStream(TEST_STREAM + ':');
+    });
+
+    afterEach(async () => {
+      // Clean up
+      try {
+        await postgresStreamService.deleteStream(TEST_STREAM);
+        await postgresStreamService.deleteStream(TEST_STREAM + ':');
+      } catch (error) {
+        // Ignore
+      }
+    });
+
+    it('should isolate messages between different consumer groups', async () => {
+      const GROUP_A = 'WORKER';
+      const GROUP_B = 'ENGINE';
+
+      // Publish messages to stream with WORKER group (default)
+      const messagesWorker = [msg(1), msg(2)];
+      const publishedWorker = await postgresStreamService.publishMessages(TEST_STREAM, messagesWorker);
+      expect(publishedWorker).toHaveLength(2);
+
+      // Publish messages to stream with ENGINE group (stream name ending with ':')
+      const messagesEngine = [msg(3), msg(4)];
+      const publishedEngine = await postgresStreamService.publishMessages(TEST_STREAM + ':', messagesEngine);
+      expect(publishedEngine).toHaveLength(2);
+
+      // Verify depths
+      const depthWorker = await postgresStreamService.getStreamDepth(TEST_STREAM);
+      const depthEngine = await postgresStreamService.getStreamDepth(TEST_STREAM + ':');
+      expect(depthWorker).toBe(2);
+      expect(depthEngine).toBe(2);
+
+      // Consume from WORKER group
+      const consumedWorker = await postgresStreamService.consumeMessages(
+        TEST_STREAM,
+        GROUP_A,
+        'consumerA',
+        { batchSize: 10 },
+      );
+
+      // Consume from ENGINE group
+      const consumedEngine = await postgresStreamService.consumeMessages(
+        TEST_STREAM + ':',
+        GROUP_B,
+        'consumerB',
+        { batchSize: 10 },
+      );
+
+      // Each group should only see its own messages
+      expect(consumedWorker).toHaveLength(2);
+      expect(consumedEngine).toHaveLength(2);
+      expect((consumedWorker[0].data as any).id).toBe(1);
+      expect((consumedEngine[0].data as any).id).toBe(3);
     });
   });
 });
