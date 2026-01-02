@@ -50,6 +50,23 @@ describe('MEMFLOW | unknown | IORedis', () => {
     });
   });
 
+  describe('Worker', () => {
+    describe('create', () => {
+      it('should create and run a worker', async () => {
+        const worker = await Worker.create({
+          connection: {
+            class: Redis,
+            options,
+          },
+          taskQueue: 'unknown-world',
+          workflow: example,
+        });
+        await worker.run();
+        expect(worker).toBeDefined();
+      });
+    });
+  });
+
   describe('Client', () => {
     describe('start', () => {
       it('should connect a client and start a workflow execution', async () => {
@@ -68,23 +85,6 @@ describe('MEMFLOW | unknown | IORedis', () => {
           },
         });
         expect(handle.workflowId).toBeDefined();
-      });
-    });
-  });
-
-  describe('Worker', () => {
-    describe('create', () => {
-      it('should create and run a worker', async () => {
-        const worker = await Worker.create({
-          connection: {
-            class: Redis,
-            options,
-          },
-          taskQueue: 'unknown-world',
-          workflow: example,
-        });
-        await worker.run();
-        expect(worker).toBeDefined();
       });
     });
   });

@@ -1,13 +1,10 @@
 import { ILogger } from '../../../logger';
 import { KeyService, KeyType } from '../../../../modules/key';
-import { parseStreamMessage, sleepFor, normalizeRetryPolicy } from '../../../../modules/utils';
 import { StreamService } from '../../index';
 import { KeyStoreParams, StringAnyType } from '../../../../types';
+import { PostgresClientType } from '../../../../types/postgres';
 import {
-  PostgresClientType,
-  PostgresNotification,
-} from '../../../../types/postgres';
-import {
+  NotificationConsumer,
   PublishMessageConfig,
   StreamConfig,
   StreamMessage,
@@ -18,17 +15,120 @@ import {
   ProviderTransaction,
 } from '../../../../types/provider';
 
-import { deploySchema, getNotificationChannelName } from './kvtables';
+import { deploySchema } from './kvtables';
+import * as Stats from './stats';
+import * as Messages from './messages';
+import { ScoutManager } from './scout';
+import { NotificationManager, getFallbackInterval } from './notifications';
+import * as Lifecycle from './lifecycle';
 
-interface NotificationConsumer {
-  streamName: string;
-  groupName: string;
-  consumerName: string;
-  callback: (messages: StreamMessage[]) => void;
-  isListening: boolean;
-  lastFallbackCheck: number;
-}
-
+/**
+ * PostgreSQL Stream Service
+ * 
+ * High-performance stream message provider using PostgreSQL with LISTEN/NOTIFY.
+ * 
+ * ## Module Organization
+ * 
+ * This service is organized into focused modules following KISS principles:
+ * - `postgres.ts` (this file) - Main orchestrator and service interface
+ * - `kvtables.ts` - Schema deployment and table management
+ * - `messages.ts` - Message CRUD operations (publish, fetch, ack, delete)
+ * - `stats.ts` - Statistics and query operations
+ * - `scout.ts` - Scout role coordination for polling visible messages
+ * - `notifications.ts` - LISTEN/NOTIFY notification system with static state management
+ * - `lifecycle.ts` - Stream and consumer group lifecycle operations
+ * 
+ * ## Lifecycle
+ * 
+ * ### Initialization (`init`)
+ * 1. Deploy PostgreSQL schema (tables, indexes, triggers, functions)
+ * 2. Create ScoutManager for coordinating visibility timeout polling
+ * 3. Create NotificationManager for LISTEN/NOTIFY event handling
+ * 4. Set up notification handler (once per client, shared across instances)
+ * 5. Start fallback poller (backup for missed notifications)
+ * 6. Start router scout poller (for visibility timeout processing)
+ * 
+ * ### Shutdown (`cleanup`)
+ * 1. Stop router scout polling loop
+ * 2. Release scout role if held
+ * 3. Stop notification consumers for this instance
+ * 4. UNLISTEN from channels when last instance disconnects
+ * 5. Clean up fallback poller when last instance disconnects
+ * 6. Remove notification handlers when last instance disconnects
+ * 
+ * ## Notification System (LISTEN/NOTIFY)
+ * 
+ * ### Real-time Message Delivery
+ * - PostgreSQL trigger on INSERT sends NOTIFY when messages are immediately visible
+ * - Messages with visibility timeout are NOT notified on INSERT
+ * - Multiple service instances share the same client and notification handlers
+ * - Static state ensures only ONE LISTEN per channel across all instances
+ * 
+ * ### Components
+ * - **Notification Handler**: Listens for PostgreSQL NOTIFY events
+ * - **Fallback Poller**: Polls every 30s (default) for missed messages
+ * - **Router Scout**: Active role-holder polls visible messages frequently (~100ms)
+ * - **Visibility Function**: `notify_visible_messages()` checks for expired timeouts
+ * 
+ * ## Scout Role (Visibility Timeout Processing)
+ * 
+ * When messages are published with visibility timeouts (delays), they need to be
+ * processed when they become visible. The scout role ensures this happens efficiently:
+ * 
+ * 1. **Role Acquisition**: One instance per app acquires "router" scout role
+ * 2. **Fast Polling**: Scout polls `notify_visible_messages()` every ~100ms
+ * 3. **Notification**: Function triggers NOTIFY for streams with visible messages
+ * 4. **Role Rotation**: Role expires after interval, another instance can claim it
+ * 5. **Fallback**: Non-scouts sleep longer, try to acquire role periodically
+ * 
+ * ## Message Flow
+ * 
+ * ### Publishing
+ * 1. Messages inserted into partitioned table
+ * 2. If immediately visible → INSERT trigger sends NOTIFY
+ * 3. If visibility timeout → no NOTIFY (scout will handle when visible)
+ * 
+ * ### Consuming (Event-Driven)
+ * 1. Consumer calls `consumeMessages` with notification callback
+ * 2. Service executes LISTEN on channel `stream_{name}_{group}`
+ * 3. On NOTIFY → fetch messages → invoke callback
+ * 4. Initial fetch done immediately (catch any queued messages)
+ * 
+ * ### Consuming (Polling)
+ * 1. Consumer calls `consumeMessages` without callback
+ * 2. Service directly queries and reserves messages
+ * 3. Returns messages synchronously
+ * 
+ * ## Reliability Guarantees
+ * 
+ * - **Notification Fallback**: Poller catches missed notifications every 30s
+ * - **Visibility Scout**: Ensures delayed messages are processed when visible
+ * - **Graceful Degradation**: Falls back to polling if LISTEN fails
+ * - **Shared State**: Multiple instances coordinate via static maps
+ * - **Race Condition Safe**: SKIP LOCKED prevents message duplication
+ * 
+ * @example
+ * ```typescript
+ * // Initialize service
+ * const service = new PostgresStreamService(client, storeClient, config);
+ * await service.init('namespace', 'appId', logger);
+ * 
+ * // Event-driven consumption (recommended)
+ * await service.consumeMessages('stream', 'group', 'consumer', {
+ *   notificationCallback: (messages) => {
+ *     // Process messages in real-time
+ *   }
+ * });
+ * 
+ * // Polling consumption
+ * const messages = await service.consumeMessages('stream', 'group', 'consumer', {
+ *   batchSize: 10
+ * });
+ * 
+ * // Cleanup on shutdown
+ * await service.cleanup();
+ * ```
+ */
 class PostgresStreamService extends StreamService<
   PostgresClientType & ProviderClient,
   any
@@ -37,25 +137,11 @@ class PostgresStreamService extends StreamService<
   appId: string;
   logger: ILogger;
 
-  // Static maps to manage notifications across all instances sharing the same client
-  private static clientNotificationConsumers: Map<
-    PostgresClientType & ProviderClient,
-    Map<string, Map<PostgresStreamService, NotificationConsumer>>
-  > = new Map();
-  private static clientNotificationHandlers: Map<
-    PostgresClientType & ProviderClient,
-    boolean
-  > = new Map();
-  private static clientFallbackPollers: Map<
-    PostgresClientType & ProviderClient,
-    NodeJS.Timeout
-  > = new Map();
+  // Scout manager
+  private scoutManager: ScoutManager;
 
-  // Instance-level tracking for cleanup
-  private instanceNotificationConsumers: Set<string> = new Set();
-  private notificationHandlerBound: (
-    notification: PostgresNotification,
-  ) => void;
+  // Notification manager
+  private notificationManager: NotificationManager<PostgresStreamService>;
 
   constructor(
     streamClient: PostgresClientType & ProviderClient,
@@ -63,7 +149,6 @@ class PostgresStreamService extends StreamService<
     config: StreamConfig = {},
   ) {
     super(streamClient, storeClient, config);
-    this.notificationHandlerBound = this.handleNotification.bind(this);
   }
 
   async init(namespace: string, appId: string, logger: ILogger): Promise<void> {
@@ -72,171 +157,48 @@ class PostgresStreamService extends StreamService<
     this.logger = logger;
     await deploySchema(this.streamClient, this.appId, this.logger);
 
+    // Initialize scout manager
+    this.scoutManager = new ScoutManager(
+      this.streamClient,
+      this.appId,
+      this.getTableName.bind(this),
+      this.mintKey.bind(this),
+      this.logger,
+    );
+
+    // Initialize notification manager
+    this.notificationManager = new NotificationManager(
+      this.streamClient,
+      this.getTableName.bind(this),
+      () => getFallbackInterval(this.config),
+      this.logger,
+    );
+
     // Set up notification handler if supported
     if (this.streamClient.on && this.isNotificationsEnabled()) {
-      this.setupClientNotificationHandler();
-      this.startClientFallbackPoller();
-    }
-  }
-
-  private setupClientNotificationHandler(): void {
-    // Check if notification handler is already set up for this client
-    if (
-      PostgresStreamService.clientNotificationHandlers.get(this.streamClient)
-    ) {
-      return;
-    }
-
-    // Initialize notification consumer map for this client if it doesn't exist
-    if (
-      !PostgresStreamService.clientNotificationConsumers.has(this.streamClient)
-    ) {
-      PostgresStreamService.clientNotificationConsumers.set(
-        this.streamClient,
-        new Map(),
+      this.notificationManager.setupClientNotificationHandler(this);
+      this.notificationManager.startClientFallbackPoller(
+        this.checkForMissedMessages.bind(this),
       );
+      this.scoutManager.startRouterScoutPoller();
     }
-
-    // Set up the notification handler for this client
-    this.streamClient.on('notification', this.handleNotification.bind(this));
-
-    // Mark this client as having a notification handler
-    PostgresStreamService.clientNotificationHandlers.set(
-      this.streamClient,
-      true,
-    );
-  }
-
-  private startClientFallbackPoller(): void {
-    // Check if fallback poller already exists for this client
-    if (PostgresStreamService.clientFallbackPollers.has(this.streamClient)) {
-      return;
-    }
-
-    const fallbackIntervalId = setInterval(() => {
-      this.checkForMissedMessages();
-    }, this.getFallbackInterval());
-
-    PostgresStreamService.clientFallbackPollers.set(
-      this.streamClient,
-      fallbackIntervalId,
-    );
   }
 
   private isNotificationsEnabled(): boolean {
-    return this.config?.postgres?.enableNotifications !== false; // Default: true
-  }
-
-  private getFallbackInterval(): number {
-    return this.config?.postgres?.notificationFallbackInterval || 30000; // Default: 30 seconds
-  }
-
-  private getNotificationTimeout(): number {
-    return this.config?.postgres?.notificationTimeout || 5000; // Default: 5 seconds
+    return Stats.isNotificationsEnabled(this.config);
   }
 
   private async checkForMissedMessages(): Promise<void> {
-    const now = Date.now();
-    const clientNotificationConsumers =
-      PostgresStreamService.clientNotificationConsumers.get(this.streamClient);
-
-    if (!clientNotificationConsumers) {
-      return;
-    }
-
-    for (const [
-      consumerKey,
-      instanceMap,
-    ] of clientNotificationConsumers.entries()) {
-      for (const [instance, consumer] of instanceMap.entries()) {
-        if (
-          consumer.isListening &&
-          now - consumer.lastFallbackCheck > this.getFallbackInterval()
-        ) {
-          try {
-            const messages = await instance.fetchMessages(
-              consumer.streamName,
-              consumer.groupName,
-              consumer.consumerName,
-              { batchSize: 10, enableBackoff: false, maxRetries: 1 },
-            );
-
-            if (messages.length > 0) {
-              instance.logger.debug('postgres-stream-fallback-messages', {
-                streamName: consumer.streamName,
-                groupName: consumer.groupName,
-                messageCount: messages.length,
-              });
-              consumer.callback(messages);
-            }
-
-            consumer.lastFallbackCheck = now;
-          } catch (error) {
-            instance.logger.error('postgres-stream-fallback-error', {
-              streamName: consumer.streamName,
-              groupName: consumer.groupName,
-              error,
-            });
-          }
-        }
-      }
-    }
-  }
-
-  private handleNotification(notification: PostgresNotification): void {
-    try {
-      // Only handle stream notifications (channels starting with "stream_")
-      // Ignore pub/sub notifications from sub provider which use different channel names
-      if (!notification.channel.startsWith('stream_')) {
-        // This is likely a pub/sub notification from the sub provider, ignore it
-        this.logger.debug('postgres-stream-ignoring-sub-notification', {
-          channel: notification.channel,
-          payloadPreview: notification.payload.substring(0, 100),
-        });
-        return;
-      }
-
-      this.logger.debug('postgres-stream-processing-notification', {
-        channel: notification.channel,
-      });
-
-      const payload = JSON.parse(notification.payload);
-      const { stream_name, group_name } = payload;
-
-      if (!stream_name || !group_name) {
-        this.logger.warn('postgres-stream-invalid-notification', {
-          notification,
-        });
-        return;
-      }
-
-      const consumerKey = this.getConsumerKey(stream_name, group_name);
-      const clientNotificationConsumers =
-        PostgresStreamService.clientNotificationConsumers.get(
-          this.streamClient,
+    await this.notificationManager.checkForMissedMessages(
+      async (instance: PostgresStreamService, consumer: NotificationConsumer) => {
+        return await instance.fetchMessages(
+          consumer.streamName,
+          consumer.groupName,
+          consumer.consumerName,
+          { batchSize: 10, enableBackoff: false, maxRetries: 1 },
         );
-
-      if (!clientNotificationConsumers) {
-        return;
-      }
-
-      const instanceMap = clientNotificationConsumers.get(consumerKey);
-      if (!instanceMap) {
-        return;
-      }
-
-      // Trigger immediate message fetch for all instances with this consumer
-      for (const [instance, consumer] of instanceMap.entries()) {
-        if (consumer.isListening) {
-          instance.fetchAndDeliverMessages(consumer);
-        }
-      }
-    } catch (error) {
-      this.logger.error('postgres-stream-notification-parse-error', {
-        notification,
-        error,
-      });
-    }
+      },
+    );
   }
 
   private async fetchAndDeliverMessages(
@@ -287,55 +249,36 @@ class PostgresStreamService extends StreamService<
   }
 
   async createStream(streamName: string): Promise<boolean> {
-    return true;
+    return Lifecycle.createStream(streamName);
   }
 
   async deleteStream(streamName: string): Promise<boolean> {
-    const client = this.streamClient;
-    const tableName = this.getTableName();
-    try {
-      if (streamName === '*') {
-        await client.query(`DELETE FROM ${tableName}`);
-      } else {
-        await client.query(`DELETE FROM ${tableName} WHERE stream_name = $1`, [
-          streamName,
-        ]);
-      }
-      return true;
-    } catch (error) {
-      this.logger.error(`postgres-stream-delete-error-${streamName}`, {
-        error,
-      });
-      throw error;
-    }
+    return Lifecycle.deleteStream(
+      this.streamClient,
+      this.getTableName(),
+      streamName,
+      this.logger,
+    );
   }
 
   async createConsumerGroup(
     streamName: string,
     groupName: string,
   ): Promise<boolean> {
-    return true;
+    return Lifecycle.createConsumerGroup(streamName, groupName);
   }
 
   async deleteConsumerGroup(
     streamName: string,
     groupName: string,
   ): Promise<boolean> {
-    const client = this.streamClient;
-    const tableName = this.getTableName();
-    try {
-      await client.query(
-        `DELETE FROM ${tableName} WHERE stream_name = $1 AND group_name = $2`,
-        [streamName, groupName],
-      );
-      return true;
-    } catch (error) {
-      this.logger.error(
-        `postgres-stream-delete-group-error-${streamName}.${groupName}`,
-        { error },
-      );
-      throw error;
-    }
+    return Lifecycle.deleteConsumerGroup(
+      this.streamClient,
+      this.getTableName(),
+      streamName,
+      groupName,
+      this.logger,
+    );
   }
 
   /**
@@ -360,34 +303,14 @@ class PostgresStreamService extends StreamService<
     messages: string[],
     options?: PublishMessageConfig,
   ): Promise<string[] | ProviderTransaction> {
-    const { sql, params } = this._publishMessages(streamName, messages, options);
-    if (
-      options?.transaction &&
-      typeof options.transaction.addCommand === 'function'
-    ) {
-      //call addCommand and return the transaction object
-      options.transaction.addCommand(
-        sql,
-        params,
-        'array',
-        (rows: { id: number }[]) => rows.map((row) => row.id.toString()),
-      );
-      return options.transaction as ProviderTransaction;
-    } else {
-      try {
-        const ids: string[] = [];
-        const res = await this.streamClient.query(sql, params);
-        for (const row of res.rows) {
-          ids.push(row.id.toString());
-        }
-        return ids;
-      } catch (error) {
-        this.logger.error(`postgres-stream-publish-error-${streamName}`, {
-          error,
-        });
-        throw error;
-      }
-    }
+    return Messages.publishMessages(
+      this.streamClient,
+      this.getTableName(),
+      streamName,
+      messages,
+      options,
+      this.logger,
+    );
   }
 
   _publishMessages(
@@ -395,81 +318,12 @@ class PostgresStreamService extends StreamService<
     messages: string[],
     options?: PublishMessageConfig,
   ): { sql: string; params: any[] } {
-    const tableName = this.getTableName();
-    const groupName = streamName.endsWith(':') ? 'ENGINE' : 'WORKER';
-    
-    // Parse messages to extract retry config
-    const parsedMessages = messages.map(msg => {
-      const data = JSON.parse(msg);
-      const retryConfig = data._streamRetryConfig;
-      
-      // Remove from message payload (stored in columns instead)
-      delete data._streamRetryConfig;
-      
-      // Determine if this message has explicit retry config
-      const hasExplicitConfig = (retryConfig && 'max_retry_attempts' in retryConfig) || options?.retryPolicy;
-      
-      let normalizedPolicy = null;
-      if (retryConfig && 'max_retry_attempts' in retryConfig) {
-        normalizedPolicy = retryConfig;
-      } else if (options?.retryPolicy) {
-        normalizedPolicy = normalizeRetryPolicy(options.retryPolicy, {
-          maximumAttempts: 3,
-          backoffCoefficient: 10,
-          maximumInterval: 120,
-        });
-      }
-      
-      return {
-        message: JSON.stringify(data),
-        hasExplicitConfig,
-        retryPolicy: normalizedPolicy,
-      };
-    });
-    
-    const params: any[] = [streamName, groupName];
-    let valuesClauses: string[] = [];
-    let insertColumns: string;
-    
-    // Check if ALL messages have explicit config or ALL don't
-    const allHaveConfig = parsedMessages.every(pm => pm.hasExplicitConfig);
-    const noneHaveConfig = parsedMessages.every(pm => !pm.hasExplicitConfig);
-    
-    if (noneHaveConfig) {
-      // Omit retry columns entirely - let DB defaults apply
-      insertColumns = '(stream_name, group_name, message)';
-      parsedMessages.forEach((pm, idx) => {
-        const base = idx * 1;
-        valuesClauses.push(`($1, $2, $${base + 3})`);
-        params.push(pm.message);
-      });
-    } else {
-      // Include retry columns
-      insertColumns = '(stream_name, group_name, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds)';
-      parsedMessages.forEach((pm, idx) => {
-        const base = idx * 4;
-        if (pm.hasExplicitConfig) {
-          valuesClauses.push(`($1, $2, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`);
-          params.push(
-            pm.message,
-            pm.retryPolicy.max_retry_attempts,
-            pm.retryPolicy.backoff_coefficient,
-            pm.retryPolicy.maximum_interval_seconds
-          );
-        } else {
-          // This message doesn't have config but others do - use DEFAULT keyword
-          valuesClauses.push(`($1, $2, $${base + 3}, DEFAULT, DEFAULT, DEFAULT)`);
-          params.push(pm.message);
-        }
-      });
-    }
-
-    return {
-      sql: `INSERT INTO ${tableName} ${insertColumns}
-        VALUES ${valuesClauses.join(', ')} 
-        RETURNING id`,
-      params,
-    };
+    return Messages.buildPublishSQL(
+      this.getTableName(),
+      streamName,
+      messages,
+      options,
+    );
   }
 
   async consumeMessages(
@@ -525,157 +379,67 @@ class PostgresStreamService extends StreamService<
     callback: (messages: StreamMessage[]) => void,
     options?: any,
   ): Promise<StreamMessage[]> {
-    const startTime = Date.now();
-    const consumerKey = this.getConsumerKey(streamName, groupName);
-    const channelName = getNotificationChannelName(streamName, groupName);
-
-    // Get or create notification consumer map for this client
-    let clientNotificationConsumers =
-      PostgresStreamService.clientNotificationConsumers.get(this.streamClient);
-    if (!clientNotificationConsumers) {
-      clientNotificationConsumers = new Map();
-      PostgresStreamService.clientNotificationConsumers.set(
-        this.streamClient,
-        clientNotificationConsumers,
+    try {
+      await this.notificationManager.setupNotificationConsumer(
+        this,
+        streamName,
+        groupName,
+        consumerName,
+        callback,
       );
-    }
 
-    // Get or create instance map for this consumer key
-    let instanceMap = clientNotificationConsumers.get(consumerKey);
-    if (!instanceMap) {
-      instanceMap = new Map();
-      clientNotificationConsumers.set(consumerKey, instanceMap);
+      // Do an initial fetch asynchronously to avoid blocking setup
+      setImmediate(async () => {
+        try {
+          const fetchStart = Date.now();
+          const initialMessages = await this.fetchMessages(
+            streamName,
+            groupName,
+            consumerName,
+            {
+              ...options,
+              enableBackoff: false,
+              maxRetries: 1,
+            },
+          );
 
-      // Set up LISTEN for this channel (only once per channel across all instances)
-      try {
-        const listenStart = Date.now();
-        await this.streamClient.query(`LISTEN "${channelName}"`);
-        this.logger.debug('postgres-stream-listen-start', {
-          streamName,
-          groupName,
-          channelName,
-          listenDuration: Date.now() - listenStart,
-        });
-      } catch (error) {
-        this.logger.error('postgres-stream-listen-error', {
-          streamName,
-          groupName,
-          channelName,
-          error,
-        });
-        // Fall back to polling if LISTEN fails
-        return this.fetchMessages(streamName, groupName, consumerName, options);
-      }
-    }
+          this.logger.debug('postgres-stream-initial-fetch-complete', {
+            streamName,
+            groupName,
+            messageCount: initialMessages.length,
+            fetchDuration: Date.now() - fetchStart,
+          });
 
-    // Register or update consumer for this instance
-    const consumer: NotificationConsumer = {
-      streamName,
-      groupName,
-      consumerName,
-      callback,
-      isListening: true,
-      lastFallbackCheck: Date.now(),
-    };
-
-    instanceMap.set(this, consumer);
-
-    // Track this consumer for cleanup
-    this.instanceNotificationConsumers.add(consumerKey);
-
-    this.logger.debug('postgres-stream-notification-setup-complete', {
-      streamName,
-      groupName,
-      instanceCount: instanceMap.size,
-      setupDuration: Date.now() - startTime,
-    });
-
-    // Do an initial fetch asynchronously to avoid blocking setup
-    // This ensures we don't miss any messages that were already in the queue
-    setImmediate(async () => {
-      try {
-        const fetchStart = Date.now();
-        const initialMessages = await this.fetchMessages(
-          streamName,
-          groupName,
-          consumerName,
-          {
-            ...options,
-            enableBackoff: false,
-            maxRetries: 1,
-          },
-        );
-
-        this.logger.debug('postgres-stream-initial-fetch-complete', {
-          streamName,
-          groupName,
-          messageCount: initialMessages.length,
-          fetchDuration: Date.now() - fetchStart,
-        });
-
-        // If we got messages, call the callback
-        if (initialMessages.length > 0) {
-          callback(initialMessages);
+          // If we got messages, call the callback
+          if (initialMessages.length > 0) {
+            callback(initialMessages);
+          }
+        } catch (error) {
+          this.logger.error('postgres-stream-initial-fetch-error', {
+            streamName,
+            groupName,
+            error,
+          });
         }
-      } catch (error) {
-        this.logger.error('postgres-stream-initial-fetch-error', {
-          streamName,
-          groupName,
-          error,
-        });
-      }
-    });
+      });
 
-    // Return empty array immediately to avoid blocking
-    return [];
+      // Return empty array immediately to avoid blocking
+      return [];
+    } catch (error) {
+      // Fall back to polling if setup fails
+      return this.fetchMessages(streamName, groupName, consumerName, options);
+    }
   }
 
   async stopNotificationConsumer(
     streamName: string,
     groupName: string,
   ): Promise<void> {
-    const consumerKey = this.getConsumerKey(streamName, groupName);
-    const clientNotificationConsumers =
-      PostgresStreamService.clientNotificationConsumers.get(this.streamClient);
-
-    if (!clientNotificationConsumers) {
-      return;
-    }
-
-    const instanceMap = clientNotificationConsumers.get(consumerKey);
-    if (!instanceMap) {
-      return;
-    }
-
-    const consumer = instanceMap.get(this);
-    if (consumer) {
-      consumer.isListening = false;
-      instanceMap.delete(this);
-
-      // Remove from instance tracking
-      this.instanceNotificationConsumers.delete(consumerKey);
-
-      // If no more instances for this consumer key, stop listening and clean up
-      if (instanceMap.size === 0) {
-        clientNotificationConsumers.delete(consumerKey);
-        const channelName = getNotificationChannelName(streamName, groupName);
-        try {
-          await this.streamClient.query(`UNLISTEN "${channelName}"`);
-          this.logger.debug('postgres-stream-unlisten', {
-            streamName,
-            groupName,
-            channelName,
-          });
-        } catch (error) {
-          this.logger.error('postgres-stream-unlisten-error', {
-            streamName,
-            groupName,
-            channelName,
-            error,
-          });
-        }
-      }
-    }
+    await this.notificationManager.stopNotificationConsumer(
+      this,
+      streamName,
+      groupName,
+    );
   }
 
   private async fetchMessages(
@@ -693,86 +457,15 @@ class PostgresStreamService extends StreamService<
       maxRetries?: number; // Maximum retries before giving up
     },
   ): Promise<StreamMessage[]> {
-    const client = this.streamClient;
-    const tableName = this.getTableName();
-    const enableBackoff = options?.enableBackoff ?? false;
-    const initialBackoff = options?.initialBackoff ?? 100; // Default initial backoff: 100ms
-    const maxBackoff = options?.maxBackoff ?? 3000; // Default max backoff: 3 seconds
-    const maxRetries = options?.maxRetries ?? 3; // Set a finite default, e.g., 3 retries
-
-    let backoff = initialBackoff;
-    let retries = 0;
-
-    try {
-      while (retries < maxRetries) {
-        retries++;
-        const batchSize = options?.batchSize || 1;
-        const reservationTimeout = options?.reservationTimeout || 30;
-
-        // Simplified query for better performance - especially for notification-triggered fetches
-        const res = await client.query(
-          `UPDATE ${tableName} 
-           SET reserved_at = NOW(), reserved_by = $4
-           WHERE id IN (
-             SELECT id FROM ${tableName}
-             WHERE stream_name = $1 
-               AND group_name = $2
-               AND (reserved_at IS NULL OR reserved_at < NOW() - INTERVAL '${reservationTimeout} seconds')
-               AND expired_at IS NULL
-             ORDER BY id
-             LIMIT $3
-             FOR UPDATE SKIP LOCKED
-           )
-           RETURNING id, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds`,
-          [streamName, groupName, batchSize, consumerName],
-        );
-
-        const messages: StreamMessage[] = res.rows.map((row: any) => {
-          const data = parseStreamMessage(row.message);
-          
-          // Inject retry policy only if not using default values
-          // Default values indicate old retry mechanism should be used (policies.retry)
-          const hasDefaultRetryPolicy = 
-            (row.max_retry_attempts === 3 || row.max_retry_attempts === 5) &&
-            parseFloat(row.backoff_coefficient) === 10 &&
-            row.maximum_interval_seconds === 120;
-          
-          if (row.max_retry_attempts !== null && !hasDefaultRetryPolicy) {
-            data._streamRetryConfig = {
-              max_retry_attempts: row.max_retry_attempts,
-              backoff_coefficient: parseFloat(row.backoff_coefficient),
-              maximum_interval_seconds: row.maximum_interval_seconds,
-            };
-          }
-          
-          return {
-            id: row.id.toString(),
-            data,
-            retryPolicy: (row.max_retry_attempts !== null && !hasDefaultRetryPolicy) ? {
-              maximumAttempts: row.max_retry_attempts,
-              backoffCoefficient: parseFloat(row.backoff_coefficient),
-              maximumInterval: row.maximum_interval_seconds,
-            } : undefined,
-          };
-        });
-
-        if (messages.length > 0 || !enableBackoff) {
-          return messages;
-        }
-
-        // Apply backoff if enabled and no messages found
-        await sleepFor(backoff);
-        backoff = Math.min(backoff * 2, maxBackoff); // Exponential backoff
-      }
-
-      // Return empty array if maxRetries is reached and still no messages
-      return [];
-    } catch (error) {
-      this.logger.error(`postgres-stream-consumer-error-${streamName}`, {
-        error,
-      });
-      throw error;
-    }
+    return Messages.fetchMessages(
+      this.streamClient,
+      this.getTableName(),
+      streamName,
+      groupName,
+      consumerName,
+      options || {},
+      this.logger,
+    );
   }
 
   async ackAndDelete(
@@ -780,7 +473,14 @@ class PostgresStreamService extends StreamService<
     groupName: string,
     messageIds: string[],
   ): Promise<number> {
-    return await this.deleteMessages(streamName, groupName, messageIds);
+    return Messages.ackAndDelete(
+      this.streamClient,
+      this.getTableName(),
+      streamName,
+      groupName,
+      messageIds,
+      this.logger,
+    );
   }
 
   async acknowledgeMessages(
@@ -789,8 +489,7 @@ class PostgresStreamService extends StreamService<
     messageIds: string[],
     options?: StringAnyType,
   ): Promise<number> {
-    // No-op for this implementation
-    return messageIds.length;
+    return Messages.acknowledgeMessages(messageIds);
   }
 
   async deleteMessages(
@@ -799,26 +498,14 @@ class PostgresStreamService extends StreamService<
     messageIds: string[],
     options?: StringAnyType,
   ): Promise<number> {
-    const client = this.streamClient;
-    const tableName = this.getTableName();
-    try {
-      const ids = messageIds.map((id) => parseInt(id));
-
-      // Perform a soft delete by setting `expired_at` to the current timestamp
-      await client.query(
-        `UPDATE ${tableName}
-         SET expired_at = NOW()
-         WHERE stream_name = $1 AND id = ANY($2::bigint[]) AND group_name = $3`,
-        [streamName, ids, groupName],
-      );
-
-      return messageIds.length;
-    } catch (error) {
-      this.logger.error(`postgres-stream-delete-error-${streamName}`, {
-        error,
-      });
-      throw error;
-    }
+    return Messages.deleteMessages(
+      this.streamClient,
+      this.getTableName(),
+      streamName,
+      groupName,
+      messageIds,
+      this.logger,
+    );
   }
 
   async retryMessages(
@@ -833,60 +520,36 @@ class PostgresStreamService extends StreamService<
       limit?: number;
     },
   ): Promise<StreamMessage[]> {
-    // Implement retry logic if needed
-    return [];
+    return Messages.retryMessages(streamName, groupName, options);
   }
 
   async getStreamStats(streamName: string): Promise<StreamStats> {
-    const client = this.streamClient;
-    const tableName = this.getTableName();
-    try {
-      const res = await client.query(
-        `SELECT COUNT(*) AS available_count 
-        FROM ${tableName} 
-        WHERE stream_name = $1 AND expired_at IS NULL`,
-        [streamName],
-      );
-      return {
-        messageCount: parseInt(res.rows[0].available_count, 10),
-      };
-    } catch (error) {
-      this.logger.error(`postgres-stream-stats-error-${streamName}`, { error });
-      throw error;
-    }
+    return Stats.getStreamStats(
+      this.streamClient,
+      this.getTableName(),
+      streamName,
+      this.logger,
+    );
   }
 
   async getStreamDepth(streamName: string): Promise<number> {
-    const stats = await this.getStreamStats(streamName);
-    return stats.messageCount;
+    return Stats.getStreamDepth(
+      this.streamClient,
+      this.getTableName(),
+      streamName,
+      this.logger,
+    );
   }
 
   async getStreamDepths(
     streamNames: { stream: string }[],
   ): Promise<{ stream: string; depth: number }[]> {
-    const client = this.streamClient;
-    const tableName = this.getTableName();
-    try {
-      const streams = streamNames.map((s) => s.stream);
-
-      const res = await client.query(
-        `SELECT stream_name, COUNT(*) AS count
-         FROM ${tableName}
-         WHERE stream_name = ANY($1::text[])
-         GROUP BY stream_name`,
-        [streams],
-      );
-
-      const result = res.rows.map((row: any) => ({
-        stream: row.stream_name,
-        depth: parseInt(row.count, 10),
-      }));
-
-      return result;
-    } catch (error) {
-      this.logger.error('postgres-stream-depth-error', { error });
-      throw error;
-    }
+    return Stats.getStreamDepths(
+      this.streamClient,
+      this.getTableName(),
+      streamNames,
+      this.logger,
+    );
   }
 
   async trimStream(
@@ -897,127 +560,29 @@ class PostgresStreamService extends StreamService<
       exactLimit?: boolean;
     },
   ): Promise<number> {
-    const client = this.streamClient;
-    const tableName = this.getTableName();
-    try {
-      let expiredCount = 0;
-
-      if (options.maxLen !== undefined) {
-        const res = await client.query(
-          `WITH to_expire AS (
-            SELECT id FROM ${tableName}
-            WHERE stream_name = $1
-            ORDER BY id ASC
-            OFFSET $2
-          )
-          UPDATE ${tableName}
-          SET expired_at = NOW()
-          WHERE id IN (SELECT id FROM to_expire)`,
-          [streamName, options.maxLen],
-        );
-        expiredCount += res.rowCount;
-      }
-
-      if (options.maxAge !== undefined) {
-        const res = await client.query(
-          `UPDATE ${tableName}
-          SET expired_at = NOW()
-          WHERE stream_name = $1 AND created_at < NOW() - INTERVAL '${options.maxAge} milliseconds'`,
-          [streamName],
-        );
-        expiredCount += res.rowCount;
-      }
-
-      return expiredCount;
-    } catch (error) {
-      this.logger.error(`postgres-stream-trim-error-${streamName}`, { error });
-      throw error;
-    }
+    return Stats.trimStream(
+      this.streamClient,
+      this.getTableName(),
+      streamName,
+      options,
+      this.logger,
+    );
   }
 
   getProviderSpecificFeatures() {
-    return {
-      supportsBatching: true,
-      supportsDeadLetterQueue: false,
-      supportsOrdering: true,
-      supportsTrimming: true,
-      supportsRetry: false,
-      supportsNotifications: this.isNotificationsEnabled(),
-      maxMessageSize: 1024 * 1024,
-      maxBatchSize: 256,
-    };
+    return Stats.getProviderSpecificFeatures(this.config);
   }
 
   // Cleanup method to be called when shutting down
   async cleanup(): Promise<void> {
-    // Clean up this instance's notification consumers
-    const clientNotificationConsumers =
-      PostgresStreamService.clientNotificationConsumers.get(this.streamClient);
-    if (clientNotificationConsumers) {
-      // Remove this instance from all consumer maps
-      for (const consumerKey of this.instanceNotificationConsumers) {
-        const instanceMap = clientNotificationConsumers.get(consumerKey);
-        if (instanceMap) {
-          const consumer = instanceMap.get(this);
-          if (consumer) {
-            consumer.isListening = false;
-            instanceMap.delete(this);
-
-            // If no more instances for this consumer, stop listening
-            if (instanceMap.size === 0) {
-              clientNotificationConsumers.delete(consumerKey);
-              const channelName = getNotificationChannelName(
-                consumer.streamName,
-                consumer.groupName,
-              );
-              try {
-                await this.streamClient.query(`UNLISTEN "${channelName}"`);
-                this.logger.debug('postgres-stream-cleanup-unlisten', {
-                  streamName: consumer.streamName,
-                  groupName: consumer.groupName,
-                  channelName,
-                });
-              } catch (error) {
-                this.logger.error('postgres-stream-cleanup-unlisten-error', {
-                  streamName: consumer.streamName,
-                  groupName: consumer.groupName,
-                  channelName,
-                  error,
-                });
-              }
-            }
-          }
-        }
-      }
+    // Stop router scout polling loop
+    if (this.scoutManager) {
+      await this.scoutManager.stopRouterScoutPoller();
     }
 
-    // Clear instance tracking
-    this.instanceNotificationConsumers.clear();
-
-    // If no more consumers exist for this client, clean up static resources
-    if (clientNotificationConsumers && clientNotificationConsumers.size === 0) {
-      // Remove client from static maps
-      PostgresStreamService.clientNotificationConsumers.delete(
-        this.streamClient,
-      );
-      PostgresStreamService.clientNotificationHandlers.delete(
-        this.streamClient,
-      );
-
-      // Stop fallback poller for this client
-      const fallbackIntervalId =
-        PostgresStreamService.clientFallbackPollers.get(this.streamClient);
-      if (fallbackIntervalId) {
-        clearInterval(fallbackIntervalId);
-        PostgresStreamService.clientFallbackPollers.delete(this.streamClient);
-      }
-
-      // Remove notification handler
-      if (this.streamClient.removeAllListeners) {
-        this.streamClient.removeAllListeners('notification');
-      } else if (this.streamClient.off && this.notificationHandlerBound) {
-        this.streamClient.off('notification', this.notificationHandlerBound);
-      }
+    // Clean up notification consumers
+    if (this.notificationManager) {
+      await this.notificationManager.cleanup(this);
     }
   }
 }

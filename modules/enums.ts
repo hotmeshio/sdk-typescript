@@ -155,6 +155,18 @@ export const HMSH_FIDELITY_SECONDS = process.env.HMSH_FIDELITY_SECONDS
 export const HMSH_SCOUT_INTERVAL_SECONDS =
   parseInt(process.env.HMSH_SCOUT_INTERVAL_SECONDS, 10) || 60;
 
+// ROUTER SCOUT - polls for visible messages when LISTEN/NOTIFY is insufficient
+export const HMSH_ROUTER_SCOUT_INTERVAL_SECONDS =
+  parseInt(process.env.HMSH_ROUTER_SCOUT_INTERVAL_SECONDS, 10) || 60;
+
+const BASE_ROUTER_SCOUT_INTERVAL_MS = 3000;
+const TEST_ROUTER_SCOUT_INTERVAL_MS = 500;
+export const HMSH_ROUTER_SCOUT_INTERVAL_MS = process.env.HMSH_ROUTER_SCOUT_INTERVAL_MS
+  ? parseInt(process.env.HMSH_ROUTER_SCOUT_INTERVAL_MS, 10)
+  : process.env.NODE_ENV === 'test'
+    ? TEST_ROUTER_SCOUT_INTERVAL_MS
+    : BASE_ROUTER_SCOUT_INTERVAL_MS;
+
 // UTILS
 export const HMSH_GUID_SIZE = Math.min(
   parseInt(process.env.HMSH_GUID_SIZE, 10) || 22,
@@ -173,6 +185,13 @@ export const DEFAULT_TASK_QUEUE = 'default';
  */
 export const HMSH_NOTIFY_PAYLOAD_LIMIT =
   parseInt(process.env.HMSH_NOTIFY_PAYLOAD_LIMIT, 10) || 7500;
+
+/**
+ * PostgreSQL LISTEN/NOTIFY fallback polling interval in milliseconds.
+ * Used when LISTEN/NOTIFY is unavailable or fails. Default 30 seconds.
+ */
+export const HMSH_ROUTER_POLL_FALLBACK_INTERVAL =
+  parseInt(process.env.HOTMESH_POSTGRES_FALLBACK_INTERVAL, 10) || 30000;
 
 /**
  * Serializer compression threshold. When a stringified object exceeds this size

@@ -19,6 +19,7 @@ import {
   HotMeshApp,
   HotMeshApps,
   HotMeshSettings,
+  ScoutType,
 } from '../../../../types/hotmesh';
 import {
   KVSQLProviderTransaction,
@@ -169,7 +170,7 @@ class PostgresStoreService extends StoreService<
    * time and signal task queues.
    */
   async reserveScoutRole(
-    scoutType: 'time' | 'signal' | 'activate',
+    scoutType: ScoutType,
     delay = HMSH_SCOUT_INTERVAL_SECONDS,
   ): Promise<boolean> {
     const key = this.mintKey(KeyType.WORK_ITEMS, {
@@ -186,7 +187,7 @@ class PostgresStoreService extends StoreService<
   }
 
   async releaseScoutRole(
-    scoutType: 'time' | 'signal' | 'activate',
+    scoutType: ScoutType,
   ): Promise<boolean> {
     const key = this.mintKey(KeyType.WORK_ITEMS, {
       appId: this.appId,

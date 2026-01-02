@@ -18,6 +18,7 @@ import { PostgresConnection } from '../../../services/connector/providers/postgr
 import { ProviderNativeClient } from '../../../types/provider';
 import { PostgresStreamService } from '../../../services/stream/providers/postgres/postgres';
 import { LoggerService } from '../../../services/logger';
+import { ConnectorService } from '../../../services/connector/factory';
 
 describe('FUNCTIONAL | Retry Policy | Postgres', () => {
   let postgresClient: ProviderNativeClient;
@@ -44,6 +45,8 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
   afterAll(async () => {
     await postgresClient.end();
     await HotMesh.stop();
+    // Force close all pooled connections
+    await ConnectorService.disconnectAll();
   });
 
   describe('HotMesh-Level Retry Policy', () => {
@@ -635,5 +638,1030 @@ app:
       expect(attemptCount).toBe(3);
     }, 35_000);
   });
-});
 
+  describe('Advanced Retry Policy with Exponential Backoff', () => {
+    const BACKOFF_APP_ID = 'retry-backoff-test';
+    let hotMesh: HotMesh;
+    let attemptCount = 0;
+    let attemptTimestamps: number[] = [];
+
+    beforeAll(async () => {
+      // Reset counters
+      attemptCount = 0;
+      attemptTimestamps = [];
+
+      // For visibility timeout tests, use polling mode with fast interval
+      // This is more reliable for tests with short visibility delays (2-4 seconds)
+      //process.env.HOTMESH_POSTGRES_DISABLE_NOTIFICATIONS = 'true';
+      //process.env.HOTMESH_POSTGRES_FALLBACK_INTERVAL = '100';
+
+      // Initialize HotMesh with modern retryPolicy configuration
+      const backoffConfig: HotMeshConfig = {
+        appId: BACKOFF_APP_ID,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.backoff',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            // Modern retry policy with exponential backoff at worker level
+            retryPolicy: {
+              maximumAttempts: 5,        // Retry up to 5 times
+              backoffCoefficient: 2,     // Exponential: 2^0, 2^1, 2^2, 2^3, 2^4 seconds
+              maximumInterval: '30s',    // Cap delay at 30 seconds
+            },
+            callback: async (
+              streamData: StreamData,
+            ): Promise<StreamDataResponse> => {
+              attemptCount++;
+              attemptTimestamps.push(Date.now());
+
+              // Fail the first 3 attempts, succeed on the 4th
+              if (attemptCount <= 3) {
+                throw new Error(
+                  `Simulated backoff failure on attempt ${attemptCount}`,
+                );
+              }
+
+              // Success on 4th attempt
+              return {
+                code: 200,
+                status: StreamStatus.SUCCESS,
+                metadata: { ...streamData.metadata },
+                data: {
+                  result: 'success_with_backoff',
+                  attempts: attemptCount,
+                  timestamps: attemptTimestamps,
+                },
+              } as StreamDataResponse;
+            },
+          },
+        ],
+      };
+
+      hotMesh = await HotMesh.init(backoffConfig);
+
+      // Deploy workflow without YAML retry config (using stream-level policy)
+      await hotMesh.deploy(`
+app:
+  id: ${BACKOFF_APP_ID}
+  version: '1'
+  graphs:
+    - subscribes: backoff.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.backoff
+          input:
+            maps:
+              code: '{t1.output.data.code}'
+          job:
+            maps:
+              result: '{a1.output.data.result}'
+              attempts: '{a1.output.data.attempts}'
+              timestamps: '{a1.output.data.timestamps}'
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await hotMesh.activate('1');
+    }, 15_000);
+
+    afterAll(async () => {
+      // Clean up environment variables
+      // delete process.env.HOTMESH_POSTGRES_DISABLE_NOTIFICATIONS;
+      // delete process.env.HOTMESH_POSTGRES_FALLBACK_INTERVAL;
+      
+      if (hotMesh) {
+        hotMesh.stop();
+      }
+    });
+
+    it('should retry with exponential backoff and eventually succeed', async () => {
+      // Reset counters for this test
+      attemptCount = 0;
+      attemptTimestamps = [];
+
+      // Execute the workflow
+      const result = await hotMesh.pubsub(
+        'backoff.test',
+        { code: 200 },
+        null,
+        60_000, // 60 second timeout to allow for exponential backoff
+      );
+
+      // Verify the workflow succeeded
+      expect(result).toBeDefined();
+      expect(result.data).toBeDefined();
+      expect(result.data.result).toBe('success_with_backoff');
+      expect(result.data.attempts).toBe(4); // Should have taken 4 attempts
+
+      // Verify we actually failed 3 times before succeeding
+      expect(attemptCount).toBe(4);
+      expect(attemptTimestamps.length).toBe(4);
+
+      // Verify exponential backoff timing
+      // Expected delays: ~2s, ~4s, ~8s (with backoffCoefficient: 2)
+      // Allow some tolerance for processing time
+      const delay1 = attemptTimestamps[1] - attemptTimestamps[0];
+      const delay2 = attemptTimestamps[2] - attemptTimestamps[1];
+      const delay3 = attemptTimestamps[3] - attemptTimestamps[2];
+
+      // First retry should be around 2 seconds (2^1)
+      expect(delay1).toBeGreaterThanOrEqual(1500);
+      expect(delay1).toBeLessThan(3000);
+
+      // Second retry should be around 4 seconds (2^2)
+      expect(delay2).toBeGreaterThanOrEqual(3500);
+      expect(delay2).toBeLessThan(5500);
+
+      // Third retry should be around 8 seconds (2^3)
+      expect(delay3).toBeGreaterThanOrEqual(7500);
+      expect(delay3).toBeLessThan(10000);
+    }, 65_000);
+
+    it('should respect maximumAttempts and fail after exhausting retries', async () => {
+      // Reset counters
+      attemptCount = 0;
+      attemptTimestamps = [];
+
+      // Create a worker that always fails
+      const failConfig: HotMeshConfig = {
+        appId: `${BACKOFF_APP_ID}-fail`,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.always-fail',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            // Worker-level retry policy
+            retryPolicy: {
+              maximumAttempts: 3,        // Only retry 3 times
+              backoffCoefficient: 2,
+              maximumInterval: '10s',
+            },
+            callback: async (
+              streamData: StreamData,
+            ): Promise<StreamDataResponse> => {
+              attemptCount++;
+              attemptTimestamps.push(Date.now());
+              
+              // Always fail
+              throw new Error(`Always fails - attempt ${attemptCount}`);
+            },
+          },
+        ],
+      };
+
+      const failHotMesh = await HotMesh.init(failConfig);
+
+      await failHotMesh.deploy(`
+app:
+  id: ${BACKOFF_APP_ID}-fail
+  version: '1'
+  graphs:
+    - subscribes: fail.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.always-fail
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await failHotMesh.activate('1');
+
+      try {
+        // This should eventually fail after 3 retries
+        await failHotMesh.pubsub(
+          'fail.test',
+          { code: 200 },
+          null,
+          30_000,
+        );
+        
+        // Should not reach here
+        fail('Expected workflow to fail after maximum attempts');
+      } catch (error) {
+        // Verify that we attempted exactly maximumAttempts times
+        expect(attemptCount).toBe(3);
+        expect(attemptTimestamps.length).toBe(3);
+      } finally {
+        failHotMesh.stop();
+      }
+    }, 35_000);
+  });
+
+  describe('Comprehensive RetryPolicy Validation', () => {
+    const VALIDATION_APP_ID = 'retry-validation-test';
+    
+    afterEach(async () => {
+      await sleepFor(100); // Brief pause for cleanup
+      await HotMesh.stop();
+    });
+
+    afterAll(async () => {
+      // Ensure all connections are closed
+      await sleepFor(200);
+      await HotMesh.stop();
+      await ConnectorService.disconnectAll();
+    });
+
+    it('should validate backoffCoefficient of 1.5 with proper delays', async () => {
+      let attemptCount = 0;
+      let attemptTimestamps: number[] = [];
+
+      const config: HotMeshConfig = {
+        appId: `${VALIDATION_APP_ID}-coeff-1-5`,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.backoff-1-5',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            retryPolicy: {
+              maximumAttempts: 4,
+              backoffCoefficient: 1.5,
+              maximumInterval: '30s',
+            },
+            callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+              attemptCount++;
+              attemptTimestamps.push(Date.now());
+
+              // Fail first 2 attempts, succeed on 3rd
+              if (attemptCount <= 2) {
+                throw new Error(`Simulated failure on attempt ${attemptCount}`);
+              }
+
+              return {
+                code: 200,
+                status: StreamStatus.SUCCESS,
+                metadata: { ...streamData.metadata },
+                data: {
+                  result: 'success',
+                  attempts: attemptCount,
+                  timestamps: attemptTimestamps,
+                },
+              } as StreamDataResponse;
+            },
+          },
+        ],
+      };
+
+      const hotMesh = await HotMesh.init(config);
+
+      await hotMesh.deploy(`
+app:
+  id: ${VALIDATION_APP_ID}-coeff-1-5
+  version: '1'
+  graphs:
+    - subscribes: backoff-1-5.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.backoff-1-5
+          job:
+            maps:
+              result: '{a1.output.data.result}'
+              attempts: '{a1.output.data.attempts}'
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await hotMesh.activate('1');
+
+      const result = await hotMesh.pubsub(
+        'backoff-1-5.test',
+        { code: 200 },
+        null,
+        20_000,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.data.attempts).toBe(3);
+      expect(attemptCount).toBe(3);
+      expect(attemptTimestamps.length).toBe(3);
+
+      // Verify backoff delays: 1.5^1 = 1.5s, 1.5^2 = 2.25s
+      const delay1 = attemptTimestamps[1] - attemptTimestamps[0];
+      const delay2 = attemptTimestamps[2] - attemptTimestamps[1];
+
+      // First retry: ~1.5 seconds (1500ms) + ~1s for visibility timeout detection
+      expect(delay1).toBeGreaterThanOrEqual(1400);
+      expect(delay1).toBeLessThan(3500);
+
+      // Second retry: ~2.25 seconds (2250ms) + ~1s for visibility timeout detection
+      expect(delay2).toBeGreaterThanOrEqual(2100);
+      expect(delay2).toBeLessThan(4000);
+
+      await hotMesh.stop();
+    }, 25_000);
+
+    it('should validate backoffCoefficient of 3 with proper delays', async () => {
+      let attemptCount = 0;
+      let attemptTimestamps: number[] = [];
+
+      const config: HotMeshConfig = {
+        appId: `${VALIDATION_APP_ID}-coeff-3`,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.backoff-3',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            retryPolicy: {
+              maximumAttempts: 4,
+              backoffCoefficient: 3,
+              maximumInterval: '60s',
+            },
+            callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+              attemptCount++;
+              attemptTimestamps.push(Date.now());
+
+              // Fail first 2 attempts, succeed on 3rd
+              if (attemptCount <= 2) {
+                throw new Error(`Simulated failure on attempt ${attemptCount}`);
+              }
+
+              return {
+                code: 200,
+                status: StreamStatus.SUCCESS,
+                metadata: { ...streamData.metadata },
+                data: {
+                  result: 'success',
+                  attempts: attemptCount,
+                  timestamps: attemptTimestamps,
+                },
+              } as StreamDataResponse;
+            },
+          },
+        ],
+      };
+
+      const hotMesh = await HotMesh.init(config);
+
+      await hotMesh.deploy(`
+app:
+  id: ${VALIDATION_APP_ID}-coeff-3
+  version: '1'
+  graphs:
+    - subscribes: backoff-3.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.backoff-3
+          job:
+            maps:
+              result: '{a1.output.data.result}'
+              attempts: '{a1.output.data.attempts}'
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await hotMesh.activate('1');
+
+      const result = await hotMesh.pubsub(
+        'backoff-3.test',
+        { code: 200 },
+        null,
+        20_000,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.data.attempts).toBe(3);
+      expect(attemptCount).toBe(3);
+      expect(attemptTimestamps.length).toBe(3);
+
+      // Verify backoff delays: 3^1 = 3s, 3^2 = 9s
+      const delay1 = attemptTimestamps[1] - attemptTimestamps[0];
+      const delay2 = attemptTimestamps[2] - attemptTimestamps[1];
+
+      // First retry: ~3 seconds (3000ms) + ~1s for visibility timeout detection
+      expect(delay1).toBeGreaterThanOrEqual(2800);
+      expect(delay1).toBeLessThan(4500);
+
+      // Second retry: ~9 seconds (9000ms) + ~1s for visibility timeout detection
+      expect(delay2).toBeGreaterThanOrEqual(8800);
+      expect(delay2).toBeLessThan(10500);
+
+      await hotMesh.stop();
+    }, 25_000);
+
+    it('should respect maximumInterval cap with high backoffCoefficient', async () => {
+      let attemptCount = 0;
+      let attemptTimestamps: number[] = [];
+
+      const config: HotMeshConfig = {
+        appId: `${VALIDATION_APP_ID}-capped`,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.backoff-capped',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            retryPolicy: {
+              maximumAttempts: 5,
+              backoffCoefficient: 10,
+              maximumInterval: '5s', // Cap at 5 seconds
+            },
+            callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+              attemptCount++;
+              attemptTimestamps.push(Date.now());
+
+              // Fail first 3 attempts, succeed on 4th
+              if (attemptCount <= 3) {
+                throw new Error(`Simulated failure on attempt ${attemptCount}`);
+              }
+
+              return {
+                code: 200,
+                status: StreamStatus.SUCCESS,
+                metadata: { ...streamData.metadata },
+                data: {
+                  result: 'success',
+                  attempts: attemptCount,
+                  timestamps: attemptTimestamps,
+                },
+              } as StreamDataResponse;
+            },
+          },
+        ],
+      };
+
+      const hotMesh = await HotMesh.init(config);
+
+      await hotMesh.deploy(`
+app:
+  id: ${VALIDATION_APP_ID}-capped
+  version: '1'
+  graphs:
+    - subscribes: backoff-capped.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.backoff-capped
+          job:
+            maps:
+              result: '{a1.output.data.result}'
+              attempts: '{a1.output.data.attempts}'
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await hotMesh.activate('1');
+
+      const result = await hotMesh.pubsub(
+        'backoff-capped.test',
+        { code: 200 },
+        null,
+        30_000,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.data.attempts).toBe(4);
+      expect(attemptCount).toBe(4);
+      expect(attemptTimestamps.length).toBe(4);
+
+      // Verify delays are capped:
+      // Without cap: 10^1=10s, 10^2=100s, 10^3=1000s
+      // With 5s cap: 10s→5s, 100s→5s, 1000s→5s
+      const delay1 = attemptTimestamps[1] - attemptTimestamps[0];
+      const delay2 = attemptTimestamps[2] - attemptTimestamps[1];
+      const delay3 = attemptTimestamps[3] - attemptTimestamps[2];
+
+      // First retry: min(10^1, 5) = 5 seconds + ~1s for visibility timeout detection
+      expect(delay1).toBeGreaterThanOrEqual(4800);
+      expect(delay1).toBeLessThan(6500);
+
+      // Second retry: min(10^2, 5) = 5 seconds (capped) + ~1s for visibility timeout detection
+      expect(delay2).toBeGreaterThanOrEqual(4800);
+      expect(delay2).toBeLessThan(6500);
+
+      // Third retry: min(10^3, 5) = 5 seconds (capped)
+      expect(delay3).toBeGreaterThanOrEqual(4800);
+      expect(delay3).toBeLessThan(5500);
+
+      await hotMesh.stop();
+    }, 35_000);
+
+    it('should validate maximumAttempts of 1 (no retries)', async () => {
+      let attemptCount = 0;
+
+      const config: HotMeshConfig = {
+        appId: `${VALIDATION_APP_ID}-no-retry`,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.no-retry',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            retryPolicy: {
+              maximumAttempts: 1, // No retries
+              backoffCoefficient: 2,
+              maximumInterval: '10s',
+            },
+            callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+              attemptCount++;
+              // Always fail
+              throw new Error(`Simulated failure on attempt ${attemptCount}`);
+            },
+          },
+        ],
+      };
+
+      const hotMesh = await HotMesh.init(config);
+
+      await hotMesh.deploy(`
+app:
+  id: ${VALIDATION_APP_ID}-no-retry
+  version: '1'
+  graphs:
+    - subscribes: no-retry.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.no-retry
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await hotMesh.activate('1');
+
+      try {
+        await hotMesh.pubsub(
+          'no-retry.test',
+          { code: 200 },
+          null,
+          10_000,
+        );
+        fail('Expected workflow to fail without retries');
+      } catch (error) {
+        // Should fail after just 1 attempt
+        expect(attemptCount).toBe(1);
+      } finally {
+        await hotMesh.stop();
+      }
+    }, 15_000);
+
+    it('should validate maximumAttempts of 2 (1 retry)', async () => {
+      let attemptCount = 0;
+      let attemptTimestamps: number[] = [];
+
+      const config: HotMeshConfig = {
+        appId: `${VALIDATION_APP_ID}-one-retry`,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.one-retry',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            retryPolicy: {
+              maximumAttempts: 2, // 1 retry
+              backoffCoefficient: 2,
+              maximumInterval: '10s',
+            },
+            callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+              attemptCount++;
+              attemptTimestamps.push(Date.now());
+
+              // Fail first attempt, succeed on retry
+              if (attemptCount === 1) {
+                throw new Error(`Simulated failure on attempt ${attemptCount}`);
+              }
+
+              return {
+                code: 200,
+                status: StreamStatus.SUCCESS,
+                metadata: { ...streamData.metadata },
+                data: {
+                  result: 'success',
+                  attempts: attemptCount,
+                },
+              } as StreamDataResponse;
+            },
+          },
+        ],
+      };
+
+      const hotMesh = await HotMesh.init(config);
+
+      await hotMesh.deploy(`
+app:
+  id: ${VALIDATION_APP_ID}-one-retry
+  version: '1'
+  graphs:
+    - subscribes: one-retry.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.one-retry
+          job:
+            maps:
+              result: '{a1.output.data.result}'
+              attempts: '{a1.output.data.attempts}'
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await hotMesh.activate('1');
+
+      const result = await hotMesh.pubsub(
+        'one-retry.test',
+        { code: 200 },
+        null,
+        10_000,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.data.attempts).toBe(2);
+      expect(attemptCount).toBe(2);
+      expect(attemptTimestamps.length).toBe(2);
+
+      // Verify one retry with 2^1 = 2 second delay
+      const delay = attemptTimestamps[1] - attemptTimestamps[0];
+      // ~2 seconds + ~1s for visibility timeout detection
+      expect(delay).toBeGreaterThanOrEqual(1800);
+      expect(delay).toBeLessThan(3500);
+
+      await hotMesh.stop();
+    }, 15_000);
+
+    it('should validate large maximumAttempts with consistent backoff', async () => {
+      let attemptCount = 0;
+      let attemptTimestamps: number[] = [];
+
+      const config: HotMeshConfig = {
+        appId: `${VALIDATION_APP_ID}-many-retries`,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.many-retries',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            retryPolicy: {
+              maximumAttempts: 6,
+              backoffCoefficient: 1.5,
+              maximumInterval: '10s',
+            },
+            callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+              attemptCount++;
+              attemptTimestamps.push(Date.now());
+
+              // Fail first 4 attempts, succeed on 5th
+              if (attemptCount <= 4) {
+                throw new Error(`Simulated failure on attempt ${attemptCount}`);
+              }
+
+              return {
+                code: 200,
+                status: StreamStatus.SUCCESS,
+                metadata: { ...streamData.metadata },
+                data: {
+                  result: 'success',
+                  attempts: attemptCount,
+                },
+              } as StreamDataResponse;
+            },
+          },
+        ],
+      };
+
+      const hotMesh = await HotMesh.init(config);
+
+      await hotMesh.deploy(`
+app:
+  id: ${VALIDATION_APP_ID}-many-retries
+  version: '1'
+  graphs:
+    - subscribes: many-retries.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.many-retries
+          job:
+            maps:
+              result: '{a1.output.data.result}'
+              attempts: '{a1.output.data.attempts}'
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await hotMesh.activate('1');
+
+      const result = await hotMesh.pubsub(
+        'many-retries.test',
+        { code: 200 },
+        null,
+        40_000,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.data.attempts).toBe(5);
+      expect(attemptCount).toBe(5);
+      expect(attemptTimestamps.length).toBe(5);
+
+      // Verify exponential backoff: 1.5^1, 1.5^2, 1.5^3, 1.5^4
+      // = 1.5s, 2.25s, 3.375s, 5.0625s
+      const delays: number[] = [];
+      for (let i = 1; i < attemptTimestamps.length; i++) {
+        delays.push(attemptTimestamps[i] - attemptTimestamps[i - 1]);
+      }
+
+      // Validate each delay is exponentially increasing
+      for (let i = 0; i < delays.length; i++) {
+        const expectedDelay = Math.pow(1.5, i + 1) * 1000;
+        const tolerance = 1000; // 1000ms tolerance (accounts for ~1s visibility timeout detection)
+        expect(delays[i]).toBeGreaterThanOrEqual(expectedDelay - tolerance);
+        expect(delays[i]).toBeLessThan(expectedDelay + tolerance);
+      }
+
+      await hotMesh.stop();
+    }, 45_000);
+
+    it('should handle numeric maximumInterval (seconds as number)', async () => {
+      let attemptCount = 0;
+      let attemptTimestamps: number[] = [];
+
+      const config: HotMeshConfig = {
+        appId: `${VALIDATION_APP_ID}-numeric`,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.numeric-interval',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            retryPolicy: {
+              maximumAttempts: 3,
+              backoffCoefficient: 10,
+              maximumInterval: 3, // 3 seconds as number
+            },
+            callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+              attemptCount++;
+              attemptTimestamps.push(Date.now());
+
+              // Fail first attempt, succeed on retry
+              if (attemptCount === 1) {
+                throw new Error(`Simulated failure on attempt ${attemptCount}`);
+              }
+
+              return {
+                code: 200,
+                status: StreamStatus.SUCCESS,
+                metadata: { ...streamData.metadata },
+                data: {
+                  result: 'success',
+                  attempts: attemptCount,
+                },
+              } as StreamDataResponse;
+            },
+          },
+        ],
+      };
+
+      const hotMesh = await HotMesh.init(config);
+
+      await hotMesh.deploy(`
+app:
+  id: ${VALIDATION_APP_ID}-numeric
+  version: '1'
+  graphs:
+    - subscribes: numeric-interval.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.numeric-interval
+          job:
+            maps:
+              result: '{a1.output.data.result}'
+              attempts: '{a1.output.data.attempts}'
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await hotMesh.activate('1');
+
+      const result = await hotMesh.pubsub(
+        'numeric-interval.test',
+        { code: 200 },
+        null,
+        10_000,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.data.attempts).toBe(2);
+      expect(attemptCount).toBe(2);
+
+      // Verify delay is capped at 3 seconds (not 10^1 = 10 seconds)
+      const delay = attemptTimestamps[1] - attemptTimestamps[0];
+      // ~3 seconds + ~1s for visibility timeout detection
+      expect(delay).toBeGreaterThanOrEqual(2800);
+      expect(delay).toBeLessThan(4500);
+
+      await hotMesh.stop();
+    }, 15_000);
+
+    it('should validate defaults when retryPolicy fields are omitted', async () => {
+      let attemptCount = 0;
+
+      const config: HotMeshConfig = {
+        appId: `${VALIDATION_APP_ID}-defaults`,
+        logLevel: HMSH_LOGLEVEL,
+        engine: {
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+        },
+        workers: [
+          {
+            topic: 'work.defaults',
+            connection: {
+              class: Postgres,
+              options: postgres_options,
+            },
+            retryPolicy: {
+              // Only set backoffCoefficient, test defaults for others
+              backoffCoefficient: 2,
+            },
+            callback: async (streamData: StreamData): Promise<StreamDataResponse> => {
+              attemptCount++;
+
+              // Fail first attempt, succeed on retry
+              if (attemptCount === 1) {
+                throw new Error(`Simulated failure on attempt ${attemptCount}`);
+              }
+
+              return {
+                code: 200,
+                status: StreamStatus.SUCCESS,
+                metadata: { ...streamData.metadata },
+                data: {
+                  result: 'success',
+                  attempts: attemptCount,
+                },
+              } as StreamDataResponse;
+            },
+          },
+        ],
+      };
+
+      const hotMesh = await HotMesh.init(config);
+
+      await hotMesh.deploy(`
+app:
+  id: ${VALIDATION_APP_ID}-defaults
+  version: '1'
+  graphs:
+    - subscribes: defaults.test
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: worker
+          topic: work.defaults
+          job:
+            maps:
+              result: '{a1.output.data.result}'
+              attempts: '{a1.output.data.attempts}'
+          
+      transitions:
+        t1:
+          - to: a1
+      `);
+
+      await hotMesh.activate('1');
+
+      const result = await hotMesh.pubsub(
+        'defaults.test',
+        { code: 200 },
+        null,
+        10_000,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.data.attempts).toBe(2);
+      // Default maximumAttempts is 3, so we should get 2 retries if needed
+      expect(attemptCount).toBe(2);
+
+      await hotMesh.stop();
+    }, 15_000);
+  });
+});

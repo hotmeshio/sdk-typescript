@@ -76,6 +76,22 @@ export type ProviderConfig = {
    * can still read/write to the store and can still pub/sub events.
    */
   readonly?: boolean;
+  /**
+   * Retry policy for stream messages. Configures automatic retry
+   * behavior with exponential backoff for failed operations.
+   * 
+   * @example
+   * ```typescript
+   * {
+   *   retryPolicy: {
+   *     maximumAttempts: 5,
+   *     backoffCoefficient: 2,
+   *     maximumInterval: '300s'
+   *   }
+   * }
+   * ```
+   */
+  retryPolicy?: import('./stream').RetryPolicy;
 };
 
 export type ProvidersConfig = {

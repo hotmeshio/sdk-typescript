@@ -179,11 +179,21 @@ class RedisSubService extends SubService<ClientProvider> {
     //      because a Redis connection with subscriptions
     //      may not publish (is read only).
     this.logger.debug('redis-publish', { topic, message });
-    const status: number = await this.storeClient.publish(
-      topic,
-      JSON.stringify(message),
-    );
-    return status > 0;
+    try {
+      const status: number = await this.storeClient.publish(
+        topic,
+        JSON.stringify(message),
+      );
+      return status > 0;
+    } catch (error) {
+      // Connection closed during test cleanup - log and continue gracefully
+      if (error?.message?.includes('Connection is closed') || error?.message?.includes('connection closed')) {
+        this.logger.debug('redis-publish-connection-closed', { topic, message: message.type });
+        return false;
+      }
+      // Re-throw unexpected errors
+      throw error;
+    }
   }
 }
 

@@ -40,6 +40,7 @@ export class ConsumptionManager<
   private counts: { [key: string]: number } = {};
   private hasReachedMaxBackoff: boolean | undefined;
   private router: any;
+  private retryPolicy: import('../../../types/stream').RetryPolicy | undefined;
 
   constructor(
     stream: S,
@@ -52,6 +53,7 @@ export class ConsumptionManager<
     appId: string,
     role: any,
     router: any,
+    retryPolicy?: import('../../../types/stream').RetryPolicy,
   ) {
     this.stream = stream;
     this.logger = logger;
@@ -63,6 +65,7 @@ export class ConsumptionManager<
     this.appId = appId;
     this.role = role;
     this.router = router;
+    this.retryPolicy = retryPolicy;
   }
 
   async createGroup(stream: string, group: string): Promise<void> {
@@ -611,14 +614,16 @@ export class ConsumptionManager<
   ): Promise<string> {
     if (output && typeof output === 'object') {
       if (output.status === 'error') {
-        // Extract retry policy from stream message config
+        // Extract retry policy with priority:
+        // 1. Use message-level _streamRetryConfig (from database columns or previous retry)
+        // 2. Fall back to router-level retryPolicy (from worker config)
         const retryPolicy = (input as any)._streamRetryConfig 
           ? {
               maximumAttempts: (input as any)._streamRetryConfig.max_retry_attempts,
               backoffCoefficient: (input as any)._streamRetryConfig.backoff_coefficient,
               maximumInterval: (input as any)._streamRetryConfig.maximum_interval_seconds,
             }
-          : undefined;
+          : this.retryPolicy;
         
         return await this.errorHandler.handleRetry(
           input,

@@ -1,4 +1,5 @@
 import { KeyStoreParams, KeyType } from '../../modules/key';
+import { ScoutType } from '../../types/hotmesh';
 import { ILogger } from '../logger';
 import { SerializerService as Serializer } from '../serializer';
 import { Consumes } from '../../types/activity';
@@ -48,11 +49,11 @@ abstract class StoreService<
   abstract setApp(id: string, version: string): Promise<any>;
   abstract activateAppVersion(id: string, version: string): Promise<boolean>;
   abstract reserveScoutRole(
-    scoutType: 'time' | 'signal' | 'activate',
+    scoutType: ScoutType,
     delay?: number,
   ): Promise<boolean>;
   abstract releaseScoutRole(
-    scoutType: 'time' | 'signal' | 'activate',
+    scoutType: ScoutType,
   ): Promise<boolean>;
   abstract reserveSymbolRange(
     target: string,

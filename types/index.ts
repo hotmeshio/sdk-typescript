@@ -91,6 +91,7 @@ export {
   HotMeshGraph,
   KeyType,
   KeyStoreParams,
+  ScoutType,
 } from './hotmesh';
 export { ILogger, LogLevel } from './logger';
 export {

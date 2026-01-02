@@ -18,6 +18,23 @@ export const nats_options = {
   servers: config.NATS_SERVERS,
 };
 
+export const ioredis_options = {
+  host: config.REDIS_HOST,
+  port: config.REDIS_PORT,
+  password: config.REDIS_PASSWORD,
+  db: config.REDIS_DATABASE,
+};
+
+export const redis_options = {
+  socket: {
+    host: config.REDIS_HOST,
+    port: config.REDIS_PORT,
+    tls: false,
+  },
+  password: config.REDIS_PASSWORD,
+  database: config.REDIS_DATABASE,
+};
+
 // Drop all user-defined schemas and their objects, then drop all tables in the public schema
 export const dropTables = async (transactionClient: any): Promise<void> => {
   let postgresClient: any;

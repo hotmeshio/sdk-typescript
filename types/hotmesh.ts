@@ -7,6 +7,13 @@ import { LogLevel } from './logger';
 import { ProviderClient, ProviderConfig, ProvidersConfig } from './provider';
 
 /**
+ * Scout role types for distributed task processing.
+ * At any given time, only a single engine will hold a scout role
+ * to check for and process work items in the respective queues.
+ */
+type ScoutType = 'time' | 'signal' | 'activate' | 'router';
+
+/**
  * the full set of entity types that are stored in the key/value store
  */
 enum KeyType {
@@ -45,7 +52,7 @@ type KeyStoreParams = {
   facet?: string; //data path starting at root with values separated by colons (e.g. "object/type:bar")
   topic?: string; //topic name (e.g., "foo" or "" for top-level)
   timeValue?: number; //time value (rounded to minute) (for delete range)
-  scoutType?: 'signal' | 'time' | 'activate'; //a single member of the quorum serves as the 'scout' for the group, triaging tasks for the collective
+  scoutType?: ScoutType; //a single member of the quorum serves as the 'scout' for the group, triaging tasks for the collective
 };
 
 type HotMesh = typeof HotMeshService;
@@ -126,6 +133,24 @@ type HotMeshEngine = {
    * that share the same task queue and database configuration.
    */
   taskQueue?: string;
+
+  /**
+   * Retry policy for stream messages. Configures automatic retry
+   * behavior with exponential backoff for failed operations.
+   * Applied to the stream connection during initialization.
+   * 
+   * @example
+   * ```typescript
+   * {
+   *   retryPolicy: {
+   *     maximumAttempts: 5,
+   *     backoffCoefficient: 2,
+   *     maximumInterval: '300s'
+   *   }
+   * }
+   * ```
+   */
+  retryPolicy?: import('./stream').RetryPolicy;
 };
 
 type HotMeshWorker = {
@@ -209,6 +234,24 @@ type HotMeshWorker = {
    * that share the same task queue and database configuration.
    */
   taskQueue?: string;
+
+  /**
+   * Retry policy for stream messages. Configures automatic retry
+   * behavior with exponential backoff for failed operations.
+   * Applied to the stream connection during initialization.
+   * 
+   * @example
+   * ```typescript
+   * {
+   *   retryPolicy: {
+   *     maximumAttempts: 5,
+   *     backoffCoefficient: 2,
+   *     maximumInterval: '300s'
+   *   }
+   * }
+   * ```
+   */
+  retryPolicy?: import('./stream').RetryPolicy;
 };
 
 type HotMeshConfig = {
@@ -320,4 +363,5 @@ export {
   HotMeshGraph,
   KeyType,
   KeyStoreParams,
+  ScoutType,
 };
