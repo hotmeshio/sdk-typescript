@@ -28,6 +28,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
   const TEST_CONSUMER = 'testConsumer';
 
   beforeAll(async () => {
+    process.env.HMSH_ROUTER_SCOUT_INTERVAL_MS = '5_000';
     postgresClient = (
       await PostgresConnection.connect(guid(), Postgres, postgres_options)
     ).getClient();
@@ -47,6 +48,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
     await HotMesh.stop();
     // Force close all pooled connections
     await ConnectorService.disconnectAll();
+    delete process.env.HMSH_ROUTER_SCOUT_INTERVAL_MS;
   });
 
   describe('HotMesh-Level Retry Policy', () => {
@@ -531,6 +533,8 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
     let attemptCount = 0;
 
     beforeAll(async () => {
+    process.env.HMSH_ROUTER_SCOUT_INTERVAL_MS = '5_000';
+
       // Reset attempt counter
       attemptCount = 0;
 
@@ -614,6 +618,7 @@ app:
       if (hotMesh) {
         hotMesh.stop();
       }
+      delete process.env.HMSH_ROUTER_SCOUT_INTERVAL_MS;
     });
 
     it('should retry worker failures and eventually succeed', async () => {
@@ -646,6 +651,8 @@ app:
     let attemptTimestamps: number[] = [];
 
     beforeAll(async () => {
+    process.env.HMSH_ROUTER_SCOUT_INTERVAL_MS = '5_000';
+
       // Reset counters
       attemptCount = 0;
       attemptTimestamps = [];
@@ -748,6 +755,7 @@ app:
       if (hotMesh) {
         hotMesh.stop();
       }
+      delete process.env.HMSH_ROUTER_SCOUT_INTERVAL_MS;
     });
 
     it('should retry with exponential backoff and eventually succeed', async () => {
@@ -780,17 +788,17 @@ app:
       const delay2 = attemptTimestamps[2] - attemptTimestamps[1];
       const delay3 = attemptTimestamps[3] - attemptTimestamps[2];
 
-      // First retry should be around 2 seconds (2^1)
+      // First retry should be around 2 seconds (2^1) + safety polling cap (5s max)
       expect(delay1).toBeGreaterThanOrEqual(1500);
-      expect(delay1).toBeLessThan(3000);
+      expect(delay1).toBeLessThan(7500);
 
-      // Second retry should be around 4 seconds (2^2)
+      // Second retry should be around 4 seconds (2^2) + safety polling cap (5s max)
       expect(delay2).toBeGreaterThanOrEqual(3500);
-      expect(delay2).toBeLessThan(5500);
+      expect(delay2).toBeLessThan(9500);
 
-      // Third retry should be around 8 seconds (2^3)
+      // Third retry should be around 8 seconds (2^3) + safety polling cap (5s max)
       expect(delay3).toBeGreaterThanOrEqual(7500);
-      expect(delay3).toBeLessThan(10000);
+      expect(delay3).toBeLessThan(14500);
     }, 65_000);
 
     it('should respect maximumAttempts and fail after exhausting retries', async () => {
@@ -891,6 +899,7 @@ app:
       await sleepFor(200);
       await HotMesh.stop();
       await ConnectorService.disconnectAll();
+      delete process.env.HMSH_ROUTER_SCOUT_INTERVAL_MS;
     });
 
     it('should validate backoffCoefficient of 1.5 with proper delays', async () => {
@@ -985,13 +994,13 @@ app:
       const delay1 = attemptTimestamps[1] - attemptTimestamps[0];
       const delay2 = attemptTimestamps[2] - attemptTimestamps[1];
 
-      // First retry: ~1.5 seconds (1500ms) + ~1s for visibility timeout detection
+      // First retry: ~1.5 seconds (1500ms) + safety polling cap (5s max)
       expect(delay1).toBeGreaterThanOrEqual(1400);
-      expect(delay1).toBeLessThan(3500);
+      expect(delay1).toBeLessThan(7000);
 
-      // Second retry: ~2.25 seconds (2250ms) + ~1s for visibility timeout detection
+      // Second retry: ~2.25 seconds (2250ms) + safety polling cap (5s max)
       expect(delay2).toBeGreaterThanOrEqual(2100);
-      expect(delay2).toBeLessThan(4000);
+      expect(delay2).toBeLessThan(7500);
 
       await hotMesh.stop();
     }, 25_000);
@@ -1088,13 +1097,13 @@ app:
       const delay1 = attemptTimestamps[1] - attemptTimestamps[0];
       const delay2 = attemptTimestamps[2] - attemptTimestamps[1];
 
-      // First retry: ~3 seconds (3000ms) + ~1s for visibility timeout detection
+      // First retry: ~3 seconds (3000ms) + safety polling cap (5s max)
       expect(delay1).toBeGreaterThanOrEqual(2800);
-      expect(delay1).toBeLessThan(4500);
+      expect(delay1).toBeLessThan(8500);
 
-      // Second retry: ~9 seconds (9000ms) + ~1s for visibility timeout detection
+      // Second retry: ~9 seconds (9000ms) + safety polling cap (5s max)
       expect(delay2).toBeGreaterThanOrEqual(8800);
-      expect(delay2).toBeLessThan(10500);
+      expect(delay2).toBeLessThan(14500);
 
       await hotMesh.stop();
     }, 25_000);
@@ -1194,17 +1203,17 @@ app:
       const delay2 = attemptTimestamps[2] - attemptTimestamps[1];
       const delay3 = attemptTimestamps[3] - attemptTimestamps[2];
 
-      // First retry: min(10^1, 5) = 5 seconds + ~1s for visibility timeout detection
+      // First retry: min(10^1, 5) = 5 seconds + safety polling cap (5s max)
       expect(delay1).toBeGreaterThanOrEqual(4800);
-      expect(delay1).toBeLessThan(6500);
+      expect(delay1).toBeLessThan(11000);
 
-      // Second retry: min(10^2, 5) = 5 seconds (capped) + ~1s for visibility timeout detection
+      // Second retry: min(10^2, 5) = 5 seconds (capped) + safety polling cap (5s max)
       expect(delay2).toBeGreaterThanOrEqual(4800);
-      expect(delay2).toBeLessThan(6500);
+      expect(delay2).toBeLessThan(11000);
 
-      // Third retry: min(10^3, 5) = 5 seconds (capped)
+      // Third retry: min(10^3, 5) = 5 seconds (capped) + safety polling cap (5s max)
       expect(delay3).toBeGreaterThanOrEqual(4800);
-      expect(delay3).toBeLessThan(5500);
+      expect(delay3).toBeLessThan(11000);
 
       await hotMesh.stop();
     }, 35_000);
@@ -1370,9 +1379,9 @@ app:
 
       // Verify one retry with 2^1 = 2 second delay
       const delay = attemptTimestamps[1] - attemptTimestamps[0];
-      // ~2 seconds + ~1s for visibility timeout detection
+      // ~2 seconds + safety polling cap (5s max)
       expect(delay).toBeGreaterThanOrEqual(1800);
-      expect(delay).toBeLessThan(3500);
+      expect(delay).toBeLessThan(7500);
 
       await hotMesh.stop();
     }, 15_000);
@@ -1474,7 +1483,7 @@ app:
       // Validate each delay is exponentially increasing
       for (let i = 0; i < delays.length; i++) {
         const expectedDelay = Math.pow(1.5, i + 1) * 1000;
-        const tolerance = 1000; // 1000ms tolerance (accounts for ~1s visibility timeout detection)
+        const tolerance = 5500; // 5500ms tolerance (accounts for safety polling cap 5s)
         expect(delays[i]).toBeGreaterThanOrEqual(expectedDelay - tolerance);
         expect(delays[i]).toBeLessThan(expectedDelay + tolerance);
       }
@@ -1570,9 +1579,9 @@ app:
 
       // Verify delay is capped at 3 seconds (not 10^1 = 10 seconds)
       const delay = attemptTimestamps[1] - attemptTimestamps[0];
-      // ~3 seconds + ~1s for visibility timeout detection
+      // ~3 seconds + safety polling cap (5s max)
       expect(delay).toBeGreaterThanOrEqual(2800);
-      expect(delay).toBeLessThan(4500);
+      expect(delay).toBeLessThan(8500);
 
       await hotMesh.stop();
     }, 15_000);

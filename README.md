@@ -2,40 +2,40 @@
 
 ![beta release](https://img.shields.io/badge/release-beta-blue.svg)
 
-Transform Postgres into a distributed orchestration engine. No central server. Just your database and client code.
+HotMesh converts any Postgres database into a workflow orchestration system—no servers, no infrastructure, just intelligent coordination.
+
 
 **Table of Contents**
-- [What is HotMesh?](#what-is-hotmesh)
-- [Core Use Cases](#core-use-cases)
+- [Common Use Cases](#common-use-cases)
+- [Installation](#installation)
 - [Quick Example: If/Else Workflow](#quick-example-ifelse-workflow)
   - [MemFlow Approach (Temporal-Compatible)](#memflow-approach-temporal-compatible)
   - [HotMesh Approach (Functional YAML)](#hotmesh-approach-functional-yaml)
 - [The Power of Transpilation](#the-power-of-transpilation)
 - [Key Features](#key-features)
-- [Installation](#installation)
-- [Getting Started](#getting-started)
-- [Why HotMesh?](#why-hotmesh)
+- [Progressive Orchestration](#progressive-orchestration)
 - [Advanced Capabilities](#advanced-capabilities)
-- [Use Cases](#use-cases)
 - [License](#license)
 
-## What is HotMesh?
-
-HotMesh converts any Postgres database into a workflow orchestration system—no servers, no infrastructure, just intelligent coordination through database streams.
-
-## Core Use Cases
+## Common Use Cases
 
 ### 1. Pipeline Database
 Transform Postgres into a durable pipeline processor. Orchestrate long-running, multi-step pipelines transactionally and durably.
 
 ### 2. Temporal You Own
-Get all the power of Temporal without the infrastructure. HotMesh includes MemFlow, a complete Temporal-compatible API that runs directly on your Postgres database. No app server required.
+Get the power of Temporal without the infrastructure. HotMesh includes MemFlow, a Temporal-compatible API that runs directly on your Postgres database. No app server required.
 
 ### 3. Distributed State Machine
-Build resilient, stateful applications where every component can fail and recover. HotMesh manages state transitions, retries, and coordination through durable database streams.
+Build resilient, stateful applications where every component can fail and recover. HotMesh manages state transitions, retries, and coordination.
 
 ### 4. Workflow-as-Code Platform
 Choose your style: procedural workflows with MemFlow's Temporal API, or functional workflows with HotMesh's YAML syntax.
+
+## Installation
+
+```bash
+npm install @hotmeshio/hotmesh
+```
 
 ## Quick Example: If/Else Workflow
 
@@ -61,7 +61,7 @@ export async function notifyBackorder(itemId: string): Promise<void> {
 }
 ```
 
-Define your workflow (it orchestrates the activities):
+Define your workflow (it should orchestrate your activities according to your business logic):
 
 ```typescript
 // workflows.ts
@@ -336,42 +336,15 @@ MemFlow's procedural code can transpile to HotMesh's functional YAML. The mesh o
 - No single points of failure
 - Scale by adding database connections
 
-## Installation
 
-```bash
-npm install @hotmeshio/hotmesh
-```
-
-## Getting Started
-
-1. **Connect to Postgres**
-   ```typescript
-   const connection = {
-     class: Postgres,
-     options: { connectionString: 'postgresql://localhost:5432/mydb' }
-   };
-   ```
-
-2. **Initialize HotMesh**
-   ```typescript
-   const hotMesh = await HotMesh.init({
-     appId: 'myapp',
-     engine: { connection }
-   });
-   ```
-
-3. **Deploy workflows** (YAML or code)
-4. **Bind workers** to handle tasks
-5. **Execute workflows** through simple pub/sub
-
-## Why HotMesh?
+## Progressive Orchestration
 
 Workflow systems tend to force a choice between two models:
 
 * **Choreography**: Distributed by design, but difficult to reason about, observe, and debug
 * **Orchestration**: Easier to model and visualize, but dependent on centralized infrastructure
 
-HotMesh removes the need to choose. It preserves the explicit structure of orchestration while operating in a fully distributed way. Workflow state lives in the database, and participating clients act as peers in the execution mesh.
+HotMesh removes the need to choose. It preserves the explicit structure of orchestration while operating in a fully distributed way. Workflow state lives in the database, and participating clients act as peers in the execution mesh. 
 
 ## Advanced Capabilities
 
@@ -384,15 +357,6 @@ HotMesh removes the need to choose. It preserves the explicit structure of orche
 - **Targeted throttling**: Control message flow rate for workers
 - **Hot deployments**: Update workflows without downtime
 
-## Use Cases
-
-- **Data Pipelines**: ETL, data processing, analytics workflows
-- **Business Processes**: Order management, approval flows, onboarding
-- **AI Agents**: Multi-step reasoning, tool orchestration, memory management
-- **Microservice Orchestration**: Saga patterns, distributed transactions
-- **Event Processing**: Complex event handling, stream processing
-- **Batch Jobs**: Scheduled tasks, recurring workflows
-
 ---
 
 **Retain your process data. Learn from your process data.**
@@ -402,4 +366,3 @@ HotMesh removes the need to choose. It preserves the explicit structure of orche
 HotMesh is licensed under the Apache License, Version 2.0.
 
 You may use, modify, and distribute HotMesh in accordance with the license, including as part of your own applications and services. However, offering HotMesh itself as a standalone, hosted commercial orchestration service (or a substantially similar service) requires prior written permission from the authors.
-

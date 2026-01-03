@@ -16,6 +16,11 @@ import {
 export class ScoutManager {
   private isScout = false;
   private shouldStopScout = false;
+  
+  // Polling metrics
+  private pollCount = 0;
+  private totalNotifications = 0;
+  private scoutStartTime: number | null = null;
 
   constructor(
     private client: PostgresClientType & ProviderClient,
@@ -52,6 +57,9 @@ export class ScoutManager {
       await this.releaseScoutRole('router');
       this.isScout = false;
     }
+
+    // Log polling metrics on shutdown
+    this.logPollingMetrics();
   }
 
   /**
@@ -64,9 +72,14 @@ export class ScoutManager {
     
     if (isScout) {
       if (!wasScout) {
-        // First time becoming scout - set timeout to reset after interval
+        // First time becoming scout - set timeout to reset after interval and track start time
+        this.scoutStartTime = Date.now();
+        this.logger.info('postgres-stream-router-scout-role-acquired', {
+          appId: this.appId,
+        });
         setTimeout(() => {
           this.isScout = false;
+          this.scoutStartTime = null;
         }, HMSH_ROUTER_SCOUT_INTERVAL_SECONDS * 1_000);
       }
       return true;
@@ -109,11 +122,17 @@ export class ScoutManager {
         `SELECT ${schemaName}.notify_visible_messages() as count`
       );
       
+      // Track polling metrics
+      this.pollCount++;
+      
       const notificationCount = result.rows[0]?.count || 0;
+      this.totalNotifications += notificationCount;
       
       if (notificationCount > 0) {
         this.logger.debug('postgres-stream-router-scout-notifications', {
           count: notificationCount,
+          totalPolls: this.pollCount,
+          totalNotifications: this.totalNotifications,
         });
       }
     } catch (error) {
@@ -217,6 +236,39 @@ export class ScoutManager {
    */
   isCurrentlyScout(): boolean {
     return this.isScout;
+  }
+
+  /**
+   * Log polling metrics for this instance's scout tenure.
+   */
+  private logPollingMetrics(): void {
+    if (this.pollCount === 0) {
+      this.logger.info('postgres-stream-router-scout-metrics', {
+        message: 'No polling occurred during this session',
+        appId: this.appId,
+      });
+      return;
+    }
+
+    const durationMs = this.scoutStartTime 
+      ? Date.now() - this.scoutStartTime 
+      : 0;
+    const durationMinutes = durationMs / 1000 / 60;
+    const qpm = durationMinutes > 0 ? this.pollCount / durationMinutes : 0;
+    const qps = durationMs > 0 ? this.pollCount / (durationMs / 1000) : 0;
+
+    this.logger.info('postgres-stream-router-scout-metrics', {
+      appId: this.appId,
+      totalPolls: this.pollCount,
+      totalNotifications: this.totalNotifications,
+      durationMs: Math.round(durationMs),
+      durationMinutes: durationMinutes.toFixed(2),
+      queriesPerMinute: qpm.toFixed(2),
+      queriesPerSecond: qps.toFixed(3),
+      avgNotificationsPerPoll: this.pollCount > 0 
+        ? (this.totalNotifications / this.pollCount).toFixed(2) 
+        : '0',
+    });
   }
 }
 
