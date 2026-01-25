@@ -11,6 +11,7 @@ import {
   RedisRedisMultiType as TransactionProvider,
 } from '../../../../types/redis';
 import { SubscriptionCallback } from '../../../../types/quorum';
+import { ProviderTransaction } from '../../../../types/provider';
 
 class RedisSubService extends SubService<ClientProvider> {
   private subscriptions: Map<string, Set<SubscriptionCallback>> = new Map();
@@ -173,18 +174,26 @@ class RedisSubService extends SubService<ClientProvider> {
     message: Record<string, any>,
     appId: string,
     engineId?: string,
+    transaction?: ProviderTransaction,
   ): Promise<boolean> {
     const topic = this.mintKey(keyType, { appId, engineId });
+    const messageStr = JSON.stringify(message);
     //NOTE: `storeClient.publish` is used,
     //      because a Redis connection with subscriptions
     //      may not publish (is read only).
-    this.logger.debug('redis-publish', { topic, message });
+    this.logger.debug('redis-publish', { topic, message, hasTransaction: !!transaction });
+    
     try {
-      const status: number = await this.storeClient.publish(
-        topic,
-        JSON.stringify(message),
-      );
-      return status > 0;
+      if (transaction) {
+        // Use transaction-bound PUBLISH method
+        console.log('[RedisSubService] PUBLISH called with transaction', { topic, message: messageStr });
+        (transaction as TransactionProvider).PUBLISH(topic, messageStr);
+        return true; // Transaction will be executed by caller
+      } else {
+        // Direct publish
+        const status: number = await this.storeClient.publish(topic, messageStr);
+        return status > 0;
+      }
     } catch (error) {
       // Connection closed during test cleanup - log and continue gracefully
       if (error?.message?.includes('Connection is closed') || error?.message?.includes('connection closed')) {

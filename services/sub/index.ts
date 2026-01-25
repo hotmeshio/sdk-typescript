@@ -58,6 +58,7 @@ abstract class SubService<ClientProvider extends ProviderClient> {
     message: Record<string, any>,
     appId: string,
     topic?: string,
+    transaction?: ProviderTransaction,
   ): Promise<boolean>;
 }
 

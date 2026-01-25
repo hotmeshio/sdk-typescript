@@ -17,9 +17,11 @@ describe('FUNCTIONAL | RedisSubService', () => {
   let redisClient: RedisClientType;
   let redisStoreClient: RedisClientType;
   let redisSubService: RedisSubService;
+  let redisStoreService: RedisStoreService;
 
   beforeEach(async () => {
     redisSubService = new RedisSubService(redisClient, redisStoreClient);
+    redisStoreService = new RedisStoreService(redisStoreClient);
   });
 
   beforeAll(async () => {
@@ -121,9 +123,136 @@ describe('FUNCTIONAL | RedisSubService', () => {
         appConfig.id,
         word,
       );
-      sleepFor(250); //give time to run
+      await sleepFor(250); //give time to run
       await redisSubService.punsubscribe(KeyType.QUORUM, appConfig.id, wild);
       expect(responded).toBeTruthy();
+    });
+  });
+
+  describe('publish with transaction', () => {
+    it('publishes messages using a transaction', async () => {
+      const txAppId = 'test-app-tx1';
+      let responded = false;
+      const subscriptionHandler: SubscriptionCallback = (topic, message) => {
+        const topicKey = redisSubService.mintKey(KeyType.QUORUM, {
+          appId: txAppId,
+        });
+        expect(topic).toEqual(topicKey);
+        expect(message).toEqual(payload);
+        responded = true;
+      };
+      
+      await redisSubService.init(
+        HMNS,
+        txAppId,
+        engineId,
+        new LoggerService(),
+      );
+      await redisStoreService.init(
+        HMNS,
+        txAppId,
+        new LoggerService(),
+      );
+      
+      const payload = { any: 'data', timestamp: Date.now() };
+      
+      // Subscribe first
+      await redisSubService.subscribe(
+        KeyType.QUORUM,
+        subscriptionHandler,
+        txAppId,
+      );
+      
+      // Create a transaction and publish within it
+      const multi = redisStoreService.transact();
+      await redisSubService.publish(
+        KeyType.QUORUM,
+        payload,
+        txAppId,
+        undefined,
+        multi,
+      );
+      
+      // Execute the transaction
+      const results = await multi.exec();
+      expect(results).toBeDefined();
+      
+      // Give time for message to be received
+      await sleepFor(250);
+      
+      await redisSubService.unsubscribe(KeyType.QUORUM, txAppId);
+      expect(responded).toBeTruthy();
+    });
+
+    it('publishes multiple messages in a single transaction', async () => {
+      const txAppId = 'test-app-tx2';
+      const receivedMessages: any[] = [];
+      const subscriptionHandler: SubscriptionCallback = (topic, message) => {
+        receivedMessages.push(message);
+      };
+      
+      await redisSubService.init(
+        HMNS,
+        txAppId,
+        engineId,
+        new LoggerService(),
+      );
+      await redisStoreService.init(
+        HMNS,
+        txAppId,
+        new LoggerService(),
+      );
+      
+      // Subscribe first
+      await redisSubService.subscribe(
+        KeyType.QUORUM,
+        subscriptionHandler,
+        txAppId,
+      );
+      
+      // Create a transaction and publish multiple messages
+      const multi = redisStoreService.transact();
+      const payload1 = { message: 'first', timestamp: Date.now() };
+      const payload2 = { message: 'second', timestamp: Date.now() + 1 };
+      const payload3 = { message: 'third', timestamp: Date.now() + 2 };
+      
+      await redisSubService.publish(
+        KeyType.QUORUM,
+        payload1,
+        txAppId,
+        undefined,
+        multi,
+      );
+      await redisSubService.publish(
+        KeyType.QUORUM,
+        payload2,
+        txAppId,
+        undefined,
+        multi,
+      );
+      await redisSubService.publish(
+        KeyType.QUORUM,
+        payload3,
+        txAppId,
+        undefined,
+        multi,
+      );
+      
+      // Execute the transaction
+      const results = await multi.exec();
+      expect(results).toBeDefined();
+      expect(results.length).toBeGreaterThanOrEqual(3);
+      
+      // Give time for messages to be received
+      await sleepFor(500);
+      
+      await redisSubService.unsubscribe(KeyType.QUORUM, txAppId);
+      
+      // Should have received all 3 messages
+      expect(receivedMessages.length).toBe(3);
+      expect(receivedMessages).toContainEqual(payload1);
+      expect(receivedMessages).toContainEqual(payload2);
+      expect(receivedMessages).toContainEqual(payload3);
     });
   });
 });

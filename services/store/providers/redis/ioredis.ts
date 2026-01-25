@@ -175,6 +175,10 @@ class IORedisStoreService
         ) {
           return addCommand('xgroup', [command, key, groupName, id, mkStream]);
         },
+        publish(channel: string, message: string) {
+          console.log('[IORedisStoreService] publish called on multi', { channel, message });
+          return addCommand('publish', [channel, message]);
+        },
       };
 
       return multiInstance;

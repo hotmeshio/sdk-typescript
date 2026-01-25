@@ -85,6 +85,7 @@ interface RedisRedisMultiType extends ProviderTransaction {
   LPUSH(key: string, items: string[]): this;
   LRANGE(key: string, start: number, end: number): this;
   RPUSH(key: string, items: string[]): this;
+  PUBLISH(channel: string, message: string): this;
   SET(key: string, value: string): this;
   XADD(key: string, id: string, fields: any): this;
   XACK(key: string, group: string, id: string): this;
@@ -322,6 +323,7 @@ type IORedisClassType = new (
   ...args: any[]
 ) => IORedisClient;
 interface IORedisMultiType extends ProviderTransaction {
+  publish(channel: string, message: string): this;
   xadd(key: string, id: string, fields: any, message?: string): this;
   xack(key: string, group: string, id: string): this;
   xack(key: string, group: string, ...ids: string[]): this;

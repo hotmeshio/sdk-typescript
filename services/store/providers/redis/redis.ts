@@ -191,6 +191,10 @@ class RedisStoreService
         ) {
           return addCommand('XGROUP', [command, key, groupName, id, mkStream]);
         },
+        PUBLISH(channel: string, message: string) {
+          console.log('[RedisStoreService] PUBLISH called on multi', { channel, message });
+          return addCommand('PUBLISH', [channel, message]);
+        },
         EXISTS: function (key: string): RedisMultiType {
           throw new Error('Function not implemented.');
         },

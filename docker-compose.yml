@@ -42,7 +42,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    container_name: hotmesh-redis-insight
+    ports:
+      - "8001:5540"
+    depends_on:
+      - redis
   nats:
     image: nats:latest
     ports:
