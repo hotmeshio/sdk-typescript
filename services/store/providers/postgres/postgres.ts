@@ -581,6 +581,35 @@ class PostgresStoreService extends StoreService<
     );
   }
 
+  /**
+   * 1) HIGH-LEVEL STORE METHOD (engine/activity-facing)
+   * ---------------------------------------------------
+   * Mirrors setStatus(), but performs the compound Step-2 requirement:
+   * - apply delta to job semaphore (jobs.status)
+   * - compute thresholdHit (0/1) for desired threshold
+   * - persist thresholdHit onto the Leg2 GUID ledger by incrementing the 100B digit (or other weight)
+   * - return thresholdHit (0/1)
+   */
+  async setStatusAndCollateGuid(
+    statusDelta: number,          // typically (N - 1)
+    threshold: number,            // typically 0 (but supports 0,1,12,...)
+    jobId: string,
+    appId: string,
+    guidField: string,            // the jobs_attributes.field for the Leg2 GUID ledger row
+    guidWeight: number,           // e.g. 100_000_000_000 for GUID 100B digit
+    transaction?: ProviderTransaction,
+  ): Promise<number> {
+    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
+    return await this.kvsql(transaction).setStatusAndCollateGuid(
+      jobKey,
+      statusDelta,
+      threshold,
+      guidField,
+      guidWeight,
+    );
+  }
+
+
   async getStatus(jobId: string, appId: string): Promise<number> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
     const status = await this.kvsql().hget(jobKey, ':');

@@ -234,6 +234,54 @@ export function createBasicOperations(context: HashContext['context']) {
         }
       }
     },
+
+    /**
+     * 2) KVSQL METHOD (non-transactional + transactional)
+     * ---------------------------------------------------
+     * Matches hincrbyfloat() pattern:
+     * - when multi is present: enqueue command and return 0 immediately
+     * - when multi absent: execute immediately and return parsed numeric value
+     *
+     * Returns: thresholdHit (0/1) as number
+     */
+    async setStatusAndCollateGuid(
+      key: string,                  // jobKey
+      statusDelta: number,          // semaphore delta
+      threshold: number,            // desired threshold (usually 0)
+      guidField: string,            // jobs_attributes.field for the guid ledger
+      guidWeight: number,           // e.g. 100B digit increment
+      multi?: ProviderTransaction,
+    ): Promise<number> {
+      const { sql, params } = _setStatusAndCollateGuid(
+        context,
+        key,
+        statusDelta,
+        threshold,
+        guidField,
+        guidWeight,
+      );
+
+      if (multi) {
+        (multi as Multi).addCommand(sql, params, 'number', (rows) => {
+          return parseFloat(rows[0].value);
+        });
+        return Promise.resolve(0);
+      } else {
+        try {
+          const res = await context.pgClient.query(sql, params);
+          return parseFloat(res.rows[0].value);
+        } catch (error) {
+          // Connection closed during test cleanup - return 0
+          if (
+            error?.message?.includes('closed') ||
+            error?.message?.includes('queryable')
+          ) {
+            return 0;
+          }
+          throw error;
+        }
+      }
+    },
   };
 }
 
@@ -587,4 +635,75 @@ export function _hincrbyfloat(
     `;
     return { sql, params: [key, field, increment] };
   }
+}
+
+/**
+ * 3) LOW-LEVEL SQL GENERATOR
+ * --------------------------
+ * This is the core compound statement. It must:
+ * - update jobs.status by statusDelta
+ * - compute thresholdHit (0/1) when status_after == threshold
+ * - increment the guidField by thresholdHit * guidWeight (typically 100B digit)
+ * - return thresholdHit as "value" so it fits the existing return parsing
+ *
+ * Notes:
+ * - Uses tableForKey(key, 'hash') which will resolve to the jobs table for job keys.
+ * - Assumes jobs_attributes table is `${jobsTableName}_attributes` (same as _hincrbyfloat)
+ * - Uses deriveType(guidField) to be consistent with your attribute typing system.
+ */
+export function _setStatusAndCollateGuid(
+  context: HashContext['context'],
+  key: string,                  // jobKey
+  statusDelta: number,
+  threshold: number,
+  guidField: string,
+  guidWeight: number,
+): SqlResult {
+  const jobsTableName = context.tableForKey(key, 'hash');
+
+  if (!isJobsTable(jobsTableName)) {
+    throw new Error(
+      `_setStatusAndCollateGuid requires a jobs table key; got table ${jobsTableName}`,
+    );
+  }
+
+  const sql = `
+    WITH status_update AS (
+      UPDATE ${jobsTableName}
+      SET status = status + $2
+      WHERE key = $1 AND is_live
+      RETURNING id AS job_id, status AS status_after
+    ),
+    hit AS (
+      SELECT
+        job_id,
+        CASE WHEN status_after = $3 THEN 1 ELSE 0 END AS threshold_hit,
+        CASE WHEN status_after = $3 THEN ($4::double precision) ELSE 0::double precision END AS guid_increment
+      FROM status_update
+    )
+    INSERT INTO ${jobsTableName}_attributes (job_id, field, value, type)
+    SELECT
+      job_id,
+      $5 AS field,
+      (guid_increment)::text AS value,
+      $6
+    FROM hit
+    ON CONFLICT (job_id, field) DO UPDATE
+    SET
+      value = ((COALESCE(${jobsTableName}_attributes.value, '0')::double precision) + EXCLUDED.value::double precision)::text,
+      type = EXCLUDED.type
+    RETURNING (SELECT threshold_hit::text FROM hit) AS value
+  `;
+
+  return {
+    sql,
+    params: [
+      key,                      // $1
+      statusDelta,              // $2
+      threshold,                // $3
+      guidWeight,               // $4 (typically 100_000_000_000)
+      guidField,                // $5
+      deriveType(guidField),    // $6
+    ],
+  };
 }

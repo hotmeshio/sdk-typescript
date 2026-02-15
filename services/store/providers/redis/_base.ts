@@ -563,6 +563,31 @@ abstract class RedisStoreBase<
     );
   }
 
+  async setStatusAndCollateGuid(
+    statusDelta: number,
+    threshold: number,
+    jobId: string,
+    appId: string,
+    guidField: string,
+    guidWeight: number,
+    transaction?: TransactionProvider,
+  ): Promise<any> {
+    //redis implementation does not support compound statements
+    //instead, assume the transaction is always present and two commands will be executed sequentially
+    //in the same transaction. The expected response from this method is 0/1. However, this
+    //implementation will return whatever the job semaphore is after the first command.
+    //trasact() method could be overloaded with handler to address, but this is a temporary solution.
+    //redis simply does not support compound statements (and as a result, transactions)
+    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
+    await transaction[this.commands.hincrbyfloat](
+      jobKey,
+      ':',
+      statusDelta,
+    );
+    await this.collateSynthetic(jobId, guidField, statusDelta, transaction);
+    return transaction;
+  }
+
   async getStatus(jobId: string, appId: string): Promise<number> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
     const status = await this.storeClient[this.commands.hget](jobKey, ':');

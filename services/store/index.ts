@@ -85,6 +85,15 @@ abstract class StoreService<
     appId: string,
     transaction?: TransactionProvider,
   ): Promise<any>;
+  abstract setStatusAndCollateGuid(
+    statusDelta: number, // typically (N - 1)
+    threshold: number, // typically 0 (but supports 0,1,12,...)
+    jobId: string,
+    appId: string,
+    guidField: string, // 
+    guidWeight: number,
+    transaction?: ProviderTransaction,
+  ): Promise<any>;
   abstract getStatus(jobId: string, appId: string): Promise<number>;
   abstract setStateNX(
     jobId: string,

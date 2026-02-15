@@ -175,6 +175,10 @@ export class KVSQL {
     this.hash.hgetall(...args);
   hincrbyfloat = (...args: Parameters<typeof this.hash.hincrbyfloat>) =>
     this.hash.hincrbyfloat(...args);
+  setStatusAndCollateGuid = (...args: Parameters<typeof this.hash.setStatusAndCollateGuid>) =>
+    this.hash.setStatusAndCollateGuid(...args);
+  _setStatusAndCollateGuid = (...args: Parameters<typeof this.hash._setStatusAndCollateGuid>) =>
+    this.hash._setStatusAndCollateGuid(...args);
   _hincrbyfloat = (...args: Parameters<typeof this.hash._hincrbyfloat>) =>
     this.hash._hincrbyfloat(...args);
   hscan = (...args: Parameters<typeof this.hash.hscan>) =>

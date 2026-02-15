@@ -12,8 +12,6 @@ HotMesh tracks activity correctness using:
 
 All ledgers are **monotonic (increment-only)** and are updated **atomically** with durable writes to ensure correctness under crashes, retries, and message replays.
 
----
-
 ## Goals
 
 This design guarantees:
@@ -26,8 +24,6 @@ This design guarantees:
 * **Exactly-once semantics** for each durable step via transaction bundling
 * **Correct job closure** even if the server crashes after the job becomes complete
 
----
-
 ## Core Principle: Transaction Bundling
 
 Every meaningful step follows one rule:
@@ -39,7 +35,30 @@ If the digit is not set, the work must be retried.
 
 This pattern is the foundation of correctness.
 
----
+### Transaction Bundling in a Layered Architecture
+
+HotMesh engines and activities do **not** author SQL directly. They operate against a small set of **durable primitives** exposed by the store provider.
+
+Those primitives are implemented per backend (Postgres, Redis, etc.) and must guarantee the bundling rule.
+
+**Principle:**
+
+> Correctness is defined by what the primitive commits atomically, not by what the engine “intends” to do.
+
+### Transactions as a Command Bundle
+
+When a transaction is present, the provider must:
+
+* collect a sequence of primitive calls into a **single BEGIN/COMMIT**
+* ensure each primitive’s SQL executes inside that same transaction
+* rely on **database atomicity** for crash safety
+
+The engine must assume:
+
+* if COMMIT happens, all bundled effects happened
+* if COMMIT does not happen, none happened
+
+This is how step markers become durable proofs.
 
 ## 1) The 15-Digit Activity Ledger
 
@@ -70,8 +89,6 @@ Weight:    100T  10T  1T  100B  10B  1B  100M  10M  1M  100K  10K  1K  100  10  
 |        8–15 | 10M..1       | **Leg2 entry counter** (8 digits, 0..99,999,999) |
 
 All other digits are reserved.
-
----
 
 ## 2) Derived Fields (How to Interpret the Activity Ledger)
 
@@ -108,8 +125,6 @@ These are durable “step completed” proofs:
 * **1B**: children spawned
 * **100M**: job completion tasks done
 
----
-
 ## 3) Overflow Rules (Hard Constraints)
 
 The ledger must **never exceed 15 digits**.
@@ -131,8 +146,6 @@ Leg2 entry counter is capped at **99,999,999**.
 The Leg2 entry counter uses the **last 8 digits** only.
 
 This prevents overflow carry into the **100M digit**, which is reserved for the Leg2 job completion step marker.
-
----
 
 ## 4) Leg1 Protocol
 
@@ -182,8 +195,6 @@ At the end of Leg1 processing, in the **same atomic transaction** as all Leg1 du
 
 If the transaction commits, Leg1 completion is guaranteed.
 
----
-
 ## 5) Leg2 Protocol
 
 Leg2 supports cyclic activity behavior and repeated entries.
@@ -197,8 +208,6 @@ Leg2 uses two ledgers:
 
 1. **Activity ledger** (15-digit)
 2. **GUID ledger** (15-digit) per Leg2 transition message
-
----
 
 ## 6) The 15-Digit GUID Ledger (Per Leg2 Message)
 
@@ -230,8 +239,6 @@ Weight:    100T  10T  1T  100B  10B  1B  100M  10M  1M  100K  10K  1K  100  10  
 
 All other digits are reserved.
 
----
-
 ## 7) Leg2 Entry (attempt marker + dimensional counter)
 
 On claim/dequeue of a Leg2 transition message:
@@ -258,8 +265,6 @@ This records that this specific GUID message is being processed again (first att
 
 These increments may be executed in the same transaction when supported.
 
----
-
 ## 8) Leg2 Step-Level Idempotency
 
 Leg2 processing contains multiple durable steps.
@@ -277,7 +282,17 @@ The system must be able to crash after any step and resume safely.
 
 When a step completes, the step marker must be incremented **in the same atomic transaction** as the durable writes that implement that step.
 
----
+### Step 2 Requires a Compound Primitive
+
+Step 2 has an additional correctness requirement:
+
+* it changes global job state (job semaphore)
+* it may close the job (edge event)
+* it must persist the “job closed” fact into the GUID ledger deterministically
+
+This cannot rely on application control flow or in-memory decisions.
+
+It must be expressed as a single durable commit.
 
 ## 9) Job Semaphore (Per Job)
 
@@ -334,19 +349,16 @@ Examples:
 
 ### 9.3 The Job Closed Snapshot (Crash-Safe Edge Capture)
 
-The job semaphore reaching `0` is an **edge event**, not just a state.
+The job semaphore reaching a threshold (typically `0`) is an **edge event**, not just a state.
 
-If the server crashes after the job semaphore becomes `0` but before job completion tasks run, the system must still guarantee completion tasks execute exactly once.
+If the server crashes after the job semaphore reaches the threshold but before job completion tasks run, the system must still guarantee completion tasks execute exactly once.
 
 To guarantee this, the system captures a durable **job closed snapshot bit** into the GUID ledger at the moment Step 2 commits:
 
-* `GUID.jobClosedSnapshot = 1` if this transition caused `jobSemaphoreAfter == 0`
+* `GUID.jobClosedSnapshot = 1` if this transition caused the semaphore to reach the threshold
 * otherwise it remains `0`
 
-This bit is **not computed on replay**.
-It is written once, durably, in the Step 2 transaction.
-
----
+This snapshot encodes **only 0/1** and is not recomputed on replay.
 
 ## 10) Leg2 Processing Order (Deterministic Resume)
 
@@ -357,8 +369,6 @@ On processing a Leg2 transition message:
 1. Load the GUID ledger
 2. Load the job semaphore
 3. Execute steps conditionally based on step markers and job snapshot bit
-
----
 
 ## 11) Step 1: Do Work (Idempotent)
 
@@ -373,8 +383,6 @@ If the GUID ledger does **not** have the `10B` marker set:
 
 If the marker is already set, skip.
 
----
-
 ## 12) Step 2: Spawn Children + Update Job Semaphore (Idempotent + Transactional)
 
 Step 2 is the transactional heart of job correctness.
@@ -383,63 +391,78 @@ If the GUID ledger does **not** have the `1B` marker set:
 
 * Publish/spawn child activities (durably)
 * Update the job semaphore using `delta = (N - 1)`
+* Persist a job closed snapshot (0/1) onto the GUID ledger if the threshold was reached
 * Atomically commit:
 
   * child stream inserts
-  * job semaphore update
   * GUID ledger `+1B`
   * activity ledger `+1B`
-  * GUID job closed snapshot bit (100B) **if and only if** the semaphore becomes `0`
+  * job semaphore update
+  * GUID job closed snapshot digit update (100B) if threshold reached
 
 If the marker is already set, skip.
+
+---
 
 ### 12.1 Step 2 Bundling Invariant (Required)
 
 Step 2 must obey this invariant:
 
-> **Child stream inserts, job semaphore update, and “children spawned” marker increments must commit in the same atomic transaction.**
+> **Child stream inserts, job semaphore update, “children spawned” marker increments, and the job closed snapshot bit must commit in one atomic transaction.**
 
-If the marker is set, the job semaphore update committed.
+If the marker is set, the semaphore update committed.
 If the marker is not set, the update did not commit and must be retried.
 
----
+This invariant is the durable proof that:
 
-### 12.2 Step 2 RETURNING Requirement (Required)
-
-Step 2 must compute and return:
-
-* `jobSemaphoreAfter`
-* `jobClosedSnapshot` (0/1)
-
-The snapshot is defined as:
-
-```
-jobClosedSnapshot = (jobSemaphoreAfter == 0 ? 1 : 0)
-```
-
-The SQL must `RETURNING jobClosedSnapshot` so the caller can persist it **in the same transaction** into the GUID ledger’s **100B digit**.
-
-The snapshot encodes **only 0/1**.
+* children were spawned exactly once
+* job semaphore moved exactly once for this activity completion
+* if the job was closed by this transition, the GUID ledger records responsibility
 
 ---
 
-### 12.3 Step 2 Snapshot Persistence Rule
+### 12.2 Compound Primitive Requirement (Required)
 
-If `jobClosedSnapshot == 1`, then in the same transaction Step 2 commits:
+Engines and activities do not bind SQL outputs to subsequent SQL inputs.
 
-* increment GUID ledger by:
+Instead, the provider must expose a compound primitive that performs the required Step 2 bundling in one durable commit.
+
+Conceptually:
 
 ```
-+100_000_000_000
+setStatusAndCollateGuid(
+  statusDelta,
+  threshold,
+  guidField,
+  guidWeight
+) -> thresholdHit (0/1)
 ```
 
-This sets the GUID ledger **100B digit** as a durable proof:
+This primitive must be implemented as a single SQL statement that:
 
-> “This GUID transition is the one that closed the job.”
+1. applies the semaphore delta to the job row
+2. computes whether the post-update semaphore equals the threshold (0/1)
+3. increments the GUID ledger by `(thresholdHit * guidWeight)` to persist the snapshot bit
+4. returns `thresholdHit`
 
-If `jobClosedSnapshot == 0`, do not set the digit.
+This ensures the “job closed snapshot” is persisted even if the server crashes immediately after Step 2.
 
 ---
+
+### 12.3 Threshold Semantics
+
+The threshold is typically `0` (job completion), but the primitive supports any integer threshold:
+
+* `0` → job fully complete
+* `1`, `12`, etc. → alternate thresholds for specialized semantics
+
+The snapshot bit encodes only whether the threshold was reached:
+
+```
+thresholdHit = (statusAfter == threshold ? 1 : 0)
+```
+
+The snapshot bit is persisted by incrementing the GUID ledger at the reserved digit weight (typically the 100B digit).
 
 ## 13) Step 3: Job Completion Tasks (Conditional + Idempotent)
 
@@ -447,19 +470,16 @@ Step 3 must run exactly once.
 
 Step 3 eligibility is driven by:
 
-* job semaphore state (`jobSemaphore == 0`)
 * GUID job closed snapshot bit (`GUID.100B`)
 * Step 3 completion marker (`GUID.100M`)
+* job semaphore state (optional fast-path)
 
 ### 13.1 Step 3 Execution Rules
 
-Step 3 must execute if **both** are true:
+Step 3 must execute if:
 
 1. GUID `100M` marker is **not set** (completion tasks not done yet)
-2. One of the following is true:
-
-   * `jobSemaphore == 0` (normal completion path)
-   * `GUID jobClosedSnapshot == 1` (crash-safe closer replay path)
+2. GUID job closed snapshot is set (`GUID.100B` is set)
 
 If Step 3 runs:
 
@@ -472,22 +492,18 @@ If Step 3 runs:
 
 If the marker is already set, skip.
 
----
+### 13.2 Why Step 3 Uses the GUID Snapshot
 
-### 13.2 Why Step 3 Uses Both Job Semaphore and GUID Snapshot
+The job semaphore being at the threshold (ex: `0`) indicates the job is complete, but does not identify **which transition message** is responsible for running completion tasks.
 
-The job semaphore reaching `0` indicates the job is complete, but does not identify **which transition message** is responsible for running completion tasks.
+The GUID snapshot provides that identity.
 
-The GUID job closed snapshot provides that identity.
+This guarantees correctness under the crash case:
 
-This ensures correctness under the crash case:
-
-* job semaphore becomes `0`
-* server crashes before Step 3
-* replay sees job semaphore already `0`
+* Step 2 closes the job and commits
+* server crashes before Step 3 runs
+* replay sees job semaphore already complete
 * GUID snapshot proves this transition must still run Step 3 if not already marked
-
----
 
 ## 14) Ack/Delete (Always Forward)
 
@@ -497,8 +513,6 @@ After all required steps are completed or skipped, the system must:
 * flow forward deterministically
 
 All reentry logic exists to guarantee forward progress.
-
----
 
 ## 15) Dimensional Indexing (Cycles)
 
@@ -517,8 +531,6 @@ dimensionalIndex = Leg2EntryCount - 1
 ```
 
 This ensures each cycle iteration can spawn descendants into a unique dimensional space.
-
----
 
 ## 16) Correctness Guarantees
 
@@ -559,8 +571,6 @@ Job completion tasks cannot be lost because:
 * Leg2: up to **99,999,999** entry attempts per activity
 * GUID attempt counter: up to **99,999,999** per message GUID
 
----
-
 ## 17) Required Implementation Rules
 
 ### Rule A: Monotonic increments only
@@ -575,14 +585,16 @@ Step marker increments must occur in the same transaction as the step’s durabl
 
 Leg2 step decisions are based on the GUID ledger.
 
-### Rule D: Step 2 must bundle semaphore + spawn + marker
+### Rule D: Step 2 must use a compound primitive
 
 Step 2 must commit atomically:
 
 * child stream inserts
 * job semaphore delta update
 * “children spawned” marker increments
-* job closed snapshot bit (if applicable)
+* job closed snapshot persistence to the GUID ledger
+
+This must be implemented as a single compound provider primitive (one SQL statement).
 
 ### Rule E: Job closed snapshot encodes only 0/1
 
@@ -600,8 +612,6 @@ Before any entry increment:
 
 Every transition message must eventually be acknowledged or deleted.
 All reentry logic exists to guarantee forward progress.
-
----
 
 ## 18) Example State Progression
 
@@ -749,8 +759,6 @@ If the server crashes immediately after this commit (before Step 3):
 
 * on replay, jobSemaphore is already 0
 * Step 3 still runs because GUID jobClosedSnapshot is set and Step 3 marker is not
-
----
 
 ## Summary
 
