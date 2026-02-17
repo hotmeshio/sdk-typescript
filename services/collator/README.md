@@ -207,7 +207,7 @@ It must support:
 Leg2 uses two ledgers:
 
 1. **Activity ledger** (15-digit)
-2. **GUID ledger** (15-digit) per Leg2 transition message
+2. **GUID ledger** (15-digit) per Leg2 transition message (in essence, a synthetic collation integer that is created per unique Leg2 stream message processed)
 
 ## 6) The 15-Digit GUID Ledger (Per Leg2 Message)
 
@@ -231,10 +231,10 @@ Weight:    100T  10T  1T  100B  10B  1B  100M  10M  1M  100K  10K  1K  100  10  
 
 | Position(s) | Weight Range | Meaning                                                      |
 | ----------: | ------------ | ------------------------------------------------------------ |
+|           4 | 100B         | **Job closed snapshot** (0/1) captured at Step 2 commit time |
 |           5 | 10B          | Step marker: work done                                       |
 |           6 | 1B           | Step marker: children spawned                                |
 |           7 | 100M         | Step marker: job completion tasks done                       |
-|           4 | 100B         | **Job closed snapshot** (0/1) captured at Step 2 commit time |
 |        8–15 | 10M..1       | Attempt counter (8 digits, 0..99,999,999)                    |
 
 All other digits are reserved.
@@ -255,15 +255,7 @@ This increments the **last 8 digits** only and yields a new `Leg2EntryCount`.
 
 ### 7.2 Increment the GUID attempt counter
 
-Atomically increment the GUID ledger by:
-
-```
-+1
-```
-
-This records that this specific GUID message is being processed again (first attempt or retry).
-
-These increments may be executed in the same transaction when supported.
+In the same transaction that incremented the activity Leg2 entry counter, persist the returned value as the initial value for the GUID ledger *if the GUID ledger does not exist*. Transactional, conditional SQL should be generated for this one step that allows for incrementing by +1 and using the returned (RETURNING) value and inserting as the Guid Ledger if it does not yet exist (or return its value if it does), returning a final, single value which is the value for the GUID ledger representing its ordinal position as originally assigned the very first time it was processed.
 
 ## 8) Leg2 Step-Level Idempotency
 
@@ -272,7 +264,7 @@ Each step has a corresponding digit marker.
 
 The system must be able to crash after any step and resume safely.
 
-### Step Markers (applied to BOTH ledgers)
+### Step Markers (applied to GUID ledger)
 
 | Step   | Meaning                        | Increment         |
 | ------ | ------------------------------ | ----------------- |
@@ -280,7 +272,7 @@ The system must be able to crash after any step and resume safely.
 | Step 2 | Children spawned               | `+1_000_000_000`  |
 | Step 3 | Job completion tasks completed | `+100_000_000`    |
 
-When a step completes, the step marker must be incremented **in the same atomic transaction** as the durable writes that implement that step.
+When a step completes, the step marker in the *GUID Ledger* must be incremented **in the same atomic transaction** as the durable writes that implement that step.
 
 ### Step 2 Requires a Compound Primitive
 

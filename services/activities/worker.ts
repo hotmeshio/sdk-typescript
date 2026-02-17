@@ -58,11 +58,11 @@ class Worker extends Activity {
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
 
-      //save state and authorize reentry
+      //save state and mark Leg1 complete
       const transaction = this.store.transact();
       //todo: await this.registerTimeout();
       const messageId = await this.execActivity(transaction);
-      await CollatorService.authorizeReentry(this, transaction);
+      await CollatorService.notarizeLeg1Completion(this, transaction);
       await this.setState(transaction);
       await this.setStatus(0, transaction);
       const txResponse = (await transaction.exec()) as TransactionResultList;

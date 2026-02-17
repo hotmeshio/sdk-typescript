@@ -40,7 +40,7 @@ export class ScoutManager {
       this.logger.error('postgres-stream-router-scout-start-error', { error });
     });
 
-    this.logger.info('postgres-stream-router-scout-started', {
+    this.logger.debug('postgres-stream-router-scout-started', {
       appId: this.appId,
       pollInterval: this.getRouterScoutInterval(),
       scoutInterval: HMSH_ROUTER_SCOUT_INTERVAL_SECONDS,
@@ -243,7 +243,7 @@ export class ScoutManager {
    */
   private logPollingMetrics(): void {
     if (this.pollCount === 0) {
-      this.logger.info('postgres-stream-router-scout-metrics', {
+      this.logger.debug('postgres-stream-router-scout-metrics', {
         message: 'No polling occurred during this session',
         appId: this.appId,
       });

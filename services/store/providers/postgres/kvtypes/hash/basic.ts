@@ -236,6 +236,50 @@ export function createBasicOperations(context: HashContext['context']) {
     },
 
     /**
+     * 2b) KVSQL METHOD: Leg2 Entry Compound
+     * --------------------------------------
+     * Atomically increments the activity Leg2 entry counter and seeds
+     * the GUID ledger with the ordinal IF NOT EXISTS.
+     *
+     * Returns: [activityValue, guidValue] as [number, number]
+     */
+    async collateLeg2Entry(
+      key: string,              // jobKey
+      activityField: string,    // serialized activity collation field
+      increment: number,        // always 1
+      guidField: string,        // GUID string
+      multi?: ProviderTransaction,
+    ): Promise<[number, number]> {
+      const { sql, params } = _collateLeg2Entry(
+        context,
+        key,
+        activityField,
+        increment,
+        guidField,
+      );
+
+      if (multi) {
+        (multi as Multi).addCommand(sql, params, 'array', (rows) => {
+          return [parseFloat(rows[0].activity_value), parseFloat(rows[0].guid_value)];
+        });
+        return Promise.resolve([0, 0]);
+      } else {
+        try {
+          const res = await context.pgClient.query(sql, params);
+          return [parseFloat(res.rows[0].activity_value), parseFloat(res.rows[0].guid_value)];
+        } catch (error) {
+          if (
+            error?.message?.includes('closed') ||
+            error?.message?.includes('queryable')
+          ) {
+            return [0, 0];
+          }
+          throw error;
+        }
+      }
+    },
+
+    /**
      * 2) KVSQL METHOD (non-transactional + transactional)
      * ---------------------------------------------------
      * Matches hincrbyfloat() pattern:
@@ -635,6 +679,76 @@ export function _hincrbyfloat(
     `;
     return { sql, params: [key, field, increment] };
   }
+}
+
+/**
+ * 3b) LOW-LEVEL SQL GENERATOR: Leg2 Entry Compound
+ * -------------------------------------------------
+ * Atomically:
+ * - increments the activity collation field by +1 (Leg2 entry counter)
+ * - seeds the GUID ledger with the ordinal (last 8 digits of activity value)
+ *   IF the GUID row does not yet exist; returns the existing value if it does
+ * - returns both (activity_value, guid_value) for the caller
+ *
+ * The GUID seed uses ON CONFLICT DO UPDATE SET value = existing.value
+ * (a no-op update) so that RETURNING fires in both insert and conflict cases.
+ */
+export function _collateLeg2Entry(
+  context: HashContext['context'],
+  key: string,              // jobKey
+  activityField: string,    // serialized activity collation field name
+  increment: number,        // always 1 for Leg2 entry
+  guidField: string,        // GUID string (used directly as field name)
+): SqlResult {
+  const jobsTableName = context.tableForKey(key, 'hash');
+
+  if (!isJobsTable(jobsTableName)) {
+    throw new Error(
+      `_collateLeg2Entry requires a jobs table key; got table ${jobsTableName}`,
+    );
+  }
+
+  const attrsTable = `${jobsTableName}_attributes`;
+
+  const sql = `
+    WITH activity_update AS (
+      INSERT INTO ${attrsTable} (job_id, field, value, type)
+      SELECT id, $2, ($3::double precision)::text, $4
+      FROM ${jobsTableName}
+      WHERE key = $1 AND is_live
+      ON CONFLICT (job_id, field) DO UPDATE
+      SET value = ((COALESCE(${attrsTable}.value, '0')::double precision) + $3::double precision)::text,
+          type = EXCLUDED.type
+      RETURNING job_id, value::double precision AS activity_value
+    ),
+    guid_upsert AS (
+      INSERT INTO ${attrsTable} (job_id, field, value, type)
+      SELECT
+        job_id,
+        $5,
+        ((activity_value::bigint) % 100000000)::text,
+        $6
+      FROM activity_update
+      ON CONFLICT (job_id, field) DO UPDATE
+      SET value = ${attrsTable}.value
+      RETURNING value::double precision AS guid_value
+    )
+    SELECT
+      (SELECT activity_value FROM activity_update) AS activity_value,
+      (SELECT guid_value FROM guid_upsert) AS guid_value
+  `;
+
+  return {
+    sql,
+    params: [
+      key,                          // $1
+      activityField,                // $2
+      increment,                    // $3
+      deriveType(activityField),    // $4
+      guidField,                    // $5
+      deriveType(guidField),        // $6
+    ],
+  };
 }
 
 /**

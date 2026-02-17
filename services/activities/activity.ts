@@ -1,4 +1,7 @@
-import { HMSH_EXPIRE_DURATION } from '../../modules/enums';
+import {
+  HMSH_CODE_MEMFLOW_MAXED,
+  HMSH_EXPIRE_DURATION,
+} from '../../modules/enums';
 import {
   CollationError,
   GenerationalError,
@@ -59,6 +62,7 @@ class Activity {
   leg: ActivityLeg;
   adjacencyList: StreamData[];
   adjacentIndex = 0;
+  guidLedger = 0;
 
   constructor(
     config: ActivityType,
@@ -113,6 +117,7 @@ class Activity {
       );
     } catch (error) {
       await CollatorService.notarizeEntry(this);
+      //todo: confirm this check is still needed; the edge event cleanup should handle fully
       if (threshold > 0) {
         if (this.context.metadata.js === threshold) {
           //conclude job EXACTLY ONCE
@@ -130,18 +135,24 @@ class Activity {
   }
 
   /**
-   * Upon entering leg 2 of a duplexed activity
+   * Upon entering leg 2 of a duplexed activity.
+   * Increments both the activity ledger (+1) and GUID ledger (+1).
+   * Stores the GUID ledger value for step-level resume decisions.
    */
   async verifyReentry(): Promise<number> {
-    const guid = this.context.metadata.guid;
+    const msgGuid = this.context.metadata.guid;
     this.setLeg(2);
     await this.getState();
+    this.context.metadata.guid = msgGuid;
     CollatorService.assertJobActive(
       this.context.metadata.js,
       this.context.metadata.jid,
       this.metadata.aid,
     );
-    return await CollatorService.notarizeReentry(this, guid);
+    const [activityLedger, guidLedger] =
+      await CollatorService.notarizeLeg2Entry(this, msgGuid);
+    this.guidLedger = guidLedger;
+    return activityLedger;
   }
 
   //********  DUPLEX RE-ENTRY POINT  ********//
@@ -181,16 +192,50 @@ class Activity {
         this.context,
       );
       telemetry.startActivitySpan(this.leg);
-      let multiResponse: TransactionResultList;
 
-      if (status === StreamStatus.PENDING) {
-        multiResponse = await this.processPending(type);
-      } else if (status === StreamStatus.SUCCESS) {
-        multiResponse = await this.processSuccess(type);
+      //bind data per status type
+      if (status === StreamStatus.ERROR) {
+        this.bindActivityError(this.data);
+        this.adjacencyList = await this.filterAdjacent();
+        if (!this.adjacencyList.length) {
+          this.bindJobError(this.data);
+        }
       } else {
-        multiResponse = await this.processError();
+        this.bindActivityData(type);
+        this.adjacencyList = await this.filterAdjacent();
       }
-      this.transitionAdjacent(multiResponse, telemetry);
+      this.mapJobData();
+
+      //When an unrecoverable error has no matching transitions
+      //(e.g., code 500 from raw errors after retries exhausted),
+      //mark the job as terminally errored so the step protocol
+      //can force completion via the isErrorTerminal path.
+      if (status === StreamStatus.ERROR && !this.adjacencyList?.length) {
+        if (!this.context.data) this.context.data = {};
+        this.context.data.done = true;
+        this.context.data.$error = {
+          message: this.data?.message || 'unknown error',
+          code: HMSH_CODE_MEMFLOW_MAXED,
+          stack: this.data?.stack,
+        };
+      }
+
+      //determine step parameters
+      const delta =
+        status === StreamStatus.PENDING
+          ? this.adjacencyList.length
+          : this.adjacencyList.length - 1;
+      const shouldFinalize = status !== StreamStatus.PENDING;
+
+      //execute 3-step protocol
+      const thresholdHit = await this.executeStepProtocol(
+        delta,
+        shouldFinalize,
+      );
+
+      //telemetry
+      telemetry.mapActivityAttributes();
+      telemetry.setActivityAttributes({});
     } catch (error) {
       if (error instanceof CollationError) {
         this.logger.info(`process-event-${error.fault}-error`, { error });
@@ -219,64 +264,114 @@ class Activity {
     }
   }
 
-  async processPending(
-    type: 'hook' | 'output',
-  ): Promise<TransactionResultList> {
-    this.bindActivityData(type);
-    this.adjacencyList = await this.filterAdjacent();
-    this.mapJobData();
-    const transaction = this.store.transact();
-    await this.setState(transaction);
-    await CollatorService.notarizeContinuation(this, transaction);
+  /**
+   * Executes the 3-step Leg2 protocol using GUID ledger for
+   * crash-safe resume. Each step bundles durable writes with
+   * its concluding digit update in a single transaction.
+   *
+   * @returns true if this transition caused the job to complete
+   */
+  async executeStepProtocol(
+    delta: number,
+    shouldFinalize: boolean,
+  ): Promise<boolean> {
+    const msgGuid = this.context.metadata.guid;
+    const threshold = this.mapStatusThreshold();
+    const { id: appId } = await this.engine.getVID();
 
-    await this.setStatus(this.adjacencyList.length, transaction);
-    return (await transaction.exec()) as TransactionResultList;
-  }
-
-  async processSuccess(
-    type: 'hook' | 'output',
-  ): Promise<TransactionResultList> {
-    this.bindActivityData(type);
-    this.adjacencyList = await this.filterAdjacent();
-    this.mapJobData();
-    const transaction = this.store.transact();
-    await this.setState(transaction);
-    await CollatorService.notarizeCompletion(this, transaction);
-
-    await this.setStatus(this.adjacencyList.length - 1, transaction);
-    return (await transaction.exec()) as TransactionResultList;
-  }
-
-  async processError(): Promise<TransactionResultList> {
-    this.bindActivityError(this.data);
-    this.adjacencyList = await this.filterAdjacent();
-    if (!this.adjacencyList.length) {
-      this.bindJobError(this.data);
+    //Step 1: Save work (skip if GUID 10B already set)
+    if (!CollatorService.isGuidStep1Done(this.guidLedger)) {
+      const txn1 = this.store.transact();
+      await this.setState(txn1);
+      await CollatorService.notarizeStep1(this, msgGuid, txn1);
+      await txn1.exec();
     }
-    this.mapJobData();
-    const transaction = this.store.transact();
-    await this.setState(transaction);
-    await CollatorService.notarizeCompletion(this, transaction);
 
-    await this.setStatus(this.adjacencyList.length - 1, transaction);
-    return (await transaction.exec()) as TransactionResultList;
-  }
-
-  async transitionAdjacent(
-    multiResponse: TransactionResultList,
-    telemetry: TelemetryService,
-  ): Promise<void> {
-    telemetry.mapActivityAttributes();
-    const jobStatus = this.resolveStatus(multiResponse);
-    const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-    //adjacencyList membership has already been set at this point (according to activity status)
-    const messageIds = await this.transition(this.adjacencyList, jobStatus);
-    if (messageIds?.length) {
-      attrs['app.activity.mids'] = messageIds.join(',');
+    //Step 2: Spawn children + semaphore + edge capture (skip if GUID 1B already set)
+    let thresholdHit = false;
+    if (!CollatorService.isGuidStep2Done(this.guidLedger)) {
+      const txn2 = this.store.transact();
+      //queue step markers first
+      await CollatorService.notarizeStep2(this, msgGuid, txn2);
+      //queue child publications
+      for (const child of this.adjacencyList) {
+        await this.engine.router?.publishMessage(null, child, txn2);
+      }
+      //queue semaphore update + edge capture LAST (so result is at end)
+      await this.store.setStatusAndCollateGuid(
+        delta,
+        threshold,
+        this.context.metadata.jid,
+        appId,
+        msgGuid,
+        CollatorService.WEIGHTS.GUID_SNAPSHOT,
+        txn2,
+      );
+      const results = (await txn2.exec()) as TransactionResultList;
+      thresholdHit = this.resolveThresholdHit(results);
+      this.logger.debug('step-protocol-step2-complete', {
+        jid: this.context.metadata.jid,
+        aid: this.metadata.aid,
+        delta,
+        threshold,
+        thresholdHit,
+        lastResult: results[results.length - 1],
+        resultCount: results.length,
+      });
+    } else {
+      //Step 2 already done; check GUID snapshot for edge
+      thresholdHit = CollatorService.isGuidJobClosed(this.guidLedger);
     }
-    telemetry.setActivityAttributes(attrs);
+
+    //Step 3: Job completion tasks (edge hit OR emit/persist, skip if GUID 100M already set)
+    //When an activity marks the job done with an unrecoverable error
+    //(e.g., stopper after max retries), force completion even when the
+    //semaphore threshold isn't hit (the signaler's +1 contribution
+    //prevents threshold 0 from matching).
+    const isErrorTerminal = !thresholdHit
+      && this.context.data?.done === true
+      && !!this.context.data?.$error;
+    const needsCompletion = thresholdHit || this.shouldEmit() || this.shouldPersistJob() || isErrorTerminal;
+    if (needsCompletion && !CollatorService.isGuidStep3Done(this.guidLedger)) {
+      const txn3 = this.store.transact();
+      const options = (thresholdHit || isErrorTerminal) ? {} : { emit: !this.shouldPersistJob() };
+      await this.engine.runJobCompletionTasks(this.context, options, txn3);
+      await CollatorService.notarizeStep3(this, msgGuid, txn3);
+      const shouldFinalizeNow = (thresholdHit || isErrorTerminal) ? shouldFinalize : this.shouldPersistJob();
+      if (shouldFinalizeNow) {
+        await CollatorService.notarizeFinalize(this, txn3);
+      }
+      await txn3.exec();
+    } else if (needsCompletion) {
+      this.logger.debug('step-protocol-step3-skipped-already-done', {
+        jid: this.context.metadata.jid,
+        aid: this.metadata.aid,
+      });
+    } else {
+      this.logger.debug('step-protocol-no-threshold', {
+        jid: this.context.metadata.jid,
+        aid: this.metadata.aid,
+        thresholdHit,
+      });
+    }
+
+    return thresholdHit;
   }
 
+  /**
+   * Extracts the thresholdHit value from transaction results.
+   * The setStatusAndCollateGuid result is the last item.
+   */
+  resolveThresholdHit(results: TransactionResultList): boolean {
+    const last = results[results.length - 1];
+    const value = Array.isArray(last) ? last[1] : last;
+    return Number(value) === 1;
+  }
+
+  /**
+   * Extracts the job status from the last result of a transaction.
+   * Used by subclass Leg1 process methods for telemetry.
+   */
   resolveStatus(multiResponse: TransactionResultList): number {
     const activityStatus = multiResponse[multiResponse.length - 1];
     if (Array.isArray(activityStatus)) {
@@ -284,6 +379,150 @@ class Activity {
     } else {
       return Number(activityStatus);
     }
+  }
+
+  /**
+   * Leg1 entry verification for Category B activities (Leg1-only with children).
+   * Returns true if this is a resume (Leg1 already completed on a prior attempt).
+   * On resume, loads the GUID ledger for step-level resume decisions.
+   */
+  async verifyLeg1Entry(): Promise<boolean> {
+    const msgGuid = this.context.metadata.guid;
+    this.setLeg(1);
+    await this.getState();
+    this.context.metadata.guid = msgGuid;
+    const threshold = this.mapStatusThreshold();
+    try {
+      CollatorService.assertJobActive(
+        this.context.metadata.js,
+        this.context.metadata.jid,
+        this.metadata.aid,
+        threshold,
+      );
+    } catch (error) {
+      if (error instanceof InactiveJobError && threshold > 0) {
+        //Dynamic Activation Control: threshold met, close the job
+        await CollatorService.notarizeEntry(this);
+        if (this.context.metadata.js === threshold) {
+          //conclude job EXACTLY ONCE
+          const status = await this.setStatus(-threshold);
+          if (Number(status) === 0) {
+            await this.engine.runJobCompletionTasks(this.context);
+          }
+        }
+      }
+      throw error;
+    }
+    try {
+      await CollatorService.notarizeEntry(this);
+      return false;
+    } catch (error) {
+      if (error instanceof CollationError && error.fault === 'duplicate') {
+        if (this.config.cycle) {
+          //Cycle re-entry: Leg1 already complete from prior iteration.
+          //Increment Leg2 counter to derive the new dimensional index,
+          //so children run in a fresh dimensional plane.
+          const [activityLedger, guidLedger] =
+            await CollatorService.notarizeLeg2Entry(this, msgGuid);
+          this.adjacentIndex =
+            CollatorService.getDimensionalIndex(activityLedger);
+          this.guidLedger = guidLedger;
+          return false;
+        }
+        //100B is set — Leg1 work already committed. Load GUID for step resume.
+        const guidValue = await this.store.collateSynthetic(
+          this.context.metadata.jid,
+          msgGuid,
+          0,
+        );
+        this.guidLedger = guidValue;
+        return true;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Executes the 3-step Leg1 protocol for Category B activities
+   * (Leg1-only with children, e.g., Hook passthrough, Signal, Interrupt-another).
+   * Uses the incoming Leg1 message GUID as the GUID ledger key.
+   *
+   * Step A: setState + notarizeLeg1Completion + step1 markers (transaction 1)
+   * Step B: publish children + step2 markers + setStatusAndCollateGuid (transaction 2)
+   * Step C: if edge → runJobCompletionTasks + step3 markers + finalize (transaction 3)
+   *
+   * @returns true if this transition caused the job to complete
+   */
+  async executeLeg1StepProtocol(
+    delta: number,
+  ): Promise<boolean> {
+    const msgGuid = this.context.metadata.guid;
+    const threshold = this.mapStatusThreshold();
+    const { id: appId } = await this.engine.getVID();
+
+    //Step A: Save work + Leg1 completion marker
+    if (!CollatorService.isGuidStep1Done(this.guidLedger)) {
+      const txn1 = this.store.transact();
+      await this.setState(txn1);
+      if (this.adjacentIndex === 0) {
+        //First entry: mark Leg1 complete. On cycle re-entry
+        //(adjacentIndex > 0), Leg1 is already complete and the
+        //Leg2 counter was already incremented by notarizeLeg2Entry.
+        await CollatorService.notarizeLeg1Completion(this, txn1);
+      }
+      await CollatorService.notarizeStep1(this, msgGuid, txn1);
+      await txn1.exec();
+    }
+
+    //Step B: Spawn children + semaphore + edge capture
+    let thresholdHit = false;
+    if (!CollatorService.isGuidStep2Done(this.guidLedger)) {
+      const txn2 = this.store.transact();
+      await CollatorService.notarizeStep2(this, msgGuid, txn2);
+      for (const child of this.adjacencyList) {
+        await this.engine.router?.publishMessage(null, child, txn2);
+      }
+      await this.store.setStatusAndCollateGuid(
+        delta,
+        threshold,
+        this.context.metadata.jid,
+        appId,
+        msgGuid,
+        CollatorService.WEIGHTS.GUID_SNAPSHOT,
+        txn2,
+      );
+      const results = (await txn2.exec()) as TransactionResultList;
+      thresholdHit = this.resolveThresholdHit(results);
+      this.logger.debug('leg1-step-protocol-stepB-complete', {
+        jid: this.context.metadata.jid,
+        aid: this.metadata.aid,
+        delta,
+        threshold,
+        thresholdHit,
+        lastResult: results[results.length - 1],
+      });
+    } else {
+      thresholdHit = CollatorService.isGuidJobClosed(this.guidLedger);
+    }
+
+    //Step C: Job completion tasks (edge hit OR emit/persist)
+    //When an activity marks the job done with an unrecoverable error
+    //(e.g., stopper after max retries), force completion even when the
+    //semaphore threshold isn't hit.
+    const isErrorTerminal = !thresholdHit
+      && this.context.data?.done === true
+      && !!this.context.data?.$error;
+    const needsCompletion = thresholdHit || this.shouldEmit() || this.shouldPersistJob() || isErrorTerminal;
+    if (needsCompletion && !CollatorService.isGuidStep3Done(this.guidLedger)) {
+      const txn3 = this.store.transact();
+      const options = (thresholdHit || isErrorTerminal) ? {} : { emit: !this.shouldPersistJob() };
+      await this.engine.runJobCompletionTasks(this.context, options, txn3);
+      await CollatorService.notarizeStep3(this, msgGuid, txn3);
+      await CollatorService.notarizeFinalize(this, txn3);
+      await txn3.exec();
+    }
+
+    return thresholdHit;
   }
 
   mapJobData(): void {
@@ -691,6 +930,10 @@ class Activity {
     return false;
   }
 
+  /**
+   * Transition method for Category C (Leg1-only, no children, no semaphore change)
+   * and Category D (Trigger) activities. NOT used by the Leg2 step protocol.
+   */
   async transition(
     adjacencyList: StreamData[],
     jobStatus: JobStatus,

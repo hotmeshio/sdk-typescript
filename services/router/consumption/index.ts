@@ -141,7 +141,7 @@ export class ConsumptionManager<
     const supportsNotifications = features.supportsNotifications;
 
     if (supportsNotifications) {
-      this.logger.info(`router-stream-using-notifications`, {
+      this.logger.debug(`router-stream-using-notifications`, {
         group,
         consumer,
         stream,

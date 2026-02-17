@@ -126,6 +126,13 @@ abstract class StoreService<
     dIds: StringStringType,
     transaction?: TransactionProvider,
   ): Promise<number>;
+  abstract collateLeg2Entry(
+    jobId: string,
+    activityId: string,
+    guid: string,
+    dIds: StringStringType,
+    transaction?: TransactionProvider,
+  ): Promise<[number, number]>;
   abstract collateSynthetic(
     jobId: string,
     guid: string,

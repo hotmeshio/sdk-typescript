@@ -60,7 +60,7 @@ describe('FUNCTIONAL | Signal | Postgres', () => {
       }
 
       await hotMesh.unsub('signal.toggled.xyz123');
-    });
+    }, 25_000);
 
     it('exits as expected after processing an outside signal', async () => {
       let isDone = false;

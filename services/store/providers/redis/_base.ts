@@ -563,6 +563,19 @@ abstract class RedisStoreBase<
     );
   }
 
+  async collateLeg2Entry(
+    jobId: string,
+    activityId: string,
+    guid: string,
+    dIds: StringStringType,
+    transaction?: TransactionProvider,
+  ): Promise<[number, number]> {
+    //redis stub: separate calls (not truly compound)
+    const activityValue = await this.collate(jobId, activityId, 1, dIds, transaction);
+    const guidValue = await this.collateSynthetic(jobId, guid, 1, transaction);
+    return [activityValue, guidValue];
+  }
+
   async setStatusAndCollateGuid(
     statusDelta: number,
     threshold: number,

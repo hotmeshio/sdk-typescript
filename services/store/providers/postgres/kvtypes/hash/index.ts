@@ -8,6 +8,7 @@ import {
   _hdel,
   _hmget,
   _hincrbyfloat,
+  _collateLeg2Entry,
   _setStatusAndCollateGuid,
 } from './basic';
 import { createJsonbOperations } from './jsonb';
@@ -233,6 +234,10 @@ export const hashModule = (context: KVSQL) => {
 
     _hincrbyfloat: (key: string, field: string, increment: number) => {
       return _hincrbyfloat(context, key, field, increment);
+    },
+
+    _collateLeg2Entry: (key: string, activityField: string, increment: number, guidField: string) => {
+      return _collateLeg2Entry(context, key, activityField, increment, guidField);
     },
 
     _setStatusAndCollateGuid: (key: string, statusDelta: number, threshold: number, guidField: string, guidWeight: number) => {

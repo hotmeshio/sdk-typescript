@@ -15,9 +15,8 @@ import {
   ActivityType,
   SignalActivity,
 } from '../../types/activity';
-import { TransactionResultList } from '../../types/provider';
 import { JobState } from '../../types/job';
-import { StringScalarType } from '../../types/serializer';
+import { ProviderTransaction } from '../../types/provider';
 import { JobStatsInput } from '../../types/stats';
 
 import { Activity } from './activity';
@@ -45,7 +44,8 @@ class Signal extends Activity {
     });
     let telemetry: TelemetryService;
     try {
-      await this.verifyEntry();
+      //Category B: entry with step resume
+      await this.verifyLeg1Entry();
 
       telemetry = new TelemetryService(
         this.engine.appId,
@@ -55,32 +55,34 @@ class Signal extends Activity {
       );
       telemetry.startActivitySpan(this.leg);
 
-      //save state and notarize early completion (signals only run leg1)
-      const transaction = this.store.transact();
       this.adjacencyList = await this.filterAdjacent();
       this.mapOutputData();
       this.mapJobData();
-      await this.setState(transaction);
-      await CollatorService.notarizeEarlyCompletion(this, transaction);
-      await this.setStatus(this.adjacencyList.length - 1, transaction);
-      const multiResponse = (await transaction.exec()) as TransactionResultList;
 
-      //todo: this should execute BEFORE the status is decremented
-      if (this.config.subtype === 'all') {
-        await this.hookAll();
-      } else {
-        await this.hookOne();
+      //Step A: Bundle signal hook with Leg1 completion marker.
+      //hookOne is transactional; hookAll is best-effort (complex multi-step).
+      if (!CollatorService.isGuidStep1Done(this.guidLedger)) {
+        const txn1 = this.store.transact();
+        if (this.config.subtype === 'all') {
+          await this.hookAll();
+        } else {
+          await this.hookOne(txn1);
+        }
+        await this.setState(txn1);
+        if (this.adjacentIndex === 0) {
+          await CollatorService.notarizeLeg1Completion(this, txn1);
+        }
+        await CollatorService.notarizeStep1(this, this.context.metadata.guid, txn1);
+        await txn1.exec();
+        //update in-memory guidLedger so executeLeg1StepProtocol skips Step A
+        this.guidLedger += CollatorService.WEIGHTS.STEP1_WORK;
       }
 
-      //transition to adjacent activities
-      const jobStatus = this.resolveStatus(multiResponse);
-      const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-      const messageIds = await this.transition(this.adjacencyList, jobStatus);
-      if (messageIds.length) {
-        attrs['app.activity.mids'] = messageIds.join(',');
-      }
+      //Steps B and C: spawn children + semaphore + edge capture
+      await this.executeLeg1StepProtocol(this.adjacencyList.length - 1);
+
       telemetry.mapActivityAttributes();
-      telemetry.setActivityAttributes(attrs);
+      telemetry.setActivityAttributes({});
 
       return this.context.metadata.aid;
     } catch (error) {
@@ -133,14 +135,15 @@ class Signal extends Activity {
   }
 
   /**
-   * The signal activity will hook one
+   * The signal activity will hook one. Accepts an optional transaction
+   * so the hook publish can be bundled with the Leg1 completion marker.
    */
-  async hookOne(): Promise<string> {
+  async hookOne(transaction?: ProviderTransaction): Promise<string> {
     const topic = Pipe.resolve(this.config.topic, this.context);
     const signalInputData = this.mapSignalData();
     const status = Pipe.resolve(this.config.status, this.context);
     const code = Pipe.resolve(this.config.code, this.context);
-    return await this.engine.hook(topic, signalInputData, status, code);
+    return await this.engine.hook(topic, signalInputData, status, code, transaction);
   }
 
   /**

@@ -12,8 +12,14 @@ import type { KVSQL } from './kvsql';
 /**
  * Utility function to format SQL commands with parameters.
  * Replaces $1, $2, etc., with %L or %s based on parameter types.
+ * Commands with no parameters (e.g., NOTIFY with inline values)
+ * are returned as-is to avoid pg-format corrupting the SQL.
  */
 function formatSqlCommand(sql: string, params: any[]): string {
+  if (!params || params.length === 0) {
+    return sql;
+  }
+
   const formatParams: any[] = [];
 
   // Replace $1, $2, etc., with %L or %s and collect parameters
@@ -274,6 +280,42 @@ export class KVTransaction implements KVSQLProviderTransaction {
     return this.addCommand(sql, params, 'object', transform);
   }
 
+  collateLeg2Entry(
+    key: string,
+    activityField: string,
+    increment: number,
+    guidField: string,
+  ): this {
+    const { sql, params } = this.kvsql._collateLeg2Entry(
+      key,
+      activityField,
+      increment,
+      guidField,
+    );
+    return this.addCommand(sql, params, 'array', (rows) => {
+      return [parseFloat(rows[0].activity_value), parseFloat(rows[0].guid_value)];
+    });
+  }
+
+  setStatusAndCollateGuid(
+    key: string,
+    statusDelta: number,
+    threshold: number,
+    guidField: string,
+    guidWeight: number,
+  ): this {
+    const { sql, params } = this.kvsql._setStatusAndCollateGuid(
+      key,
+      statusDelta,
+      threshold,
+      guidField,
+      guidWeight,
+    );
+    return this.addCommand(sql, params, 'number', (rows) => {
+      return parseFloat(rows[0].value);
+    });
+  }
+
   rename(oldKey: string, newKey: string): this {
     const { sql, params } = this.kvsql._rename(oldKey, newKey);
     return this.addCommand(sql, params, 'void');
@@ -337,6 +379,12 @@ export class KVTransaction implements KVSQLProviderTransaction {
       }
       return results;
     } catch (err) {
+      console.error('kvtransaction-exec-error', {
+        error: err.message,
+        commandCount: this.commands.length,
+        commandTypes: this.commands.map(c => c.returnType),
+        commandSqlPreviews: this.commands.map(c => c.sql.substring(0, 80)),
+      });
       await client.query('ROLLBACK');
       throw err;
     }

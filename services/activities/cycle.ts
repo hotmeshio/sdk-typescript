@@ -7,6 +7,7 @@ import {
 import { guid } from '../../modules/utils';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
+import { TelemetryService } from '../telemetry';
 import {
   ActivityData,
   ActivityMetadata,
@@ -14,12 +15,11 @@ import {
   CycleActivity,
 } from '../../types/activity';
 import {
-  TransactionResultList,
   ProviderTransaction,
+  TransactionResultList,
 } from '../../types/provider';
 import { JobState } from '../../types/job';
 import { StreamData } from '../../types/stream';
-import { TelemetryService } from '../telemetry';
 
 import { Activity } from './activity';
 
@@ -74,7 +74,7 @@ class Cycle extends Activity {
       });
 
       //exit early (`Cycle` activities only execute Leg 1)
-      await CollatorService.notarizeEarlyExit(this, transaction);
+      await CollatorService.notarizeLeg1Completion(this, transaction);
       (await transaction.exec()) as TransactionResultList;
 
       return this.context.metadata.aid;
