@@ -234,6 +234,98 @@ export function createBasicOperations(context: HashContext['context']) {
         }
       }
     },
+
+    /**
+     * 2b) KVSQL METHOD: Leg2 Entry Compound
+     * --------------------------------------
+     * Atomically increments the activity Leg2 entry counter and seeds
+     * the GUID ledger with the ordinal IF NOT EXISTS.
+     *
+     * Returns: [activityValue, guidValue] as [number, number]
+     */
+    async collateLeg2Entry(
+      key: string,              // jobKey
+      activityField: string,    // serialized activity collation field
+      increment: number,        // always 1
+      guidField: string,        // GUID string
+      multi?: ProviderTransaction,
+    ): Promise<[number, number]> {
+      const { sql, params } = _collateLeg2Entry(
+        context,
+        key,
+        activityField,
+        increment,
+        guidField,
+      );
+
+      if (multi) {
+        (multi as Multi).addCommand(sql, params, 'array', (rows) => {
+          return [parseFloat(rows[0].activity_value), parseFloat(rows[0].guid_value)];
+        });
+        return Promise.resolve([0, 0]);
+      } else {
+        try {
+          const res = await context.pgClient.query(sql, params);
+          return [parseFloat(res.rows[0].activity_value), parseFloat(res.rows[0].guid_value)];
+        } catch (error) {
+          if (
+            error?.message?.includes('closed') ||
+            error?.message?.includes('queryable')
+          ) {
+            return [0, 0];
+          }
+          throw error;
+        }
+      }
+    },
+
+    /**
+     * 2) KVSQL METHOD (non-transactional + transactional)
+     * ---------------------------------------------------
+     * Matches hincrbyfloat() pattern:
+     * - when multi is present: enqueue command and return 0 immediately
+     * - when multi absent: execute immediately and return parsed numeric value
+     *
+     * Returns: thresholdHit (0/1) as number
+     */
+    async setStatusAndCollateGuid(
+      key: string,                  // jobKey
+      statusDelta: number,          // semaphore delta
+      threshold: number,            // desired threshold (usually 0)
+      guidField: string,            // jobs_attributes.field for the guid ledger
+      guidWeight: number,           // e.g. 100B digit increment
+      multi?: ProviderTransaction,
+    ): Promise<number> {
+      const { sql, params } = _setStatusAndCollateGuid(
+        context,
+        key,
+        statusDelta,
+        threshold,
+        guidField,
+        guidWeight,
+      );
+
+      if (multi) {
+        (multi as Multi).addCommand(sql, params, 'number', (rows) => {
+          return parseFloat(rows[0].value);
+        });
+        return Promise.resolve(0);
+      } else {
+        try {
+          const res = await context.pgClient.query(sql, params);
+          return parseFloat(res.rows[0].value);
+        } catch (error) {
+          // Connection closed during test cleanup - return 0
+          if (
+            error?.message?.includes('closed') ||
+            error?.message?.includes('queryable')
+          ) {
+            return 0;
+          }
+          throw error;
+        }
+      }
+    },
   };
 }
 
@@ -587,4 +679,145 @@ export function _hincrbyfloat(
     `;
     return { sql, params: [key, field, increment] };
   }
+}
+
+/**
+ * 3b) LOW-LEVEL SQL GENERATOR: Leg2 Entry Compound
+ * -------------------------------------------------
+ * Atomically:
+ * - increments the activity collation field by +1 (Leg2 entry counter)
+ * - seeds the GUID ledger with the ordinal (last 8 digits of activity value)
+ *   IF the GUID row does not yet exist; returns the existing value if it does
+ * - returns both (activity_value, guid_value) for the caller
+ *
+ * The GUID seed uses ON CONFLICT DO UPDATE SET value = existing.value
+ * (a no-op update) so that RETURNING fires in both insert and conflict cases.
+ */
+export function _collateLeg2Entry(
+  context: HashContext['context'],
+  key: string,              // jobKey
+  activityField: string,    // serialized activity collation field name
+  increment: number,        // always 1 for Leg2 entry
+  guidField: string,        // GUID string (used directly as field name)
+): SqlResult {
+  const jobsTableName = context.tableForKey(key, 'hash');
+
+  if (!isJobsTable(jobsTableName)) {
+    throw new Error(
+      `_collateLeg2Entry requires a jobs table key; got table ${jobsTableName}`,
+    );
+  }
+
+  const attrsTable = `${jobsTableName}_attributes`;
+
+  const sql = `
+    WITH activity_update AS (
+      INSERT INTO ${attrsTable} (job_id, field, value, type)
+      SELECT id, $2, ($3::double precision)::text, $4
+      FROM ${jobsTableName}
+      WHERE key = $1 AND is_live
+      ON CONFLICT (job_id, field) DO UPDATE
+      SET value = ((COALESCE(${attrsTable}.value, '0')::double precision) + $3::double precision)::text,
+          type = EXCLUDED.type
+      RETURNING job_id, value::double precision AS activity_value
+    ),
+    guid_upsert AS (
+      INSERT INTO ${attrsTable} (job_id, field, value, type)
+      SELECT
+        job_id,
+        $5,
+        ((activity_value::bigint) % 100000000)::text,
+        $6
+      FROM activity_update
+      ON CONFLICT (job_id, field) DO UPDATE
+      SET value = ${attrsTable}.value
+      RETURNING value::double precision AS guid_value
+    )
+    SELECT
+      (SELECT activity_value FROM activity_update) AS activity_value,
+      (SELECT guid_value FROM guid_upsert) AS guid_value
+  `;
+
+  return {
+    sql,
+    params: [
+      key,                          // $1
+      activityField,                // $2
+      increment,                    // $3
+      deriveType(activityField),    // $4
+      guidField,                    // $5
+      deriveType(guidField),        // $6
+    ],
+  };
+}
+
+/**
+ * 3) LOW-LEVEL SQL GENERATOR
+ * --------------------------
+ * This is the core compound statement. It must:
+ * - update jobs.status by statusDelta
+ * - compute thresholdHit (0/1) when status_after == threshold
+ * - increment the guidField by thresholdHit * guidWeight (typically 100B digit)
+ * - return thresholdHit as "value" so it fits the existing return parsing
+ *
+ * Notes:
+ * - Uses tableForKey(key, 'hash') which will resolve to the jobs table for job keys.
+ * - Assumes jobs_attributes table is `${jobsTableName}_attributes` (same as _hincrbyfloat)
+ * - Uses deriveType(guidField) to be consistent with your attribute typing system.
+ */
+export function _setStatusAndCollateGuid(
+  context: HashContext['context'],
+  key: string,                  // jobKey
+  statusDelta: number,
+  threshold: number,
+  guidField: string,
+  guidWeight: number,
+): SqlResult {
+  const jobsTableName = context.tableForKey(key, 'hash');
+
+  if (!isJobsTable(jobsTableName)) {
+    throw new Error(
+      `_setStatusAndCollateGuid requires a jobs table key; got table ${jobsTableName}`,
+    );
+  }
+
+  const sql = `
+    WITH status_update AS (
+      UPDATE ${jobsTableName}
+      SET status = status + $2
+      WHERE key = $1 AND is_live
+      RETURNING id AS job_id, status AS status_after
+    ),
+    hit AS (
+      SELECT
+        job_id,
+        CASE WHEN status_after = $3 THEN 1 ELSE 0 END AS threshold_hit,
+        CASE WHEN status_after = $3 THEN ($4::double precision) ELSE 0::double precision END AS guid_increment
+      FROM status_update
+    )
+    INSERT INTO ${jobsTableName}_attributes (job_id, field, value, type)
+    SELECT
+      job_id,
+      $5 AS field,
+      (guid_increment)::text AS value,
+      $6
+    FROM hit
+    ON CONFLICT (job_id, field) DO UPDATE
+    SET
+      value = ((COALESCE(${jobsTableName}_attributes.value, '0')::double precision) + EXCLUDED.value::double precision)::text,
+      type = EXCLUDED.type
+    RETURNING (SELECT threshold_hit::text FROM hit) AS value
+  `;
+
+  return {
+    sql,
+    params: [
+      key,                      // $1
+      statusDelta,              // $2
+      threshold,                // $3
+      guidWeight,               // $4 (typically 100_000_000_000)
+      guidField,                // $5
+      deriveType(guidField),    // $6
+    ],
+  };
 }

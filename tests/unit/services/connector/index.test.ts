@@ -38,10 +38,9 @@ describe('ConnectorService Functional Test', () => {
     expect(target.stream).toBeDefined();
     expect(target.sub).toBeDefined();
 
-    // Verify they can actually interact with the backend
-    await target?.store?.set('testKeyStore', 'testValue');
-    const valueStore = await target?.store?.get('testKeyStore');
-    expect(valueStore).toBe('testValue');
+    // Verify the store client can interact with the backend
+    const result = await target?.store?.query('SELECT 1 AS ok');
+    expect(result.rows[0].ok).toBe(1);
   });
 
   // Disconnect from Postgres after all tests

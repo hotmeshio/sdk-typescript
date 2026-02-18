@@ -581,6 +581,35 @@ class PostgresStoreService extends StoreService<
     );
   }
 
+  /**
+   * 1) HIGH-LEVEL STORE METHOD (engine/activity-facing)
+   * ---------------------------------------------------
+   * Mirrors setStatus(), but performs the compound Step-2 requirement:
+   * - apply delta to job semaphore (jobs.status)
+   * - compute thresholdHit (0/1) for desired threshold
+   * - persist thresholdHit onto the Leg2 GUID ledger by incrementing the 100B digit (or other weight)
+   * - return thresholdHit (0/1)
+   */
+  async setStatusAndCollateGuid(
+    statusDelta: number,          // typically (N - 1)
+    threshold: number,            // typically 0 (but supports 0,1,12,...)
+    jobId: string,
+    appId: string,
+    guidField: string,            // the jobs_attributes.field for the Leg2 GUID ledger row
+    guidWeight: number,           // e.g. 100_000_000_000 for GUID 100B digit
+    transaction?: ProviderTransaction,
+  ): Promise<number> {
+    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
+    return await this.kvsql(transaction).setStatusAndCollateGuid(
+      jobKey,
+      statusDelta,
+      threshold,
+      guidField,
+      guidWeight,
+    );
+  }
+
+
   async getStatus(jobId: string, appId: string): Promise<number> {
     const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
     const status = await this.kvsql().hget(jobKey, ':');
@@ -714,6 +743,39 @@ class PostgresStoreService extends StoreService<
     const hashData = this.serializer.package(payload, symbolNames);
     const targetId = Object.keys(hashData)[0];
     return await this.kvsql(transaction).hincrbyfloat(jobKey, targetId, amount);
+  }
+
+  /**
+   * Compound Leg2 entry: atomically increments the activity Leg2 entry
+   * counter and seeds the GUID ledger with the ordinal IF NOT EXISTS.
+   * Returns [activityValue, guidValue].
+   */
+  async collateLeg2Entry(
+    jobId: string,
+    activityId: string,
+    guid: string,
+    dIds: StringStringType,
+    transaction?: ProviderTransaction,
+  ): Promise<[number, number]> {
+    const jobKey = this.mintKey(KeyType.JOB_STATE, {
+      appId: this.appId,
+      jobId,
+    });
+    const collationKey = `${activityId}/output/metadata/as`;
+    const symbolNames = [activityId];
+    const symKeys = await this.getSymbolKeys(symbolNames);
+    const symVals = await this.getSymbolValues();
+    this.serializer.resetSymbols(symKeys, symVals, dIds);
+
+    const payload = { [collationKey]: '1' };
+    const hashData = this.serializer.package(payload, symbolNames);
+    const targetId = Object.keys(hashData)[0];
+    return await this.kvsql(transaction).collateLeg2Entry(
+      jobKey,
+      targetId,
+      1,
+      guid,
+    );
   }
 
   /**
@@ -1356,7 +1418,7 @@ class PostgresStoreService extends StoreService<
       // Execute the entire SQL as one statement (functions contain $$ blocks with semicolons)
       await client.query(sql);
 
-      this.logger.info('postgres-time-notifications-deployed', {
+      this.logger.debug('postgres-time-notifications-deployed', {
         appId,
         schemaName,
         message:

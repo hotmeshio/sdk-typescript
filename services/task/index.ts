@@ -62,13 +62,10 @@ class TaskService {
     jobId: string,
     inSeconds = HMSH_EXPIRE_DURATION,
     options: JobCompletionOptions,
+    transaction?: ProviderTransaction,
   ): Promise<void> {
     if (inSeconds > 0) {
-      await this.store.expireJob(jobId, inSeconds);
-      // const fromNow = Date.now() + inSeconds * 1000;
-      // const fidelityMS = HMSH_FIDELITY_SECONDS * 1000;
-      // const timeSlot = Math.floor(fromNow / fidelityMS) * fidelityMS;
-      // await this.store.registerDependenciesForCleanup(jobId, timeSlot, options);
+      await this.store.expireJob(jobId, inSeconds, transaction);
     }
   }
 

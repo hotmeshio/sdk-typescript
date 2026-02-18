@@ -590,6 +590,7 @@ class EngineService {
     context: JobState,
     jobOutput: JobOutput,
     emit = false,
+    transaction?: ProviderTransaction,
   ): Promise<string> {
     if (this.hasParentJob(context)) {
       //errors are stringified `StreamError` objects
@@ -622,7 +623,7 @@ class EngineService {
         streamData.status = StreamStatus.SUCCESS;
         streamData.code = HMSH_CODE_SUCCESS;
       }
-      return (await this.router?.publishMessage(null, streamData)) as string;
+      return (await this.router?.publishMessage(null, streamData, transaction)) as string;
     }
   }
   /**
@@ -687,6 +688,7 @@ class EngineService {
     data: JobData,
     status: StreamStatus = StreamStatus.SUCCESS,
     code: StreamCode = 200,
+    transaction?: ProviderTransaction,
   ): Promise<string> {
     const hookRule = await this.taskService.getHookRule(topic);
     const [aid] = await this.getSchema(`.${hookRule.to}`);
@@ -701,7 +703,7 @@ class EngineService {
       },
       data,
     };
-    return (await this.router?.publishMessage(null, streamData)) as string;
+    return (await this.router?.publishMessage(null, streamData, transaction)) as string;
   }
   /**
    * @private
@@ -902,7 +904,7 @@ class EngineService {
   /**
    * @private
    */
-  async pubOneTimeSubs(context: JobState, jobOutput: JobOutput, emit = false) {
+  async pubOneTimeSubs(context: JobState, jobOutput: JobOutput, emit = false, transaction?: ProviderTransaction) {
     //todo: subscriber should query for the job...only publish minimum context needed
     if (this.hasOneTimeSubscription(context)) {
       const message: JobMessage = {
@@ -910,11 +912,12 @@ class EngineService {
         topic: context.metadata.jid,
         job: restoreHierarchy(jobOutput) as JobOutput,
       };
-      this.subscribe.publish(
+      await this.subscribe.publish(
         KeyType.QUORUM,
         message,
         this.appId,
         context.metadata.ngn,
+        transaction,
       );
     }
   }
@@ -931,7 +934,7 @@ class EngineService {
   /**
    * @private
    */
-  async pubPermSubs(context: JobState, jobOutput: JobOutput, emit = false) {
+  async pubPermSubs(context: JobState, jobOutput: JobOutput, emit = false, transaction?: ProviderTransaction) {
     const topic = await this.getPublishesTopic(context);
     if (topic) {
       const message: JobMessage = {
@@ -939,11 +942,12 @@ class EngineService {
         topic,
         job: restoreHierarchy(jobOutput) as JobOutput,
       };
-      this.subscribe.publish(
+      await this.subscribe.publish(
         KeyType.QUORUM,
         message,
         this.appId,
         `${topic}.${context.metadata.jid}`,
+        transaction,
       );
     }
   }
@@ -980,27 +984,52 @@ class EngineService {
   async runJobCompletionTasks(
     context: JobState,
     options: JobCompletionOptions = {},
+    transaction?: ProviderTransaction,
   ): Promise<string | void> {
     //'emit' indicates the job is still active
     const isAwait = this.hasParentJob(context, true);
     const isOneTimeSub = this.hasOneTimeSubscription(context);
     const topic = await this.getPublishesTopic(context);
     let msgId: string;
+    let jobOutput: JobOutput;
     if (isAwait || isOneTimeSub || topic) {
-      const jobOutput = await this.getState(
+      jobOutput = await this.getState(
         context.metadata.tpc,
         context.metadata.jid,
       );
-      msgId = await this.execAdjacentParent(context, jobOutput, options.emit);
-      this.pubOneTimeSubs(context, jobOutput, options.emit);
-      this.pubPermSubs(context, jobOutput, options.emit);
+      //only send RESULT to parent for non-severed children (execChild).
+      //startChild (px=true) children already sent RESULT at spawn time
+      //via Trigger.execAdjacentParent; sending again here would cause
+      //a duplicate semaphore decrement in collation workflows.
+      if (isAwait) {
+        msgId = await this.execAdjacentParent(context, jobOutput, options.emit, transaction);
+      }
+      if (transaction) {
+        //transactional: await to queue NOTIFY in the transaction
+        await this.pubOneTimeSubs(context, jobOutput, options.emit, transaction);
+        await this.pubPermSubs(context, jobOutput, options.emit, transaction);
+      } else {
+        //non-transactional: fire-and-forget to avoid race with inline
+        //trigger processing (callback registered after pub() returns)
+        this.pubOneTimeSubs(context, jobOutput, options.emit);
+        this.pubPermSubs(context, jobOutput, options.emit);
+      }
     }
     if (!options.emit) {
-      this.taskService.registerJobForCleanup(
-        context.metadata.jid,
-        this.resolveExpires(context, options),
-        options,
-      );
+      if (transaction) {
+        await this.taskService.registerJobForCleanup(
+          context.metadata.jid,
+          this.resolveExpires(context, options),
+          options,
+          transaction,
+        );
+      } else {
+        this.taskService.registerJobForCleanup(
+          context.metadata.jid,
+          this.resolveExpires(context, options),
+          options,
+        );
+      }
     }
     return msgId;
   }
@@ -1051,7 +1080,7 @@ class EngineService {
     }
     const [state, status] = output;
     const stateTree = restoreHierarchy(state) as JobOutput;
-    if (status && stateTree.metadata) {
+    if (status != null && stateTree.metadata) {
       stateTree.metadata.js = status;
     }
     return stateTree;

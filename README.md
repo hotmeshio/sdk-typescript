@@ -14,7 +14,7 @@ Transform Postgres into a durable pipeline processor. Orchestrate long-running, 
 Get the power of Temporal without the infrastructure. HotMesh includes MemFlow, a Temporal-compatible API that runs directly on your Postgres database. No app server required.
 
 ### 3. Distributed State Machine
-Build resilient, stateful applications where every component can fail and recover. HotMesh manages state transitions, retries, and coordination.
+Build resilient, stateful applications where every component can [fail and recover](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md). HotMesh manages state transitions, retries, and coordination.
 
 ### 4. Workflow-as-Code Platform
 Choose your style: procedural workflows with MemFlow's Temporal API, or functional workflows with HotMesh's YAML syntax.

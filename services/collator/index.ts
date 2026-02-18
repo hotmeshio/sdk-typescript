@@ -11,6 +11,24 @@ class CollatorService {
   static targetLength = 15;
 
   /**
+   * Positional weights for the 15-digit activity/GUID ledger.
+   *
+   * Position:  1     2     3    4      5     6    7      8-15
+   * Weight:   100T  10T   1T   100B   10B   1B   100M   10M..1
+   */
+  static WEIGHTS = {
+    AUTH:           100_000_000_000_000,  // pos 1 (reserved)
+    FINALIZE:        10_000_000_000_000,  // pos 2 (reserved)
+    LEG1_ENTRY:       1_000_000_000_000,  // pos 3: Leg1 attempt counter
+    LEG1_COMPLETE:      100_000_000_000,  // pos 4: Leg1 completion marker
+    STEP1_WORK:          10_000_000_000,  // pos 5: Leg2 work done
+    STEP2_SPAWN:          1_000_000_000,  // pos 6: children spawned
+    STEP3_CLEANUP:          100_000_000,  // pos 7: job completion tasks done
+    LEG2_ENTRY:                       1,  // pos 8-15: Leg2 entry counter
+    GUID_SNAPSHOT:      100_000_000_000,  // 100B on GUID ledger (job closed snapshot)
+  };
+
+  /**
    * Upon re/entry, verify that the job status is active
    */
   static assertJobActive(
@@ -62,15 +80,22 @@ class CollatorService {
     return dimensions.join(',');
   }
 
+  // ──────────────────────────────────────────────────
+  //  Leg1 notarization
+  // ──────────────────────────────────────────────────
+
+  /**
+   * Leg1 entry: increment attempt counter (+1T).
+   * NOT bundled with Leg1 work — exists only to mark entry.
+   */
   static async notarizeEntry(
     activity: Activity,
     transaction?: ProviderTransaction,
   ): Promise<number> {
-    //decrement by -100_000_000_000_000
     const amount = await activity.store.collate(
       activity.context.metadata.jid,
       activity.metadata.aid,
-      -100_000_000_000_000,
+      this.WEIGHTS.LEG1_ENTRY,
       this.getDimensionalAddress(activity),
       transaction,
     );
@@ -78,56 +103,179 @@ class CollatorService {
     return amount;
   }
 
-  static async authorizeReentry(
+  /**
+   * Leg1 completion: increment +100B to mark Leg1 complete.
+   * For cycle=true activities, also pre-seeds the Leg2 entry counter (+1)
+   * so the first real Leg2 gets adjacentIndex=1 (new dimension).
+   * MUST be bundled in the same transaction as Leg1 durable work.
+   */
+  static async notarizeLeg1Completion(
     activity: Activity,
     transaction?: ProviderTransaction,
   ): Promise<number> {
-    //set second digit to 8, allowing for re-entry
-    //decrement by -10_000_000_000_000
-    const amount = await activity.store.collate(
-      activity.context.metadata.jid,
-      activity.metadata.aid,
-      -10_000_000_000_000,
-      this.getDimensionalAddress(activity),
-      transaction,
-    );
-    return amount;
-  }
-
-  static async notarizeEarlyExit(
-    activity: Activity,
-    transaction?: ProviderTransaction,
-  ): Promise<number> {
-    //decrement the 2nd and 3rd digits to fully deactivate (`cycle` activities use this command to fully exit after leg 1) (should result in `888000000000000`)
+    const amount = activity.config.cycle
+      ? this.WEIGHTS.LEG1_COMPLETE + this.WEIGHTS.LEG2_ENTRY
+      : this.WEIGHTS.LEG1_COMPLETE;
     return await activity.store.collate(
       activity.context.metadata.jid,
       activity.metadata.aid,
-      -11_000_000_000_000,
-      this.getDimensionalAddress(activity),
-      transaction,
-    );
-  }
-
-  static async notarizeEarlyCompletion(
-    activity: Activity,
-    transaction?: ProviderTransaction,
-  ): Promise<number> {
-    //initialize both `possible` (1m) and `actualized` (1) zero dimension, while decrementing the 2nd
-    //3rd digit is optionally kept open if the activity might be used in a cycle
-    const decrement = activity.config.cycle
-      ? 10_000_000_000_000
-      : 11_000_000_000_000;
-    return await activity.store.collate(
-      activity.context.metadata.jid,
-      activity.metadata.aid,
-      1_000_001 - decrement,
+      amount,
       this.getDimensionalAddress(activity),
       transaction,
     );
   }
 
   /**
-   * sets the synthetic inception key (in case of an overage occurs).
+   * Leg1 early exit: marks Leg1 complete for activities that
+   * only run Leg1 and fully close (e.g., Cycle).
+   * Increment +100B (Leg1 completion marker).
+   */
+  static async notarizeEarlyExit(
+    activity: Activity,
+    transaction?: ProviderTransaction,
+  ): Promise<number> {
+    return await activity.store.collate(
+      activity.context.metadata.jid,
+      activity.metadata.aid,
+      this.WEIGHTS.LEG1_COMPLETE,
+      this.getDimensionalAddress(activity),
+      transaction,
+    );
+  }
+
+  /**
+   * Leg1 early completion: marks Leg1 complete for Leg1-only
+   * activities that spawn children (e.g., Signal, Hook passthrough,
+   * Interrupt-another). Increment +100B.
+   */
+  static async notarizeEarlyCompletion(
+    activity: Activity,
+    transaction?: ProviderTransaction,
+  ): Promise<number> {
+    return await activity.store.collate(
+      activity.context.metadata.jid,
+      activity.metadata.aid,
+      this.WEIGHTS.LEG1_COMPLETE,
+      this.getDimensionalAddress(activity),
+      transaction,
+    );
+  }
+
+  // ──────────────────────────────────────────────────
+  //  Leg2 notarization (entry + 3-step protocol)
+  // ──────────────────────────────────────────────────
+
+  /**
+   * Leg2 entry: atomically increments the activity ledger (+1) and
+   * seeds the GUID ledger with the ordinal IF NOT EXISTS.
+   * Returns [activityLedger, guidLedger] after the compound operation.
+   */
+  static async notarizeLeg2Entry(
+    activity: Activity,
+    guid: string,
+    transaction?: ProviderTransaction,
+  ): Promise<[number, number]> {
+    const jid = activity.context.metadata.jid;
+    const localMulti = transaction || activity.store.transact();
+    //compound: increment activity Leg2 counter and seed GUID ledger
+    await activity.store.collateLeg2Entry(
+      jid,
+      activity.metadata.aid,
+      guid,
+      this.getDimensionalAddress(activity, true),
+      localMulti,
+    );
+    const results = await localMulti.exec();
+    const result = results[0];
+    const [amountConcrete, amountSynthetic] = Array.isArray(result)
+      ? result
+      : [result, result];
+    this.verifyInteger(amountConcrete as number, 2, 'enter');
+    this.verifySyntheticInteger(amountSynthetic as number);
+    return [amountConcrete as number, amountSynthetic as number];
+  }
+
+  /**
+   * Step 1: Mark Leg2 work done (+10B on GUID ledger only).
+   * MUST be bundled with Leg2 durable work writes.
+   */
+  static async notarizeStep1(
+    activity: Activity,
+    guid: string,
+    transaction: ProviderTransaction,
+  ): Promise<void> {
+    const jid = activity.context.metadata.jid;
+    await activity.store.collateSynthetic(
+      jid,
+      guid,
+      this.WEIGHTS.STEP1_WORK,
+      transaction,
+    );
+  }
+
+  /**
+   * Step 2: Mark children spawned (+1B on GUID ledger only).
+   * The job semaphore update and GUID job-closed snapshot are handled
+   * by the compound `setStatusAndCollateGuid` primitive, which MUST
+   * be called in the same transaction.
+   */
+  static async notarizeStep2(
+    activity: Activity,
+    guid: string,
+    transaction: ProviderTransaction,
+  ): Promise<void> {
+    const jid = activity.context.metadata.jid;
+    await activity.store.collateSynthetic(
+      jid,
+      guid,
+      this.WEIGHTS.STEP2_SPAWN,
+      transaction,
+    );
+  }
+
+  /**
+   * Step 3: Mark job completion tasks done (+100M on GUID ledger only).
+   * MUST be bundled with job completion durable writes.
+   */
+  static async notarizeStep3(
+    activity: Activity,
+    guid: string,
+    transaction: ProviderTransaction,
+  ): Promise<void> {
+    const jid = activity.context.metadata.jid;
+    await activity.store.collateSynthetic(
+      jid,
+      guid,
+      this.WEIGHTS.STEP3_CLEANUP,
+      transaction,
+    );
+  }
+
+  /**
+   * Finalize: close the activity to new Leg2 GUIDs (+10T).
+   * Only for non-cycle activities after final SUCCESS/ERROR.
+   */
+  static async notarizeFinalize(
+    activity: Activity,
+    transaction: ProviderTransaction,
+  ): Promise<void> {
+    if (!activity.config.cycle) {
+      await activity.store.collate(
+        activity.context.metadata.jid,
+        activity.metadata.aid,
+        this.WEIGHTS.FINALIZE,
+        this.getDimensionalAddress(activity),
+        transaction,
+      );
+    }
+  }
+
+  // ──────────────────────────────────────────────────
+  //  Inception (trigger duplicate detection)
+  // ──────────────────────────────────────────────────
+
+  /**
+   * sets the synthetic inception key (in case an overage occurs).
    */
   static async notarizeInception(
     activity: Activity,
@@ -162,74 +310,68 @@ class CollatorService {
     return false;
   }
 
+  // ──────────────────────────────────────────────────
+  //  GUID ledger extraction (step-level resume)
+  // ──────────────────────────────────────────────────
+
   /**
-   * verifies both the concrete and synthetic keys for the activity; concrete keys
-   * exist in the original model and are effectively the 'real' keys. In reality,
-   * hook activities are atomized during compilation to create a synthetic DAG that
-   * is used to track the status of the graph in a distributed environment. The
-   * synthetic key represents different dimensional realities and is used to
-   * track re-entry overages (it distinguishes between the original and re-entry).
-   * The essential challenge is: is this a re-entry that is purposeful in
-   * order to induce cycles, or is the re-entry due to a failure in the system?
+   * Check if Step 1 (work done) is complete on the GUID ledger.
+   * Position 5 (10B digit) > 0.
    */
-  static async notarizeReentry(
-    activity: Activity,
-    guid: string,
-    transaction?: ProviderTransaction,
-  ): Promise<number> {
-    const jid = activity.context.metadata.jid;
-    const localMulti = transaction || activity.store.transact();
-    //increment by 1_000_000 (indicates re-entry and is used to drive the 'dimensional address' for adjacent activities (minus 1))
-    await activity.store.collate(
-      jid,
-      activity.metadata.aid,
-      1_000_000,
-      this.getDimensionalAddress(activity, true),
-      localMulti,
-    );
-    await activity.store.collateSynthetic(jid, guid, 1_000_000, localMulti);
-    const [_amountConcrete, _amountSynthetic] = await localMulti.exec();
-    const amountConcrete = Array.isArray(_amountConcrete)
-      ? _amountConcrete[1]
-      : _amountConcrete;
-    const amountSynthetic = Array.isArray(_amountSynthetic)
-      ? _amountSynthetic[1]
-      : _amountSynthetic;
-    this.verifyInteger(amountConcrete as number, 2, 'enter');
-    this.verifySyntheticInteger(amountSynthetic as number);
-    return amountConcrete as number;
+  static isGuidStep1Done(guidLedger: number): boolean {
+    return this.getDigitAtPosition(guidLedger, 5) > 0;
   }
 
-  static async notarizeContinuation(
-    activity: Activity,
-    transaction?: ProviderTransaction,
-  ): Promise<number> {
-    //keep open; actualize the leg2 dimension (+1)
-    return await activity.store.collate(
-      activity.context.metadata.jid,
-      activity.metadata.aid,
-      1,
-      this.getDimensionalAddress(activity),
-      transaction,
-    );
+  /**
+   * Check if Step 2 (children spawned) is complete on the GUID ledger.
+   * Position 6 (1B digit) > 0.
+   */
+  static isGuidStep2Done(guidLedger: number): boolean {
+    return this.getDigitAtPosition(guidLedger, 6) > 0;
   }
 
-  static async notarizeCompletion(
-    activity: Activity,
-    transaction?: ProviderTransaction,
-  ): Promise<number> {
-    //1) ALWAYS actualize leg2 dimension (+1)
-    //2) IF the activity is used in a cycle, don't close leg 2!
-    const decrement = activity.config.cycle ? 0 : 1_000_000_000_000;
-    return await activity.store.collate(
-      activity.context.metadata.jid,
-      activity.metadata.aid,
-      1 - decrement,
-      this.getDimensionalAddress(activity),
-      transaction,
-    );
+  /**
+   * Check if Step 3 (job completion tasks) is complete on the GUID ledger.
+   * Position 7 (100M digit) > 0.
+   */
+  static isGuidStep3Done(guidLedger: number): boolean {
+    return this.getDigitAtPosition(guidLedger, 7) > 0;
   }
 
+  /**
+   * Check if this GUID was responsible for closing the job.
+   * Position 4 (100B digit) > 0 (job closed snapshot).
+   */
+  static isGuidJobClosed(guidLedger: number): boolean {
+    return this.getDigitAtPosition(guidLedger, 4) > 0;
+  }
+
+  /**
+   * Get the attempt count from the GUID ledger (last 8 digits).
+   */
+  static getGuidAttemptCount(guidLedger: number): number {
+    return guidLedger % 100_000_000;
+  }
+
+  // ──────────────────────────────────────────────────
+  //  Digit extraction
+  // ──────────────────────────────────────────────────
+
+  /**
+   * Gets the digit at a 1-indexed position from a 15-digit ledger value.
+   * The value is left-padded to 15 digits before extraction.
+   */
+  static getDigitAtPosition(num: number, position: number): number {
+    const numStr = num.toString().padStart(this.targetLength, '0');
+    if (position < 1 || position > this.targetLength) {
+      return 0;
+    }
+    return parseInt(numStr[position - 1], 10);
+  }
+
+  /**
+   * @deprecated Use getDigitAtPosition (1-indexed) instead
+   */
   static getDigitAtIndex(num: number, targetDigitIndex: number): number | null {
     const numStr = num.toString();
     if (targetDigitIndex < 0 || targetDigitIndex >= numStr.length) {
@@ -239,61 +381,60 @@ class CollatorService {
     return digit;
   }
 
+  /**
+   * Extracts the dimensional index from the Leg2 entry counter.
+   * Non-cycle activities: first Leg2 → leg2Count=1 → 1-1=0 (same dimension as Leg1).
+   * Cycle activities: first Leg2 → leg2Count=2 (pre-seeded +1) → 2-1=1 (new dimension).
+   */
   static getDimensionalIndex(num: number): number | null {
-    const numStr = num.toString();
-    if (numStr.length < 9) {
+    const leg2EntryCount = num % 100_000_000;
+    if (leg2EntryCount <= 0) {
       return null;
     }
-    const extractedStr = numStr.substring(3, 9);
-    const extractedInt = parseInt(extractedStr, 10);
-    return extractedInt - 1;
+    return leg2EntryCount - 1;
   }
 
-  static isDuplicate(num: number, targetDigitIndex: number): boolean {
-    return this.getDigitAtIndex(num, targetDigitIndex) < 8;
-  }
+  // ──────────────────────────────────────────────────
+  //  Verification
+  // ──────────────────────────────────────────────────
 
-  static isInactive(num: number): boolean {
-    return this.getDigitAtIndex(num, 2) < 9;
-  }
+  /**
+   * Verifies the GUID ledger value for step-level resume decisions.
+   * The GUID ledger is seeded with an ordinal position (last 8 digits)
+   * on first entry; step markers drive all resume/reject logic.
+   *
+   * Fully processed: Step 3 done, or Steps 1+2 done without job closure.
+   * Crash recovery: Any incomplete step combination is allowed for resume.
+   */
+  static verifySyntheticInteger(amount: number): void {
+    const step2Done = this.isGuidStep2Done(amount);
+    const step3Done = this.isGuidStep3Done(amount);
+    const jobClosed = this.isGuidJobClosed(amount);
 
-  static isPrimed(amount: number, leg: ActivityDuplex): boolean {
-    //activity entry is not allowed if paths not properly pre-set
-    if (leg == 1) {
-      return amount != -100_000_000_000_000;
-    } else {
-      return (
-        this.getDigitAtIndex(amount, 0) < 9 &&
-        this.getDigitAtIndex(amount, 1) < 9
-      );
+    if (step3Done) {
+      //all steps complete; nothing more to do
+      throw new CollationError(amount, 2, 'enter', CollationFaultType.INACTIVE);
     }
+    if (step2Done && !jobClosed) {
+      //steps 1+2 done but this GUID didn't close the job; no Step 3 needed
+      throw new CollationError(amount, 2, 'enter', CollationFaultType.INACTIVE);
+    }
+    //all other cases: allow entry
+    // - no steps done (fresh entry or pre-step-1 crash recovery)
+    // - step 1 done, step 2 not (crash after step 1)
+    // - steps 1+2 done, job closed, step 3 not (crash recovery for step 3)
   }
 
   /**
-   * During compilation, the graphs are compiled into structures necessary
-   * for distributed processing; these are referred to as 'synthetic DAGs',
-   * because they are not part of the original graph, but are used to track
-   * the status of the graph in a distributed environment. This check ensures
-   * that the 'synthetic key' is not a duplicate. (which is different than
-   * saying the 'key' is not a duplicate)
+   * Verifies the activity ledger value at entry boundaries.
+   *
+   * Leg1 enter: pos 3 (1T digit) must be > 0 after +1T (proves seed exists).
+   *             pos 4 (100B) must be 0 (Leg1 not yet complete).
+   *             If pos 3 > 1 and pos 4 == 1, it's a stale/replayed message.
+   *
+   * Leg2 enter: pos 4 (100B) must be > 0 (Leg1 complete, reentry authorized).
+   *             pos 2 (10T) must be 0 (not finalized) — cycle activities exempt.
    */
-  static verifySyntheticInteger(amount: number): void {
-    const samount = amount.toString();
-    const isCompletedValue = parseInt(samount[samount.length - 1], 10);
-    if (isCompletedValue > 0) {
-      //already done error (ack/delete clearly failed; this is a duplicate)
-      throw new CollationError(amount, 2, 'enter', CollationFaultType.INACTIVE);
-    } else if (amount >= 2_000_000) {
-      //duplicate synthetic key (this is a duplicate job ID)
-      throw new CollationError(
-        amount,
-        2,
-        'enter',
-        CollationFaultType.DUPLICATE,
-      );
-    }
-  }
-
   static verifyInteger(
     amount: number,
     leg: ActivityDuplex,
@@ -301,23 +442,23 @@ class CollatorService {
   ): void {
     let faultType: CollationFaultType | undefined;
     if (leg === 1 && stage === 'enter') {
-      if (!this.isPrimed(amount, 1)) {
+      const leg1Attempts = this.getDigitAtPosition(amount, 3);
+      const leg1Complete = this.getDigitAtPosition(amount, 4);
+      if (leg1Attempts === 0) {
+        //seed was not set (no authorization)
         faultType = CollationFaultType.MISSING;
-      } else if (this.isDuplicate(amount, 0)) {
-        faultType = CollationFaultType.DUPLICATE;
-      } else if (amount != 899_000_000_000_000) {
-        faultType = CollationFaultType.INVALID;
-      }
-    } else if (leg === 1 && stage === 'exit') {
-      if (amount === -10_000_000_000_000) {
-        faultType = CollationFaultType.MISSING;
-      } else if (this.isDuplicate(amount, 1)) {
+      } else if (leg1Complete > 0) {
+        //Leg1 already completed — stale/replayed message
         faultType = CollationFaultType.DUPLICATE;
       }
     } else if (leg === 2 && stage === 'enter') {
-      if (!this.isPrimed(amount, 2)) {
+      const leg1Complete = this.getDigitAtPosition(amount, 4);
+      const finalized = this.getDigitAtPosition(amount, 2);
+      if (leg1Complete === 0) {
+        //Leg1 not complete — reentry not authorized
         faultType = CollationFaultType.FORBIDDEN;
-      } else if (this.isInactive(amount)) {
+      } else if (finalized > 0) {
+        //activity finalized — no new Leg2 GUIDs accepted
         faultType = CollationFaultType.INACTIVE;
       }
     }
@@ -325,6 +466,10 @@ class CollatorService {
       throw new CollationError(amount, leg, stage, faultType);
     }
   }
+
+  // ──────────────────────────────────────────────────
+  //  Dimensional address resolution
+  // ──────────────────────────────────────────────────
 
   static getDimensionsById(
     ancestors: string[],
@@ -344,19 +489,29 @@ class CollatorService {
     return map;
   }
 
+  // ──────────────────────────────────────────────────
+  //  Seeds
+  // ──────────────────────────────────────────────────
+
   /**
-   * All non-trigger activities are assigned a status seed by their parent
+   * All non-trigger activities are assigned a status seed by their parent.
+   * Seed: 100000000000000 (pos 1 = 1, authorized for entry)
    */
   static getSeed(): string {
-    return '999000000000000';
+    return '100000000000000';
   }
 
   /**
-   * All trigger activities are assigned a status seed in a completed state
+   * All trigger activities are assigned a status seed in a completed state.
+   * Seed: 101100000000001 (authorized, 1 Leg1 entry, Leg1 complete, 1 Leg2 entry)
    */
   static getTriggerSeed(): string {
-    return '888000001000001';
+    return '101100000000001';
   }
+
+  // ──────────────────────────────────────────────────
+  //  Compiler
+  // ──────────────────────────────────────────────────
 
   /**
    * entry point for compiler-type activities. This is called by the compiler

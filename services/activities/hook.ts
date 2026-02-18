@@ -17,11 +17,7 @@ import {
 } from '../../types/activity';
 import { HookRule } from '../../types/hook';
 import { JobState, JobStatus } from '../../types/job';
-import {
-  ProviderTransaction,
-  TransactionResultList,
-} from '../../types/provider';
-import { StringScalarType } from '../../types/serializer';
+import { ProviderTransaction } from '../../types/provider';
 import { StreamCode, StreamStatus } from '../../types/stream';
 
 import { Activity } from './activity';
@@ -53,7 +49,9 @@ class Hook extends Activity {
     let telemetry: TelemetryService;
 
     try {
-      await this.verifyEntry();
+      //Phase 1: Load state and verify entry (all paths use verifyLeg1Entry
+      //for GUID-ledger-backed crash recovery)
+      const isResume = await this.verifyLeg1Entry();
 
       telemetry = new TelemetryService(
         this.engine.appId,
@@ -63,11 +61,15 @@ class Hook extends Activity {
       );
       telemetry.startActivitySpan(this.leg);
 
-      if (this.doesHook()) {
-        //sleep and wait to awaken upon a signal
-        await this.doHook(telemetry);
+      //Phase 2: Route based on RUNTIME evaluation (not static config)
+      if (this.isConfiguredAsHook() && this.doesHook()) {
+        //Category A: duplexed hook registration (Leg2 handles completion)
+        if (!isResume) {
+          await this.doHook(telemetry);
+        }
+        //If resume, Leg1 already ran — Leg2 will handle completion
       } else {
-        //end the activity and transition to its children
+        //Category B: passthrough with crash-safe step protocol + GUID ledger
         await this.doPassThrough(telemetry);
       }
 
@@ -108,6 +110,14 @@ class Hook extends Activity {
   }
 
   /**
+   * Static config check: does this activity have a hook or sleep config?
+   * Used for routing before context is loaded.
+   */
+  isConfiguredAsHook(): boolean {
+    return !!this.config.sleep || !!this.config.hook?.topic;
+  }
+
+  /**
    * does this activity use a time-hook or web-hook
    */
   doesHook(): boolean {
@@ -124,7 +134,7 @@ class Hook extends Activity {
     this.mapOutputData();
     this.mapJobData();
     await this.setState(transaction);
-    await CollatorService.authorizeReentry(this, transaction);
+    await CollatorService.notarizeLeg1Completion(this, transaction);
 
     await this.setStatus(0, transaction);
     await transaction.exec();
@@ -132,25 +142,14 @@ class Hook extends Activity {
   }
 
   async doPassThrough(telemetry: TelemetryService) {
-    const transaction = this.store.transact();
-    let multiResponse: TransactionResultList;
-
     this.adjacencyList = await this.filterAdjacent();
     this.mapOutputData();
     this.mapJobData();
-    await this.setState(transaction);
-    await CollatorService.notarizeEarlyCompletion(this, transaction);
 
-    await this.setStatus(this.adjacencyList.length - 1, transaction);
-    multiResponse = (await transaction.exec()) as TransactionResultList;
+    //Category B: use Leg1 step protocol for crash-safe edge capture
+    await this.executeLeg1StepProtocol(this.adjacencyList.length - 1);
     telemetry.mapActivityAttributes();
-    const jobStatus = this.resolveStatus(multiResponse);
-    const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-    const messageIds = await this.transition(this.adjacencyList, jobStatus);
-    if (messageIds.length) {
-      attrs['app.activity.mids'] = messageIds.join(',');
-    }
-    telemetry.setActivityAttributes(attrs);
+    telemetry.setActivityAttributes({});
   }
 
   async getHookRule(topic: string): Promise<HookRule | undefined> {

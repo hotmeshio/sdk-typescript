@@ -42,19 +42,27 @@ class Interrupt extends Activity {
     });
     let telemetry: TelemetryService;
     try {
-      await this.verifyEntry();
-
-      telemetry = new TelemetryService(
-        this.engine.appId,
-        this.config,
-        this.metadata,
-        this.context,
-      );
-      telemetry.startActivitySpan(this.leg);
-
-      if (this.isInterruptingSelf()) {
+      if (!this.config.target) {
+        //Category C: self-interrupt (no children, no semaphore edge risk)
+        await this.verifyEntry();
+        telemetry = new TelemetryService(
+          this.engine.appId,
+          this.config,
+          this.metadata,
+          this.context,
+        );
+        telemetry.startActivitySpan(this.leg);
         await this.interruptSelf(telemetry);
       } else {
+        //Category B: interrupt another (spawns children, needs step protocol)
+        await this.verifyLeg1Entry();
+        telemetry = new TelemetryService(
+          this.engine.appId,
+          this.config,
+          this.metadata,
+          this.context,
+        );
+        telemetry.startActivitySpan(this.leg);
         await this.interruptAnother(telemetry);
       }
     } catch (error) {
@@ -102,10 +110,10 @@ class Interrupt extends Activity {
     // Interrupt THIS job
     const messageId = await this.interrupt();
 
-    // Notarize completion and log
+    // Notarize Leg1 completion and set status
     telemetry.mapActivityAttributes();
     const transaction = this.store.transact();
-    await CollatorService.notarizeEarlyCompletion(this, transaction);
+    await CollatorService.notarizeLeg1Completion(this, transaction);
     await this.setStatus(-1, transaction);
     const txResponse = (await transaction.exec()) as TransactionResultList;
     const jobStatus = this.resolveStatus(txResponse);
@@ -118,34 +126,21 @@ class Interrupt extends Activity {
   }
 
   async interruptAnother(telemetry: TelemetryService): Promise<string> {
-    // Interrupt ANOTHER job
-    const messageId = await this.interrupt();
-    const attrs = { 'app.activity.mid': messageId };
+    // Interrupt ANOTHER job (best-effort, fires before step protocol)
+    await this.interrupt();
 
     // Apply updates to THIS job's state
-    telemetry.mapActivityAttributes();
     this.adjacencyList = await this.filterAdjacent();
     if (this.config.job?.maps || this.config.output?.maps) {
       this.mapOutputData();
       this.mapJobData();
-      const transaction = this.store.transact();
-      await this.setState(transaction);
     }
 
-    // Notarize completion
-    const transaction = this.store.transact();
-    await CollatorService.notarizeEarlyCompletion(this, transaction);
-    await this.setStatus(this.adjacencyList.length - 1, transaction);
-    const txResponse = (await transaction.exec()) as TransactionResultList;
-    const jobStatus = this.resolveStatus(txResponse);
-    attrs['app.job.jss'] = jobStatus;
+    //Category B: use Leg1 step protocol for crash-safe edge capture
+    await this.executeLeg1StepProtocol(this.adjacencyList.length - 1);
 
-    // Transition next generation and log
-    const messageIds = await this.transition(this.adjacencyList, jobStatus);
-    if (messageIds.length) {
-      attrs['app.activity.mids'] = messageIds.join(',');
-    }
-    telemetry.setActivityAttributes(attrs);
+    telemetry.mapActivityAttributes();
+    telemetry.setActivityAttributes({});
 
     return this.context.metadata.aid;
   }
