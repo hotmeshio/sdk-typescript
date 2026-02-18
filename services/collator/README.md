@@ -39,7 +39,7 @@ This pattern is the foundation of correctness.
 
 HotMesh engines and activities do **not** author SQL directly. They operate against a small set of **durable primitives** exposed by the store provider.
 
-Those primitives are implemented per backend (Postgres, Redis, etc.) and must guarantee the bundling rule.
+Those primitives are implemented per backend (Postgres) and must guarantee the bundling rule.
 
 **Principle:**
 
@@ -255,7 +255,7 @@ This increments the **last 8 digits** only and yields a new `Leg2EntryCount`.
 
 ### 7.2 Increment the GUID attempt counter
 
-In the same transaction that incremented the activity Leg2 entry counter, persist the returned value as the initial value for the GUID ledger *if the GUID ledger does not exist*. Transactional, conditional SQL should be generated for this one step that allows for incrementing by +1 and using the returned (RETURNING) value and inserting as the Guid Ledger if it does not yet exist (or return its value if it does), returning a final, single value which is the value for the GUID ledger representing its ordinal position as originally assigned the very first time it was processed.
+In the same transaction that incremented the activity Leg2 entry counter, persist the returned value as the initial value for the GUID ledger *if the GUID ledger does not exist*.
 
 ## 8) Leg2 Step-Level Idempotency
 

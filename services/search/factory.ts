@@ -2,11 +2,8 @@ import { identifyProvider } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { PostgresClientType } from '../../types/postgres';
 import { ProviderClient } from '../../types/provider';
-import { RedisRedisClientType, IORedisClientType } from '../../types/redis';
 
 import { PostgresSearchService } from './providers/postgres/postgres';
-import { IORedisSearchService } from './providers/redis/ioredis';
-import { RedisSearchService } from './providers/redis/redis';
 
 import { SearchService } from './index';
 
@@ -24,17 +21,7 @@ class SearchServiceFactory {
         providerClient as PostgresClientType & ProviderClient,
         storeProviderClient as PostgresClientType & ProviderClient,
       );
-    } else if (identifyProvider(providerClient) === 'redis') {
-      service = new RedisSearchService(
-        providerClient as RedisRedisClientType,
-        storeProviderClient as RedisRedisClientType,
-      );
-    } else {
-      service = new IORedisSearchService(
-        providerClient as IORedisClientType,
-        storeProviderClient as IORedisClientType,
-      );
-    }
+    } //etc
     await service.init(namespace, appId, logger);
     return service;
   }

@@ -95,47 +95,17 @@ export function identifyProvider(provider: any): Providers | null {
     return 'postgres';
   } else if (provider.toString().toLowerCase().includes('nats')) {
     return 'nats';
-  } else if (
-    'defineCommand' in prototype ||
-    Object.keys(prototype).includes('multi')
-  ) {
-    return 'ioredis';
-  } else if (Object.keys(prototype).includes('Multi')) {
-    return 'redis';
   }
 
-  if (provider.constructor) {
-    if (
-      provider.constructor.name === 'Redis' ||
-      provider.constructor.name === 'EventEmitter'
-    ) {
-      if ('hset' in provider) {
-        return 'ioredis';
-      }
-    } else if (
-      provider.constructor.name === 'ProviderClient' ||
-      provider.constructor.name === 'Commander'
-    ) {
-      if ('HSET' in provider) {
-        return 'redis';
-      }
-    }
-  }
-
-  let type: Providers | null = null;
   if (
     Object.keys(provider).includes('connection') ||
     !isNaN(provider.totalCount) && !isNaN(provider.idleCount)
   ) {
-    type = 'postgres';
-  } else if (Object.keys(provider).includes('Pipeline')) {
-    type = 'ioredis';
-  } else if (Object.keys(provider).includes('createClient')) {
-    type = 'redis';
+    return 'postgres';
   } else if (prototype.constructor.toString().includes('NatsConnectionImpl')) {
-    type = 'nats';
+    return 'nats';
   }
-  return type;
+  return null;
 }
 
 /**

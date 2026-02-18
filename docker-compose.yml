@@ -11,23 +11,10 @@ services:
     environment:
       - NODE_ENV=development
     depends_on:
-      redis:
-        condition: service_healthy
       postgres:
         condition: service_healthy
       nats:
         condition: service_healthy
-
-  redis:
-    image: redis/redis-stack:latest
-    command: ["redis-server", "--requirepass", "key_admin", "--loadmodule", "/opt/redis-stack/lib/redisearch.so"]
-    ports:
-      - "6380:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   postgres:
     image: postgres:latest
@@ -42,13 +29,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-  redis-insight:
-    image: redislabs/redisinsight:latest
-    container_name: hotmesh-redis-insight
-    ports:
-      - "8001:5540"
-    depends_on:
-      - redis
   nats:
     image: nats:latest
     ports:
