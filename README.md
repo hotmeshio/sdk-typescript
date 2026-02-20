@@ -8,44 +8,7 @@ Run durable workflows on Postgres. No servers, no queues, just your database.
 npm install @hotmeshio/hotmesh
 ```
 
-## It's just data
-
-There is nothing between you and your data. Workflow state lives in your database as ordinary rows — `jobs` and `jobs_attributes`. Query it directly, back it up with pg_dump, replicate it, join it against your application tables.
-
-```sql
-SELECT
-  j.key          AS job_key,
-  j.status       AS semaphore,
-  j.entity       AS workflow,
-  a.field        AS attribute,
-  a.value        AS value,
-  j.created_at,
-  j.updated_at
-FROM
-  jobs j
-  JOIN jobs_attributes a ON a.job_id = j.id
-WHERE
-  j.key = 'order-456'
-ORDER BY
-  a.field;
-```
-
-What happened? Consult the database. What's still running? Query the semaphore. What failed? Read the row. The execution state isn't reconstructed from a log — it was committed transactionally as each step ran.
-
-You can also use the Temporal-compatible API:
-
-```typescript
-const handle = client.workflow.getHandle('orders', 'orderWorkflow', 'order-456');
-
-const result = await handle.result();           // final output
-const status = await handle.status();           // semaphore (0 = complete)
-const state  = await handle.state(true);        // full state with metadata
-const exported = await handle.export({          // selective export
-  allow: ['data', 'state', 'status', 'timeline']
-});
-```
-
-## You can also use it for...
+## Use HotMesh for...
 
 - **Durable pipelines** — Orchestrate long-running, multi-step pipelines transactionally.
 - **Temporal replacement** — MemFlow provides a Temporal-compatible API that runs directly on Postgres. No app server required.
@@ -242,6 +205,43 @@ const results = await Promise.all([
 ```typescript
 const childHandle = await startChild(validateOrder, { args: [orderId] });
 const validation = await childHandle.result();
+```
+
+## It's just data
+
+There is nothing between you and your data. Workflow state lives in your database as ordinary rows — `jobs` and `jobs_attributes`. Query it directly, back it up with pg_dump, replicate it, join it against your application tables.
+
+```sql
+SELECT
+  j.key          AS job_key,
+  j.status       AS semaphore,
+  j.entity       AS workflow,
+  a.field        AS attribute,
+  a.value        AS value,
+  j.created_at,
+  j.updated_at
+FROM
+  jobs j
+  JOIN jobs_attributes a ON a.job_id = j.id
+WHERE
+  j.key = 'order-456'
+ORDER BY
+  a.field;
+```
+
+What happened? Consult the database. What's still running? Query the semaphore. What failed? Read the row. The execution state isn't reconstructed from a log — it was committed transactionally as each step ran.
+
+You can also use the Temporal-compatible API:
+
+```typescript
+const handle = client.workflow.getHandle('orders', 'orderWorkflow', 'order-456');
+
+const result = await handle.result();           // final output
+const status = await handle.status();           // semaphore (0 = complete)
+const state  = await handle.state(true);        // full state with metadata
+const exported = await handle.export({          // selective export
+  allow: ['data', 'state', 'status', 'timeline']
+});
 ```
 
 ## Architecture
