@@ -92,6 +92,12 @@ class TelemetryService {
       recordException(_exception: unknown, _time?: number): void {
         // no-op
       },
+      addLink(_link: unknown): Span {
+        return this;
+      },
+      addLinks(_links: unknown[]): Span {
+        return this;
+      },
     };
   }
 
