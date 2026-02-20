@@ -69,10 +69,71 @@ function getChildInterruptPayload(
 }
 
 /**
- * Spawns a child workflow and awaits the result, or if `await` is false, returns immediately.
- * @template T
- * @param {WorkflowOptions} options - Workflow options.
- * @returns {Promise<T>} Result of the child workflow.
+ * Spawns a child workflow and awaits its result. The child runs as an
+ * independent job with its own lifecycle, retry policy, and dimensional
+ * isolation. If the child fails, the error is propagated to the parent
+ * as a typed error (`MemFlowFatalError`, `MemFlowMaxedError`,
+ * `MemFlowTimeoutError`, or `MemFlowRetryError`).
+ *
+ * On replay, the stored child result is returned immediately without
+ * re-spawning the child workflow.
+ *
+ * ## Child Job ID
+ *
+ * If `options.workflowId` is provided, it is used directly. Otherwise,
+ * the child ID is generated from the entity/workflow name, a GUID, the
+ * parent's dimensional coordinates, and the execution index — ensuring
+ * uniqueness across parallel and re-entrant executions.
+ *
+ * ## Examples
+ *
+ * ```typescript
+ * import { MemFlow } from '@hotmeshio/hotmesh';
+ *
+ * // Spawn a child workflow and await its result
+ * export async function parentWorkflow(orderId: string): Promise<string> {
+ *   const result = await MemFlow.workflow.execChild<{ status: string }>({
+ *     taskQueue: 'payments',
+ *     workflowName: 'processPayment',
+ *     args: [orderId, 99.99],
+ *     config: {
+ *       maximumAttempts: 3,
+ *       backoffCoefficient: 2,
+ *     },
+ *   });
+ *   return result.status;
+ * }
+ * ```
+ *
+ * ```typescript
+ * // Fan-out: spawn multiple children in parallel
+ * export async function batchWorkflow(items: string[]): Promise<string[]> {
+ *   const results = await Promise.all(
+ *     items.map((item) =>
+ *       MemFlow.workflow.execChild<string>({
+ *         taskQueue: 'processors',
+ *         workflowName: 'processItem',
+ *         args: [item],
+ *       }),
+ *     ),
+ *   );
+ *   return results;
+ * }
+ * ```
+ *
+ * ```typescript
+ * // Entity-based child (uses entity name as task queue)
+ * const user = await MemFlow.workflow.execChild<UserRecord>({
+ *   entity: 'user',
+ *   args: [{ name: 'Alice', email: 'alice@example.com' }],
+ *   workflowId: 'user-alice',          // deterministic ID
+ *   expire: 3600,                       // 1 hour TTL
+ * });
+ * ```
+ *
+ * @template T - The return type of the child workflow.
+ * @param {WorkflowOptions} options - Child workflow configuration.
+ * @returns {Promise<T>} The child workflow's return value.
  */
 export async function execChild<T>(options: WorkflowOptions): Promise<T> {
   const isStartChild = options.await === false;
@@ -119,14 +180,41 @@ export async function execChild<T>(options: WorkflowOptions): Promise<T> {
 }
 
 /**
- * Alias for execChild.
+ * Alias for {@link execChild}.
  */
 export const executeChild = execChild;
 
 /**
- * Spawns a child workflow and returns the child Job ID without awaiting its completion.
- * @param {WorkflowOptions} options - Workflow options.
- * @returns {Promise<string>} The child job ID.
+ * Spawns a child workflow in fire-and-forget mode. The parent workflow
+ * continues immediately without waiting for the child to complete.
+ * Returns the child's job ID for later reference (e.g., to interrupt
+ * or query the child).
+ *
+ * This is a convenience wrapper around `execChild` with `await: false`.
+ *
+ * ## Example
+ *
+ * ```typescript
+ * import { MemFlow } from '@hotmeshio/hotmesh';
+ *
+ * export async function dispatchWorkflow(taskId: string): Promise<string> {
+ *   // Fire-and-forget: start the child and continue immediately
+ *   const childJobId = await MemFlow.workflow.startChild({
+ *     taskQueue: 'background',
+ *     workflowName: 'longRunningTask',
+ *     args: [taskId],
+ *   });
+ *
+ *   // Optionally store the child ID for monitoring
+ *   const search = await MemFlow.workflow.search();
+ *   await search.set({ childJobId });
+ *
+ *   return childJobId;
+ * }
+ * ```
+ *
+ * @param {WorkflowOptions} options - Child workflow configuration.
+ * @returns {Promise<string>} The child workflow's job ID.
  */
 export async function startChild(options: WorkflowOptions): Promise<string> {
   return execChild({ ...options, await: false });

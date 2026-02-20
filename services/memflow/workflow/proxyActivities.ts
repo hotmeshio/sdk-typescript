@@ -107,81 +107,109 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
 }
 
 /**
- * Create proxies for activity functions with automatic retry and deterministic replay.
- * Activities execute via message queue, so they can run on different servers.
- * 
- * Without `taskQueue`, activities use the workflow's task queue (e.g., `my-workflow-activity`).
- * With `taskQueue`, activities use the specified queue (e.g., `payment-activity`).
- * 
- * The `activities` parameter is optional. If activities are already registered via
- * `registerActivityWorker()`, you can reference them by providing just the `taskQueue`
- * and a TypeScript interface.
- * 
- * @template ACT
- * @param {ActivityConfig} [options] - Activity configuration
- * @param {any} [options.activities] - (Optional) Activity functions to register inline
- * @param {string} [options.taskQueue] - (Optional) Task queue name (without `-activity` suffix)
- * @param {object} [options.retryPolicy] - Retry configuration
- * @returns {ProxyType<ACT>} Proxy for calling activities with durability and retry
- * 
- * @example
+ * Creates a typed proxy for calling activity functions with durable execution,
+ * automatic retry, and deterministic replay. This is the primary way to invoke
+ * side-effectful code (HTTP calls, database writes, file I/O) from within a
+ * workflow function.
+ *
+ * Activities execute on a **separate worker process** via message queue,
+ * isolating side effects from the deterministic workflow function. Each
+ * proxied call is assigned a unique execution index, and on replay the
+ * stored result is returned without re-executing the activity.
+ *
+ * ## Routing
+ *
+ * - **Default**: Activities route to `{workflowTaskQueue}-activity`.
+ * - **Explicit `taskQueue`**: Activities route to `{taskQueue}-activity`,
+ *   enabling shared/global activity worker pools across workflows.
+ *
+ * ## Retry Policy
+ *
+ * | Option               | Default | Description |
+ * |----------------------|---------|-------------|
+ * | `maximumAttempts`    | 50      | Max retries before the activity is marked as failed |
+ * | `backoffCoefficient` | 2       | Exponential backoff multiplier |
+ * | `maximumInterval`    | `'5m'`  | Cap on delay between retries |
+ * | `throwOnError`       | `true`  | Throw on activity failure (set `false` to return the error) |
+ *
+ * ## Examples
+ *
  * ```typescript
- * // Inline registration (activities in same codebase)
- * const activities = MemFlow.workflow.proxyActivities<typeof activities>({
- *   activities: { processData, validateData },
- *   retryPolicy: { maximumAttempts: 3 }
- * });
- * 
- * await activities.processData('input');
+ * import { MemFlow } from '@hotmeshio/hotmesh';
+ * import * as activities from './activities';
+ *
+ * // Standard pattern: register and proxy activities inline
+ * export async function orderWorkflow(orderId: string): Promise<string> {
+ *   const { validateOrder, chargePayment, sendConfirmation } =
+ *     MemFlow.workflow.proxyActivities<typeof activities>({
+ *       activities,
+ *       retryPolicy: {
+ *         maximumAttempts: 3,
+ *         backoffCoefficient: 2,
+ *         maximumInterval: '30s',
+ *       },
+ *     });
+ *
+ *   await validateOrder(orderId);
+ *   const receipt = await chargePayment(orderId);
+ *   await sendConfirmation(orderId, receipt);
+ *   return receipt;
+ * }
  * ```
- * 
- * @example
+ *
  * ```typescript
- * // Reference pre-registered activities (can be on different server)
+ * // Remote activities: reference a pre-registered worker pool by taskQueue
  * interface PaymentActivities {
  *   processPayment: (amount: number) => Promise<string>;
- *   sendEmail: (to: string, subject: string) => Promise<void>;
+ *   refundPayment: (txId: string) => Promise<void>;
  * }
- * 
- * const { processPayment, sendEmail } = 
- *   MemFlow.workflow.proxyActivities<PaymentActivities>({
- *     taskQueue: 'payment',
- *     retryPolicy: { maximumAttempts: 3 }
- *   });
- * 
- * const result = await processPayment(100.00);
- * await sendEmail('user@example.com', 'Payment processed');
+ *
+ * export async function refundWorkflow(txId: string): Promise<void> {
+ *   const { refundPayment } =
+ *     MemFlow.workflow.proxyActivities<PaymentActivities>({
+ *       taskQueue: 'payments',
+ *       retryPolicy: { maximumAttempts: 5 },
+ *     });
+ *
+ *   await refundPayment(txId);
+ * }
  * ```
- * 
- * @example
+ *
  * ```typescript
- * // Shared activities in interceptor
- * const interceptor: WorkflowInterceptor = {
+ * // Interceptor with shared activity pool
+ * const auditInterceptor: WorkflowInterceptor = {
  *   async execute(ctx, next) {
  *     const { auditLog } = MemFlow.workflow.proxyActivities<{
  *       auditLog: (id: string, action: string) => Promise<void>;
  *     }>({
- *       taskQueue: 'shared',
- *       retryPolicy: { maximumAttempts: 3 }
+ *       taskQueue: 'shared-audit',
+ *       retryPolicy: { maximumAttempts: 3 },
  *     });
- *     
+ *
  *     await auditLog(ctx.get('workflowId'), 'started');
  *     const result = await next();
  *     await auditLog(ctx.get('workflowId'), 'completed');
  *     return result;
- *   }
+ *   },
  * };
  * ```
- * 
- * @example
+ *
  * ```typescript
- * // Custom task queue for specific activities
- * const highPriority = MemFlow.workflow.proxyActivities<typeof activities>({
- *   activities: { criticalProcess },
- *   taskQueue: 'high-priority',
- *   retryPolicy: { maximumAttempts: 5 }
+ * // Graceful error handling (no throw)
+ * const { riskyOperation } = MemFlow.workflow.proxyActivities<typeof activities>({
+ *   activities,
+ *   retryPolicy: { maximumAttempts: 1, throwOnError: false },
  * });
+ *
+ * const result = await riskyOperation();
+ * if (result instanceof Error) {
+ *   // handle gracefully
+ * }
  * ```
+ *
+ * @template ACT - The activity type map (use `typeof activities` for inline registration).
+ * @param {ActivityConfig} [options] - Activity configuration including retry policy and routing.
+ * @returns {ProxyType<ACT>} A typed proxy object mapping activity names to their durable wrappers.
  */
 export function proxyActivities<ACT>(options?: ActivityConfig): ProxyType<ACT> {
   // Register activities if provided (optional - may already be registered remotely)

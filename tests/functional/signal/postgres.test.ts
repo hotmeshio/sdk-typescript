@@ -82,7 +82,7 @@ describe('FUNCTIONAL | Signal | Postgres', () => {
       //sleep for a bit to make sure the job registers for signals and then goes to sleep
       await sleepFor(500);
       //send a signal to awaken the job
-      await hotMesh.hook('waitForSignaler.doPleaseResume', signal);
+      await hotMesh.signal('waitForSignaler.doPleaseResume', signal);
       while (!isDone) {
         //loop until we know the job is complete
         await sleepFor(100);

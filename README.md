@@ -8,18 +8,36 @@ Run durable workflows on Postgres. No servers, no queues, just your database.
 npm install @hotmeshio/hotmesh
 ```
 
-## Use HotMesh for...
+## Use HotMesh for
 
 - **Durable pipelines** — Orchestrate long-running, multi-step pipelines transactionally.
 - **Temporal replacement** — MemFlow provides a Temporal-compatible API that runs directly on Postgres. No app server required.
 - **Distributed state machines** — Build stateful applications where every component can [fail and recover](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md).
 - **AI and training pipelines** — Multi-step AI workloads where each stage is expensive and must not be repeated on failure. A crashed pipeline resumes from the last committed step, not from the beginning.
 
+> **MemFlow** is HotMesh's Temporal-compatible workflow module — a static class (`MemFlow.Client`, `MemFlow.Worker`, `MemFlow.workflow`) that provides the same developer experience as Temporal's SDK but runs entirely on Postgres.
+
 ## How it works in 30 seconds
 
 1. **You write workflow functions.** Plain TypeScript — branching, loops, error handling. HotMesh also supports a YAML syntax for declarative, functional workflows.
 2. **HotMesh compiles them into a transactional execution plan.** Each step becomes a committed database row. If the process crashes mid-workflow, it resumes from the last committed step.
 3. **Your Postgres database is the engine.** It stores state, coordinates retries, and delivers messages. Every connected client participates in execution — there is no central server.
+
+## Quickstart
+
+Start Postgres locally (or use an existing instance), then:
+
+```bash
+npm install @hotmeshio/hotmesh
+```
+
+The repo includes a `docker-compose.yml` that starts Postgres (and NATS, if needed):
+
+```bash
+docker compose up -d postgres
+```
+
+Then follow the [Quick Start guide](./docs/quickstart.md) for a progressive walkthrough — from a single trigger to conditional, parallel, and compositional workflows.
 
 ## Two ways to write workflows
 
@@ -135,6 +153,7 @@ transitions:
                 - ['{@conditional.gte}']
 ```
 
+Deploy and run as follows:
 ```typescript
 // main.ts (reuses same activities.ts)
 import * as activities from './activities';
@@ -183,29 +202,86 @@ Both compile to the same distributed execution model.
 
 ## Common patterns
 
-**Long-running workflows**
+All snippets below run inside a workflow function (like `orderWorkflow` above). MemFlow methods are available as static imports:
 
 ```typescript
-await sleep('30 days');
+import { MemFlow } from '@hotmeshio/hotmesh';
+```
+
+**Long-running workflows** — `sleepFor` is durable. The process can restart; the timer survives.
+
+```typescript
+// sendFollowUp is a proxied activity from proxyActivities()
+await MemFlow.workflow.sleepFor('30 days');
 await sendFollowUp();
 ```
 
-**Parallel execution**
+**Parallel execution** — fan out to multiple activities and wait for all results.
 
 ```typescript
-const results = await Promise.all([
-  processPayment(),
-  updateInventory(),
-  notifyWarehouse()
+// proxied activities run as durable, retryable steps
+const [payment, inventory, shipment] = await Promise.all([
+  processPayment(orderId),
+  updateInventory(orderId),
+  notifyWarehouse(orderId)
 ]);
 ```
 
-**Child workflows**
+**Child workflows** — compose workflows from other workflows.
 
 ```typescript
-const childHandle = await startChild(validateOrder, { args: [orderId] });
+const childHandle = await MemFlow.workflow.startChild(validateOrder, {
+  args: [orderId],
+  taskQueue: 'validation',
+  workflowId: `validate-${orderId}`
+});
 const validation = await childHandle.result();
 ```
+
+**Signals** — pause a workflow until an external event arrives.
+
+```typescript
+const approval = await MemFlow.workflow.waitFor<{ approved: boolean }>('manager-approval');
+if (!approval.approved) return 'rejected';
+```
+
+## Retries and error handling
+
+Activities retry automatically on failure. Configure the policy per activity or per worker:
+
+```typescript
+// MemFlow: per-activity retry policy
+const { reserveItem } = MemFlow.workflow.proxyActivities<typeof activities>({
+  taskQueue: 'inventory-tasks',
+  retryPolicy: {
+    maximumAttempts: 5,
+    backoffCoefficient: 2,
+    maximumInterval: '60s'
+  }
+});
+```
+
+```typescript
+// HotMesh: worker-level retry policy
+const hotMesh = await HotMesh.init({
+  appId: 'orders',
+  engine: { connection },
+  workers: [{
+    topic: 'inventory.reserve',
+    connection,
+    retryPolicy: {
+      maximumAttempts: 5,
+      backoffCoefficient: 2,
+      maximumInterval: '60s'
+    },
+    callback: async (data) => { /* ... */ }
+  }]
+});
+```
+
+Defaults: 3 attempts, coefficient 10, 120s cap. Delay formula: `min(coefficient ^ attempt, maximumInterval)`. Duration strings like `'5 seconds'`, `'2 minutes'`, and `'1 hour'` are supported.
+
+If all retries are exhausted, the activity fails and the error propagates to the workflow function — handle it with a standard `try/catch`.
 
 ## It's just data
 
@@ -244,9 +320,26 @@ const exported = await handle.export({          // selective export
 });
 ```
 
+## Observability
+
+There is no proprietary dashboard. Workflow state lives in Postgres, so use whatever tools you already have:
+
+- **Direct SQL** — query `jobs` and `jobs_attributes` to inspect state, as shown above.
+- **Handle API** — `handle.status()`, `handle.state(true)`, and `handle.export()` give programmatic access to any running or completed workflow.
+- **Logging** — set `HMSH_LOGLEVEL` (`debug`, `info`, `warn`, `error`, `silent`) to control log verbosity.
+- **OpenTelemetry** — set `HMSH_TELEMETRY=true` to emit spans and metrics. Plug in any OTel-compatible collector (Jaeger, Datadog, etc.).
+
 ## Architecture
 
 For a deep dive into the transactional execution model — how every step is crash-safe, how the monotonic collation ledger guarantees exactly-once delivery, and how cycles and retries remain correct under arbitrary failure — see the [Collation Design Document](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md). The symbolic system (how to design workflows) and lifecycle details (how to deploy workflows) are covered in the [Architectural Overview](https://zenodo.org/records/12168558).
+
+## Familiar with Temporal?
+
+MemFlow is designed as a drop-in-compatible alternative for common Temporal patterns.
+
+**What's the same:** `Client`, `Worker`, `proxyActivities`, `sleepFor`, `startChild`/`execChild`, signals (`waitFor`/`signal`), retry policies, and the overall workflow-as-code programming model.
+
+**What's different:** No Temporal server or cluster to operate. Postgres is the only infrastructure dependency — it stores state, coordinates workers, and delivers messages. HotMesh also offers a YAML-based approach for declarative workflows that compile to the same execution model.
 
 ## License
 

@@ -11,10 +11,75 @@ import { getContext } from './context';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 
 /**
- * Spawns a hook from the main thread or a hook thread.
- * If entity/workflowName are not provided, defaults to the current workflow.
+ * Spawns a hook execution against an existing workflow job. The hook runs
+ * in an isolated dimensional thread within the target job's namespace,
+ * allowing it to read/write the same job state without interfering with
+ * the main workflow thread.
  *
- * @param {HookOptions} options - Hook configuration options.
+ * This is the low-level primitive behind `execHook()`. Use `hook()`
+ * directly when you need fire-and-forget hook execution or when you
+ * manage signal coordination yourself.
+ *
+ * ## Target Resolution
+ *
+ * - If `taskQueue` and `workflowName` (or `entity`) are provided, the
+ *   hook targets that specific workflow type.
+ * - If neither is provided, the hook targets the **current** workflow.
+ *   However, targeting the same topic as the current workflow is
+ *   rejected to prevent infinite loops.
+ *
+ * ## Idempotency
+ *
+ * The `isSideEffectAllowed` guard ensures hooks fire exactly once —
+ * on replay, the hook is not re-spawned.
+ *
+ * ## Examples
+ *
+ * ```typescript
+ * import { MemFlow } from '@hotmeshio/hotmesh';
+ *
+ * // Fire-and-forget: spawn a hook without waiting for its result
+ * export async function notifyWorkflow(userId: string): Promise<void> {
+ *   await MemFlow.workflow.hook({
+ *     taskQueue: 'notifications',
+ *     workflowName: 'sendNotification',
+ *     args: [userId, 'Your order has shipped'],
+ *   });
+ *   // Continues immediately, does not wait for the hook
+ * }
+ * ```
+ *
+ * ```typescript
+ * // Manual signal coordination (equivalent to execHook)
+ * export async function manualHookPattern(itemId: string): Promise<string> {
+ *   const signalId = `process-${itemId}`;
+ *
+ *   await MemFlow.workflow.hook({
+ *     taskQueue: 'processors',
+ *     workflowName: 'processItem',
+ *     args: [itemId, signalId],
+ *   });
+ *
+ *   // Manually wait for the hook to signal back
+ *   return await MemFlow.workflow.waitFor<string>(signalId);
+ * }
+ * ```
+ *
+ * ```typescript
+ * // Hook with retry configuration
+ * await MemFlow.workflow.hook({
+ *   taskQueue: 'enrichment',
+ *   workflowName: 'enrichProfile',
+ *   args: [profileId],
+ *   config: {
+ *     maximumAttempts: 5,
+ *     backoffCoefficient: 2,
+ *     maximumInterval: '1m',
+ *   },
+ * });
+ * ```
+ *
+ * @param {HookOptions} options - Hook configuration including target workflow and arguments.
  * @returns {Promise<string>} The resulting hook/stream ID.
  */
 export async function hook(options: HookOptions): Promise<string> {
@@ -71,7 +136,7 @@ export async function hook(options: HookOptions): Promise<string> {
         options?.config?.maximumInterval ?? HMSH_MEMFLOW_MAX_INTERVAL,
       ),
     };
-    return await hotMeshClient.hook(
+    return await hotMeshClient.signal(
       `${namespace}.flow.signal`,
       payload,
       StreamStatus.PENDING,

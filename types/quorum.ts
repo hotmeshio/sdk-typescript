@@ -1,11 +1,11 @@
 import { JobOutput } from './job';
 import { StringAnyType } from './serializer';
 
-interface CPULoad {
+export interface CPULoad {
   [cpu: string]: string;
 }
 
-interface NetworkStat {
+export interface NetworkStat {
   iface: string;
   operstate: string;
   rx_bytes: number;

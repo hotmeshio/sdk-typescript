@@ -21,6 +21,111 @@ import { JobStatsInput } from '../../types/stats';
 
 import { Activity } from './activity';
 
+/**
+ * Sends a signal to one or more paused flows, resuming their execution.
+ * The `signal` activity is the counterpart to a `Hook` activity
+ * configured with a webhook listener. It allows any flow to reach into
+ * another flow and deliver data to a waiting hook, regardless of the
+ * relationship between the flows.
+ *
+ * ## YAML Configuration — Signal One
+ *
+ * Resumes a single paused flow by publishing to the hook's topic. Use
+ * `subtype: one` when you know the specific hook topic to signal.
+ *
+ * ```yaml
+ * app:
+ *   id: myapp
+ *   version: '1'
+ *   graphs:
+ *     - subscribes: signal.start
+ *       expire: 120
+ *
+ *       activities:
+ *         t1:
+ *           type: trigger
+ *
+ *         resume_hook:
+ *           type: signal
+ *           subtype: one
+ *           topic: my.hook.topic          # the hook's registered topic
+ *           status: success               # optional: success (default) or pending
+ *           code: 200                     # optional: 200 (default) or 202 (keep-alive)
+ *           signal:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 approved: { type: boolean }
+ *             maps:
+ *               approved: true            # data delivered to the hook
+ *
+ *         done:
+ *           type: hook
+ *
+ *       transitions:
+ *         t1:
+ *           - to: resume_hook
+ *         resume_hook:
+ *           - to: done
+ * ```
+ *
+ * A `code: 202` signal delivers data but keeps the hook alive for
+ * additional signals. A `code: 200` (default) closes the hook.
+ *
+ * ## YAML Configuration — Signal All
+ *
+ * Resumes all paused flows that share a common job key facet. Use
+ * `subtype: all` for fan-out patterns where multiple waiting flows
+ * should be resumed simultaneously.
+ *
+ * ```yaml
+ * app:
+ *   id: myapp
+ *   version: '1'
+ *   graphs:
+ *     - subscribes: signal.fan.out
+ *       expire: 120
+ *
+ *       activities:
+ *         t1:
+ *           type: trigger
+ *
+ *         resume_all:
+ *           type: signal
+ *           subtype: all
+ *           topic: hook.resume
+ *           key_name: parent_job_id       # index facet name
+ *           key_value: '{$job.metadata.jid}'
+ *           scrub: true                   # clean up indexes after use
+ *           resolver:
+ *             maps:
+ *               data:
+ *                 parent_job_id: '{$job.metadata.jid}'
+ *               scrub: true
+ *           signal:
+ *             maps:
+ *               done: true                # data delivered to all matching hooks
+ *
+ *         done:
+ *           type: hook
+ *
+ *       transitions:
+ *         t1:
+ *           - to: resume_all
+ *         resume_all:
+ *           - to: done
+ * ```
+ *
+ * ## Execution Model
+ *
+ * Signal is a **Category B (Leg1-only with children)** activity:
+ * - Bundles the hook signal with the Leg 1 completion marker in a
+ *   single transaction (`hookOne`) or fires best-effort (`hookAll`).
+ * - Executes the crash-safe `executeLeg1StepProtocol` to transition
+ *   to adjacent activities.
+ *
+ * @see {@link SignalActivity} for the TypeScript interface
+ */
 class Signal extends Activity {
   config: SignalActivity;
 
@@ -64,9 +169,9 @@ class Signal extends Activity {
       if (!CollatorService.isGuidStep1Done(this.guidLedger)) {
         const txn1 = this.store.transact();
         if (this.config.subtype === 'all') {
-          await this.hookAll();
+          await this.signalAll();
         } else {
-          await this.hookOne(txn1);
+          await this.signalOne(txn1);
         }
         await this.setState(txn1);
         if (this.adjacentIndex === 0) {
@@ -138,18 +243,18 @@ class Signal extends Activity {
    * The signal activity will hook one. Accepts an optional transaction
    * so the hook publish can be bundled with the Leg1 completion marker.
    */
-  async hookOne(transaction?: ProviderTransaction): Promise<string> {
+  async signalOne(transaction?: ProviderTransaction): Promise<string> {
     const topic = Pipe.resolve(this.config.topic, this.context);
     const signalInputData = this.mapSignalData();
     const status = Pipe.resolve(this.config.status, this.context);
     const code = Pipe.resolve(this.config.code, this.context);
-    return await this.engine.hook(topic, signalInputData, status, code, transaction);
+    return await this.engine.signal(topic, signalInputData, status, code, transaction);
   }
 
   /**
-   * The signal activity will hook all paused jobs that share the same job key.
+   * Signals all paused jobs that share the same job key, resuming their execution.
    */
-  async hookAll(): Promise<string[]> {
+  async signalAll(): Promise<string[]> {
     //prep 1) generate `input signal data` (essentially the webhook payload)
     const signalInputData = this.mapSignalData();
 
@@ -165,8 +270,8 @@ class Signal extends Activity {
     const key_value = Pipe.resolve(this.config.key_value, this.context);
     const indexQueryFacets = [`${key_name}:${key_value}`];
 
-    //execute: `hookAll` will now resume all paused jobs that share the same job key
-    return await this.engine.hookAll(
+    //execute: `signalAll` will now resume all paused jobs that share the same job key
+    return await this.engine.signalAll(
       this.config.topic,
       signalInputData,
       keyResolverData,

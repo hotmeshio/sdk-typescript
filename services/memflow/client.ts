@@ -273,7 +273,7 @@ export class ClientService {
       const topic = `${namespace ?? APP_ID}.wfs.signal`;
       return await (
         await this.getHotMeshClient(topic, namespace)
-      ).hook(topic, { id: signalId, data });
+      ).signal(topic, { id: signalId, data });
     },
 
     /**
@@ -315,7 +315,7 @@ export class ClientService {
         taskQueue,
         options.namespace,
       );
-      const msgId = await hotMeshClient.hook(
+      const msgId = await hotMeshClient.signal(
         `${hotMeshClient.appId}.flow.signal`,
         payload,
         StreamStatus.PENDING,

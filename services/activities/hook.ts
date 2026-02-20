@@ -23,7 +23,145 @@ import { StreamCode, StreamStatus } from '../../types/stream';
 import { Activity } from './activity';
 
 /**
- * Supports `signal hook`, `time hook`, and `cycle hook` patterns
+ * A versatile pause/resume activity that supports three distinct patterns:
+ * **time hook** (sleep), **web hook** (external signal), and **passthrough**
+ * (immediate transition with optional data mapping).
+ *
+ * The hook activity is the most flexible activity type. Depending on its
+ * YAML configuration, it operates in one of the following modes:
+ *
+ * ## Time Hook (Sleep)
+ *
+ * Pauses the flow for a specified duration in seconds. The `sleep` value
+ * can be a literal number or a `@pipe` expression for dynamic delays
+ * (e.g., exponential backoff).
+ *
+ * ```yaml
+ * app:
+ *   id: myapp
+ *   version: '1'
+ *   graphs:
+ *     - subscribes: job.start
+ *       expire: 300
+ *
+ *       activities:
+ *         t1:
+ *           type: trigger
+ *
+ *         delay:
+ *           type: hook
+ *           sleep: 60                        # pause for 60 seconds
+ *           job:
+ *             maps:
+ *               paused_at: '{$self.output.metadata.ac}'
+ *
+ *         resume:
+ *           type: hook
+ *
+ *       transitions:
+ *         t1:
+ *           - to: delay
+ *         delay:
+ *           - to: resume
+ * ```
+ *
+ * ## Web Hook (External Signal)
+ *
+ * Registers a webhook listener on a named topic. The flow pauses until
+ * an external signal is sent to the hook's topic. The signal data becomes
+ * available as `$self.hook.data`. The `hooks` section at the graph level
+ * routes incoming signals to the waiting activity.
+ *
+ * ```yaml
+ * app:
+ *   id: myapp
+ *   version: '1'
+ *   graphs:
+ *     - subscribes: order.placed
+ *       expire: 3600
+ *
+ *       activities:
+ *         t1:
+ *           type: trigger
+ *
+ *         wait_for_approval:
+ *           type: hook
+ *           hook:
+ *             type: object
+ *             properties:
+ *               approved: { type: boolean }
+ *           job:
+ *             maps:
+ *               approved: '{$self.hook.data.approved}'
+ *
+ *         done:
+ *           type: hook
+ *
+ *       transitions:
+ *         t1:
+ *           - to: wait_for_approval
+ *         wait_for_approval:
+ *           - to: done
+ *
+ *       hooks:
+ *         order.approval:                    # external topic that delivers the signal
+ *           - to: wait_for_approval
+ *             conditions:
+ *               match:
+ *                 - expected: '{t1.output.data.id}'
+ *                   actual: '{$self.hook.data.id}'
+ * ```
+ *
+ * ## Passthrough (No Hook)
+ *
+ * When neither `sleep` nor `hook` is configured, the hook activity acts
+ * as a passthrough: it maps data and immediately transitions to children.
+ * This is useful for data transformation, convergence points, or as a
+ * cycle pivot (with `cycle: true`).
+ *
+ * ```yaml
+ * app:
+ *   id: myapp
+ *   version: '1'
+ *   graphs:
+ *     - subscribes: job.start
+ *
+ *       activities:
+ *         t1:
+ *           type: trigger
+ *
+ *         pivot:
+ *           type: hook
+ *           cycle: true                      # enables re-entry from a cycle activity
+ *           output:
+ *             maps:
+ *               retryCount: 0
+ *           job:
+ *             maps:
+ *               counter: '{$self.output.data.retryCount}'
+ *
+ *         do_work:
+ *           type: worker
+ *           topic: work.do
+ *
+ *       transitions:
+ *         t1:
+ *           - to: pivot
+ *         pivot:
+ *           - to: do_work
+ * ```
+ *
+ * ## Execution Model
+ *
+ * - **With `sleep` or `hook`**: Category A (duplex). Leg 1 registers the
+ *   hook and saves state. Leg 2 fires when the timer expires or the
+ *   external signal arrives (via `processTimeHookEvent` or
+ *   `processWebHookEvent`).
+ * - **Without `sleep` or `hook`**: Category B (passthrough). Uses the
+ *   crash-safe `executeLeg1StepProtocol` to map data and transition
+ *   to adjacent activities.
+ *
+ * @see {@link HookActivity} for the TypeScript interface
  */
 class Hook extends Activity {
   config: HookActivity;

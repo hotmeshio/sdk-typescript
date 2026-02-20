@@ -26,6 +26,61 @@ import { MapperService } from '../mapper';
 
 import { Activity } from './activity';
 
+/**
+ * The entry point for every workflow graph. Each graph must have exactly
+ * one `trigger` activity, which executes when the graph's `subscribes`
+ * topic receives a message (via `hotMesh.pub` or `hotMesh.pubsub`).
+ *
+ * The trigger initializes the job, sets its unique ID and key, binds
+ * the incoming payload as the trigger's output data, and transitions
+ * to adjacent activities defined in the `transitions` section.
+ *
+ * ## YAML Configuration
+ *
+ * ```yaml
+ * app:
+ *   id: myapp
+ *   version: '1'
+ *   graphs:
+ *     - subscribes: order.placed       # the trigger fires when this topic receives a message
+ *       publishes: order.processed     # emitted when the graph completes
+ *       expire: 120
+ *
+ *       activities:
+ *         t1:
+ *           type: trigger
+ *           entity: '{$self.input.data.entityType}'
+ *           job:
+ *             maps:
+ *               myField: '{$self.output.data.inputField}'
+ *           stats:
+ *             id: '{$self.input.data.workflowId}'
+ *             key: '{$self.input.data.parentId}'
+ *             parent: '{$self.input.data.originJobId}'
+ *             adjacent: '{$self.input.data.parentJobId}'
+ *
+ *         process:
+ *           type: worker
+ *           topic: order.process
+ *
+ *       transitions:
+ *         t1:
+ *           - to: process
+ * ```
+ *
+ * ## Key Behaviors
+ *
+ * - **Job ID Resolution**: If `stats.id` is provided, it resolves via `@pipe`
+ *   expressions against the input data. Otherwise a UUID is generated.
+ * - **Duplicate Detection**: If a job with the same ID already exists,
+ *   a `DuplicateJobError` is thrown (unless it's a crash-recovery scenario).
+ * - **Pending Mode**: When invoked with `{ pending: <seconds> }`, the trigger
+ *   creates the job but does not transition to children until resumed.
+ * - **Crash Recovery**: Uses a 3-step inception protocol with GUID ledger
+ *   to ensure atomic job creation survives process crashes.
+ *
+ * @see {@link TriggerActivity} for the TypeScript interface
+ */
 class Trigger extends Activity {
   config: TriggerActivity;
 

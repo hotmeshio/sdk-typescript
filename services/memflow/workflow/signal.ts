@@ -2,31 +2,60 @@ import { asyncLocalStorage, WorkerService } from './common';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 
 /**
- * Sends a signal payload to any paused workflow thread awaiting this signal.
- * This method is commonly used to coordinate between workflows, hook functions,
- * and external events.
+ * Sends a signal payload to a paused workflow thread that is awaiting this
+ * `signalId` via `waitFor()`. Signals are the primary mechanism for
+ * inter-workflow communication and for delivering results from hook
+ * functions back to the orchestrating workflow.
  *
- * @example
- * // Basic usage - send a simple signal with data
- * await MemFlow.workflow.signal('signal-id', { name: 'WarmMash' });
+ * `signal` is the **send** side of the coordination pair. The **receive**
+ * side is `waitFor()`. A signal can be sent from:
+ * - Another workflow function
+ * - A hook function (most common pattern with `execHook`)
+ * - An external client via `MemFlow.Client.workflow.signal()`
  *
- * @example
- * // Hook function signaling completion
- * export async function exampleHook(name: string): Promise<void> {
- *   const result = await processData(name);
- *   await MemFlow.workflow.signal('hook-complete', { data: result });
+ * Signals fire exactly once per workflow execution — the `isSideEffectAllowed`
+ * guard ensures they are not re-sent on replay.
+ *
+ * ## Examples
+ *
+ * ```typescript
+ * import { MemFlow } from '@hotmeshio/hotmesh';
+ *
+ * // Hook function that signals completion back to the parent workflow
+ * export async function processOrder(
+ *   orderId: string,
+ *   signalInfo?: { signal: string; $memflow: boolean },
+ * ): Promise<{ total: number }> {
+ *   const { calculateTotal } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *   const total = await calculateTotal(orderId);
+ *
+ *   // Signal the waiting workflow with the result
+ *   if (signalInfo?.signal) {
+ *     await MemFlow.workflow.signal(signalInfo.signal, { total });
+ *   }
+ *   return { total };
  * }
+ * ```
  *
- * @example
- * // Signal with complex data structure
- * await MemFlow.workflow.signal('process-complete', {
- *   status: 'success',
- *   data: { id: 123, name: 'test' },
- *   timestamp: new Date().toISOString()
- * });
+ * ```typescript
+ * // Cross-workflow coordination: workflow A signals workflow B
+ * export async function coordinatorWorkflow(): Promise<void> {
+ *   const { prepareData } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *   const data = await prepareData();
  *
- * @param {string} signalId - Unique signal identifier that matches a waitFor() call.
- * @param {Record<any, any>} data - The payload to send with the signal.
+ *   // Signal another workflow that is paused on waitFor('data-ready')
+ *   await MemFlow.workflow.signal('data-ready', { payload: data });
+ * }
+ * ```
+ *
+ * ```typescript
+ * // External signal from an API handler (outside a workflow)
+ * const client = new MemFlow.Client({ connection });
+ * await client.workflow.signal('approval-signal', { approved: true });
+ * ```
+ *
+ * @param {string} signalId - Unique signal identifier that matches a `waitFor()` call.
+ * @param {Record<any, any>} data - The payload to deliver to the waiting workflow.
  * @returns {Promise<string>} The resulting hook/stream ID.
  */
 export async function signal(
@@ -42,7 +71,7 @@ export async function signal(
     namespace,
   });
   if (await isSideEffectAllowed(hotMeshClient, 'signal')) {
-    return await hotMeshClient.hook(`${namespace}.wfs.signal`, {
+    return await hotMeshClient.signal(`${namespace}.wfs.signal`, {
       id: signalId,
       data,
     });

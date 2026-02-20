@@ -19,6 +19,118 @@ import { JobInterruptOptions, JobState } from '../../types/job';
 
 import { Activity } from './activity';
 
+/**
+ * Terminates a flow by sending an interrupt signal. The `interrupt` activity
+ * can target the current flow (self-interrupt) or any other flow by its
+ * job ID (remote interrupt). Interrupted jobs have their status set to a
+ * value less than -100,000,000, indicating abnormal termination.
+ *
+ * ## YAML Configuration — Self-Interrupt
+ *
+ * When no `target` is specified, the activity interrupts the current flow.
+ * The flow terminates immediately after this activity executes. Use
+ * conditional transitions to route to an interrupt only when needed.
+ *
+ * ```yaml
+ * app:
+ *   id: myapp
+ *   version: '1'
+ *   graphs:
+ *     - subscribes: validation.check
+ *       expire: 120
+ *
+ *       activities:
+ *         t1:
+ *           type: trigger
+ *
+ *         validate:
+ *           type: worker
+ *           topic: validate.input
+ *
+ *         cancel:
+ *           type: interrupt
+ *           reason: 'Validation failed'
+ *           throw: true
+ *           code: 410
+ *           job:
+ *             maps:
+ *               cancelled_at: '{$self.output.metadata.ac}'
+ *
+ *         proceed:
+ *           type: hook
+ *
+ *       transitions:
+ *         t1:
+ *           - to: validate
+ *         validate:
+ *           - to: cancel
+ *             conditions:
+ *               code: 422               # interrupt only on validation failure
+ *           - to: proceed
+ * ```
+ *
+ * ## YAML Configuration — Remote Interrupt
+ *
+ * When `target` is specified, the activity interrupts another flow while
+ * the current flow continues to transition to adjacent activities.
+ *
+ * ```yaml
+ * app:
+ *   id: myapp
+ *   version: '1'
+ *   graphs:
+ *     - subscribes: parent.flow
+ *       expire: 120
+ *
+ *       activities:
+ *         t1:
+ *           type: trigger
+ *           job:
+ *             maps:
+ *               childJobId: '{$self.output.data.childJobId}'
+ *
+ *         stop_child:
+ *           type: interrupt
+ *           topic: child.flow.topic     # topic of the target flow
+ *           target: '{t1.output.data.childJobId}'
+ *           throw: false                # do not throw (silent cancellation)
+ *           descend: true               # also interrupt descendant sub-flows
+ *           job:
+ *             maps:
+ *               interrupted: true
+ *
+ *         done:
+ *           type: hook
+ *
+ *       transitions:
+ *         t1:
+ *           - to: stop_child
+ *         stop_child:
+ *           - to: done
+ * ```
+ *
+ * ## Configuration Properties
+ *
+ * | Property   | Type    | Default            | Description |
+ * |------------|---------|--------------------|-------------|
+ * | `target`   | string  | (current job)      | Job ID to interrupt. Supports `@pipe` expressions. |
+ * | `topic`    | string  | (current topic)    | Topic of the target flow |
+ * | `reason`   | string  | `'Job Interrupted'`| Error message attached to the interruption |
+ * | `throw`    | boolean | `true`             | Whether to throw a `JobInterrupted` error |
+ * | `descend`  | boolean | `false`            | Whether to cascade to child/descendant flows |
+ * | `code`     | number  | `410`              | Error code attached to the interruption |
+ * | `stack`    | string  | —                  | Optional stack trace |
+ *
+ * ## Execution Model
+ *
+ * - **Self-interrupt (no `target`)**: Category C. Verifies entry, maps job
+ *   data, sets status to -1, and fires the interrupt. No children.
+ * - **Remote interrupt (with `target`)**: Category B. Fires the interrupt
+ *   best-effort, then uses `executeLeg1StepProtocol` to transition to
+ *   adjacent activities.
+ *
+ * @see {@link InterruptActivity} for the TypeScript interface
+ */
 class Interrupt extends Activity {
   config: InterruptActivity;
 

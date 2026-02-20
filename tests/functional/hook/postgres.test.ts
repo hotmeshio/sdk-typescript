@@ -97,8 +97,8 @@ describe('FUNCTIONAL | Hook', () => {
       //refer to the YAML to see this index listed (parent_job_id)
       const indexQueryFacets = [`parent_job_id:${parent_job_id}`];
 
-      //hookAll will resume all paused jobs that match the query
-      const targets = await hotMesh.hookAll(
+      //signalAll will resume all paused jobs that match the query
+      const targets = await hotMesh.signalAll(
         'hook.resume',
         { done: true },
         jobKeyQuery,

@@ -23,6 +23,88 @@ import { StreamData } from '../../types/stream';
 
 import { Activity } from './activity';
 
+/**
+ * Re-executes an ancestor activity in a new dimensional thread, enabling
+ * retry loops and iterative patterns without violating the DAG constraint.
+ * The `cycle` activity targets a specific ancestor (typically a
+ * `Hook` with `cycle: true`) and sends execution back to that point.
+ *
+ * Each cycle iteration runs in a fresh **dimensional thread** — individual
+ * activity state is isolated per iteration, while **shared job state**
+ * (`job.maps`) accumulates across iterations. This pattern enables retries,
+ * polling loops, and iterative processing.
+ *
+ * ## YAML Configuration
+ *
+ * ```yaml
+ * app:
+ *   id: myapp
+ *   version: '1'
+ *   graphs:
+ *     - subscribes: retry.start
+ *       expire: 300
+ *
+ *       activities:
+ *         t1:
+ *           type: trigger
+ *
+ *         pivot:
+ *           type: hook
+ *           cycle: true                    # marks this activity as a cycle target
+ *           output:
+ *             maps:
+ *               retryCount: 0
+ *
+ *         do_work:
+ *           type: worker
+ *           topic: work.do
+ *           output:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 result: { type: string }
+ *
+ *         retry:
+ *           type: cycle
+ *           ancestor: pivot                # re-execute from this activity
+ *           input:
+ *             maps:
+ *               retryCount:                # increment retry counter each cycle
+ *                 '@pipe':
+ *                   - ['{pivot.output.data.retryCount}', 1]
+ *                   - ['{@math.add}']
+ *
+ *         done:
+ *           type: hook
+ *
+ *       transitions:
+ *         t1:
+ *           - to: pivot
+ *         pivot:
+ *           - to: do_work
+ *         do_work:
+ *           - to: retry
+ *             conditions:
+ *               code: 500                  # cycle on error
+ *           - to: done
+ * ```
+ *
+ * ## Key Behaviors
+ *
+ * - The `ancestor` field must reference an activity with `cycle: true`.
+ * - The cycle activity's `input.maps` override the ancestor's output data
+ *   for the next iteration, allowing each cycle to pass different values.
+ * - Dimensional isolation ensures parallel cycle iterations don't collide.
+ *
+ * ## Execution Model
+ *
+ * Cycle is a **Category A (Leg 1 only)** activity:
+ * - Maps input data, resolves the re-entry dimensional address, and
+ *   publishes a stream message addressed to the ancestor activity.
+ * - The ancestor re-enters via its Leg 2 path in the new dimension.
+ *
+ * @see {@link CycleActivity} for the TypeScript interface
+ */
 class Cycle extends Activity {
   config: CycleActivity;
 

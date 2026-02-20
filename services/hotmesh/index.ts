@@ -42,178 +42,160 @@ import {
 import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
 
 /**
- * HotMesh transforms Postgres into a durable workflow orchestration engine capable of running
- * fault-tolerant workflows across multiple services and systems.
+ * A distributed service mesh that turns Postgres into a durable workflow
+ * orchestration engine. Every `HotMesh.init()` call creates a **point of
+ * presence** — an engine, a quorum member, and zero or more workers — that
+ * collaborates with its peers through Postgres LISTEN/NOTIFY to form a
+ * self-coordinating mesh with no external dependencies.
  *
- * ## Key Features
+ * ## Service Mesh Architecture
  *
- * - **Fault Tolerance**: Automatic retry with exponential backoff and configurable policies
- * - **Distributed Execution**: No single point of failure
- * - **YAML-Driven**: Model-driven development with declarative workflow definitions
- * - **OpenTelemetry**: Built-in observability and tracing
- * - **Durable State**: Workflow state persists across system restarts
- * - **Pattern Matching**: Pub/sub with wildcard pattern support
- * - **Throttling**: Dynamic flow control and backpressure management
- * - **Retry Policies**: PostgreSQL-native retry configuration with exponential backoff
+ * Each HotMesh instance joins a **quorum** — a real-time pub/sub channel
+ * backed by Postgres LISTEN/NOTIFY. The quorum is the mesh's nervous
+ * system: version activations, throttle commands, roll calls, and custom
+ * user messages all propagate instantly to every connected engine and
+ * worker across all processes and servers.
+ * 
+ * ## Quick Start
  *
- * ## Architecture
- *
- * HotMesh consists of several specialized modules:
- * - **HotMesh**: Core orchestration engine (this class)
- * - **MemFlow**: Temporal.io-compatible workflow framework
- * - **MeshCall**: Durable function execution (Temporal-like clone)
- *
- * ## Lifecycle Overview
- *
- * 1. **Initialize**: Create HotMesh instance with provider configuration
- * 2. **Deploy**: Upload YAML workflow definitions to the backend
- * 3. **Activate**: Coordinate quorum to enable the workflow version
- * 4. **Execute**: Publish events to trigger workflow execution
- * 5. **Monitor**: Track progress via OpenTelemetry and built-in observability
- *
- * ## Basic Usage
- *
- * @example
  * ```typescript
  * import { HotMesh } from '@hotmeshio/hotmesh';
  * import { Client as Postgres } from 'pg';
  *
- * // Initialize with Postgres backend
  * const hotMesh = await HotMesh.init({
- *   appId: 'my-app',
+ *   appId: 'myapp',
  *   engine: {
  *     connection: {
  *       class: Postgres,
- *       options: {
- *         connectionString: 'postgresql://user:pass@localhost:5432/db'
- *       }
- *     }
- *   }
+ *       options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' },
+ *     },
+ *   },
+ *   workers: [{
+ *     topic: 'order.process',
+ *     connection: {
+ *       class: Postgres,
+ *       options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' },
+ *     },
+ *     callback: async (data) => ({
+ *       metadata: { ...data.metadata },
+ *       data: { orderId: data.data.id, status: 'fulfilled' },
+ *     }),
+ *   }],
  * });
  *
- * // Deploy workflow definition
+ * // Deploy a YAML workflow graph
  * await hotMesh.deploy(`
  * app:
- *   id: my-app
+ *   id: myapp
  *   version: '1'
  *   graphs:
- *     - subscribes: order.process
+ *     - subscribes: order.placed
+ *       publishes: order.fulfilled
+ *       expire: 600
+ *
  *       activities:
- *         validate:
+ *         t1:
+ *           type: trigger
+ *         process:
  *           type: worker
- *           topic: order.validate
- *         approve:
- *           type: hook
- *           topic: order.approve
- *         fulfill:
- *           type: worker
- *           topic: order.fulfill
+ *           topic: order.process
+ *           input:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id: { type: string }
+ *             maps:
+ *               id: '{t1.output.data.id}'
  *       transitions:
- *         validate:
- *           - to: approve
- *         approve:
- *           - to: fulfill
+ *         t1:
+ *           - to: process
  * `);
  *
- * // Activate the workflow version
  * await hotMesh.activate('1');
  *
- * // Execute workflow (fire-and-forget)
- * const jobId = await hotMesh.pub('order.process', {
- *   orderId: '12345',
- *   amount: 99.99
- * });
+ * // Fire-and-forget
+ * const jobId = await hotMesh.pub('order.placed', { id: 'ORD-123' });
  *
- * // Execute workflow and wait for result
- * const result = await hotMesh.pubsub('order.process', {
- *   orderId: '12345',
- *   amount: 99.99
- * });
+ * // Request/response (blocks until workflow completes)
+ * const result = await hotMesh.pubsub('order.placed', { id: 'ORD-456' });
  * ```
  *
- * ## Postgres Backend Example
+ * ## Quorum: The Mesh Control Plane
  *
- * @example
+ * The quorum channel is a broadcast bus available to every mesh member.
+ * Use it for operational control, observability, and custom messaging.
+ *
  * ```typescript
- * import { HotMesh } from '@hotmeshio/hotmesh';
- * import { Client as Postgres } from 'pg';
+ * // Roll call — discover every engine and worker in the mesh
+ * const members = await hotMesh.rollCall();
+ * // => [{ engine_id, worker_topic, throttle, system: { CPULoad, ... } }, ...]
  *
- * const hotMesh = await HotMesh.init({
- *   appId: 'my-app',
- *   engine: {
- *     connection: {
- *       class: Postgres,
- *       options: {
- *         connectionString: 'postgresql://user:pass@localhost:5432/db'
- *       }
- *     }
+ * // Subscribe to ALL quorum traffic (throttle, activate, pong, job, user)
+ * await hotMesh.subQuorum((topic, message) => {
+ *   switch (message.type) {
+ *     case 'pong':      // roll call response from a mesh member
+ *       console.log(`Member ${message.guid} on topic ${message.profile?.worker_topic}`);
+ *       break;
+ *     case 'throttle':  // a throttle command was broadcast
+ *       console.log(`Throttle ${message.throttle}ms on ${message.topic ?? 'all'}`);
+ *       break;
+ *     case 'activate':  // a version activation is in progress
+ *       console.log(`Activating version ${message.until_version}`);
+ *       break;
+ *     case 'job':       // a workflow completed and published its result
+ *       console.log(`Job done on ${message.topic}:`, message.job);
+ *       break;
+ *     case 'user':      // a custom user message
+ *       console.log(`User event ${message.topic}:`, message.message);
+ *       break;
  *   }
  * });
- * ```
  *
- * ## Advanced Features
- *
- * **Pattern Subscriptions**: Listen to multiple workflow topics
- * ```typescript
- * await hotMesh.psub('order.*', (topic, message) => {
- *   console.log(`Received ${topic}:`, message);
+ * // Publish a custom message to every mesh member
+ * await hotMesh.pubQuorum({
+ *   type: 'user',
+ *   topic: 'deploy.notify',
+ *   message: { version: '2.1.0', deployer: 'ci-pipeline' },
  * });
  * ```
  *
- * **Throttling**: Control processing rates
- * ```typescript
- * // Pause all processing for 5 seconds
- * await hotMesh.throttle({ throttle: 5000 });
+ * ## Throttling: Backpressure Across the Mesh
  *
- * // Emergency stop (pause indefinitely)
+ * Throttle commands propagate instantly to every targeted member via
+ * the quorum channel, providing fine-grained flow control.
+ *
+ * ```typescript
+ * // Pause the ENTIRE mesh (emergency stop)
  * await hotMesh.throttle({ throttle: -1 });
+ *
+ * // Resume the entire mesh
+ * await hotMesh.throttle({ throttle: 0 });
+ *
+ * // Slow a specific worker topic to 1 message per 500ms
+ * await hotMesh.throttle({ throttle: 500, topic: 'order.process' });
+ *
+ * // Throttle a single engine/worker instance by GUID
+ * await hotMesh.throttle({ throttle: 2000, guid: 'abc-123' });
+ *
+ * // Combine: throttle a specific topic on a specific instance
+ * await hotMesh.throttle({ throttle: 1000, guid: 'abc-123', topic: 'order.process' });
  * ```
  *
- * **Workflow Interruption**: Gracefully stop running workflows
- * ```typescript
- * await hotMesh.interrupt('order.process', jobId, {
- *   reason: 'User cancellation'
- * });
- * ```
+ * ## Lifecycle
  *
- * **State Inspection**: Query workflow state and progress
- * ```typescript
- * const state = await hotMesh.getState('order.process', jobId);
- * const status = await hotMesh.getStatus(jobId);
- * ```
+ * 1. **`init`** — Create an engine + workers; join the quorum.
+ * 2. **`deploy`** — Upload a YAML graph to Postgres (inactive).
+ * 3. **`activate`** — Coordinate the quorum to switch to the new version.
+ * 4. **`pub` / `pubsub`** — Trigger workflow execution.
+ * 5. **`stop`** — Leave the quorum and release connections.
  *
- * ## Distributed Coordination
+ * ## Higher-Level Modules
  *
- * HotMesh automatically handles distributed coordination through its quorum system:
+ * For most use cases, prefer the higher-level wrappers:
+ * - **MemFlow** — Temporal-style durable workflow functions.
+ * - **MeshCall** — Durable function calls and RPC patterns.
  *
- * ```typescript
- * // Check quorum health
- * const members = await hotMesh.rollCall();
- *
- * // Coordinate version activation across all instances
- * await hotMesh.activate('2', 1000); // 1 second delay for consensus
- * ```
- *
- * ## Integration with Higher-Level Modules
- *
- * For most use cases, consider using the higher-level modules:
- * - **MemFlow**: For Temporal.io-style workflows with TypeScript functions
- * - **MeshCall**: For durable function calls and RPC patterns
- *
- * ## Cleanup
- *
- * Always clean up resources when shutting down:
- * ```typescript
- * // Stop this instance
- * hotMesh.stop();
- *
- * // Stop all instances (typically in signal handlers)
- * await HotMesh.stop();
- * ```
- *
- * @see {@link https://docs.hotmesh.io/} - Complete documentation
- * @see {@link https://github.com/hotmeshio/samples-typescript} - Examples and tutorials
- * @see {@link https://zenodo.org/records/12168558} - White paper on the architecture
+ * @see {@link https://hotmeshio.github.io/sdk-typescript/} - API reference
  */
 class HotMesh {
   namespace: string;
@@ -268,12 +250,19 @@ class HotMesh {
    *
    * ## Retry Policy Configuration
    *
-   * HotMesh supports robust retry policies with exponential backoff for PostgreSQL.
-   * Configure retry behavior at the stream level for automatic fault tolerance.
+   * HotMesh supports retry policies with exponential backoff. Retry behavior
+   * can be configured independently on both the `engine` and individual
+   * `workers`. They are **not inherited**; each operates at its own level.
+   *
+   * - **Engine `retryPolicy`**: Stamps messages the engine publishes with
+   *   retry metadata (stored as Postgres columns). Workers that consume
+   *   these messages will use the embedded config when handling failures.
+   * - **Worker `retryPolicy`**: Used as the fallback when the consumed
+   *   message does not carry explicit retry metadata.
    *
    * @example Basic Configuration
    * ```typescript
-   * const config: HotMeshConfig = {
+   * const hotMesh = await HotMesh.init({
    *   appId: 'myapp',
    *   engine: {
    *     connection: {
@@ -283,46 +272,49 @@ class HotMesh {
    *       }
    *     }
    *   },
-   *   workers [...]
-   * };
-   * const hotMesh = await HotMesh.init(config);
+   *   workers: [...]
+   * });
    * ```
    *
-   * @example With Retry Policy (PostgreSQL)
+   * @example Engine Retry Policy
    * ```typescript
-   * import { HotMesh } from '@hotmeshio/hotmesh';
-   * import { Client as Postgres } from 'pg';
-   *
    * const hotMesh = await HotMesh.init({
-   *   appId: 'my-app',
+   *   appId: 'myapp',
    *   engine: {
    *     connection: {
    *       class: Postgres,
    *       options: { connectionString: 'postgresql://...' }
    *     },
-   *     // Default retry policy for engine streams
    *     retryPolicy: {
-   *       maximumAttempts: 5,      // Retry up to 5 times
-   *       backoffCoefficient: 2,   // Exponential: 2^0, 2^1, 2^2...
-   *       maximumInterval: '300s'  // Cap delay at 5 minutes
+   *       maximumAttempts: 5,
+   *       backoffCoefficient: 2,
+   *       maximumInterval: '300s'
    *     }
-   *   },
+   *   }
+   * });
+   * ```
+   *
+   * @example Worker Retry Policy
+   * ```typescript
+   * const hotMesh = await HotMesh.init({
+   *   appId: 'myapp',
+   *   engine: { connection },
    *   workers: [{
    *     topic: 'order.process',
-   *     connection: {
-   *       class: Postgres,
-   *       options: { connectionString: 'postgresql://...' }
-   *     },
-   *     // Worker-specific retry policy
+   *     connection,
    *     retryPolicy: {
-   *       maximumAttempts: 10,
-   *       backoffCoefficient: 1.5,
-   *       maximumInterval: '600s'
+   *       maximumAttempts: 5,
+   *       backoffCoefficient: 2,
+   *       maximumInterval: '30s',
    *     },
-   *     callback: async (data) => {
-   *       // Your business logic here
-   *       // Failures will automatically retry with exponential backoff
-   *       return { status: 'success', data: processedData };
+   *     callback: async (data: StreamData) => {
+   *       const result = await doWork(data.data);
+   *       return {
+   *         code: 200,
+   *         status: StreamStatus.SUCCESS,
+   *         metadata: { ...data.metadata },
+   *         data: { result },
+   *       } as StreamDataResponse;
    *     }
    *   }]
    * });
@@ -357,8 +349,8 @@ class HotMesh {
   }
 
   /**
-   * returns a guid using the same core guid
-   * generator used by the HotMesh (nanoid)
+   * Generates a unique ID using the same nanoid generator used
+   * internally by HotMesh for job IDs and GUIDs.
    */
   static guid(): string {
     return guid();
@@ -494,10 +486,17 @@ class HotMesh {
 
   // ************* PUB/SUB METHODS *************
   /**
-   * Starts a workflow
+   * Publishes a message to a workflow topic, starting a new job.
+   * Returns the job ID immediately (fire-and-forget). Use `pubsub`
+   * to block until the workflow completes.
+   *
    * @example
    * ```typescript
-   * await hotMesh.pub('a.b.c', { key: 'value' });
+   * const jobId = await hotMesh.pub('order.placed', {
+   *   id: 'ORD-123',
+   *   amount: 99.99,
+   * });
+   * console.log(`Started job ${jobId}`);
    * ```
    */
   async pub(
@@ -509,14 +508,14 @@ class HotMesh {
     return await this.engine?.pub(topic, data, context, extended);
   }
   /**
-   * Subscribe (listen) to all output and interim emissions of a single
-   * workflow topic. NOTE: Postgres does not support patterned
-   * unsubscription, so this method is not supported for Postgres.
+   * Subscribes to all output and interim emissions from a specific
+   * workflow topic. The callback fires each time a job on that topic
+   * completes or emits an interim result.
    *
    * @example
    * ```typescript
-   * await hotMesh.psub('a.b.c', (topic, message) => {
-   *  console.log(message);
+   * await hotMesh.sub('order.fulfilled', (topic, message) => {
+   *   console.log(`Order completed:`, message.data);
    * });
    * ```
    */
@@ -524,18 +523,21 @@ class HotMesh {
     return await this.engine?.sub(topic, callback);
   }
   /**
-   * Stop listening in on a single workflow topic
+   * Unsubscribes from a single workflow topic previously registered
+   * with `sub()`.
    */
   async unsub(topic: string): Promise<void> {
     return await this.engine?.unsub(topic);
   }
   /**
-   * Listen to all output and interim emissions of a workflow topic
-   * matching a wildcard pattern.
+   * Subscribes to workflow emissions matching a wildcard pattern.
+   * Useful for monitoring an entire domain of workflows at once.
+   *
    * @example
    * ```typescript
-   * await hotMesh.psub('a.b.c*', (topic, message) => {
-   *  console.log(message);
+   * // Listen to all order-related workflow completions
+   * await hotMesh.psub('order.*', (topic, message) => {
+   *   console.log(`${topic} completed:`, message.data);
    * });
    * ```
    */
@@ -543,17 +545,24 @@ class HotMesh {
     return await this.engine?.psub(wild, callback);
   }
   /**
-   * Patterned unsubscribe. NOTE: Postgres does not support patterned
-   * unsubscription, so this method is not supported for Postgres.
+   * Unsubscribes from a wildcard pattern previously registered with `psub()`.
    */
   async punsub(wild: string): Promise<void> {
     return await this.engine?.punsub(wild);
   }
   /**
-   * Starts a workflow and awaits the response
+   * Publishes a message to a workflow topic and blocks until the workflow
+   * completes, returning the final job output. Internally subscribes to
+   * the workflow's `publishes` topic before publishing, then unsubscribes
+   * after receiving the result.
+   *
    * @example
    * ```typescript
-   * await hotMesh.pubsub('a.b.c', { key: 'value' });
+   * const result = await hotMesh.pubsub('order.placed', {
+   *   id: 'ORD-789',
+   *   amount: 49.99,
+   * });
+   * console.log('Order result:', result.data);
    * ```
    */
   async pubsub(
@@ -565,8 +574,10 @@ class HotMesh {
     return await this.engine?.pubsub(topic, data, context, timeout);
   }
   /**
-   * Add a transition message to the workstream, resuming leg 2 of a paused
-   * reentrant activity (e.g., await, worker, hook)
+   * Adds a transition message to the workstream, resuming Leg 2 of a
+   * paused reentrant activity (e.g., `await`, `worker`, `hook`). This
+   * is typically called by the engine internally but is exposed for
+   * advanced use cases like custom activity implementations.
    */
   async add(streamData: StreamData | StreamDataResponse): Promise<string> {
     return (await this.engine.add(streamData)) as string;
@@ -574,31 +585,73 @@ class HotMesh {
 
   // ************* QUORUM METHODS *************
   /**
-   * Request a roll call from the quorum (engine and workers)
+   * Broadcasts a roll call across the mesh and collects responses from
+   * every connected engine and worker. Each member replies with its
+   * `QuorumProfile` — including GUID, worker topic, stream depth,
+   * throttle rate, and system health (CPU, memory, network).
+   *
+   * Use this for service discovery, health checks, and capacity planning.
+   *
+   * @example
+   * ```typescript
+   * const members = await hotMesh.rollCall();
+   * for (const member of members) {
+   *   console.log(
+   *     `${member.engine_id} | topic=${member.worker_topic ?? 'engine'} ` +
+   *     `| throttle=${member.throttle}ms | depth=${member.stream_depth}`,
+   *   );
+   * }
+   * ```
    */
   async rollCall(delay?: number): Promise<QuorumProfile[]> {
     return await this.quorum?.rollCall(delay);
   }
   /**
-   * Sends a throttle message to the quorum (engine and/or workers)
-   * to limit the rate of processing. Pass `-1` to throttle indefinitely.
-   * The value must be a non-negative integer and not exceed `MAX_DELAY` ms.
+   * Broadcasts a throttle command to the mesh via the quorum channel.
+   * Targeted members insert a delay (in milliseconds) before processing
+   * their next stream message, providing instant backpressure control
+   * across any combination of engines and workers.
    *
-   * When throttling is set, the quorum will pause for the specified time
-   * before processing the next message. Target specific engines and
-   * workers by passing a `guid` and/or `topic`. Pass no arguments to
-   * throttle the entire quorum.
+   * Throttling is **stateless** — no data is lost. Messages accumulate
+   * in Postgres streams and are processed once the throttle is lifted.
    *
-   * In this example, all processing has been paused indefinitely for
-   * the entire quorum. This is equivalent to an emergency stop.
+   * ## Targeting
    *
-   * HotMesh is a stateless sequence engine, so the throttle can be adjusted up
-   * and down with no loss of data.
+   * | Option  | Effect |
+   * |---------|--------|
+   * | *(none)* | Throttle the **entire mesh** (all engines + all workers) |
+   * | `topic` | Throttle all workers subscribed to this topic |
+   * | `guid`  | Throttle a single engine or worker instance |
+   * | `topic` + `guid` | Throttle a specific topic on a specific instance |
    *
+   * ## Special Values
+   *
+   * | Value  | Effect |
+   * |--------|--------|
+   * | `0`    | Resume normal processing (remove throttle) |
+   * | `-1`   | Pause indefinitely (emergency stop) |
+   * | `500`  | 500ms delay between messages |
    *
    * @example
    * ```typescript
+   * // Emergency stop: pause the entire mesh
    * await hotMesh.throttle({ throttle: -1 });
+   *
+   * // Resume the entire mesh
+   * await hotMesh.throttle({ throttle: 0 });
+   *
+   * // Slow a specific worker topic to 1 msg per second
+   * await hotMesh.throttle({ throttle: 1000, topic: 'order.process' });
+   *
+   * // Throttle a single instance by GUID
+   * await hotMesh.throttle({ throttle: 2000, guid: 'abc-123' });
+   *
+   * // Throttle a specific topic on a specific instance
+   * await hotMesh.throttle({
+   *   throttle: 500,
+   *   guid: 'abc-123',
+   *   topic: 'payment.charge',
+   * });
    * ```
    */
   async throttle(options: ThrottleOptions): Promise<boolean> {
@@ -627,19 +680,114 @@ class HotMesh {
     return await this.quorum?.pub(throttleMessage);
   }
   /**
-   * Publish a message to the quorum (engine and/or workers)
+   * Publishes a message to every mesh member via the quorum channel
+   * (Postgres LISTEN/NOTIFY). Any `QuorumMessage` type can be sent,
+   * but the `user` type is the most common for application-level
+   * messaging.
+   *
+   * @example
+   * ```typescript
+   * // Broadcast a custom event to all mesh members
+   * await hotMesh.pubQuorum({
+   *   type: 'user',
+   *   topic: 'deploy.notify',
+   *   message: { version: '2.1.0', deployer: 'ci-pipeline' },
+   * });
+   *
+   * // Broadcast a config-reload signal
+   * await hotMesh.pubQuorum({
+   *   type: 'user',
+   *   topic: 'config.reload',
+   *   message: { features: { darkMode: true } },
+   * });
+   * ```
    */
   async pubQuorum(quorumMessage: QuorumMessage) {
     return await this.quorum?.pub(quorumMessage);
   }
   /**
-   * Subscribe to quorum events (engine and workers)
+   * Subscribes to the quorum channel, receiving **every** message
+   * broadcast across the mesh in real time. This is the primary
+   * observability hook into the service mesh — use it to monitor
+   * version activations, throttle commands, roll call responses,
+   * workflow completions, and custom user events.
+   *
+   * Messages arrive as typed `QuorumMessage` unions. Switch on
+   * `message.type` to handle each:
+   *
+   * | Type        | When it fires |
+   * |-------------|---------------|
+   * | `pong`      | A mesh member responds to a roll call |
+   * | `throttle`  | A throttle command was broadcast |
+   * | `activate`  | A version activation is in progress |
+   * | `job`       | A workflow completed and published its result |
+   * | `user`      | A custom user message (via `pubQuorum`) |
+   * | `ping`      | A roll call was initiated |
+   * | `work`      | A work distribution event |
+   * | `cron`      | A cron/scheduled event |
+   *
+   * @example
+   * ```typescript
+   * // Build a real-time mesh dashboard
+   * await hotMesh.subQuorum((topic, message) => {
+   *   switch (message.type) {
+   *     case 'pong':
+   *       dashboard.updateMember(message.guid, {
+   *         topic: message.profile?.worker_topic,
+   *         throttle: message.profile?.throttle,
+   *         depth: message.profile?.stream_depth,
+   *         cpu: message.profile?.system?.CPULoad,
+   *       });
+   *       break;
+   *
+   *     case 'throttle':
+   *       dashboard.logThrottle(
+   *         message.throttle,
+   *         message.topic,
+   *         message.guid,
+   *       );
+   *       break;
+   *
+   *     case 'job':
+   *       dashboard.logCompletion(message.topic, message.job);
+   *       break;
+   *
+   *     case 'user':
+   *       dashboard.logUserEvent(message.topic, message.message);
+   *       break;
+   *   }
+   * });
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // React to custom deployment events
+   * await hotMesh.subQuorum((topic, message) => {
+   *   if (message.type === 'user' && message.topic === 'config.reload') {
+   *     reloadFeatureFlags(message.message);
+   *   }
+   * });
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Log all mesh activity for audit
+   * await hotMesh.subQuorum((topic, message) => {
+   *   auditLog.append({
+   *     timestamp: Date.now(),
+   *     type: message.type,
+   *     guid: message.guid,
+   *     topic: message.topic,
+   *     payload: message,
+   *   });
+   * });
+   * ```
    */
   async subQuorum(callback: QuorumMessageCallback): Promise<void> {
     return await this.quorum?.sub(callback);
   }
   /**
-   * Unsubscribe from quorum events (engine and workers)
+   * Unsubscribes a callback previously registered with `subQuorum()`.
    */
   async unsubQuorum(callback: QuorumMessageCallback): Promise<void> {
     return await this.quorum?.unsub(callback);
@@ -655,44 +803,79 @@ class HotMesh {
     return await this.engine?.plan(path);
   }
   /**
-   * When the app YAML descriptor file is ready, the `deploy` function can be called.
-   * This function is responsible for merging all referenced YAML source
-   * files and writing the JSON output to the file system and to the provider backend. It
-   * is also possible to embed the YAML in-line as a string.
+   * Deploys a YAML workflow graph to Postgres. Accepts a file path or
+   * an inline YAML string. Referenced `$ref` files are resolved and
+   * merged. The deployed version is **inactive** until `activate()` is
+   * called.
    *
-   * *The version will not be active until activation is explicitly called.*
+   * @example
+   * ```typescript
+   * // Deploy from an inline YAML string
+   * await hotMesh.deploy(`
+   * app:
+   *   id: myapp
+   *   version: '2'
+   *   graphs:
+   *     - subscribes: order.placed
+   *       activities:
+   *         t1:
+   *           type: trigger
+   *         process:
+   *           type: worker
+   *           topic: order.process
+   *       transitions:
+   *         t1:
+   *           - to: process
+   * `);
+   *
+   * // Deploy from a file path (resolves $ref references)
+   * await hotMesh.deploy('./workflows/order.yaml');
+   * ```
    */
   async deploy(pathOrYAML: string): Promise<HotMeshManifest> {
     return await this.engine?.deploy(pathOrYAML);
   }
   /**
-   * Once the app YAML file is deployed to the provider backend, the `activate` function can be
-   * called to enable it for the entire quorum at the same moment.
+   * Activates a deployed version across the entire mesh. The quorum
+   * coordinates a synchronized switch-over:
    *
-   * The approach is to establish the coordinated health of the system through series
-   * of call/response exchanges. Once it is established that the quorum is healthy,
-   * the quorum is instructed to run their engine in `no-cache` mode, ensuring
-   * that the provider backend is consulted for the active app version each time a
-   * call is processed. This ensures that all engines are running the same version
-   * of the app, switching over at the same moment and then enabling `cache` mode
-   * to improve performance.
+   * 1. Roll call to verify quorum health.
+   * 2. Broadcast `nocache` mode — all engines consult Postgres for the
+   *    active version on every request.
+   * 3. Set the new version as active.
+   * 4. Broadcast `cache` mode — engines resume caching.
    *
-   * *Add a delay for the quorum to reach consensus if traffic is busy, but
-   * also consider throttling traffic flow to an acceptable level.*
+   * The optional `delay` adds a pause (in ms) for the quorum to reach
+   * consensus under heavy traffic. Combine with `throttle()` for
+   * zero-downtime version switches.
+   *
+   * @example
+   * ```typescript
+   * // Simple activation
+   * await hotMesh.activate('2');
+   *
+   * // With consensus delay under heavy traffic
+   * await hotMesh.throttle({ throttle: 500 });   // slow the mesh
+   * await hotMesh.activate('2', 2000);            // activate with 2s consensus window
+   * await hotMesh.throttle({ throttle: 0 });      // resume full speed
+   * ```
    */
   async activate(version: string, delay?: number): Promise<boolean> {
     return await this.quorum?.activate(version, delay);
   }
 
   /**
-   * Returns the job state as a JSON object, useful
-   * for understanding dependency chains
+   * Exports the full job state as a structured JSON object, including
+   * activity data, transitions, and dependency chains. Useful for
+   * debugging, auditing, and visualizing workflow execution.
    */
   async export(jobId: string): Promise<JobExport> {
     return await this.engine?.export(jobId);
   }
   /**
-   * Returns all data (HGETALL) for a job.
+   * Returns all raw key-value pairs for a job's HASH record. This is
+   * the lowest-level read — it returns internal engine fields alongside
+   * user data. Prefer `getState()` for structured output.
    */
   async getRaw(jobId: string): Promise<StringStringType> {
     return await this.engine?.getRaw(jobId);
@@ -705,36 +888,42 @@ class HotMesh {
     return await this.engine?.getStats(topic, query);
   }
   /**
-   * Returns the status of a job. This is a numeric
-   * semaphore value that indicates the job's state.
-   * Any non-positive value indicates a completed job.
-   * Jobs with a value of `-1` are pending and will
-   * automatically be scrubbed after a set period.
-   * Jobs a value around -1billion have been interrupted
-   * and will be scrubbed after a set period. Jobs with
-   * a value of 0 completed normally. Jobs with a
-   * positive value are still running.
+   * Returns the numeric status semaphore for a job.
+   *
+   * | Value            | Meaning |
+   * |------------------|---------|
+   * | `> 0`            | Running (count of open activities) |
+   * | `0`              | Completed normally |
+   * | `-1`             | Pending (awaiting activation) |
+   * | `< -100,000,000` | Interrupted (abnormal termination) |
    */
   async getStatus(jobId: string): Promise<JobStatus> {
     return this.engine?.getStatus(jobId);
   }
   /**
-   * Returns the job state (data and metadata) for a job.
+   * Returns the structured job state (data and metadata) for a job,
+   * scoped to the given workflow topic.
+   *
+   * @example
+   * ```typescript
+   * const state = await hotMesh.getState('order.placed', jobId);
+   * console.log(state.data);     // workflow output data
+   * console.log(state.metadata); // jid, aid, timestamps, etc.
+   * ```
    */
   async getState(topic: string, jobId: string): Promise<JobOutput> {
     return this.engine?.getState(topic, jobId);
   }
   /**
-   * Returns searchable/queryable data for a job. In this
-   * example a literal field is also searched (the colon
-   * is used to track job status and is a reserved field;
-   * it can be read but not written).
+   * Returns specific searchable fields from a job's HASH record.
+   * Pass field names to retrieve; use `":"` to read the reserved
+   * status field.
    *
    * @example
    * ```typescript
-   * const fields = ['fred', 'barney', '":"'];
-   * const queryState = await hotMesh.getQueryState('123', fields);
-   * //returns { fred: 'flintstone', barney: 'rubble', ':': '1' }
+   * const fields = ['orderId', 'status', '":"'];
+   * const data = await hotMesh.getQueryState(jobId, fields);
+   * // => { orderId: 'ORD-123', status: 'paid', ':': '0' }
    * ```
    */
   async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
@@ -761,7 +950,17 @@ class HotMesh {
   }
 
   /**
-   * Interrupt an active job
+   * Interrupts (terminates) an active workflow job. The job's status is
+   * set to an error code indicating abnormal termination, and any pending
+   * activities or timers are cancelled.
+   *
+   * @example
+   * ```typescript
+   * await hotMesh.interrupt('order.placed', jobId, {
+   *   reason: 'Customer cancelled',
+   *   descend: true,   // also interrupt child workflows
+   * });
+   * ```
    */
   async interrupt(
     topic: string,
@@ -772,46 +971,80 @@ class HotMesh {
   }
 
   /**
-   * Immediately deletes (DEL) a completed job from the system.
-   *
-   * *Scrubbed jobs must be complete with a non-positive `status` value*
+   * Immediately deletes a completed job from the system. The job must
+   * have a non-positive status (completed or interrupted). Running jobs
+   * must be interrupted first.
    */
   async scrub(jobId: string) {
     await this.engine?.scrub(jobId);
   }
 
   /**
-   * Re/entry point for an active job. This is used to resume a paused job
-   * and close the reentry point or leave it open for subsequent reentry.
-   * Because `hooks` are public entry points, they include a `topic`
-   * which is established in the app YAML file.
+   * Sends a signal to a paused workflow, resuming its execution.
+   * The `topic` must match a hook rule defined in the YAML graph's
+   * `hooks` section. The engine locates the exact activity and
+   * dimension for reentry based on the hook rule's match conditions.
    *
-   * When this method is called, a hook rule will be located to establish
-   * the exact activity and activity dimension for reentry.
+   * Use this to deliver external data (approval decisions, webhook
+   * payloads, partner responses) into a workflow that is sleeping
+   * on a hook activity or awaiting a `waitFor()` signal.
+   *
+   * @example
+   * ```typescript
+   * // Resume a paused approval workflow with external data
+   * await hotMesh.signal('order.approval', {
+   *   id: jobId,
+   *   approved: true,
+   *   reviewer: 'manager@example.com',
+   * });
+   * ```
+   *
+   * @example
+   * ```typescript
+   * // Signal a MemFlow workflow waiting on waitFor('payment-received')
+   * await hotMesh.signal(`${appId}.wfs.signal`, {
+   *   id: 'payment-received',
+   *   data: { amount: 99.99, currency: 'USD' },
+   * });
+   * ```
    */
-  async hook(
+  async signal(
     topic: string,
     data: JobData,
     status?: StreamStatus,
     code?: StreamCode,
   ): Promise<string> {
-    return await this.engine?.hook(topic, data, status, code);
+    return await this.engine?.signal(topic, data, status, code);
   }
 
   /**
+   * Fan-out variant of `signal()` that delivers data to **all**
+   * paused workflows matching a search query. Useful for resuming
+   * a batch of workflows waiting on the same external event.
+   *
    * @private
    */
-  async hookAll(
+  async signalAll(
     hookTopic: string,
     data: JobData,
     query: JobStatsInput,
     queryFacets: string[] = [],
   ): Promise<string[]> {
-    return await this.engine?.hookAll(hookTopic, data, query, queryFacets);
+    return await this.engine?.signalAll(hookTopic, data, query, queryFacets);
   }
 
   /**
-   * Stop all points of presence, workers and engines
+   * Stops **all** HotMesh instances in the current process — engines,
+   * workers, and connections. Typically called in signal handlers
+   * (`SIGTERM`, `SIGINT`) for graceful shutdown.
+   *
+   * @example
+   * ```typescript
+   * process.on('SIGTERM', async () => {
+   *   await HotMesh.stop();
+   *   process.exit(0);
+   * });
+   * ```
    */
   static async stop() {
     if (!this.disconnecting) {
@@ -822,7 +1055,9 @@ class HotMesh {
   }
 
   /**
-   * Stop this point of presence, workers and engines
+   * Stops this specific HotMesh instance — its engine, quorum
+   * membership, and all attached workers. Other instances in the
+   * same process are unaffected.
    */
   stop() {
     this.engine?.taskService.cancelCleanup();

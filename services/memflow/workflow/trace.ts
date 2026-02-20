@@ -8,14 +8,47 @@ import { getContext } from './context';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 
 /**
- * Executes a distributed trace, outputting the provided attributes
- * to the telemetry sink (e.g. OpenTelemetry).
+ * Emits a distributed trace span to the configured telemetry sink
+ * (e.g., OpenTelemetry). The span is linked to the workflow's trace
+ * context (`traceId`, `spanId`) for end-to-end observability across
+ * workflow executions, activities, and child workflows.
  *
- * This trace will only run once per workflow execution by default.
+ * By default (`config.once = true`), the trace is emitted exactly once
+ * per workflow execution — it will not re-fire on replay.
  *
- * @param {StringScalarType} attributes - Key-value attributes to attach to the trace.
- * @param {{ once: boolean }} [config={ once: true }] - If `once` is true, trace only runs once.
- * @returns {Promise<boolean>} True if tracing succeeded, otherwise false.
+ * ## Examples
+ *
+ * ```typescript
+ * import { MemFlow } from '@hotmeshio/hotmesh';
+ *
+ * // Emit trace spans at key workflow milestones
+ * export async function orderWorkflow(orderId: string): Promise<void> {
+ *   await MemFlow.workflow.trace({
+ *     'order.id': orderId,
+ *     'order.stage': 'started',
+ *   });
+ *
+ *   const { processPayment } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *   await processPayment(orderId);
+ *
+ *   await MemFlow.workflow.trace({
+ *     'order.id': orderId,
+ *     'order.stage': 'payment_completed',
+ *   });
+ * }
+ * ```
+ *
+ * ```typescript
+ * // Trace on every re-execution (for debugging replay behavior)
+ * await MemFlow.workflow.trace(
+ *   { 'debug.counter': counter, 'debug.phase': 'retry' },
+ *   { once: false },
+ * );
+ * ```
+ *
+ * @param {StringScalarType} attributes - Key-value attributes to attach to the trace span.
+ * @param {{ once: boolean }} [config={ once: true }] - If `true`, trace fires only once (idempotent).
+ * @returns {Promise<boolean>} `true` if tracing succeeded.
  */
 export async function trace(
   attributes: StringScalarType,

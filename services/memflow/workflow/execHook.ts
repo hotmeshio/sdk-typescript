@@ -4,7 +4,8 @@ import { waitFor } from './waitFor';
 import { didInterrupt } from './interruption';
 
 /**
- * Extended hook options that include signal configuration
+ * Extended hook options that include signal configuration.
+ * Used by `execHook()` and `execHookBatch()`.
  */
 export interface ExecHookOptions extends HookOptions {
   /** Signal ID to send after hook execution; if not provided, a random one will be generated */
@@ -12,60 +13,74 @@ export interface ExecHookOptions extends HookOptions {
 }
 
 /**
- * Executes a hook function and awaits the signal response.
- * This is a convenience method that combines `hook()` and `waitFor()` operations.
+ * Combines `hook()` + `waitFor()` into a single call: spawns a hook
+ * function on a target workflow and suspends the current workflow until
+ * the hook signals completion. This is the recommended pattern for
+ * request/response communication between workflow threads.
  *
- * **Signal Injection**: The `signalId` is automatically injected as the LAST argument
- * to the hooked function. The hooked function should check for this signal parameter
- * and emit the signal when processing is complete.
+ * ## Signal Injection
  *
- * This behaves like `execChild` but targets the existing workflow instead of
- * spawning a new workflow.
+ * A `signalId` is automatically generated (or use the one you provide)
+ * and injected as the **last argument** to the hooked function as
+ * `{ signal: string, $memflow: true }`. The hook function must call
+ * `MemFlow.workflow.signal(signalInfo.signal, result)` to deliver
+ * its response back to the waiting workflow.
  *
- * @template T
- * @param {ExecHookOptions} options - Hook configuration with signal ID.
- * @returns {Promise<T>} The signal result from the hooked function.
+ * ## Difference from `execChild`
  *
- * @example
+ * - `execChild` spawns a **new** workflow job with its own lifecycle.
+ * - `execHook` runs within an **existing** workflow's job, in an
+ *   isolated dimensional thread. This is lighter-weight and shares
+ *   the parent job's data namespace.
+ *
+ * ## Examples
+ *
  * ```typescript
- * // Execute a hook and await its signal response
- * const result = await MemFlow.workflow.execHook({
- *   taskQueue: 'processing',
- *   workflowName: 'processData',
- *   args: ['user123', 'batch-process'],
- *   signalId: 'processing-complete'
- * });
+ * import { MemFlow } from '@hotmeshio/hotmesh';
  *
- * // The hooked function receives the signal as the last argument:
- * export async function processData(userId: string, processType: string, signalInfo?: { signal: string }) {
- *   // ... do processing work ...
- *   const result = { userId, processType, status: 'completed' };
+ * // Orchestrator: spawn a hook and await its result
+ * export async function reviewWorkflow(docId: string): Promise<string> {
+ *   const verdict = await MemFlow.workflow.execHook<{ approved: boolean }>({
+ *     taskQueue: 'reviewers',
+ *     workflowName: 'reviewDocument',
+ *     args: [docId],
+ *   });
  *
- *   // Check if called via execHook (signalInfo will be present)
+ *   return verdict.approved ? 'accepted' : 'rejected';
+ * }
+ * ```
+ *
+ * ```typescript
+ * // The hooked function (runs on the 'reviewers' worker)
+ * export async function reviewDocument(
+ *   docId: string,
+ *   signalInfo?: { signal: string; $memflow: boolean },
+ * ): Promise<{ approved: boolean }> {
+ *   const { analyzeDocument } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *   const score = await analyzeDocument(docId);
+ *   const result = { approved: score > 0.8 };
+ *
+ *   // Signal the waiting workflow with the result
  *   if (signalInfo?.signal) {
  *     await MemFlow.workflow.signal(signalInfo.signal, result);
  *   }
- *
  *   return result;
  * }
  * ```
  *
- * @example
  * ```typescript
- * // Alternative pattern - check if last arg is signal object
- * export async function myHookFunction(arg1: string, arg2: number, ...rest: any[]) {
- *   // ... process arg1 and arg2 ...
- *   const result = { processed: true, data: [arg1, arg2] };
- *
- *   // Check if last argument is a signal object
- *   const lastArg = rest[rest.length - 1];
- *   if (lastArg && typeof lastArg === 'object' && lastArg.signal) {
- *     await MemFlow.workflow.signal(lastArg.signal, result);
- *   }
- *
- *   return result;
- * }
+ * // With explicit signalId for traceability
+ * const result = await MemFlow.workflow.execHook<AnalysisResult>({
+ *   taskQueue: 'analyzers',
+ *   workflowName: 'runAnalysis',
+ *   args: [datasetId],
+ *   signalId: `analysis-${datasetId}`,
+ * });
  * ```
+ *
+ * @template T - The type of data returned by the hook function's signal.
+ * @param {ExecHookOptions} options - Hook configuration including target workflow and arguments.
+ * @returns {Promise<T>} The signal result from the hooked function.
  */
 export async function execHook<T>(options: ExecHookOptions): Promise<T> {
   try {

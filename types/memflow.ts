@@ -739,6 +739,7 @@ export {
   ClientWorkflow,
   ContextType,
   Connection,
+  FunctionSignature,
   ProxyResponseType,
   ProxyType,
   Registry,

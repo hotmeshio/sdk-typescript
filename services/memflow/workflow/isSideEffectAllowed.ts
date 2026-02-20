@@ -7,12 +7,29 @@ import {
 } from './common';
 
 /**
- * Checks if a side-effect is allowed to run. This ensures certain actions
- * are executed exactly once.
+ * Guards side-effectful operations (`emit`, `signal`, `hook`, `trace`,
+ * `interrupt`) against duplicate execution during replay. Unlike
+ * `didRun()` (which replays stored results), this guard is for
+ * operations that don't produce a return value to cache — they simply
+ * must not run twice.
+ *
+ * ## Mechanism
+ *
+ * 1. Increments the execution counter to produce a `sessionId`.
+ * 2. If that `sessionId` already exists in the `replay` hash, the
+ *    operation already ran in a previous execution → return `false`.
+ * 3. Otherwise, atomically increments a field on the job's backend
+ *    HASH via `incrementFieldByFloat`. If the result is exactly `1`,
+ *    this is the first worker to reach this point → return `true`.
+ *    If `> 1`, a concurrent worker already executed it → return `false`.
+ *
+ * This provides **distributed idempotency** for side effects across
+ * replays and concurrent worker instances.
+ *
  * @private
  * @param {HotMesh} hotMeshClient - The HotMesh client.
- * @param {string} prefix - A unique prefix representing the action (e.g., 'trace', 'emit', etc.)
- * @returns {Promise<boolean>} True if the side effect can run, false otherwise.
+ * @param {string} prefix - Operation type (`'trace'`, `'emit'`, `'signal'`, `'hook'`, `'interrupt'`).
+ * @returns {Promise<boolean>} `true` if the side effect should execute, `false` if it already ran.
  */
 export async function isSideEffectAllowed(
   hotMeshClient: HotMesh,

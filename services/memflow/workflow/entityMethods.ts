@@ -1,16 +1,63 @@
 import { asyncLocalStorage, WorkerService, Entity } from './common';
 
 /**
- * Returns an entity session handle for interacting with the workflow's JSONB entity storage.
- * @returns {Promise<Entity>} An entity session for workflow data.
+ * Returns an `Entity` session handle for interacting with the workflow's
+ * structured JSON document storage. Unlike `search()` (flat HASH
+ * key-value pairs), `entity()` provides a JSONB document store with
+ * deep merge, append, and path-based get operations.
  *
- * @example
+ * Each call produces a unique session ID tied to the deterministic
+ * execution counter, ensuring correct replay behavior.
+ *
+ * ## Examples
+ *
  * ```typescript
- * const entity = await workflow.entity();
- * await entity.set({ user: { id: 123 } });
- * await entity.merge({ user: { name: "John" } });
- * const user = await entity.get("user");
+ * import { MemFlow } from '@hotmeshio/hotmesh';
+ *
+ * export async function userProfileWorkflow(userId: string): Promise<UserProfile> {
+ *   const entity = await MemFlow.workflow.entity();
+ *
+ *   // Initialize a structured document
+ *   await entity.set({
+ *     user: { id: userId, status: 'active' },
+ *     preferences: { theme: 'dark', locale: 'en-US' },
+ *   });
+ *
+ *   // Deep merge: adds name without overwriting existing fields
+ *   await entity.merge({ user: { name: 'Alice', email: 'alice@example.com' } });
+ *   // user is now: { id: userId, status: 'active', name: 'Alice', email: '...' }
+ *
+ *   // Append to an array
+ *   await entity.set({ user: { tags: ['premium'] } });
+ *   await entity.append({ user: { tags: ['verified'] } });
+ *   // user.tags is now: ['premium', 'verified']
+ *
+ *   // Read a nested path
+ *   const user = await entity.get('user');
+ *   return user as UserProfile;
+ * }
  * ```
+ *
+ * ```typescript
+ * // Accumulate state across activities
+ * export async function pipelineWorkflow(input: string): Promise<PipelineResult> {
+ *   const entity = await MemFlow.workflow.entity();
+ *   const { step1, step2, step3 } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *
+ *   const r1 = await step1(input);
+ *   await entity.merge({ pipeline: { step1: r1 } });
+ *
+ *   const r2 = await step2(r1);
+ *   await entity.merge({ pipeline: { step2: r2 } });
+ *
+ *   const r3 = await step3(r2);
+ *   await entity.merge({ pipeline: { step3: r3 } });
+ *
+ *   return await entity.get('pipeline') as PipelineResult;
+ * }
+ * ```
+ *
+ * @returns {Promise<Entity>} An entity session scoped to the current workflow job.
  */
 export async function entity(): Promise<Entity> {
   const store = asyncLocalStorage.getStore();

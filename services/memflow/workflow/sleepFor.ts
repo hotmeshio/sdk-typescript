@@ -8,26 +8,65 @@ import {
 import { didRun } from './didRun';
 
 /**
- * Sleeps the workflow for a specified duration, deterministically.
- * On replay, it will not actually sleep again, but resume after sleep.
+ * Suspends workflow execution for a durable, crash-safe duration. Unlike
+ * `setTimeout`, this sleep survives process restarts — the engine persists
+ * the wake-up time and resumes the workflow when the timer expires.
  *
- * @example
- * // Basic usage - sleep for a specific duration
- * await MemFlow.workflow.sleepFor('2 seconds');
+ * On replay, `sleepFor` returns immediately with the stored duration
+ * (no actual waiting occurs). This makes it safe for deterministic
+ * re-execution.
  *
- * @example
- * // Using with Promise.all for parallel operations
- * const [greeting, timeInSeconds] = await Promise.all([
- *   someActivity(name),
- *   MemFlow.workflow.sleepFor('1 second')
+ * ## Duration Formats
+ *
+ * Accepts any human-readable duration string parsed by the `ms` module:
+ * `'5 seconds'`, `'30s'`, `'2 minutes'`, `'1m'`, `'1 hour'`, `'2h'`,
+ * `'1 day'`, `'7d'`.
+ *
+ * ## Examples
+ *
+ * ```typescript
+ * import { MemFlow } from '@hotmeshio/hotmesh';
+ *
+ * // Simple delay before continuing
+ * export async function reminderWorkflow(userId: string): Promise<void> {
+ *   const { sendReminder } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *
+ *   // Wait 24 hours (survives server restarts)
+ *   await MemFlow.workflow.sleepFor('24 hours');
+ *   await sendReminder(userId, 'Your trial expires tomorrow');
+ *
+ *   // Wait another 6 days
+ *   await MemFlow.workflow.sleepFor('6 days');
+ *   await sendReminder(userId, 'Your trial has expired');
+ * }
+ * ```
+ *
+ * ```typescript
+ * // Exponential backoff with retry loop
+ * export async function pollingWorkflow(resourceId: string): Promise<string> {
+ *   const { checkStatus } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *
+ *   for (let attempt = 0; attempt < 10; attempt++) {
+ *     const status = await checkStatus(resourceId);
+ *     if (status === 'ready') return status;
+ *
+ *     // Exponential backoff: 1s, 2s, 4s, 8s, ...
+ *     const delay = Math.pow(2, attempt);
+ *     await MemFlow.workflow.sleepFor(`${delay} seconds`);
+ *   }
+ *   return 'timeout';
+ * }
+ * ```
+ *
+ * ```typescript
+ * // Race a sleep against an activity
+ * const [result, _] = await Promise.all([
+ *   activities.fetchData(id),
+ *   MemFlow.workflow.sleepFor('30 seconds'),
  * ]);
+ * ```
  *
- * @example
- * // Multiple sequential sleeps
- * await MemFlow.workflow.sleepFor('1 seconds');  // First pause
- * await MemFlow.workflow.sleepFor('2 seconds');  // Second pause
- *
- * @param {string} duration - A human-readable duration string (e.g., '1m', '2 hours', '30 seconds').
+ * @param {string} duration - A human-readable duration string.
  * @returns {Promise<number>} The resolved duration in seconds.
  */
 export async function sleepFor(duration: string): Promise<number> {
