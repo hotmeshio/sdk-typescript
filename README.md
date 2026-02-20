@@ -4,26 +4,59 @@
 
 Run durable workflows on Postgres. No servers, no queues, just your database.
 
-
-## Common Use Cases
-
-### 1. Pipeline Database
-Transform Postgres into a durable pipeline processor. Orchestrate long-running, multi-step pipelines transactionally and durably.
-
-### 2. Temporal You Own
-Get the power of Temporal without the infrastructure. HotMesh includes MemFlow, a Temporal-compatible API that runs directly on your Postgres database. No app server required.
-
-### 3. Distributed State Machine
-Build resilient, stateful applications where every component can [fail and recover](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md). HotMesh manages state transitions, retries, and coordination.
-
-### 4. Workflow-as-Code Platform
-Choose your style: procedural workflows with MemFlow's Temporal API, or functional workflows with HotMesh's YAML syntax.
-
-## Installation
-
 ```bash
 npm install @hotmeshio/hotmesh
 ```
+
+## It's just data
+
+There is nothing between you and your data. Workflow state lives in your database as ordinary rows — `jobs` and `jobs_attributes`. Query it directly, back it up with pg_dump, replicate it, join it against your application tables.
+
+```sql
+SELECT
+  j.key          AS job_key,
+  j.status       AS semaphore,
+  j.entity       AS workflow,
+  a.field        AS attribute,
+  a.value        AS value,
+  j.created_at,
+  j.updated_at
+FROM
+  jobs j
+  JOIN jobs_attributes a ON a.job_id = j.id
+WHERE
+  j.key = 'order-456'
+ORDER BY
+  a.field;
+```
+
+What happened? Consult the database. What's still running? Query the semaphore. What failed? Read the row. The execution state isn't reconstructed from a log — it was committed transactionally as each step ran.
+
+You can also use the Temporal-compatible API:
+
+```typescript
+const handle = client.workflow.getHandle('orders', 'orderWorkflow', 'order-456');
+
+const result = await handle.result();           // final output
+const status = await handle.status();           // semaphore (0 = complete)
+const state  = await handle.state(true);        // full state with metadata
+const exported = await handle.export({          // selective export
+  allow: ['data', 'state', 'status', 'timeline']
+});
+```
+
+## You can also use it for...
+
+- **Durable pipelines** — Orchestrate long-running, multi-step pipelines transactionally.
+- **Temporal replacement** — MemFlow provides a Temporal-compatible API that runs directly on Postgres. No app server required.
+- **Distributed state machines** — Build stateful applications where every component can [fail and recover](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md).
+- **AI and training pipelines** — Multi-step AI workloads where each stage is expensive and must not be repeated on failure. A crashed pipeline resumes from the last committed step, not from the beginning.
+
+## How it works in 30 seconds
+
+1. **You write workflow functions.** Plain TypeScript — branching, loops, error handling. HotMesh also supports a YAML syntax for declarative, functional workflows.
+2. **HotMesh compiles them into a transactional execution plan.** Each step becomes a committed database row. If the process crashes mid-workflow, it resumes from the last committed step.
+3. **Your Postgres database is the engine.** It stores state, coordinates retries, and delivers messages. Every connected client participates in execution — there is no central server.
 
 ## Two ways to write workflows
 
@@ -52,13 +85,13 @@ import { MemFlow } from '@hotmeshio/hotmesh';
 import * as activities from './activities';
 
 export async function orderWorkflow(itemId: string, qty: number) {
-  const { checkInventory, reserveItem, notifyBackorder } = 
+  const { checkInventory, reserveItem, notifyBackorder } =
     MemFlow.workflow.proxyActivities<typeof activities>({
       taskQueue: 'inventory-tasks'
     });
-  
+
   const available = await checkInventory(itemId);
-  
+
   if (available >= qty) {
     return await reserveItem(itemId, qty);
   } else {
@@ -102,23 +135,23 @@ const result = await handle.result();
 activities:
   trigger:
     type: trigger
-    
+
   checkInventory:
     type: worker
     topic: inventory.check
-    
+
   reserveItem:
     type: worker
     topic: inventory.reserve
-    
+
   notifyBackorder:
     type: worker
     topic: inventory.backorder.notify
-    
+
 transitions:
   trigger:
     - to: checkInventory
-    
+
   checkInventory:
     - to: reserveItem
       conditions:
@@ -128,7 +161,7 @@ transitions:
               '@pipe':
                 - ['{checkInventory.output.data.availableQty}', '{trigger.output.data.requestedQty}']
                 - ['{@conditional.gte}']
-    
+
     - to: notifyBackorder
       conditions:
         match:
@@ -185,14 +218,6 @@ const result = await hotMesh.pubsub('order.requested', {
 
 Both compile to the same distributed execution model.
 
-## Core features
-
-- **Durable execution** - Survives crashes, retries automatically
-- **No infrastructure** - Runs on your existing Postgres
-- **Temporal compatible** - Drop-in replacement for many use cases
-- **Distributed** - Every client participates in execution
-- **Observable** - Full execution history in your database
-
 ## Common patterns
 
 **Long-running workflows**
@@ -219,53 +244,10 @@ const childHandle = await startChild(validateOrder, { args: [orderId] });
 const validation = await childHandle.result();
 ```
 
-## AI and training pipelines
-
-HotMesh's transactional execution model is a natural fit for multi-step AI workloads — training runs, evaluation loops, reward scoring, data preparation — where each stage is expensive and must not be repeated on failure. Steps commit their results durably as they execute. A crashed training pipeline resumes from the last committed step, not from the beginning.
-
-## It's just data
-
-HotMesh provides a Temporal-compatible API for inspecting workflow state:
-
-```typescript
-const handle = client.workflow.getHandle('orders', 'orderWorkflow', 'order-456');
-
-const result = await handle.result();           // final output
-const status = await handle.status();           // semaphore (0 = complete)
-const state  = await handle.state(true);        // full state with metadata
-const exported = await handle.export({          // selective export
-  allow: ['data', 'state', 'status', 'timeline']
-});
-```
-
-But there is nothing between you and your data. Workflow state lives in your database as ordinary rows — `jobs` and `jobs_attributes`. Query it directly, back it up with pg_dump, replicate it, join it against your application tables.
-
-```sql
-SELECT
-  j.key          AS job_key,
-  j.status       AS semaphore,
-  j.entity       AS workflow,
-  a.field        AS attribute,
-  a.value        AS value,
-  j.created_at,
-  j.updated_at
-FROM
-  jobs j
-  JOIN jobs_attributes a ON a.job_id = j.id
-WHERE
-  j.key = 'order-456'
-ORDER BY
-  a.field;
-```
-
-What happened? Consult the database. What's still running? Query the semaphore. What failed? Read the row. The execution state isn't reconstructed from a log — it was committed transactionally as each step ran.
-
 ## Architecture
 
-For a deep dive into the transactional execution model — how every step is crash-safe, how the monotonic collation ledger guarantees exactly-once delivery, and how cycles and retries remain correct under arbitrary failure — see the [Collation Design Document](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md).
+For a deep dive into the transactional execution model — how every step is crash-safe, how the monotonic collation ledger guarantees exactly-once delivery, and how cycles and retries remain correct under arbitrary failure — see the [Collation Design Document](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md). The symbolic system (how to design workflows) and lifecycle details (how to deploy workflows) are covered in the [Architectural Overview](https://zenodo.org/records/12168558).
 
 ## License
 
-HotMesh is licensed under the Apache License, Version 2.0.
-
-You may use, modify, and distribute HotMesh in accordance with the license, including as part of your own applications and services. However, offering HotMesh itself as a standalone, hosted commercial orchestration service (or a substantially similar service) requires prior written permission from the author.
+HotMesh is source-available under the [HotMesh Source Available License](./LICENSE).

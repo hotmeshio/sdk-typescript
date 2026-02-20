@@ -16,8 +16,41 @@ The two ledgers are **monotonic** (increment-only). The semaphore is **convergen
 
 ---
 
+## Execution Model Overview
+
+Before diving into ledger mechanics, here are the core structures and terms used throughout this document.
+
+| Term | Definition |
+| ---- | ---------- |
+| **Job** | A single execution of a workflow. Each job has a unique ID, a status semaphore, and a set of activity instances. |
+| **Activity** | A node in the workflow graph. Types include trigger, worker, await, hook, signal, cycle, and interrupt. The type determines which legs and step protocols apply. |
+| **Transition** | A durable message that moves execution from one activity to the next. Delivered via streams and processed exactly once. |
+| **Leg 1** | The first phase of an activity. Publishes a work request, registers a hook, or sends a signal. Commits a completion marker (`+100B`) when done. |
+| **Leg 2** | The second phase (not all activities have one). Processes a response — worker results, timer fires, or webhook callbacks. Uses a per-message GUID ledger for step-level crash recovery. |
+| **DAG** | The directed graph of activities and transitions that defines a workflow. Each job executes one traversal. Cycles are supported via [dimensional re-entry](./DIMENSIONAL_ADDRESSING.md). |
+| **Collation ledger** | A monotonic 15-digit integer recording what has durably committed. One per activity (activity ledger) and one per Leg 2 message (GUID ledger). |
+| **Semaphore** | A per-job counter tracking open activity obligations. When it reaches the threshold (default: `0`), the job is complete. |
+
+### Lifecycle of a single activity
+
+Not all activities use both legs. The full two-leg lifecycle (Category A) looks like this:
+
+1. A **transition message** arrives, triggering the activity.
+2. **Leg 1** claims the message, performs its work (e.g., publishing a worker request), and commits a completion marker. The activity now waits for a response.
+3. A **response message** arrives (worker result, timer expiration, webhook callback). This begins **Leg 2**.
+4. Leg 2 processes three steps in order, each committed atomically with its ledger marker:
+   - **Step 1** — Execute the activity's logic and save results.
+   - **Step 2** — Spawn child activities, update the job semaphore, and capture a job-closed snapshot if the semaphore hit the threshold.
+   - **Step 3** — If this message closed the job, run job completion tasks.
+5. The message is **acknowledged and deleted**. If a crash occurs at any point, the ledger markers determine exactly which steps to skip on retry.
+
+See [Section 19](#19-activity-categories) for the four activity categories and which legs each type uses.
+
+---
+
 ## Table of Contents
 
+- [Execution Model Overview](#execution-model-overview)
 - [Goals](#goals)
 - [Core Principle: Transaction Bundling](#core-principle-transaction-bundling)
   - [Transaction Bundling in a Layered Architecture](#transaction-bundling-in-a-layered-architecture)
@@ -49,7 +82,7 @@ The two ledgers are **monotonic** (increment-only). The semaphore is **convergen
   - [Signal](#205-signal)
   - [Cycle](#206-cycle)
   - [Interrupt](#207-interrupt)
-- [21) Parent/Child Transitions and Dimensional Addressing](#21-parentchild-transitions-and-dimensional-addressing)
+- [21) Dimensional Addressing](#21-dimensional-addressing)
 - [Summary](#summary)
 
 ---
@@ -130,6 +163,16 @@ Weight:    100T  10T  1T  100B  10B  1B  100M  10M  1M  100K  10K  1K  100  10  
 |        8-15 | 10M..1       | **Leg2 entry counter** (8 digits, 0..99,999,999) |
 
 Positions 5-7 are structurally reserved but **not written by the Leg2 step protocol**. Step markers (work done, children spawned, job completion tasks) are tracked on the **GUID ledger**, not the activity ledger. This is because Leg 2 supports multiple entries per activity (hook cycles, retries), and each entry gets its own GUID with independent step tracking.
+
+### Operations Map
+
+| Region | Positions | Increment | Written when |
+| ------ | :-------: | --------- | ------------ |
+| **Finalize** | 1 | `+200_000_000_000_000` | Step 3 commits (sets pos 1 to `2`, closing the activity) |
+| **Leg1 entry counter** | 2-3 | `+1_000_000_000_000` | Each Leg1 message claim |
+| **Leg1 completion** | 4 | `+100_000_000_000` | Leg1 work commits |
+| **Reserved** | 5-7 | — | — |
+| **Leg2 entry counter** | 8-15 | `+1` | Each Leg2 message claim |
 
 ## 2) Derived Fields (How to Interpret the Activity Ledger)
 
@@ -276,6 +319,36 @@ Weight:    100T  10T  1T  100B  10B  1B  100M  10M  1M  100K  10K  1K  100  10  
 |        8-15 | 10M..1       | **Ordinal** (8 digits, seeded at creation with the activity's Leg2 entry count) |
 
 All other digits are reserved.
+
+### Operations Map
+
+| Region | Positions | Increment | Written when |
+| ------ | :-------: | --------- | ------------ |
+| **Reserved** | 1-3 | — | — |
+| **Job closed snapshot** | 4 | `+100_000_000_000` | Step 2 compound primitive (only if semaphore hit threshold) |
+| **Step 1: work done** | 5 | `+10_000_000_000` | Step 1 commits with durable work |
+| **Step 2: children spawned** | 6 | `+1_000_000_000` | Step 2 commits with child inserts + semaphore delta |
+| **Step 3: completion tasks** | 7 | `+100_000_000` | Step 3 commits with job completion work |
+| **Ordinal** | 8-15 | Seeded once | Leg2 entry (copied from activity's Leg2 counter) |
+
+### Cross-Ledger Operation Flow
+
+The two ledgers work in sequence. The activity ledger tracks coarse lifecycle; the GUID ledger tracks step completion within a single Leg 2 message.
+
+```
+Leg1 claim ───────► Activity [pos 2-3]  (+1T)
+Leg1 commit ──────► Activity [pos 4]    (+100B)
+                         ·
+                    (wait for response)
+                         ·
+Leg2 claim ───────► Activity [pos 8-15] (+1)
+                    GUID [pos 8-15]     (ordinal seed)
+Step 1 commit ────► GUID [pos 5]        (+10B)
+Step 2 commit ────► GUID [pos 6]        (+1B)
+                    GUID [pos 4]        (+100B if job closed)
+Step 3 commit ────► GUID [pos 7]        (+100M)
+                    Activity [pos 1]    (+200T finalize)
+```
 
 ## 7) Leg2 Entry (ordinal seed + dimensional counter)
 
@@ -453,7 +526,9 @@ This invariant is the durable proof that:
 
 ---
 
-### 12.2 Compound Primitive Requirement (Required)
+### 12.2 The Compound Primitive
+
+> **This is the most critical implementation detail in this document.** If the semaphore delta and job-closed snapshot are not computed and persisted in a single SQL statement, the system cannot guarantee exactly-once job completion under crash. Every other correctness guarantee depends on this primitive being implemented correctly.
 
 Engines and activities do not bind SQL outputs to subsequent SQL inputs.
 
@@ -1177,64 +1252,11 @@ The interrupt message to the target job fires before the step protocol. This is 
 
 ---
 
-## 21) Parent/Child Transitions and Dimensional Addressing
+## 21) Dimensional Addressing
 
-### Dimensional Address (DAD)
+Dimensional addressing isolates cycle iterations and parallel branches into independent state namespaces. Every activity executes in a plane identified by its **DAD** (Dimensional Address) — a comma-separated path like `,0,1,0` that encodes its position in the execution tree. Cycles increment the index to create a new plane; children inherit and extend the parent's DAD.
 
-Every activity executes in a dimensional plane identified by its **DAD** (Dimensional Address). The DAD is a comma-separated path that encodes the activity's position in the execution tree:
-
-```
-,<trigger_index>,<child1_index>,<child2_index>,...
-```
-
-All activities start at index `0` in their dimension. Cycle re-entry increments the index to create a new plane.
-
-### Examples
-
-| Activity | DAD | Meaning |
-| -------- | --- | ------- |
-| Trigger | `,0` | Root, first (only) dimension |
-| First child of trigger | `,0,0` | One level deep, first dimension |
-| Second-level child | `,0,0,0` | Two levels deep, first dimension |
-| Cycle re-entry of child at depth 1 | `,0,1` | Same depth, second dimension |
-| Children of re-entered activity | `,0,1,0` | Fresh plane under new dimension |
-
-### How Children Receive Their DAD
-
-When an activity spawns children in Step 2:
-
-1. The parent resolves its own DAD (accounting for cycle index via `resolveDad()`)
-2. The parent appends `,0` to create the **adjacent DAD** (via `resolveAdjacentDad()`)
-3. All children receive this adjacent DAD in their stream metadata
-4. Each child's own children will extend the DAD by one more level
-
-### How Cycle Changes the DAD
-
-When a cycle activity targets an ancestor:
-
-1. The current DAD (e.g., `,0,0,1,0`) is trimmed to the ancestor's position in the graph
-2. The last segment is replaced with `,0` (reset for new dimension)
-3. The ancestor re-enters with this new DAD
-4. The ancestor's Leg 2 counter increments, producing a `dimensionalIndex > 0`
-5. `resolveDad()` replaces the trailing `,0` with the new index (e.g., `,0,1`)
-6. All children of this re-entry run under the new dimensional prefix
-
-### Dimensional Isolation
-
-Each dimensional address maps to an independent state namespace. Activity state stored under DAD `,0,0` is invisible to state stored under DAD `,0,1`. This ensures:
-
-* Cycle iterations do not overwrite prior iteration state
-* Parallel branches in the graph execute in isolated namespaces
-* The ledger tracks each dimension independently via the `getDimensionsById()` mapping
-
-### Semaphore Accounting Across Generations
-
-The semaphore tracks all open obligations regardless of dimensional depth:
-
-1. **Trigger** initializes semaphore = number of direct children
-2. **Each completing activity** applies `delta = (N - 1)` where N = children spawned
-3. **Cycle re-entries** do not change the semaphore directly; the cycle activity sets `status = 0` (no-op), and the re-entered ancestor's step protocol handles its own children
-4. **The job completes** when the semaphore reaches the threshold (default: `0`), meaning all activities across all dimensions have completed
+For the full specification — DAD construction, cycle re-entry mechanics, and semaphore accounting across generations — see the [Dimensional Addressing Document](./DIMENSIONAL_ADDRESSING.md).
 
 ---
 
@@ -1247,7 +1269,7 @@ This collation strategy provides a durable, monotonic, overflow-safe ledger for 
 * **Job semaphore** guarantees correct job closure detection and exactly-once completion tasks
 * **Transaction-bundled digit increments** provide exactly-once proofs for each durable step
 * **Four activity categories** (A through D) map each activity type to a precise combination of legs, step protocols, and ledger increments
-* **Dimensional addressing** isolates cycle iterations and parallel branches into independent state namespaces
+* **Dimensional addressing** isolates cycle iterations and parallel branches into independent state namespaces (see [full specification](./DIMENSIONAL_ADDRESSING.md))
 * **High retry and cycle capacity** ensure long-running, reentrant workflows remain correct and forward-progressing under arbitrary failures
 
 Nothing is ledgered without a supporting proof in the same transaction. Nothing is proven without a durable commit. The monotonic ledger is the single source of truth for what has occurred, and the step protocol guarantees that every activity converges to completion regardless of crashes, retries, or message replays.
