@@ -11,31 +11,64 @@ import {
 } from '../../../modules/errors';
 
 /**
- * Checks if an error is a HotMesh reserved error type that indicates
- * a HotMesh interruption rather than a true error condition.
+ * Type guard that returns `true` if an error is a MemFlow engine
+ * control-flow signal rather than a genuine application error.
  *
- * When this returns true, you can safely return rethrow the error.
- * The workflow engine will handle the interruption automatically.
+ * MemFlow uses thrown errors internally to suspend workflow execution
+ * for durable operations like `sleepFor`, `waitFor`, `proxyActivities`,
+ * and `execChild`. These errors must be re-thrown (not swallowed) so
+ * the engine can persist state and schedule the next step.
  *
- * @example
+ * **Always use `didInterrupt` in `catch` blocks inside workflow
+ * functions** to avoid accidentally swallowing engine signals.
+ *
+ * ## Recognized Error Types
+ *
+ * `MemFlowChildError`, `MemFlowFatalError`, `MemFlowMaxedError`,
+ * `MemFlowProxyError`, `MemFlowRetryError`, `MemFlowSleepError`,
+ * `MemFlowTimeoutError`, `MemFlowWaitForError`, `MemFlowWaitForAllError`
+ *
+ * ## Examples
+ *
  * ```typescript
  * import { MemFlow } from '@hotmeshio/hotmesh';
  *
- * try {
- *   await someWorkflowOperation();
- * } catch (error) {
- *   // Check if this is a HotMesh interruption
- *   if (MemFlow.workflow.didInterrupt(error)) {
- *     // Rethrow the error
- *     throw error;
+ * export async function safeWorkflow(): Promise<string> {
+ *   const { riskyOperation } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *
+ *   try {
+ *     return await riskyOperation();
+ *   } catch (error) {
+ *     // CRITICAL: re-throw engine signals
+ *     if (MemFlow.workflow.didInterrupt(error)) {
+ *       throw error;
+ *     }
+ *     // Handle real application errors
+ *     return 'fallback-value';
  *   }
- *   // Handle actual error
- *   console.error('Workflow failed:', error);
  * }
  * ```
  *
- * @param error - The error to check
- * @returns true if the error is a HotMesh interruption
+ * ```typescript
+ * // Common pattern in interceptors
+ * const interceptor: WorkflowInterceptor = {
+ *   async execute(ctx, next) {
+ *     try {
+ *       return await next();
+ *     } catch (error) {
+ *       if (MemFlow.workflow.didInterrupt(error)) {
+ *         throw error;  // always re-throw engine signals
+ *       }
+ *       // Log and re-throw application errors
+ *       console.error('Workflow failed:', error);
+ *       throw error;
+ *     }
+ *   },
+ * };
+ * ```
+ *
+ * @param {Error} error - The error to check.
+ * @returns {boolean} `true` if the error is a MemFlow engine interruption signal.
  */
 export function didInterrupt(error: Error): boolean {
   return (

@@ -542,7 +542,7 @@ describe('FUNCTIONAL | MEMFLOW | Postgres', () => {
       const jobId = await hotMesh.pub('memflow.execute', payload);
       await sleepFor(2_500);
 
-      await hotMesh.hook(collatorSignalTopic, {
+      await hotMesh.signal(collatorSignalTopic, {
         id: signalId,
         data: { ...signalResponse, id: signalId },
       });
@@ -638,7 +638,7 @@ describe('FUNCTIONAL | MEMFLOW | Postgres', () => {
       await sleepFor(2_500);
 
       //send the signal so that the workflow can continue
-      await hotMesh.hook(collatorSignalTopic, {
+      await hotMesh.signal(collatorSignalTopic, {
         id: `${signalId}hi`,
         data: { ...signalResponse, id: `${signalId}hi` },
       });

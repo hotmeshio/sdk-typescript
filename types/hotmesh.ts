@@ -364,4 +364,5 @@ export {
   KeyType,
   KeyStoreParams,
   ScoutType,
+  VersionedFields,
 };

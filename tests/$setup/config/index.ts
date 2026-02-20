@@ -1,4 +1,9 @@
 import * as dotenv from 'dotenv';
+import development from './development';
+import test from './test';
+import staging from './staging';
+import production from './production';
+
 dotenv.config();
 
 const env = process.env.NODE_ENV || 'development';
@@ -28,11 +33,6 @@ const baseConfig = {
   NATS_SERVERS: ['nats:4222'],
 };
 
-const envConfig = {
-  development: require('./development').default,
-  test: require('./test').default,
-  staging: require('./staging').default,
-  production: require('./production').default,
-};
+const envConfig = { development, test, staging, production };
 
 export default { ...baseConfig, ...envConfig[env] };

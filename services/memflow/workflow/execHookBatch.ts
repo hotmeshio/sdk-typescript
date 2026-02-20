@@ -4,7 +4,8 @@ import { waitFor } from './waitFor';
 import { ExecHookOptions } from './execHook';
 
 /**
- * Configuration for a single hook in a batch execution
+ * Configuration for a single hook in a batch execution.
+ * @see {@link execHookBatch}
  */
 export interface BatchHookConfig<T = any> {
   /** Unique key to identify this hook's result in the returned object */
@@ -14,47 +15,99 @@ export interface BatchHookConfig<T = any> {
 }
 
 /**
- * Executes multiple hooks in parallel and awaits all their signal responses.
- * This solves the race condition where Promise.all() with execHook() would prevent
- * all waitFor() registrations from completing.
- * 
- * The method ensures all waitFor() registrations happen before any hooks execute,
- * preventing signals from being sent before the framework is ready to receive them.
+ * Executes multiple hooks in parallel and awaits all their signal responses,
+ * returning a keyed object of results. This is the recommended way to run
+ * concurrent hooks — it solves a race condition where calling
+ * `Promise.all([execHook(), execHook()])` would throw before all `waitFor`
+ * registrations complete.
  *
- * @template T - Object type with keys matching the batch hook keys and values as expected response types
- * @param {BatchHookConfig[]} hookConfigs - Array of hook configurations with unique keys
- * @returns {Promise<T>} Object with keys from hookConfigs and values as the signal responses
+ * ## Three-Phase Execution
  *
- * @example
+ * 1. **Fire all hooks** via `Promise.all` (registers streams immediately).
+ * 2. **Await all signals** via `Promise.all` (all `waitFor` registrations
+ *    happen together before any `MemFlowWaitForError` is thrown).
+ * 3. **Combine results** into a `{ [key]: result }` map.
+ *
+ * ## Examples
+ *
  * ```typescript
- * // Execute multiple research perspectives in parallel
- * const results = await MemFlow.workflow.execHookBatch<{
- *   optimistic: OptimisticResult;
- *   skeptical: SkepticalResult;
+ * import { MemFlow } from '@hotmeshio/hotmesh';
+ *
+ * // Fan-out to multiple AI agents, gather all perspectives
+ * export async function researchWorkflow(query: string): Promise<Summary> {
+ *   const perspectives = await MemFlow.workflow.execHookBatch<{
+ *     optimistic: PerspectiveResult;
+ *     skeptical: PerspectiveResult;
+ *     neutral: PerspectiveResult;
+ *   }>([
+ *     {
+ *       key: 'optimistic',
+ *       options: {
+ *         taskQueue: 'agents',
+ *         workflowName: 'analyzeOptimistic',
+ *         args: [query],
+ *       },
+ *     },
+ *     {
+ *       key: 'skeptical',
+ *       options: {
+ *         taskQueue: 'agents',
+ *         workflowName: 'analyzeSkeptical',
+ *         args: [query],
+ *       },
+ *     },
+ *     {
+ *       key: 'neutral',
+ *       options: {
+ *         taskQueue: 'agents',
+ *         workflowName: 'analyzeNeutral',
+ *         args: [query],
+ *       },
+ *     },
+ *   ]);
+ *
+ *   // All three results are available as typed properties
+ *   const { synthesize } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *   return await synthesize(
+ *     perspectives.optimistic,
+ *     perspectives.skeptical,
+ *     perspectives.neutral,
+ *   );
+ * }
+ * ```
+ *
+ * ```typescript
+ * // Parallel validation with different services
+ * const checks = await MemFlow.workflow.execHookBatch<{
+ *   fraud: { safe: boolean };
+ *   compliance: { approved: boolean };
  * }>([
  *   {
- *     key: 'optimistic',
+ *     key: 'fraud',
  *     options: {
- *       taskQueue: 'agents',
- *       workflowName: 'optimisticPerspective',
- *       args: [query],
- *       signalId: 'optimistic-complete'
- *     }
+ *       taskQueue: 'fraud-detection',
+ *       workflowName: 'checkFraud',
+ *       args: [transactionId],
+ *     },
  *   },
  *   {
- *     key: 'skeptical', 
+ *     key: 'compliance',
  *     options: {
- *       taskQueue: 'agents',
- *       workflowName: 'skepticalPerspective',
- *       args: [query],
- *       signalId: 'skeptical-complete'
- *     }
- *   }
+ *       taskQueue: 'compliance',
+ *       workflowName: 'checkCompliance',
+ *       args: [transactionId],
+ *     },
+ *   },
  * ]);
- * 
- * // results.optimistic contains the OptimisticResult
- * // results.skeptical contains the SkepticalResult
+ *
+ * if (checks.fraud.safe && checks.compliance.approved) {
+ *   // proceed with transaction
+ * }
  * ```
+ *
+ * @template T - Object type with keys matching the batch hook keys.
+ * @param {BatchHookConfig[]} hookConfigs - Array of hook configurations with unique keys.
+ * @returns {Promise<T>} Object mapping each config's `key` to its signal response.
  */
 export async function execHookBatch<T extends Record<string, any>>(
   hookConfigs: BatchHookConfig[]

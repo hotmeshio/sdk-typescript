@@ -46,13 +46,69 @@ import {
 import { TransitionRule } from '../../types/transition';
 
 /**
- * The base class for all activities
+ * Base class for all HotMesh activity types. Activities are the execution
+ * units within a YAML-defined workflow graph. Each activity represents a
+ * node in a Directed Acyclic Graph (DAG) that the engine orchestrates.
+ *
+ * ## Activity Categories
+ *
+ * Activities fall into three execution categories:
+ *
+ * - **Category A (Duplex)**: Two-phase activities with Leg 1 (dispatch) and
+ *   Leg 2 (response). Used by `Worker` and `Await`. Leg 1
+ *   publishes a message and waits; Leg 2 handles the response via
+ *   `processEvent` and transitions to adjacent activities.
+ *
+ * - **Category B (Leg1-only with children)**: Single-phase activities that
+ *   execute work and transition to children using the crash-safe
+ *   `executeLeg1StepProtocol`. Used by `Hook` (passthrough mode),
+ *   `Signal`, and `Interrupt` (target mode).
+ *
+ * - **Category C (Leg1-only, no children)**: Terminal activities that
+ *   execute without spawning children. Used by `Interrupt` (self mode).
+ *
+ * ## Shared YAML Configuration
+ *
+ * All activity types support these base properties in the YAML descriptor:
+ *
+ * | Property             | Type    | Description |
+ * |----------------------|---------|-------------|
+ * | `type`               | string  | Activity type: `trigger`, `worker`, `await`, `hook`, `signal`, `interrupt`, `cycle` |
+ * | `title`              | string  | Human-readable label for the activity |
+ * | `input.schema`       | object  | JSON Schema for input validation |
+ * | `input.maps`         | object  | Maps data from other activities into this activity's input |
+ * | `output.schema`      | object  | JSON Schema for output validation |
+ * | `output.maps`        | object  | Maps/transforms the activity's own output data |
+ * | `job.maps`           | object  | Maps activity data to the shared job state |
+ * | `emit`               | boolean | If `true`, emits a message to the graph's `publishes` topic |
+ * | `persist`            | boolean | If `true`, emits the job-completed event while keeping the job active |
+ * | `expire`             | number  | Seconds until the job expires after completion (`-1` = forever) |
+ * | `statusThreshold`    | number  | Custom semaphore threshold for Dynamic Activation Control |
+ * | `cycle`              | boolean | If `true`, leaves Leg 2 open so the activity can be re-entered |
+ *
+ * ## Data Mapping Syntax
+ *
+ * Mapping expressions use curly-brace references to bind data between
+ * activities and the shared job state:
+ *
+ * ```yaml
+ * input:
+ *   maps:
+ *     x: '{t1.output.data.fieldName}'      # reference another activity's output
+ *     y: '{$self.output.data.fieldName}'    # reference own output
+ *     z: '{$job.data.fieldName}'            # reference shared job state
+ *     s: '{$app.settings.configKey}'        # reference app-level settings
+ * ```
+ *
+ * @see {@link https://hotmeshio.github.io/sdk-typescript/docs/quickstart | Quick Start Guide}
+ * @see [Model Driven Development](https://hotmeshio.github.io/sdk-typescript/docs/model_driven_development)
  */
 class Activity {
   config: ActivityType;
   data: ActivityData;
   hook: ActivityData;
   metadata: ActivityMetadata;
+  /** @hidden */
   store: StoreService<ProviderClient, ProviderTransaction>;
   context: JobState;
   engine: EngineService;
@@ -117,13 +173,15 @@ class Activity {
       );
     } catch (error) {
       await CollatorService.notarizeEntry(this);
-      //todo: confirm this check is still needed; the edge event cleanup should handle fully
       if (threshold > 0) {
-        if (this.context.metadata.js === threshold) {
-          //conclude job EXACTLY ONCE
+        if (this.context.metadata.js <= threshold) {
+          //Dynamic Activation Control: convergent claim — only the
+          //activity whose HINCRBY reaches exactly 0 runs completion.
           const status = await this.setStatus(-threshold);
           if (Number(status) === 0) {
-            await this.engine.runJobCompletionTasks(this.context);
+            const txn = this.store.transact();
+            await this.engine.runJobCompletionTasks(this.context, {}, txn);
+            await txn.exec();
           }
         }
       } else {
@@ -631,17 +689,10 @@ class Activity {
     );
   }
 
-  authorizeEntry(state: StringAnyType): string[] {
-    //pre-authorize activity state to allow entry for adjacent activities
-    return (
-      this.adjacencyList?.map((streamData) => {
-        const {
-          metadata: { aid },
-        } = streamData;
-        state[`${aid}/output/metadata/as`] = CollatorService.getSeed();
-        return aid;
-      }) ?? []
-    );
+  authorizeEntry(_state: StringAnyType): string[] {
+    //seed writes removed: child activities increment from 0 (null field).
+    //FINALIZE (200T) sets pos 1 directly to 2 without needing a 100T base.
+    return [];
   }
 
   bindDimensionalAddress(state: StringAnyType) {
@@ -928,38 +979,6 @@ class Activity {
       return Pipe.resolve(this.config.persist, this.context) === true;
     }
     return false;
-  }
-
-  /**
-   * Transition method for Category C (Leg1-only, no children, no semaphore change)
-   * and Category D (Trigger) activities. NOT used by the Leg2 step protocol.
-   */
-  async transition(
-    adjacencyList: StreamData[],
-    jobStatus: JobStatus,
-  ): Promise<string[]> {
-    if (this.jobWasInterrupted(jobStatus)) {
-      return;
-    }
-    let mIds: string[] = [];
-
-    if (
-      this.shouldEmit() ||
-      this.isJobComplete(jobStatus) ||
-      this.shouldPersistJob()
-    ) {
-      await this.engine.runJobCompletionTasks(this.context, {
-        emit: !this.isJobComplete(jobStatus) && !this.shouldPersistJob(),
-      });
-    }
-    if (adjacencyList.length && !this.isJobComplete(jobStatus)) {
-      const transaction = this.store.transact();
-      for (const execSignal of adjacencyList) {
-        await this.engine.router?.publishMessage(null, execSignal, transaction);
-      }
-      mIds = (await transaction.exec()) as string[];
-    }
-    return mIds;
   }
 
   /**

@@ -165,8 +165,8 @@ describe('FUNCTIONAL | HotMesh', () => {
         facility: 'acme',
         actual_release_series: '202304110015',
       };
-      //hook returns the streamId (searchable through open telemetry)
-      const streamId = await hotMesh.hook('order.routed', payload);
+      //signal returns the streamId (searchable through open telemetry)
+      const streamId = await hotMesh.signal('order.routed', payload);
       expect(streamId).not.toBeNull();
     });
 
@@ -281,14 +281,14 @@ describe('FUNCTIONAL | HotMesh', () => {
     }, 61_000);
   });
 
-  describe('hook()', () => {
+  describe('signal()', () => {
     it('should signal and awaken a sleeping job', async () => {
       const payload = {
         id: 'ord_1054',
         facility: 'spacely',
         actual_release_series: '202304110015',
       };
-      await hotMesh.hook('order.routed', payload);
+      await hotMesh.signal('order.routed', payload);
       while (await hotMesh.getStatus(payload.id) !== 0) {
         await sleepFor(1000);
       }
@@ -297,7 +297,7 @@ describe('FUNCTIONAL | HotMesh', () => {
     });
   });
 
-  describe('hookAll()', () => {
+  describe('signalAll()', () => {
     it('should signal and awaken all jobs of a certain type', async () => {
       const payload = {
         facility: 'acme',
@@ -312,7 +312,7 @@ describe('FUNCTIONAL | HotMesh', () => {
         range: '1h',
         end: 'NOW',
       };
-      const response = await hotMesh.hookAll('order.routed', payload, query, [
+      const response = await hotMesh.signalAll('order.routed', payload, query, [
         'color:red',
       ]);
       await sleepFor(1500);

@@ -2,6 +2,8 @@ import { Client } from 'pg';
 
 import config from '../../../../$setup/config';
 import { PostgresConnection } from '../../../../../services/connector/providers/postgres';
+import { PostgresSubService } from '../../../../../services/sub/providers/postgres/postgres';
+import { PostgresStreamService } from '../../../../../services/stream/providers/postgres/postgres';
 import {
   PostgresClientOptions,
   PostgresClientType,
@@ -221,7 +223,7 @@ describe('PostgresConnection', () => {
 
   it('should handle multiple SubService instances with shared taskQueue connection correctly', async () => {
     // Import the SubService here to test subscription handling
-    const { PostgresSubService } = require('../../../../../services/sub/providers/postgres/postgres');
+    // PostgresSubService imported at top of file
     
     const taskQueue = 'shared-task-queue';
     const options: PostgresClientOptions = {
@@ -279,7 +281,7 @@ describe('PostgresConnection', () => {
 
   it('should handle multiple StreamService instances with shared taskQueue connection correctly', async () => {
     // Import the StreamService here to test notification handling
-    const { PostgresStreamService } = require('../../../../../services/stream/providers/postgres/postgres');
+    // PostgresStreamService imported at top of file
     
     const taskQueue = 'shared-stream-task-queue';
     const options: PostgresClientOptions = {

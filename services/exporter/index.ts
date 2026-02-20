@@ -23,9 +23,11 @@ import {
 class ExporterService {
   appId: string;
   logger: ILogger;
+  /** @hidden */
   store: StoreService<ProviderClient, ProviderTransaction>;
   symbols: Promise<Symbols> | Symbols;
 
+  /** @hidden */
   constructor(
     appId: string,
     store: StoreService<ProviderClient, ProviderTransaction>,

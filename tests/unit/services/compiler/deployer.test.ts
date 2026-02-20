@@ -8,7 +8,7 @@ describe('Deployer', () => {
   let deployer: Deployer;
 
   beforeEach(() => {
-    jest.resetAllMocks();
+    vi.resetAllMocks();
     deployer = new Deployer(manifest);
   });
 

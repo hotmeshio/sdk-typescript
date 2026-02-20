@@ -34,9 +34,9 @@ services:
     ports:
       - "4222:4222"
       - "8222:8222"
-    command: ["-js"]
+    command: ["-js", "-m", "8222"]
     healthcheck:
-      test: ["CMD", "nats", "ping", "localhost"]
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8222/healthz || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -8,29 +8,66 @@ import { didRun } from './didRun';
 
 /**
  * Pauses the workflow until a signal with the given `signalId` is received.
- * This method is commonly used to coordinate between the main workflow and hook functions,
- * or to wait for external events.
+ * The workflow suspends durably — it survives process restarts and will
+ * resume exactly once when the matching `signal()` call delivers data.
  *
- * @example
- * // Basic usage - wait for a single signal
- * const payload = await MemFlow.workflow.waitFor<PayloadType>('abcdefg');
+ * `waitFor` is the **receive** side of the signal coordination pair.
+ * The **send** side is `signal()`, which can be called from another
+ * workflow, a hook function, or externally via `MemFlow.Client.workflow.signal()`.
  *
- * @example
- * // Wait for multiple signals in parallel
- * const [signal1, signal2] = await Promise.all([
- *   MemFlow.workflow.waitFor<Record<string, any>>('signal1'),
- *   MemFlow.workflow.waitFor<Record<string, any>>('signal2')
- * ]);
+ * On replay, `waitFor` returns the previously stored signal payload
+ * immediately (no actual suspension occurs).
  *
- * @example
- * // Typical pattern with hook functions
- * // In main workflow:
- * await MemFlow.workflow.waitFor<ResponseType>('hook-complete');
+ * ## Examples
  *
- * // In hook function:
- * await MemFlow.workflow.signal('hook-complete', { data: result });
+ * ```typescript
+ * import { MemFlow } from '@hotmeshio/hotmesh';
  *
- * @template T - The type of data expected in the signal payload
+ * // Human-in-the-loop approval pattern
+ * export async function approvalWorkflow(orderId: string): Promise<boolean> {
+ *   const { submitForReview } = MemFlow.workflow.proxyActivities<typeof activities>();
+ *
+ *   await submitForReview(orderId);
+ *
+ *   // Pause indefinitely until a human approves or rejects
+ *   const decision = await MemFlow.workflow.waitFor<{ approved: boolean }>('approval');
+ *
+ *   return decision.approved;
+ * }
+ *
+ * // Later, from outside the workflow (e.g., an API handler):
+ * await client.workflow.signal('approval', { approved: true });
+ * ```
+ *
+ * ```typescript
+ * // Fan-in: wait for multiple signals in parallel
+ * export async function gatherWorkflow(): Promise<[string, number]> {
+ *   const [name, score] = await Promise.all([
+ *     MemFlow.workflow.waitFor<string>('name-signal'),
+ *     MemFlow.workflow.waitFor<number>('score-signal'),
+ *   ]);
+ *   return [name, score];
+ * }
+ * ```
+ *
+ * ```typescript
+ * // Paired with hook: spawn work and wait for the result
+ * export async function orchestrator(input: string): Promise<string> {
+ *   const signalId = `result-${MemFlow.workflow.random()}`;
+ *
+ *   // Spawn a hook that will signal back when done
+ *   await MemFlow.workflow.hook({
+ *     taskQueue: 'processors',
+ *     workflowName: 'processItem',
+ *     args: [input, signalId],
+ *   });
+ *
+ *   // Wait for the hook to signal completion
+ *   return await MemFlow.workflow.waitFor<string>(signalId);
+ * }
+ * ```
+ *
+ * @template T - The type of data expected in the signal payload.
  * @param {string} signalId - A unique signal identifier shared by the sender and receiver.
  * @returns {Promise<T>} The data payload associated with the received signal.
  */

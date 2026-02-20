@@ -89,11 +89,17 @@ class EngineService {
   appId: string;
   guid: string;
   exporter: ExporterService | null;
+  /** @hidden */
   search: SearchService<ProviderClient> | null;
+  /** @hidden */
   store: StoreService<ProviderClient, ProviderTransaction> | null;
+  /** @hidden */
   stream: StreamService<ProviderClient, ProviderTransaction> | null;
+  /** @hidden */
   subscribe: SubService<ProviderClient> | null;
+  /** @hidden */
   router: Router<typeof this.stream> | null;
+  /** @hidden */
   taskService: TaskService | null;
   logger: ILogger;
   cacheMode: CacheMode = 'cache';
@@ -326,7 +332,7 @@ class EngineService {
    * @private
    */
   async processWebHooks() {
-    this.taskService.processWebHooks(this.hook.bind(this));
+    this.taskService.processWebHooks(this.signal.bind(this));
   }
 
   /**
@@ -679,11 +685,17 @@ class EngineService {
     await this.store.scrub(jobId);
   }
 
-  // ****************** `HOOK` ACTIVITY RE-ENTRY POINT *****************
+  // ****************** `SIGNAL` ACTIVITY RE-ENTRY POINT ****************
   /**
+   * Delivers a signal (data payload) to a paused hook activity,
+   * resuming its Leg 2 execution. The `topic` must match a hook rule
+   * defined in the YAML graph's `hooks` section. The engine locates
+   * the target activity and dimension for reentry based on the hook
+   * rule's match conditions.
+   *
    * @private
    */
-  async hook(
+  async signal(
     topic: string,
     data: JobData,
     status: StreamStatus = StreamStatus.SUCCESS,
@@ -736,9 +748,13 @@ class EngineService {
     await this.router?.publishMessage(null, streamData);
   }
   /**
+   * Fan-out variant of `signal()` that delivers data to **all**
+   * paused workflows matching a search query. Useful for resuming
+   * a batch of workflows waiting on the same external event.
+   *
    * @private
    */
-  async hookAll(
+  async signalAll(
     hookTopic: string,
     data: JobData,
     keyResolver: JobStatsInput,

@@ -315,7 +315,7 @@ class MemFlowClass {
    * Checks if an error is a HotMesh reserved error type that indicates
    * a workflow interruption rather than a true error condition.
    *
-   * @see {@link utils/interruption.didInterrupt} for detailed documentation
+   * @see {@link didInterrupt} for detailed documentation
    */
   static didInterrupt = didInterrupt;
 

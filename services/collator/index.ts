@@ -17,9 +17,9 @@ class CollatorService {
    * Weight:   100T  10T   1T   100B   10B   1B   100M   10M..1
    */
   static WEIGHTS = {
-    AUTH:           100_000_000_000_000,  // pos 1 (reserved)
-    FINALIZE:        10_000_000_000_000,  // pos 2 (reserved)
-    LEG1_ENTRY:       1_000_000_000_000,  // pos 3: Leg1 attempt counter
+    AUTH:           100_000_000_000_000,  // pos 1: reserved (trigger seed only)
+    FINALIZE:       200_000_000_000_000,  // pos 1: +200T sets pos 1 to 2 (finalized)
+    LEG1_ENTRY:       1_000_000_000_000,  // pos 3: Leg1 attempt counter (pos 2-3 = 0..99)
     LEG1_COMPLETE:      100_000_000_000,  // pos 4: Leg1 completion marker
     STEP1_WORK:          10_000_000_000,  // pos 5: Leg2 work done
     STEP2_SPAWN:          1_000_000_000,  // pos 6: children spawned
@@ -252,7 +252,8 @@ class CollatorService {
   }
 
   /**
-   * Finalize: close the activity to new Leg2 GUIDs (+10T).
+   * Finalize: close the activity to new Leg2 GUIDs (+200T).
+   * Sets pos 1 to 2 (finalized).
    * Only for non-cycle activities after final SUCCESS/ERROR.
    */
   static async notarizeFinalize(
@@ -268,46 +269,6 @@ class CollatorService {
         transaction,
       );
     }
-  }
-
-  // ──────────────────────────────────────────────────
-  //  Inception (trigger duplicate detection)
-  // ──────────────────────────────────────────────────
-
-  /**
-   * sets the synthetic inception key (in case an overage occurs).
-   */
-  static async notarizeInception(
-    activity: Activity,
-    guid: string,
-    transaction: ProviderTransaction,
-  ): Promise<void> {
-    if (guid) {
-      await activity.store.collateSynthetic(
-        activity.context.metadata.jid,
-        guid,
-        1_000_000,
-        transaction,
-      );
-    }
-  }
-
-  /**
-   * ignore those ID collisions that are due to re-entry overages
-   */
-  static async isInceptionOverage(
-    activity: Activity,
-    guid: string,
-  ): Promise<boolean> {
-    if (guid) {
-      const amount = await activity.store.collateSynthetic(
-        activity.context.metadata.jid,
-        guid,
-        1_000_000,
-      );
-      return amount > 1_000_000;
-    }
-    return false;
   }
 
   // ──────────────────────────────────────────────────
@@ -433,7 +394,7 @@ class CollatorService {
    *             If pos 3 > 1 and pos 4 == 1, it's a stale/replayed message.
    *
    * Leg2 enter: pos 4 (100B) must be > 0 (Leg1 complete, reentry authorized).
-   *             pos 2 (10T) must be 0 (not finalized) — cycle activities exempt.
+   *             pos 1 (100T) must be < 2 (not finalized) — cycle activities exempt.
    */
   static verifyInteger(
     amount: number,
@@ -453,12 +414,12 @@ class CollatorService {
       }
     } else if (leg === 2 && stage === 'enter') {
       const leg1Complete = this.getDigitAtPosition(amount, 4);
-      const finalized = this.getDigitAtPosition(amount, 2);
+      const finalized = this.getDigitAtPosition(amount, 1);
       if (leg1Complete === 0) {
         //Leg1 not complete — reentry not authorized
         faultType = CollationFaultType.FORBIDDEN;
-      } else if (finalized > 0) {
-        //activity finalized — no new Leg2 GUIDs accepted
+      } else if (finalized >= 2) {
+        //activity finalized (pos 1 = 2) — no new Leg2 GUIDs accepted
         faultType = CollationFaultType.INACTIVE;
       }
     }
@@ -492,14 +453,6 @@ class CollatorService {
   // ──────────────────────────────────────────────────
   //  Seeds
   // ──────────────────────────────────────────────────
-
-  /**
-   * All non-trigger activities are assigned a status seed by their parent.
-   * Seed: 100000000000000 (pos 1 = 1, authorized for entry)
-   */
-  static getSeed(): string {
-    return '100000000000000';
-  }
 
   /**
    * All trigger activities are assigned a status seed in a completed state.

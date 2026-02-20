@@ -228,6 +228,7 @@ type JobCompletionOptions = {
 };
 
 export {
+  ActivityData,
   JobCompletionOptions,
   JobData,
   JobsData,

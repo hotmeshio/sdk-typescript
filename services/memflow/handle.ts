@@ -67,7 +67,7 @@ export class WorkflowHandleService {
    * will awaken if no other signals are pending.
    */
   async signal(signalId: string, data: Record<any, any>): Promise<void> {
-    await this.hotMesh.hook(`${this.hotMesh.appId}.wfs.signal`, {
+    await this.hotMesh.signal(`${this.hotMesh.appId}.wfs.signal`, {
       id: signalId,
       data,
     });

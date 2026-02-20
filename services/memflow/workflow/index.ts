@@ -24,20 +24,75 @@ import { asyncLocalStorage, WorkerService, HotMesh } from './common';
 import { entity } from './entityMethods';
 
 /**
- * The WorkflowService class provides a set of static methods to be used within a workflow function.
- * These methods ensure deterministic replay, persistence of state, and error handling across
- * re-entrant workflow executions.
+ * The workflow-internal API surface, exposed as `MemFlow.workflow`. Every
+ * method on this class is designed to be called **inside** a workflow
+ * function — they participate in deterministic replay and durable state
+ * management.
  *
- * @example
+ * ## Core Primitives
+ *
+ * | Method | Purpose |
+ * |--------|---------|
+ * | {@link proxyActivities} | Create durable activity proxies with retry |
+ * | {@link sleepFor} | Durable, crash-safe sleep |
+ * | {@link waitFor} | Pause until a signal is received |
+ * | {@link signal} | Send data to a waiting workflow |
+ * | {@link execChild} | Spawn and await a child workflow |
+ * | {@link startChild} | Spawn a child workflow (fire-and-forget) |
+ * | {@link execHook} | Spawn a hook and await its signal response |
+ * | {@link execHookBatch} | Spawn multiple hooks in parallel |
+ * | {@link hook} | Low-level hook spawning |
+ * | {@link interrupt} | Terminate a running workflow |
+ *
+ * ## Data & Observability
+ *
+ * | Method | Purpose |
+ * |--------|---------|
+ * | {@link search} | Read/write flat HASH key-value data |
+ * | {@link enrich} | One-shot HASH enrichment |
+ * | {@link entity} | Structured JSONB document storage |
+ * | {@link emit} | Publish events to the event bus |
+ * | {@link trace} | Emit OpenTelemetry trace spans |
+ *
+ * ## Utilities
+ *
+ * | Method | Purpose |
+ * |--------|---------|
+ * | {@link getContext} | Access workflow ID, namespace, replay state |
+ * | {@link random} | Deterministic pseudo-random numbers |
+ * | {@link all} | Workflow-safe `Promise.all` |
+ * | {@link didInterrupt} | Type guard for engine control-flow errors |
+ *
+ * ## Example
+ *
  * ```typescript
  * import { MemFlow } from '@hotmeshio/hotmesh';
+ * import * as activities from './activities';
  *
- * export async function waitForExample(): Promise<[boolean, number]> {
- *   const [s1, s2] = await Promise.all([
- *     MemFlow.workflow.waitFor<boolean>('my-sig-nal-1'),
- *     MemFlow.workflow.waitFor<number>('my-sig-nal-2')
- *   ]);
- *   return [s1, s2];
+ * export async function orderWorkflow(orderId: string): Promise<string> {
+ *   // Proxy activities for durable execution
+ *   const { validateOrder, processPayment, sendReceipt } =
+ *     MemFlow.workflow.proxyActivities<typeof activities>({
+ *       activities,
+ *       retryPolicy: { maximumAttempts: 3 },
+ *     });
+ *
+ *   await validateOrder(orderId);
+ *
+ *   // Durable sleep (survives restarts)
+ *   await MemFlow.workflow.sleepFor('5 seconds');
+ *
+ *   const receipt = await processPayment(orderId);
+ *
+ *   // Store searchable metadata
+ *   await MemFlow.workflow.enrich({ orderId, status: 'paid' });
+ *
+ *   // Wait for external approval signal
+ *   const approval = await MemFlow.workflow.waitFor<{ ok: boolean }>('approve');
+ *   if (!approval.ok) return 'cancelled';
+ *
+ *   await sendReceipt(orderId, receipt);
+ *   return receipt;
  * }
  * ```
  */

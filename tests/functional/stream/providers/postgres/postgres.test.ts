@@ -284,7 +284,7 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       const initialBackoff = 100;
   
       // First call with empty stream to trigger backoff
-      const consumeSpy = jest.spyOn(postgresStreamService, 'consumeMessages');
+      const consumeSpy = vi.spyOn(postgresStreamService, 'consumeMessages');
       const firstAttempt = await postgresStreamService.consumeMessages(
         TEST_STREAM,
         TEST_GROUP,
@@ -315,8 +315,8 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       const initialBackoff = 100;
       const maxBackoff = 500;
     
-      const consumeSpy = jest.spyOn(postgresStreamService, 'consumeMessages');
-      const querySpy = jest.spyOn(postgresStreamService['streamClient'], 'query');
+      const consumeSpy = vi.spyOn(postgresStreamService, 'consumeMessages');
+      const querySpy = vi.spyOn(postgresStreamService['streamClient'], 'query');
     
       const start = Date.now();
     
