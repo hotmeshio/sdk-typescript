@@ -219,6 +219,51 @@ const childHandle = await startChild(validateOrder, { args: [orderId] });
 const validation = await childHandle.result();
 ```
 
+## AI and training pipelines
+
+HotMesh's transactional execution model is a natural fit for multi-step AI workloads — training runs, evaluation loops, reward scoring, data preparation — where each stage is expensive and must not be repeated on failure. Steps commit their results durably as they execute. A crashed training pipeline resumes from the last committed step, not from the beginning.
+
+## It's just data
+
+HotMesh provides a Temporal-compatible API for inspecting workflow state:
+
+```typescript
+const handle = client.workflow.getHandle('orders', 'orderWorkflow', 'order-456');
+
+const result = await handle.result();           // final output
+const status = await handle.status();           // semaphore (0 = complete)
+const state  = await handle.state(true);        // full state with metadata
+const exported = await handle.export({          // selective export
+  allow: ['data', 'state', 'status', 'timeline']
+});
+```
+
+But there is nothing between you and your data. Workflow state lives in your database as ordinary rows — `jobs` and `jobs_attributes`. Query it directly, back it up with pg_dump, replicate it, join it against your application tables.
+
+```sql
+SELECT
+  j.key          AS job_key,
+  j.status       AS semaphore,
+  j.entity       AS workflow,
+  a.field        AS attribute,
+  a.value        AS value,
+  j.created_at,
+  j.updated_at
+FROM
+  jobs j
+  JOIN jobs_attributes a ON a.job_id = j.id
+WHERE
+  j.key = 'order-456'
+ORDER BY
+  a.field;
+```
+
+What happened? Consult the database. What's still running? Query the semaphore. What failed? Read the row. The execution state isn't reconstructed from a log — it was committed transactionally as each step ran.
+
+## Architecture
+
+For a deep dive into the transactional execution model — how every step is crash-safe, how the monotonic collation ledger guarantees exactly-once delivery, and how cycles and retries remain correct under arbitrary failure — see the [Collation Design Document](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md).
+
 ## License
 
 HotMesh is licensed under the Apache License, Version 2.0.

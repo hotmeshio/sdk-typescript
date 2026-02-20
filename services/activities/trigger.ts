@@ -3,7 +3,6 @@ import {
   formatISODate,
   getTimeSeries,
   guid,
-  sleepFor,
 } from '../../modules/utils';
 import { CollatorService } from '../collator';
 import { EngineService } from '../engine';
@@ -17,8 +16,11 @@ import {
   ActivityType,
   TriggerActivity,
 } from '../../types/activity';
-import { JobState, ExtensionType, JobStatus } from '../../types/job';
-import { ProviderTransaction } from '../../types/provider';
+import { JobState, ExtensionType } from '../../types/job';
+import {
+  ProviderTransaction,
+  TransactionResultList,
+} from '../../types/provider';
 import { StringScalarType } from '../../types/serializer';
 import { MapperService } from '../mapper';
 
@@ -63,50 +65,107 @@ class Trigger extends Activity {
         { entity: this.config.entity },
         this.context,
       ).mapRules()?.entity as string;
-      await this.setStateNX(initialStatus, options?.entity || resolvedEntity);
-      await this.setStatus(initialStatus);
+      const msgGuid = this.context.metadata.guid || guid();
+      this.context.metadata.guid = msgGuid;
+      const { id: appId } = await this.engine.getVID();
 
+      //═══ Step 1: Inception (atomic job creation + GUID seed) ═══
+      const txn1 = this.store.transact();
+      await this.store.setStateNX(
+        this.context.metadata.jid,
+        appId,
+        initialStatus,
+        options?.entity || resolvedEntity,
+        txn1,
+      );
+      await this.store.collateSynthetic(
+        this.context.metadata.jid,
+        msgGuid,
+        CollatorService.WEIGHTS.STEP1_WORK,
+        txn1,
+      );
+      const results1 = (await txn1.exec()) as TransactionResultList;
+      const jobCreated = Number(results1[0]) > 0;
+      const guidValue = Number(results1[1]);
+
+      if (!jobCreated) {
+        if (guidValue > CollatorService.WEIGHTS.STEP1_WORK) {
+          //crash recovery: GUID was seeded on a prior attempt; resume
+          this.guidLedger = guidValue;
+          this.logger.info('trigger-crash-recovery', {
+            job_id: this.context.metadata.jid,
+            guid: msgGuid,
+            guidLedger: guidValue,
+          });
+        } else {
+          //true duplicate: another process owns this job
+          throw new DuplicateJobError(this.context.metadata.jid);
+        }
+      }
+
+      await this.setStatus(initialStatus);
       this.bindSearchData(options);
       this.bindMarkerData(options);
 
-      const transaction = this.store.transact();
-      await this.setState(transaction);
-      await this.setStats(transaction);
-      if (options?.pending) {
-        await this.setExpired(options?.pending, transaction);
+      //═══ Step 2: Work (state + children + GUID Step 2) ═══
+      if (!CollatorService.isGuidStep2Done(this.guidLedger)) {
+        const txn2 = this.store.transact();
+        await this.setState(txn2);
+        await this.setStats(txn2);
+        if (options?.pending) {
+          await this.setExpired(options.pending, txn2);
+        }
+        //publish children (unless pending or job already complete)
+        if (isNaN(options?.pending) && this.adjacencyList.length && initialStatus > 0) {
+          for (const child of this.adjacencyList) {
+            await this.engine.router?.publishMessage(null, child, txn2);
+          }
+        }
+        await CollatorService.notarizeStep2(this, msgGuid, txn2);
+        await txn2.exec();
       }
-      await CollatorService.notarizeInception(
-        this,
-        this.context.metadata.guid,
-        transaction,
-      );
-      await transaction.exec();
 
+      //best-effort parent notification
       this.execAdjacentParent();
-      telemetry.mapActivityAttributes();
+
+      //═══ Step 3: Completion (if job immediately complete) ═══
+      //NOTE: runJobCompletionTasks is non-transactional here because
+      //the trigger runs inline within pub(). Subscribers register AFTER
+      //pub() returns, so pub notifications must be fire-and-forget to
+      //avoid a race. The GUID marker commits in its own transaction.
       const jobStatus = Number(this.context.metadata.js);
+      const needsCompletion =
+        this.shouldEmit() ||
+        this.isJobComplete(jobStatus) ||
+        this.shouldPersistJob();
+      if (needsCompletion && !CollatorService.isGuidStep3Done(this.guidLedger)) {
+        await this.engine.runJobCompletionTasks(
+          this.context,
+          { emit: !this.isJobComplete(jobStatus) && !this.shouldPersistJob() },
+        );
+        //NOTE: notarizeStep3 is fire-and-forget for the trigger.
+        //pubOneTimeSubs (inside runJobCompletionTasks) sends a NOTIFY
+        //that must not be processed until registerJobCallback runs
+        //AFTER pub() returns. An `await` here yields to the event loop,
+        //which could deliver the NOTIFY before the callback is registered.
+        const txn3 = this.store.transact();
+        CollatorService.notarizeStep3(this, msgGuid, txn3)
+          .then(() => txn3.exec())
+          .catch((err) =>
+            this.logger.error('trigger-notarize-step3-error', { error: err }),
+          );
+      }
+
+      //telemetry
+      telemetry.mapActivityAttributes();
       telemetry.setJobAttributes({ 'app.job.jss': jobStatus });
       const attrs: StringScalarType = { 'app.job.jss': jobStatus };
-      await this.transitionAndLogAdjacent(options, jobStatus, attrs);
       telemetry.setActivityAttributes(attrs);
 
       return this.context.metadata.jid;
     } catch (error) {
       telemetry?.setActivityError(error.message);
       if (error instanceof DuplicateJobError) {
-        //todo: verify baseline in x-AZ rollover
-        await sleepFor(1000);
-        const isOverage = await CollatorService.isInceptionOverage(
-          this,
-          this.context.metadata.guid,
-        );
-        if (isOverage) {
-          this.logger.info('trigger-collation-overage', {
-            job_id: error.jobId,
-            guid: this.context.metadata.guid,
-          });
-          return;
-        }
         this.logger.error('duplicate-job-error', {
           job_id: error.jobId,
           guid: this.context.metadata.guid,
@@ -123,20 +182,6 @@ class Trigger extends Activity {
         jid: this.context.metadata.jid,
         gid: this.context.metadata.gid,
       });
-    }
-  }
-
-  async transitionAndLogAdjacent(
-    options: ExtensionType = {},
-    jobStatus: JobStatus,
-    attrs: StringScalarType,
-  ): Promise<void> {
-    //todo: enable resume from pending state
-    if (isNaN(options.pending)) {
-      const messageIds = await this.transition(this.adjacencyList, jobStatus);
-      if (messageIds.length) {
-        attrs['app.activity.mids'] = messageIds.join(',');
-      }
     }
   }
 
@@ -297,18 +342,6 @@ class Trigger extends Activity {
   resolveJobKey(context: Partial<JobState>): string {
     const jobKey = this.config.stats?.key;
     return jobKey ? Pipe.resolve(jobKey, context) : '';
-  }
-
-  async setStateNX(
-    status?: number,
-    entity?: string | undefined,
-  ): Promise<void> {
-    const jobId = this.context.metadata.jid;
-    if (
-      !await this.store.setStateNX(jobId, this.engine.appId, status, entity)
-    ) {
-      throw new DuplicateJobError(jobId);
-    }
   }
 
   async setStats(transaction?: ProviderTransaction): Promise<void> {

@@ -117,13 +117,15 @@ class Activity {
       );
     } catch (error) {
       await CollatorService.notarizeEntry(this);
-      //todo: confirm this check is still needed; the edge event cleanup should handle fully
       if (threshold > 0) {
-        if (this.context.metadata.js === threshold) {
-          //conclude job EXACTLY ONCE
+        if (this.context.metadata.js <= threshold) {
+          //Dynamic Activation Control: convergent claim — only the
+          //activity whose HINCRBY reaches exactly 0 runs completion.
           const status = await this.setStatus(-threshold);
           if (Number(status) === 0) {
-            await this.engine.runJobCompletionTasks(this.context);
+            const txn = this.store.transact();
+            await this.engine.runJobCompletionTasks(this.context, {}, txn);
+            await txn.exec();
           }
         }
       } else {
@@ -631,17 +633,10 @@ class Activity {
     );
   }
 
-  authorizeEntry(state: StringAnyType): string[] {
-    //pre-authorize activity state to allow entry for adjacent activities
-    return (
-      this.adjacencyList?.map((streamData) => {
-        const {
-          metadata: { aid },
-        } = streamData;
-        state[`${aid}/output/metadata/as`] = CollatorService.getSeed();
-        return aid;
-      }) ?? []
-    );
+  authorizeEntry(_state: StringAnyType): string[] {
+    //seed writes removed: child activities increment from 0 (null field).
+    //FINALIZE (200T) sets pos 1 directly to 2 without needing a 100T base.
+    return [];
   }
 
   bindDimensionalAddress(state: StringAnyType) {
@@ -928,38 +923,6 @@ class Activity {
       return Pipe.resolve(this.config.persist, this.context) === true;
     }
     return false;
-  }
-
-  /**
-   * Transition method for Category C (Leg1-only, no children, no semaphore change)
-   * and Category D (Trigger) activities. NOT used by the Leg2 step protocol.
-   */
-  async transition(
-    adjacencyList: StreamData[],
-    jobStatus: JobStatus,
-  ): Promise<string[]> {
-    if (this.jobWasInterrupted(jobStatus)) {
-      return;
-    }
-    let mIds: string[] = [];
-
-    if (
-      this.shouldEmit() ||
-      this.isJobComplete(jobStatus) ||
-      this.shouldPersistJob()
-    ) {
-      await this.engine.runJobCompletionTasks(this.context, {
-        emit: !this.isJobComplete(jobStatus) && !this.shouldPersistJob(),
-      });
-    }
-    if (adjacencyList.length && !this.isJobComplete(jobStatus)) {
-      const transaction = this.store.transact();
-      for (const execSignal of adjacencyList) {
-        await this.engine.router?.publishMessage(null, execSignal, transaction);
-      }
-      mIds = (await transaction.exec()) as string[];
-    }
-    return mIds;
   }
 
   /**

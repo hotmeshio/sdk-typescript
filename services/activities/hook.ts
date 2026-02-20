@@ -177,6 +177,7 @@ class Hook extends Activity {
         'sleep',
         duration,
         this.metadata.dad || '',
+        transaction,
       );
       return this.context.metadata.jid;
     }

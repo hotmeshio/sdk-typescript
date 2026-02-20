@@ -101,22 +101,23 @@ class Interrupt extends Activity {
   }
 
   async interruptSelf(telemetry: TelemetryService): Promise<string> {
-    // Apply final updates to THIS job's state
     if (this.config.job?.maps) {
       this.mapJobData();
-      await this.setState();
     }
 
-    // Interrupt THIS job
-    const messageId = await this.interrupt();
-
-    // Notarize Leg1 completion and set status
+    // Bundle state + Leg1 completion + semaphore in one transaction
     telemetry.mapActivityAttributes();
     const transaction = this.store.transact();
+    if (this.config.job?.maps) {
+      await this.setState(transaction);
+    }
     await CollatorService.notarizeLeg1Completion(this, transaction);
     await this.setStatus(-1, transaction);
     const txResponse = (await transaction.exec()) as TransactionResultList;
     const jobStatus = this.resolveStatus(txResponse);
+
+    // Interrupt fires AFTER proof commits (best-effort)
+    const messageId = await this.interrupt();
     telemetry.setActivityAttributes({
       'app.activity.mid': messageId,
       'app.job.jss': jobStatus,

@@ -100,6 +100,7 @@ abstract class StoreService<
     appId: string,
     status?: number,
     entity?: string,
+    transaction?: ProviderTransaction,
   ): Promise<boolean>;
   abstract setState(
     state: StringAnyType,

@@ -57,25 +57,19 @@ class Cycle extends Activity {
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
 
-      //set state/status
-      let transaction = this.store.transact();
+      //set state/status, cycle ancestor, and mark Leg1 complete — single transaction
+      const transaction = this.store.transact();
       await this.setState(transaction);
       await this.setStatus(0, transaction); //leg 1 never changes job status
+      const messageId = await this.cycleAncestorActivity(transaction);
+      await CollatorService.notarizeLeg1Completion(this, transaction);
       const txResponse = (await transaction.exec()) as TransactionResultList;
       telemetry.mapActivityAttributes();
       const jobStatus = this.resolveStatus(txResponse);
-
-      //cycle the target ancestor
-      transaction = this.store.transact();
-      const messageId = await this.cycleAncestorActivity(transaction);
       telemetry.setActivityAttributes({
         'app.activity.mid': messageId,
         'app.job.jss': jobStatus,
       });
-
-      //exit early (`Cycle` activities only execute Leg 1)
-      await CollatorService.notarizeLeg1Completion(this, transaction);
-      (await transaction.exec()) as TransactionResultList;
 
       return this.context.metadata.aid;
     } catch (error) {
