@@ -1,15 +1,16 @@
 import { HotMesh } from './services/hotmesh';
 import { HotMeshConfig } from './types/hotmesh';
-import { MeshCall } from './services/meshcall';
-import { MemFlow } from './services/memflow';
-import { ClientService as Client } from './services/memflow/client';
-import { ConnectionService as Connection } from './services/memflow/connection';
-import { Search } from './services/memflow/search';
-import { Entity } from './services/memflow/entity';
-import { WorkerService as Worker } from './services/memflow/worker';
-import { WorkflowService as workflow } from './services/memflow/workflow';
-import { WorkflowHandleService as WorkflowHandle } from './services/memflow/handle';
-import { proxyActivities } from './services/memflow/workflow/proxyActivities';
+import { Virtual } from './services/virtual';
+import { Durable } from './services/durable';
+import { DBA } from './services/dba';
+import { ClientService as Client } from './services/durable/client';
+import { ConnectionService as Connection } from './services/durable/connection';
+import { Search } from './services/durable/search';
+import { Entity } from './services/durable/entity';
+import { WorkerService as Worker } from './services/durable/worker';
+import { WorkflowService as workflow } from './services/durable/workflow';
+import { WorkflowHandleService as WorkflowHandle } from './services/durable/handle';
+import { proxyActivities } from './services/durable/workflow/proxyActivities';
 import * as Errors from './modules/errors';
 import * as Utils from './modules/utils';
 import * as Enums from './modules/enums';
@@ -27,10 +28,11 @@ export {
   //Top-level Modules
   HotMesh,
   HotMeshConfig,
-  MeshCall,
-  MemFlow,
+  Virtual,
+  Durable,
+  DBA,
 
-  //MemFlow Submodules
+  //Durable Submodules
   Client,
   Connection,
   proxyActivities,

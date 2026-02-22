@@ -13,7 +13,7 @@ const obfuscateTargets = [
   // './build/services/engine',
   // './build/services/exporter',
   // './build/services/mapper',
-  // './build/services/memflow/exporter',
+  // './build/services/durable/exporter',
   // './build/services/pipe',
   // './build/services/quorum',
   // './build/services/reporter',

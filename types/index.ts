@@ -51,18 +51,22 @@ export {
   WorkflowOptions,
   WorkflowInterceptor,
   InterceptorRegistry,
-} from './memflow';
+} from './durable';
 export {
-  MemFlowChildErrorType,
-  MemFlowProxyErrorType,
-  MemFlowSleepErrorType,
-  MemFlowWaitForAllErrorType,
-  MemFlowWaitForErrorType,
+  PruneOptions,
+  PruneResult,
+} from './dba';
+export {
+  DurableChildErrorType,
+  DurableProxyErrorType,
+  DurableSleepErrorType,
+  DurableWaitForAllErrorType,
+  DurableWaitForErrorType,
 } from './error';
 export {
   ActivityAction,
   DependencyExport,
-  MemFlowJobExport,
+  DurableJobExport,
   ExportCycles,
   ExportItem,
   ExportOptions,
@@ -128,15 +132,15 @@ export {
   ProviderOptions,
 } from './provider';
 export {
-  MeshCallConnectParams,
-  MeshCallExecParams,
-  MeshCallCronParams,
-  MeshCallExecOptions,
-  MeshCallCronOptions,
-  MeshCallInterruptOptions,
-  MeshCallInterruptParams,
-  MeshCallFlushParams,
-} from './meshcall';
+  VirtualConnectParams,
+  VirtualExecParams,
+  VirtualCronParams,
+  VirtualExecOptions,
+  VirtualCronOptions,
+  VirtualInterruptOptions,
+  VirtualInterruptParams,
+  VirtualFlushParams,
+} from './virtual';
 export {
   PostgresClassType,
   PostgresClientOptions,

@@ -1,0 +1,210 @@
+import { ProviderConfig, ProvidersConfig } from './provider';
+import { LogLevel } from './logger';
+
+interface VirtualExecOptions {
+  /**
+   * Cache id when caching, flushing and retrieving function results.
+   */
+  id: string;
+  /**
+   * Time to live for the cache key. For example, `1 day`, `1 hour`. Refer to the syntax for the `ms` NPM package.
+   */
+  ttl?: string;
+  /**
+   * If true, the cache will first be flushed and the function will be executed.
+   */
+  flush?: boolean;
+}
+interface VirtualConnectParams {
+  /**
+   * Log level for the worker
+   */
+  logLevel?: LogLevel;
+  /**
+   * Idempotent GUID for the worker and engine
+   */
+  guid?: string;
+  /**
+   * Namespace for grouping common functions
+   */
+  namespace?: string;
+  /**
+   * Unique topic for the worker function
+   */
+  topic: string;
+  /**
+   * Provider configuration
+   */
+  connection?: ProviderConfig | ProvidersConfig;
+  /**
+   * The linked worker function that will be called; optional if read only
+   */
+  callback?: (...args: any[]) => any;
+}
+
+interface VirtualExecParams {
+  /**
+   * namespace for grouping common functions
+   */
+  namespace?: string;
+  /**
+   * topic assigned to the worker when it was connected
+   */
+  topic: string;
+  /**
+   * Arguments to pass to the worker function
+   */
+  args: any[];
+  /**
+   * Provider configuration
+   */
+  connection?: ProviderConfig | ProvidersConfig;
+  /**
+   * Execution options like caching ttl
+   */
+  options?: VirtualExecOptions;
+}
+
+interface VirtualFlushOptions {
+  /**
+   * Cache id when caching/flushing/retrieving function results.
+   */
+  id: string;
+}
+
+interface VirtualFlushParams {
+  /**
+   * namespace for grouping common functions
+   */
+  namespace?: string;
+  /**
+   * id for cached response to flush
+   */
+  id?: string;
+  /**
+   * topic assigned to the worker when it was connected
+   */
+  topic: string;
+  /**
+   * Provider configuration
+   */
+  connection?: ProviderConfig | ProvidersConfig;
+  /**
+   * Options for the flush
+   */
+  options?: VirtualFlushOptions;
+}
+interface VirtualCronOptions {
+  /**
+   * Idempotent GUID for the function
+   * */
+  id: string;
+  /**
+   * For example, `1 day`, `1 hour`. Fidelity is generally
+   * within 5 seconds. Refer to the syntax for the `ms` NPM package.
+   * Standard cron syntax is also supported. (e.g. `0 0 * * *`)
+   */
+  interval: string;
+  /**
+   * Maximum number of cycles to run before exiting the cron.
+   */
+  maxCycles?: number;
+  /**
+   * Time in seconds to sleep before invoking the first cycle.
+   * For example, `1 day`, `1 hour`. Fidelity is generally
+   * within 5 seconds. Refer to the syntax for the `ms` NPM package.
+   * If the interval field uses standard cron syntax, this field is ignored.
+   */
+  delay?: string;
+}
+
+interface VirtualInterruptOptions {
+  /**
+   * Idempotent GUID for the cron function
+   */
+  id: string;
+}
+
+interface VirtualCronParams {
+  /**
+   * Log level for the cron
+   */
+  logLevel?: LogLevel;
+  /**
+   * Idempotent GUID for the worker and engine used for the cron
+   */
+  guid?: string;
+  /**
+   * Namespace for grouping common cron functions. (e.g. `hmsh:[namespace]:j:*`)
+   */
+  namespace?: string;
+  /**
+   * Unique topic for the cron function to identify the worker
+   */
+  topic: string;
+  /**
+   * Provider configuration
+   */
+  connection?: ProviderConfig | ProvidersConfig;
+  /**
+   * Arguments to pass to the cron job; arguments will be passed to the callback
+   * each time it runs
+   */
+  args: any[];
+  /**
+   * linked worker function to run; if not provided, the system will
+   * attempt to start the cron job using the topic, but a new
+   * worker will not be created. This is useful for spawning a cron job
+   * from an ephemeral node process.
+   */
+  callback?: (...args: any[]) => any;
+  /**
+   * Options for the cron job
+   */
+  options: VirtualCronOptions;
+}
+
+interface VirtualInstanceOptions {
+  /**
+   * if true, the connection to HotMesh will be in readonly mode
+   * and the instantiated client will not route messages
+   * @default false
+   */
+  readonly?: boolean;
+  /**
+   * Idempotent GUID for the worker and engine
+   */
+  guid?: string;
+}
+
+interface VirtualInterruptParams {
+  /**
+   * namespace for grouping common functions
+   */
+  namespace?: string;
+  /**
+   * topic assigned to the cron worker when it was connected
+   */
+  topic: string;
+  /**
+   * Provider configuration
+   */
+  connection?: ProviderConfig | ProvidersConfig;
+  /**
+   * Options for interrupting the cron
+   */
+  options: VirtualInterruptOptions;
+}
+
+export {
+  VirtualConnectParams,
+  VirtualExecParams,
+  VirtualCronParams,
+  VirtualExecOptions,
+  VirtualCronOptions,
+  VirtualInterruptOptions,
+  VirtualInterruptParams,
+  VirtualFlushOptions,
+  VirtualFlushParams,
+  VirtualInstanceOptions,
+};

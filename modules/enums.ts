@@ -13,10 +13,6 @@ export const HMSH_TELEMETRY =
  * Default cleanup time for signal in the db when its associated job is completed.
  */
 export const HMSH_SIGNAL_EXPIRE = 3_600; //seconds
-/**
- * Determines if the system is running in cluster mode (for Redis cluster support).
- */
-export const HMSH_IS_CLUSTER = process.env.HMSH_IS_CLUSTER === 'true';
 
 // HOTMESH STATUS CODES
 export const HMSH_CODE_SUCCESS = 200;
@@ -26,45 +22,45 @@ export const HMSH_CODE_INTERRUPT = 410;
 export const HMSH_CODE_UNKNOWN = 500;
 export const HMSH_CODE_TIMEOUT = 504;
 export const HMSH_CODE_UNACKED = 999;
-// MEMFLOW STATUS CODES
+// DURABLE STATUS CODES
 /**
- * This is thrown when a MemFlow has been interrupted by a sleepFor call.
+ * This is thrown when a Durable has been interrupted by a sleepFor call.
  */
-export const HMSH_CODE_MEMFLOW_SLEEP = 588;
+export const HMSH_CODE_DURABLE_SLEEP = 588;
 /**
- * This is thrown when a MemFlow has been interrupted by a Promise.all call.
+ * This is thrown when a Durable has been interrupted by a Promise.all call.
  */
-export const HMSH_CODE_MEMFLOW_ALL = 589;
+export const HMSH_CODE_DURABLE_ALL = 589;
 /**
- * This is thrown when a MemFlow has been interrupted by an execChild or startChild call.
+ * This is thrown when a Durable has been interrupted by an execChild or startChild call.
  */
-export const HMSH_CODE_MEMFLOW_CHILD = 590;
+export const HMSH_CODE_DURABLE_CHILD = 590;
 /**
- * This is thrown when a MemFlow has been interrupted by a proxyActivity call.
+ * This is thrown when a Durable has been interrupted by a proxyActivity call.
  */
-export const HMSH_CODE_MEMFLOW_PROXY = 591;
+export const HMSH_CODE_DURABLE_PROXY = 591;
 /**
- * This is thrown when a MemFlow has been interrupted by a waitForSignal call.
+ * This is thrown when a Durable has been interrupted by a waitForSignal call.
  */
-export const HMSH_CODE_MEMFLOW_WAIT = 595;
+export const HMSH_CODE_DURABLE_WAIT = 595;
 /**
- * The timeout status code for MemFlow. This status code is thrown when MemFlow has encountered a timeout error and needs to aler the caller why the call failed.
+ * The timeout status code for Durable. This status code is thrown when Durable has encountered a timeout error and needs to aler the caller why the call failed.
  */
-export const HMSH_CODE_MEMFLOW_TIMEOUT = 596;
+export const HMSH_CODE_DURABLE_TIMEOUT = 596;
 /**
- * The maxed status code for MemFlow. This status code is used to indicate that the MemFlow has reached the maximum
+ * The maxed status code for Durable. This status code is used to indicate that the Durable has reached the maximum
  * number of attempts and should be halted. Thrown from a proxied activity or a flow to halt standard execution
  * and prevent further attempts.
  */
-export const HMSH_CODE_MEMFLOW_MAXED = 597;
+export const HMSH_CODE_DURABLE_MAXED = 597;
 /**
- * The fatal status code for MemFlow. This status code is used to indicate that the MemFlow has encountered a fatal error. Throw from a proxied activity or a flow to halt standard execution.
+ * The fatal status code for Durable. This status code is used to indicate that the Durable has encountered a fatal error. Throw from a proxied activity or a flow to halt standard execution.
  */
-export const HMSH_CODE_MEMFLOW_FATAL = 598;
+export const HMSH_CODE_DURABLE_FATAL = 598;
 /**
- * The retryable status code for MemFlow. This status code is used to indicate that the MemFlow has encountered a retryable error (essentially unknown and covered by the standard retry policy).
+ * The retryable status code for Durable. This status code is used to indicate that the Durable has encountered a retryable error (essentially unknown and covered by the standard retry policy).
  */
-export const HMSH_CODE_MEMFLOW_RETRYABLE = 599;
+export const HMSH_CODE_DURABLE_RETRYABLE = 599;
 
 // HOTMESH MESSAGES
 export const HMSH_STATUS_UNKNOWN = 'unknown';
@@ -108,22 +104,22 @@ export const HMSH_MAX_TIMEOUT_MS =
 export const HMSH_GRADUATED_INTERVAL_MS =
   parseInt(process.env.HMSH_GRADUATED_INTERVAL_MS, 10) || 5000;
 
-// MEMFLOW
+// DURABLE
 /**
- * The maximum number of attempts to retry a MemFlow job before it is considered failed.
+ * The maximum number of attempts to retry a Durable job before it is considered failed.
  * @default 3
  */
-export const HMSH_MEMFLOW_MAX_ATTEMPTS = 3;
+export const HMSH_DURABLE_MAX_ATTEMPTS = 3;
 /**
- * The maximum interval to wait before retrying a MemFlow job.
+ * The maximum interval to wait before retrying a Durable job.
  * @default 120s
  */
-export const HMSH_MEMFLOW_MAX_INTERVAL = '120s';
+export const HMSH_DURABLE_MAX_INTERVAL = '120s';
 /**
  * The exponential backoff factor to apply to the interval between retries.
  * @default 10
  */
-export const HMSH_MEMFLOW_EXP_BACKOFF = 10;
+export const HMSH_DURABLE_EXP_BACKOFF = 10;
 
 const BASE_BLOCK_DURATION = 10000;
 const TEST_BLOCK_DURATION = 1000;
@@ -192,12 +188,3 @@ export const HMSH_NOTIFY_PAYLOAD_LIMIT =
  */
 export const HMSH_ROUTER_POLL_FALLBACK_INTERVAL =
   parseInt(process.env.HOTMESH_POSTGRES_FALLBACK_INTERVAL, 10) || 30000;
-
-/**
- * Serializer compression threshold. When a stringified object exceeds this size
- * in bytes, it will be gzipped and base64 encoded (with /b prefix) to reduce
- * Redis hash storage size. Default 100 bytes - small enough to catch most
- * workflow state but compression only applies if it actually reduces size.
- */
-export const HMSH_SERIALIZER_COMPRESSION_THRESHOLD =
-  parseInt(process.env.HMSH_SERIALIZER_COMPRESSION_THRESHOLD, 10) || 100_000_000;

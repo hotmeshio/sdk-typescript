@@ -1,4 +1,4 @@
-export type MemFlowChildErrorType = {
+export type DurableChildErrorType = {
   arguments: string[];
   await?: boolean;
   backoffCoefficient?: number;
@@ -16,7 +16,7 @@ export type MemFlowChildErrorType = {
   workflowTopic: string;
 };
 
-export type MemFlowWaitForAllErrorType = {
+export type DurableWaitForAllErrorType = {
   items: string[];
   workflowId: string;
   workflowTopic: string;
@@ -27,7 +27,7 @@ export type MemFlowWaitForAllErrorType = {
   workflowDimension: string;
 };
 
-export type MemFlowProxyErrorType = {
+export type DurableProxyErrorType = {
   arguments: string[];
   activityName: string;
   backoffCoefficient?: number;
@@ -42,14 +42,14 @@ export type MemFlowProxyErrorType = {
   workflowTopic: string;
 };
 
-export type MemFlowWaitForErrorType = {
+export type DurableWaitForErrorType = {
   signalId: string;
   index: number;
   workflowDimension: string;
   workflowId: string;
 };
 
-export type MemFlowSleepErrorType = {
+export type DurableSleepErrorType = {
   duration: number;
   index: number;
   workflowDimension: string;

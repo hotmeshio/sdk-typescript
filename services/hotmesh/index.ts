@@ -192,8 +192,8 @@ import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
  * ## Higher-Level Modules
  *
  * For most use cases, prefer the higher-level wrappers:
- * - **MemFlow** — Temporal-style durable workflow functions.
- * - **MeshCall** — Durable function calls and RPC patterns.
+ * - **Durable** — Temporal-style durable workflow functions.
+ * - **Virtual** — Virtual network functions and idempotent RPC.
  *
  * @see {@link https://hotmeshio.github.io/sdk-typescript/} - API reference
  */
@@ -1001,7 +1001,7 @@ class HotMesh {
    *
    * @example
    * ```typescript
-   * // Signal a MemFlow workflow waiting on waitFor('payment-received')
+   * // Signal a Durable workflow waiting on waitFor('payment-received')
    * await hotMesh.signal(`${appId}.wfs.signal`, {
    *   id: 'payment-received',
    *   data: { amount: 99.99, currency: 'USD' },
