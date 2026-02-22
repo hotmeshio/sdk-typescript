@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { Client as Postgres } from 'pg';
 
 import { HMNS } from '../../../modules/key';

@@ -13,6 +13,7 @@ import {
   HMSH_CODE_MEMFLOW_PROXY,
   MemFlowProxyErrorType,
   s,
+  asyncLocalStorage,
 } from './common';
 import { getContext } from './context';
 import { didRun } from './didRun';
@@ -89,20 +90,38 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
 
     const context = getContext();
     const { interruptionRegistry } = context;
-    const interruptionMessage = getProxyInterruptPayload(
-      context,
-      activityName,
-      execIndex,
-      args,
-      options,
-    );
-    interruptionRegistry.push({
-      code: HMSH_CODE_MEMFLOW_PROXY,
-      type: 'MemFlowProxyError',
-      ...interruptionMessage,
-    });
-    await sleepImmediate();
-    throw new MemFlowProxyError(interruptionMessage);
+
+    // Core activity registration logic
+    const executeActivity = async () => {
+      const interruptionMessage = getProxyInterruptPayload(
+        context,
+        activityName,
+        execIndex,
+        args,
+        options,
+      );
+      interruptionRegistry.push({
+        code: HMSH_CODE_MEMFLOW_PROXY,
+        type: 'MemFlowProxyError',
+        ...interruptionMessage,
+      });
+      await sleepImmediate();
+      throw new MemFlowProxyError(interruptionMessage);
+    };
+
+    // Check for activity interceptors
+    const store = asyncLocalStorage.getStore();
+    const interceptorService = store?.get('activityInterceptorService');
+
+    if (interceptorService?.activityInterceptors?.length > 0) {
+      return await interceptorService.executeActivityChain(
+        { activityName, args, options },
+        store,
+        executeActivity,
+      );
+    }
+
+    return await executeActivity();
   } as unknown as T;
 }
 

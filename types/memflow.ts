@@ -731,6 +731,68 @@ export interface InterceptorRegistry {
   interceptors: WorkflowInterceptor[];
 }
 
+/**
+ * Context provided to an activity interceptor, containing metadata
+ * about the proxied activity being invoked.
+ */
+export interface ActivityInterceptorContext {
+  /** The name of the activity function being called */
+  activityName: string;
+  /** The arguments passed to the activity call */
+  args: any[];
+  /** The activity configuration (retryPolicy, taskQueue, etc.) */
+  options?: ActivityConfig;
+}
+
+/**
+ * Interceptor for individual proxied activity calls within a workflow.
+ * Runs inside the workflow's async local storage context, so all MemFlow
+ * workflow methods (proxyActivities, sleepFor, waitFor, execChild, etc.)
+ * are available.
+ *
+ * Activity interceptors execute BEFORE the activity registers with the
+ * interruptionRegistry and throws. Any MemFlow operations called within
+ * the interceptor will register their own interruptions first, and those
+ * will be processed before the wrapped activity's interruption during
+ * the replay cycle.
+ *
+ * @example
+ * ```typescript
+ * const auditInterceptor: ActivityInterceptor = {
+ *   async execute(activityCtx, workflowCtx, next) {
+ *     const { auditLog } = MemFlow.workflow.proxyActivities<{
+ *       auditLog: (id: string, action: string) => Promise<void>;
+ *     }>({
+ *       taskQueue: 'shared-audit',
+ *       retryPolicy: { maximumAttempts: 3 },
+ *     });
+ *
+ *     await auditLog(workflowCtx.get('workflowId'), `before:${activityCtx.activityName}`);
+ *     const result = await next();
+ *     await auditLog(workflowCtx.get('workflowId'), `after:${activityCtx.activityName}`);
+ *     return result;
+ *   },
+ * };
+ *
+ * MemFlow.registerActivityInterceptor(auditInterceptor);
+ * ```
+ */
+export interface ActivityInterceptor {
+  /**
+   * Called before each proxied activity invocation.
+   *
+   * @param activityCtx - Metadata about the activity being called
+   * @param workflowCtx - The workflow context map (same as WorkflowInterceptor receives)
+   * @param next - Call to proceed to the next interceptor or the actual activity registration
+   * @returns The activity result (from replay or after interruption/re-execution)
+   */
+  execute(
+    activityCtx: ActivityInterceptorContext,
+    workflowCtx: Map<string, any>,
+    next: () => Promise<any>,
+  ): Promise<any>;
+}
+
 export {
   ActivityConfig,
   ActivityWorkflowDataType,

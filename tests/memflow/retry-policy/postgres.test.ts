@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Client as Postgres } from 'pg';
 
 import { MemFlow } from '../../../services/memflow';
