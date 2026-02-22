@@ -378,15 +378,44 @@ class DurableClass {
   private static interceptorService = new InterceptorService();
 
   /**
-   * Register a workflow interceptor
+   * Register a workflow interceptor that wraps the entire workflow execution
+   * in an onion-like pattern. Interceptors execute in registration order
+   * (first registered is outermost) and can perform actions before and after
+   * workflow execution, handle errors, and add cross-cutting concerns like
+   * logging, metrics, or tracing.
+   *
+   * Workflow interceptors run inside the workflow's async local storage context,
+   * so all Durable workflow methods (`proxyActivities`, `sleepFor`, `waitFor`,
+   * `execChild`, etc.) are available. When using Durable functions, always check
+   * for interruptions with `Durable.didInterrupt(err)` and rethrow them.
+   *
    * @param interceptor The interceptor to register
+   *
+   * @example
+   * ```typescript
+   * // Logging interceptor
+   * Durable.registerInterceptor({
+   *   async execute(ctx, next) {
+   *     console.log(`Workflow ${ctx.get('workflowName')} starting`);
+   *     try {
+   *       const result = await next();
+   *       console.log(`Workflow ${ctx.get('workflowName')} completed`);
+   *       return result;
+   *     } catch (err) {
+   *       if (Durable.didInterrupt(err)) throw err;
+   *       console.error(`Workflow ${ctx.get('workflowName')} failed`);
+   *       throw err;
+   *     }
+   *   }
+   * });
+   * ```
    */
   static registerInterceptor(interceptor: WorkflowInterceptor): void {
     DurableClass.interceptorService.register(interceptor);
   }
 
   /**
-   * Clear all registered interceptors (both workflow and activity)
+   * Clear all registered interceptors (both workflow and activity).
    */
   static clearInterceptors(): void {
     DurableClass.interceptorService.clear();

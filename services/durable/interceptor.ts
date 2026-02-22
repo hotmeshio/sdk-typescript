@@ -187,6 +187,79 @@ import {
  *   }
  * };
  * ```
+ *
+ * ## Activity Interceptors
+ *
+ * Activity interceptors wrap individual proxied activity calls, supporting
+ * both **before** and **after** phases. The before phase receives the activity
+ * input (and can modify `activityCtx.args`). The after phase receives the
+ * activity output as the return value of `next()`.
+ *
+ * This enables patterns like publishing activity results to an external
+ * system (e.g., SNS, audit log) without modifying the workflow itself.
+ *
+ * **Important:** The after-phase proxy activity calls go through the same
+ * interceptor chain. Guard against recursion by checking `activityCtx.activityName`
+ * to skip the interceptor's own calls.
+ *
+ * @example
+ * ```typescript
+ * import { Durable } from '@hotmeshio/hotmesh';
+ * import type { ActivityInterceptor } from '@hotmeshio/hotmesh/types/durable';
+ * import * as activities from './activities';
+ *
+ * // Activity interceptor that publishes results via a proxy activity
+ * const publishResultInterceptor: ActivityInterceptor = {
+ *   async execute(activityCtx, workflowCtx, next) {
+ *     try {
+ *       // BEFORE: inspect or modify the activity input
+ *       console.log(`Calling ${activityCtx.activityName}`, activityCtx.args);
+ *
+ *       // Execute the activity (returns stored result on replay)
+ *       const result = await next();
+ *
+ *       // AFTER: use the activity output (only runs on replay,
+ *       // once the result is available)
+ *
+ *       // Guard: skip for the interceptor's own proxy calls
+ *       if (activityCtx.activityName !== 'publishToSNS') {
+ *         const { publishToSNS } = Durable.workflow.proxyActivities<{
+ *           publishToSNS: (topic: string, payload: any) => Promise<void>;
+ *         }>({
+ *           taskQueue: 'shared-notifications',
+ *           retryPolicy: { maximumAttempts: 3, throwOnError: true },
+ *         });
+ *
+ *         await publishToSNS('activity-results', {
+ *           workflowId: workflowCtx.get('workflowId'),
+ *           activityName: activityCtx.activityName,
+ *           input: activityCtx.args,
+ *           output: result,
+ *         });
+ *       }
+ *
+ *       return result;
+ *     } catch (err) {
+ *       if (Durable.didInterrupt(err)) throw err;
+ *       throw err;
+ *     }
+ *   },
+ * };
+ *
+ * Durable.registerActivityInterceptor(publishResultInterceptor);
+ * ```
+ *
+ * ## Activity Interceptor Replay Pattern
+ *
+ * Activity interceptors participate in the interruption/replay cycle:
+ *
+ * 1. **First execution**: Before-phase runs → `next()` registers the activity
+ *    interruption and throws `DurableProxyError` → workflow pauses
+ * 2. **Second execution**: Before-phase replays → `next()` returns the stored
+ *    activity result → after-phase runs → after-phase proxy call (e.g.,
+ *    `publishToSNS`) registers its own interruption → workflow pauses
+ * 3. **Third execution**: Everything replays → after-phase proxy call returns
+ *    its stored result → interceptor returns → workflow continues
  */
 export class InterceptorService implements InterceptorRegistry {
   interceptors: WorkflowInterceptor[] = [];

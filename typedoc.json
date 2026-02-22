@@ -23,6 +23,7 @@
     "services/virtual/index.ts",
     "services/dba/index.ts",
     "services/durable/index.ts",
+    "services/durable/interceptor.ts",
     "services/durable/client.ts",
     "services/durable/handle.ts",
     "services/durable/search.ts",
