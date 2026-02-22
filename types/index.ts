@@ -23,6 +23,8 @@ export { CacheMode } from './cache';
 export { CollationFaultType, CollationStage } from './collator';
 export {
   ActivityConfig,
+  ActivityInterceptor,
+  ActivityInterceptorContext,
   ActivityWorkflowDataType,
   ChildResponseType,
   ClientConfig,

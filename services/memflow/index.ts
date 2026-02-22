@@ -1,5 +1,5 @@
 import { HotMesh } from '../hotmesh';
-import { ContextType, WorkflowInterceptor } from '../../types/memflow';
+import { ContextType, WorkflowInterceptor, ActivityInterceptor } from '../../types/memflow';
 import { guid } from '../../modules/utils';
 
 import { ClientService } from './client';
@@ -139,7 +139,7 @@ import { InterceptorService } from './interceptor';
  *   },
  *   taskQueue: 'interceptor-activities'
  * }, { auditLog }, 'interceptor-activities');
- * 
+ *
  * // Add audit interceptor that uses activities with explicit taskQueue
  * MemFlow.registerInterceptor({
  *   async execute(ctx, next) {
@@ -163,6 +163,62 @@ import { InterceptorService } from './interceptor';
  *       if (MemFlow.didInterrupt(err)) {
  *         throw err; // Rethrow for replay system
  *       }
+ *       throw err;
+ *     }
+ *   }
+ * });
+ * ```
+ *
+ * ### 7. Activity Interceptors
+ * Wrap individual proxied activity calls with cross-cutting logic.
+ * Unlike workflow interceptors (which wrap the entire workflow), activity
+ * interceptors execute around each `proxyActivities` call. They run inside
+ * the workflow's execution context and have access to all MemFlow workflow
+ * methods (`proxyActivities`, `sleepFor`, `waitFor`, `execChild`, etc.).
+ * Multiple activity interceptors execute in onion order (first registered
+ * is outermost).
+ * ```typescript
+ * // Simple logging interceptor
+ * MemFlow.registerActivityInterceptor({
+ *   async execute(activityCtx, workflowCtx, next) {
+ *     console.log(`Activity ${activityCtx.activityName} starting`);
+ *     try {
+ *       const result = await next();
+ *       console.log(`Activity ${activityCtx.activityName} completed`);
+ *       return result;
+ *     } catch (err) {
+ *       if (MemFlow.didInterrupt(err)) throw err;
+ *       console.error(`Activity ${activityCtx.activityName} failed`);
+ *       throw err;
+ *     }
+ *   }
+ * });
+ *
+ * // Interceptor that calls its own proxy activities
+ * await MemFlow.registerActivityWorker({
+ *   connection: {
+ *     class: Postgres,
+ *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
+ *   },
+ *   taskQueue: 'audit-activities'
+ * }, { auditLog }, 'audit-activities');
+ *
+ * MemFlow.registerActivityInterceptor({
+ *   async execute(activityCtx, workflowCtx, next) {
+ *     try {
+ *       const { auditLog } = MemFlow.workflow.proxyActivities<{
+ *         auditLog: (id: string, action: string) => Promise<void>;
+ *       }>({
+ *         taskQueue: 'audit-activities',
+ *         retryPolicy: { maximumAttempts: 3 }
+ *       });
+ *
+ *       await auditLog(workflowCtx.get('workflowId'), `before:${activityCtx.activityName}`);
+ *       const result = await next();
+ *       await auditLog(workflowCtx.get('workflowId'), `after:${activityCtx.activityName}`);
+ *       return result;
+ *     } catch (err) {
+ *       if (MemFlow.didInterrupt(err)) throw err;
  *       throw err;
  *     }
  *   }
@@ -330,10 +386,52 @@ class MemFlowClass {
   }
 
   /**
-   * Clear all registered workflow interceptors
+   * Clear all registered interceptors (both workflow and activity)
    */
   static clearInterceptors(): void {
     MemFlowClass.interceptorService.clear();
+  }
+
+  /**
+   * Register an activity interceptor that wraps individual proxied
+   * activity calls within workflows. Interceptors execute in registration
+   * order (first registered is outermost) using the onion pattern.
+   *
+   * Activity interceptors run inside the workflow's execution context
+   * and have access to all MemFlow workflow methods (`proxyActivities`,
+   * `sleepFor`, `waitFor`, `execChild`, etc.). The `activityCtx` parameter
+   * provides `activityName`, `args`, and `options` for the call being
+   * intercepted. The `workflowCtx` map provides workflow metadata
+   * (`workflowId`, `workflowName`, `namespace`, etc.).
+   *
+   * @param interceptor The activity interceptor to register
+   *
+   * @example
+   * ```typescript
+   * MemFlow.registerActivityInterceptor({
+   *   async execute(activityCtx, workflowCtx, next) {
+   *     const start = Date.now();
+   *     try {
+   *       const result = await next();
+   *       console.log(`${activityCtx.activityName} took ${Date.now() - start}ms`);
+   *       return result;
+   *     } catch (err) {
+   *       if (MemFlow.didInterrupt(err)) throw err;
+   *       throw err;
+   *     }
+   *   }
+   * });
+   * ```
+   */
+  static registerActivityInterceptor(interceptor: ActivityInterceptor): void {
+    MemFlowClass.interceptorService.registerActivity(interceptor);
+  }
+
+  /**
+   * Clear all registered activity interceptors
+   */
+  static clearActivityInterceptors(): void {
+    MemFlowClass.interceptorService.clearActivity();
   }
 
   /**

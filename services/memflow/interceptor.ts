@@ -1,4 +1,9 @@
-import { WorkflowInterceptor, InterceptorRegistry } from '../../types/memflow';
+import {
+  WorkflowInterceptor,
+  InterceptorRegistry,
+  ActivityInterceptor,
+  ActivityInterceptorContext,
+} from '../../types/memflow';
 
 /**
  * Service for managing workflow interceptors that wrap workflow execution
@@ -185,6 +190,7 @@ import { WorkflowInterceptor, InterceptorRegistry } from '../../types/memflow';
  */
 export class InterceptorService implements InterceptorRegistry {
   interceptors: WorkflowInterceptor[] = [];
+  activityInterceptors: ActivityInterceptor[] = [];
 
   /**
    * Register a new workflow interceptor that will wrap workflow execution.
@@ -246,7 +252,48 @@ export class InterceptorService implements InterceptorRegistry {
   }
 
   /**
-   * Clear all registered interceptors.
+   * Register a new activity interceptor that will wrap individual
+   * proxied activity calls. Interceptors are executed in the order
+   * they are registered, with the first registered being the outermost wrapper.
+   *
+   * @param interceptor The activity interceptor to register
+   */
+  registerActivity(interceptor: ActivityInterceptor): void {
+    this.activityInterceptors.push(interceptor);
+  }
+
+  /**
+   * Execute the activity interceptor chain around an activity invocation.
+   * Uses the same onion/reduceRight pattern as executeChain.
+   *
+   * @param activityCtx - Metadata about the activity (name, args, options)
+   * @param workflowCtx - The workflow context Map
+   * @param fn - The core activity function (registers with interruptionRegistry, sleeps, throws)
+   * @returns The result of the activity (from replay or after future execution)
+   */
+  async executeActivityChain(
+    activityCtx: ActivityInterceptorContext,
+    workflowCtx: Map<string, any>,
+    fn: () => Promise<any>,
+  ): Promise<any> {
+    const chain = this.activityInterceptors.reduceRight(
+      (next, interceptor) => {
+        return () => interceptor.execute(activityCtx, workflowCtx, next);
+      },
+      fn,
+    );
+    return chain();
+  }
+
+  /**
+   * Clear all registered activity interceptors.
+   */
+  clearActivity(): void {
+    this.activityInterceptors = [];
+  }
+
+  /**
+   * Clear all registered interceptors (both workflow and activity).
    *
    * @example
    * ```typescript
@@ -255,5 +302,6 @@ export class InterceptorService implements InterceptorRegistry {
    */
   clear(): void {
     this.interceptors = [];
+    this.activityInterceptors = [];
   }
 }

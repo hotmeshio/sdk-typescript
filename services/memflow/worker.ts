@@ -699,6 +699,7 @@ export class WorkerService {
         );
         context.set('replay', replay);
         context.set('cursor', cursor); // if != 0, more remain
+        context.set('activityInterceptorService', MemFlow.getInterceptorService());
 
         // Execute workflow with interceptors
         const workflowResponse = await asyncLocalStorage.run(
