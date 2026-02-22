@@ -1,5 +1,5 @@
 import {
-  HMSH_CODE_MEMFLOW_MAXED,
+  HMSH_CODE_DURABLE_MAXED,
   HMSH_EXPIRE_DURATION,
 } from '../../modules/enums';
 import {
@@ -273,7 +273,7 @@ class Activity {
         this.context.data.done = true;
         this.context.data.$error = {
           message: this.data?.message || 'unknown error',
-          code: HMSH_CODE_MEMFLOW_MAXED,
+          code: HMSH_CODE_DURABLE_MAXED,
           stack: this.data?.stack,
         };
       }

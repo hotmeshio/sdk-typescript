@@ -87,7 +87,7 @@ export interface TransitionType {
   updated: string;
 }
 
-export interface MemFlowJobExport {
+export interface DurableJobExport {
   data?: StringAnyType;
   state?: StringAnyType;
   status?: number;

@@ -242,35 +242,6 @@ describe('FUNCTIONAL | Retry | Postgres', () => {
       }
     });
 
-    // NOTE: This test is skipped for Postgres because it requires pattern subscriptions
-    // (e.g., 'calculated.*' to match all job results). PostgreSQL's LISTEN/NOTIFY
-    // does not support wildcard pattern matching like Redis PSUBSCRIBE does.
-    // The workflow publishes to 'calculated.${jobId}', requiring a pattern to catch all results.
-    it.skip('should subscribe to a topic to see all job results', async () => {
-      let jobId: string;
-      let bAtLeastOne = false;
-      //subscribe to the 'calculated' topic (using sub instead of psub - Postgres doesn't support pattern subscriptions)
-      await hotMesh.sub(
-        'calculated',
-        (topic: string, message: JobOutput) => {
-          //results are broadcast here
-          expect(topic).toBe('calculated');
-          expect(message.data.result).toBe(5);
-          bAtLeastOne = true;
-        },
-      );
-      const payload = {
-        operation: 'divide',
-        values: JSON.stringify([100, 4, 5]),
-      };
-      //publish a job (sleep for 500, so the test doesn't exit tooo soon)
-      jobId = (await hotMesh.pub('calculate', payload)) as string;
-      while (!bAtLeastOne) {
-        await sleepFor(100);
-      }
-      await hotMesh.unsub('calculated');
-    }, 5_000);
-
     it('should subscribe to a topic to see a single job results', async () => {
       let jobId: string;
       let bAtLeastOne = false;

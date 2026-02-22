@@ -1,24 +1,24 @@
 import { ActivityDuplex } from '../types/activity';
 import { CollationFaultType, CollationStage } from '../types/collator';
 import {
-  MemFlowChildErrorType,
-  MemFlowProxyErrorType,
-  MemFlowSleepErrorType,
-  MemFlowWaitForAllErrorType,
-  MemFlowWaitForErrorType,
+  DurableChildErrorType,
+  DurableProxyErrorType,
+  DurableSleepErrorType,
+  DurableWaitForAllErrorType,
+  DurableWaitForErrorType,
 } from '../types/error';
 
 import {
-  HMSH_CODE_MEMFLOW_MAXED,
-  HMSH_CODE_MEMFLOW_TIMEOUT,
-  HMSH_CODE_MEMFLOW_FATAL,
+  HMSH_CODE_DURABLE_MAXED,
+  HMSH_CODE_DURABLE_TIMEOUT,
+  HMSH_CODE_DURABLE_FATAL,
   HMSH_CODE_NOTFOUND,
-  HMSH_CODE_MEMFLOW_RETRYABLE,
-  HMSH_CODE_MEMFLOW_WAIT,
-  HMSH_CODE_MEMFLOW_PROXY,
-  HMSH_CODE_MEMFLOW_CHILD,
-  HMSH_CODE_MEMFLOW_ALL,
-  HMSH_CODE_MEMFLOW_SLEEP,
+  HMSH_CODE_DURABLE_RETRYABLE,
+  HMSH_CODE_DURABLE_WAIT,
+  HMSH_CODE_DURABLE_PROXY,
+  HMSH_CODE_DURABLE_CHILD,
+  HMSH_CODE_DURABLE_ALL,
+  HMSH_CODE_DURABLE_SLEEP,
 } from './enums';
 
 class GetStateError extends Error {
@@ -35,23 +35,23 @@ class SetStateError extends Error {
   }
 }
 
-class MemFlowWaitForError extends Error {
+class DurableWaitForError extends Error {
   code: number;
   signalId: string;
   workflowId: string;
   index: number;
   workflowDimension: string; //hook workflowDimension (e.g., ',0,1,0') (use empty string for `null`)
-  type = 'MemFlowWaitForError';
-  constructor(params: MemFlowWaitForErrorType) {
+  type = 'DurableWaitForError';
+  constructor(params: DurableWaitForErrorType) {
     super(`WaitFor Interruption`);
     this.signalId = params.signalId;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
-    this.code = HMSH_CODE_MEMFLOW_WAIT;
+    this.code = HMSH_CODE_DURABLE_WAIT;
   }
 }
 
-class MemFlowProxyError extends Error {
+class DurableProxyError extends Error {
   activityName: string;
   arguments: string[];
   backoffCoefficient: number;
@@ -65,8 +65,8 @@ class MemFlowProxyError extends Error {
   workflowDimension: string;
   workflowId: string;
   workflowTopic: string;
-  type = 'MemFlowProxyError';
-  constructor(params: MemFlowProxyErrorType) {
+  type = 'DurableProxyError';
+  constructor(params: DurableProxyErrorType) {
     super(`ProxyActivity Interruption`);
     this.arguments = params.arguments;
     this.workflowId = params.workflowId;
@@ -80,11 +80,11 @@ class MemFlowProxyError extends Error {
     this.backoffCoefficient = params.backoffCoefficient;
     this.maximumAttempts = params.maximumAttempts;
     this.maximumInterval = params.maximumInterval;
-    this.code = HMSH_CODE_MEMFLOW_PROXY;
+    this.code = HMSH_CODE_DURABLE_PROXY;
   }
 }
 
-class MemFlowChildError extends Error {
+class DurableChildError extends Error {
   await: boolean;
   entity: string;
   arguments: string[];
@@ -101,8 +101,8 @@ class MemFlowChildError extends Error {
   parentWorkflowId: string;
   workflowId: string;
   workflowTopic: string;
-  type = 'MemFlowChildError';
-  constructor(params: MemFlowChildErrorType) {
+  type = 'DurableChildError';
+  constructor(params: DurableChildErrorType) {
     super(`ExecChild Interruption`);
     this.arguments = params.arguments;
     this.workflowId = params.workflowId;
@@ -115,7 +115,7 @@ class MemFlowChildError extends Error {
     this.entity = params.entity;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
-    this.code = HMSH_CODE_MEMFLOW_CHILD;
+    this.code = HMSH_CODE_DURABLE_CHILD;
     this.await = params.await;
     this.backoffCoefficient = params.backoffCoefficient;
     this.maximumAttempts = params.maximumAttempts;
@@ -123,7 +123,7 @@ class MemFlowChildError extends Error {
   }
 }
 
-class MemFlowWaitForAllError extends Error {
+class DurableWaitForAllError extends Error {
   items: any[];
   code: number;
   workflowDimension: string;
@@ -133,8 +133,8 @@ class MemFlowWaitForAllError extends Error {
   parentWorkflowId: string;
   workflowId: string;
   workflowTopic: string;
-  type = 'MemFlowWaitForAllError';
-  constructor(params: MemFlowWaitForAllErrorType) {
+  type = 'DurableWaitForAllError';
+  constructor(params: DurableWaitForAllErrorType) {
     super(`Collation Interruption`);
     this.items = params.items;
     this.size = params.size;
@@ -144,69 +144,69 @@ class MemFlowWaitForAllError extends Error {
     this.originJobId = params.originJobId;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
-    this.code = HMSH_CODE_MEMFLOW_ALL;
+    this.code = HMSH_CODE_DURABLE_ALL;
   }
 }
 
-class MemFlowSleepError extends Error {
+class DurableSleepError extends Error {
   workflowId: string;
   code: number;
   duration: number; //seconds
   index: number;
   workflowDimension: string; //empty string for null
-  type = 'MemFlowSleepError';
-  constructor(params: MemFlowSleepErrorType) {
+  type = 'DurableSleepError';
+  constructor(params: DurableSleepErrorType) {
     super(`SleepFor Interruption`);
     this.duration = params.duration;
     this.workflowId = params.workflowId;
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
-    this.code = HMSH_CODE_MEMFLOW_SLEEP;
+    this.code = HMSH_CODE_DURABLE_SLEEP;
   }
 }
 
-class MemFlowTimeoutError extends Error {
+class DurableTimeoutError extends Error {
   code: number;
-  type = 'MemFlowTimeoutError';
+  type = 'DurableTimeoutError';
   constructor(message: string, stack?: string) {
     super(message);
     if (this.stack) {
       this.stack = stack;
     }
-    this.code = HMSH_CODE_MEMFLOW_TIMEOUT;
+    this.code = HMSH_CODE_DURABLE_TIMEOUT;
   }
 }
-class MemFlowMaxedError extends Error {
+class DurableMaxedError extends Error {
   code: number;
-  type = 'MemFlowMaxedError';
+  type = 'DurableMaxedError';
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {
       this.stack = stackTrace;
     }
-    this.code = HMSH_CODE_MEMFLOW_MAXED;
+    this.code = HMSH_CODE_DURABLE_MAXED;
   }
 }
-class MemFlowFatalError extends Error {
+class DurableFatalError extends Error {
   code: number;
-  type = 'MemFlowFatalError';
+  type = 'DurableFatalError';
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {
       this.stack = stackTrace;
     }
-    this.code = HMSH_CODE_MEMFLOW_FATAL;
+    this.code = HMSH_CODE_DURABLE_FATAL;
   }
 }
-class MemFlowRetryError extends Error {
+class DurableRetryError extends Error {
   code: number;
-  type = 'MemFlowRetryError';
+  type = 'DurableRetryError';
   constructor(message: string, stackTrace?: string) {
     super(message);
     if (stackTrace) {
       this.stack = stackTrace;
     }
-    this.code = HMSH_CODE_MEMFLOW_RETRYABLE;
+    this.code = HMSH_CODE_DURABLE_RETRYABLE;
   }
 }
 
@@ -293,15 +293,15 @@ class CollationError extends Error {
 
 export {
   CollationError,
-  MemFlowChildError,
-  MemFlowFatalError,
-  MemFlowMaxedError,
-  MemFlowProxyError,
-  MemFlowRetryError,
-  MemFlowSleepError,
-  MemFlowTimeoutError,
-  MemFlowWaitForAllError,
-  MemFlowWaitForError,
+  DurableChildError,
+  DurableFatalError,
+  DurableMaxedError,
+  DurableProxyError,
+  DurableRetryError,
+  DurableSleepError,
+  DurableTimeoutError,
+  DurableWaitForAllError,
+  DurableWaitForError,
   DuplicateJobError,
   ExecActivityError,
   GenerationalError,

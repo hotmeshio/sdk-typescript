@@ -11,11 +11,9 @@ npm install @hotmeshio/hotmesh
 ## Use HotMesh for
 
 - **Durable pipelines** — Orchestrate long-running, multi-step pipelines transactionally.
-- **Temporal replacement** — MemFlow provides a Temporal-compatible API that runs directly on Postgres. No app server required.
+- **Temporal replacement** — The `Durable` module provides a Temporal-compatible API (`Client`, `Worker`, `proxyActivities`, `sleepFor`, `startChild`, signals) that runs directly on Postgres. No app server required.
 - **Distributed state machines** — Build stateful applications where every component can [fail and recover](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md).
 - **AI and training pipelines** — Multi-step AI workloads where each stage is expensive and must not be repeated on failure. A crashed pipeline resumes from the last committed step, not from the beginning.
-
-> **MemFlow** is HotMesh's Temporal-compatible workflow module — a static class (`MemFlow.Client`, `MemFlow.Worker`, `MemFlow.workflow`) that provides the same developer experience as Temporal's SDK but runs entirely on Postgres.
 
 ## How it works in 30 seconds
 
@@ -25,19 +23,19 @@ npm install @hotmeshio/hotmesh
 
 ## Quickstart
 
-Start Postgres locally (or use an existing instance), then:
+Install the package:
 
 ```bash
 npm install @hotmeshio/hotmesh
 ```
 
-The repo includes a `docker-compose.yml` that starts Postgres (and NATS, if needed):
+The repo includes a `docker-compose.yml` that starts Postgres, NATS, and a development container:
 
 ```bash
-docker compose up -d postgres
+docker compose up -d
 ```
 
-Then follow the [Quick Start guide](./docs/quickstart.md) for a progressive walkthrough — from a single trigger to conditional, parallel, and compositional workflows.
+Then follow the [Quick Start guide](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/quickstart.md) for a progressive walkthrough — from a single trigger to conditional, parallel, and compositional workflows.
 
 ## Two ways to write workflows
 
@@ -62,12 +60,12 @@ export async function notifyBackorder(itemId: string): Promise<void> {
 
 ```typescript
 // workflows.ts
-import { MemFlow } from '@hotmeshio/hotmesh';
+import { Durable } from '@hotmeshio/hotmesh';
 import * as activities from './activities';
 
 export async function orderWorkflow(itemId: string, qty: number) {
   const { checkInventory, reserveItem, notifyBackorder } =
-    MemFlow.workflow.proxyActivities<typeof activities>({
+    Durable.workflow.proxyActivities<typeof activities>({
       taskQueue: 'inventory-tasks'
     });
 
@@ -87,18 +85,18 @@ const connection = {
   options: { connectionString: 'postgresql://localhost:5432/mydb' }
 };
 
-await MemFlow.registerActivityWorker({
+await Durable.registerActivityWorker({
   connection,
   taskQueue: 'inventory-tasks'
 }, activities, 'inventory-activities');
 
-await MemFlow.Worker.create({
+await Durable.Worker.create({
   connection,
   taskQueue: 'orders',
   workflow: orderWorkflow
 });
 
-const client = new MemFlow.Client({ connection });
+const client = new Durable.Client({ connection });
 const handle = await client.workflow.start({
   args: ['item-123', 5],
   taskQueue: 'orders',
@@ -202,17 +200,17 @@ Both compile to the same distributed execution model.
 
 ## Common patterns
 
-All snippets below run inside a workflow function (like `orderWorkflow` above). MemFlow methods are available as static imports:
+All snippets below run inside a workflow function (like `orderWorkflow` above). Durable methods are available as static imports:
 
 ```typescript
-import { MemFlow } from '@hotmeshio/hotmesh';
+import { Durable } from '@hotmeshio/hotmesh';
 ```
 
 **Long-running workflows** — `sleepFor` is durable. The process can restart; the timer survives.
 
 ```typescript
 // sendFollowUp is a proxied activity from proxyActivities()
-await MemFlow.workflow.sleepFor('30 days');
+await Durable.workflow.sleepFor('30 days');
 await sendFollowUp();
 ```
 
@@ -230,7 +228,7 @@ const [payment, inventory, shipment] = await Promise.all([
 **Child workflows** — compose workflows from other workflows.
 
 ```typescript
-const childHandle = await MemFlow.workflow.startChild(validateOrder, {
+const childHandle = await Durable.workflow.startChild(validateOrder, {
   args: [orderId],
   taskQueue: 'validation',
   workflowId: `validate-${orderId}`
@@ -241,7 +239,7 @@ const validation = await childHandle.result();
 **Signals** — pause a workflow until an external event arrives.
 
 ```typescript
-const approval = await MemFlow.workflow.waitFor<{ approved: boolean }>('manager-approval');
+const approval = await Durable.workflow.waitFor<{ approved: boolean }>('manager-approval');
 if (!approval.approved) return 'rejected';
 ```
 
@@ -250,8 +248,8 @@ if (!approval.approved) return 'rejected';
 Activities retry automatically on failure. Configure the policy per activity or per worker:
 
 ```typescript
-// MemFlow: per-activity retry policy
-const { reserveItem } = MemFlow.workflow.proxyActivities<typeof activities>({
+// Durable: per-activity retry policy
+const { reserveItem } = Durable.workflow.proxyActivities<typeof activities>({
   taskQueue: 'inventory-tasks',
   retryPolicy: {
     maximumAttempts: 5,
@@ -283,9 +281,9 @@ Defaults: 3 attempts, coefficient 10, 120s cap. Delay formula: `min(coefficient 
 
 If all retries are exhausted, the activity fails and the error propagates to the workflow function — handle it with a standard `try/catch`.
 
-## It's just data
+## Workflow state is queryable data
 
-There is nothing between you and your data. Workflow state lives in your database as ordinary rows — `jobs` and `jobs_attributes`. Query it directly, back it up with pg_dump, replicate it, join it against your application tables.
+Workflow state lives in your database as ordinary rows — `jobs` and `jobs_attributes`. Query it directly, back it up with pg_dump, replicate it, join it against your application tables.
 
 ```sql
 SELECT
@@ -327,7 +325,7 @@ There is no proprietary dashboard. Workflow state lives in Postgres, so use what
 - **Direct SQL** — query `jobs` and `jobs_attributes` to inspect state, as shown above.
 - **Handle API** — `handle.status()`, `handle.state(true)`, and `handle.export()` give programmatic access to any running or completed workflow.
 - **Logging** — set `HMSH_LOGLEVEL` (`debug`, `info`, `warn`, `error`, `silent`) to control log verbosity.
-- **OpenTelemetry** — set `HMSH_TELEMETRY=true` to emit spans and metrics. Plug in any OTel-compatible collector (Jaeger, Datadog, etc.).
+- **OpenTelemetry** — set `HMSH_TELEMETRY=true` to emit spans and metrics. Plug in any OTel-compatible collector.
 
 ## Architecture
 
@@ -335,11 +333,28 @@ For a deep dive into the transactional execution model — how every step is cra
 
 ## Familiar with Temporal?
 
-MemFlow is designed as a drop-in-compatible alternative for common Temporal patterns.
+Durable is designed as a drop-in-compatible alternative for common Temporal patterns.
 
 **What's the same:** `Client`, `Worker`, `proxyActivities`, `sleepFor`, `startChild`/`execChild`, signals (`waitFor`/`signal`), retry policies, and the overall workflow-as-code programming model.
 
 **What's different:** No Temporal server or cluster to operate. Postgres is the only infrastructure dependency — it stores state, coordinates workers, and delivers messages. HotMesh also offers a YAML-based approach for declarative workflows that compile to the same execution model.
+
+## Running tests
+
+Tests run inside Docker. Start the services and run the full suite:
+
+```bash
+docker compose up -d
+docker compose exec hotmesh npm test
+```
+
+Run a specific test group:
+
+```bash
+docker compose exec hotmesh npm run test:durable         # all Durable tests (Temporal pattern coverage proofs)
+docker compose exec hotmesh npm run test:durable:hello   # single Durable test (hello world proxyActivity proof)
+docker compose exec hotmesh npm run test:virtual         # all Virtual network function (VNF) tests
+```
 
 ## License
 
