@@ -1,3 +1,4 @@
+import { describe, it, expect } from 'vitest';
 import * as utils from '../../../modules/utils';
 import { StreamStatus } from '../../../types/stream';
 

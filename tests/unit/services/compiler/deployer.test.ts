@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Deployer } from '../../../../services/compiler/deployer';
 import Manifest from '../../../$setup/apps/calc/v1/.hotmesh.calc.1.json';
 import { HotMeshManifest } from '../../../../types/hotmesh';

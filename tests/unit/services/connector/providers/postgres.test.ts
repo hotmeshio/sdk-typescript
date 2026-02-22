@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client } from 'pg';
 
 import config from '../../../../$setup/config';

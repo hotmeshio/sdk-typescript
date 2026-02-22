@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { Client as Postgres } from 'pg';
 
 import { HotMesh, HotMeshConfig } from '../../../index';

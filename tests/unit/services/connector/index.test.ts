@@ -1,3 +1,4 @@
+import { describe, it, expect, afterAll, beforeEach } from 'vitest';
 import { Client as Postgres } from 'pg';
 
 import config from '../../../$setup/config';

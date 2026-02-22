@@ -1,3 +1,4 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import { Client } from 'pg';
 
 import { HMNS } from '../../../../../modules/key';
