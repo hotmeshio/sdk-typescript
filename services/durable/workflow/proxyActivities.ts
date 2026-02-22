@@ -65,39 +65,45 @@ function getProxyInterruptPayload(
  */
 function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
   return async function (...args: any[]) {
+    // Increment counter first for deterministic replay ordering
     const [didRunAlready, execIndex, result] = await didRun('proxy');
-    if (didRunAlready) {
-      if (result?.$error) {
-        if (options?.retryPolicy?.throwOnError !== false) {
-          const code = result.$error.code;
-          const message = result.$error.message;
-          const stack = result.$error.stack;
-          if (code === HMSH_CODE_DURABLE_FATAL) {
-            throw new DurableFatalError(message, stack);
-          } else if (code === HMSH_CODE_DURABLE_MAXED) {
-            throw new DurableMaxedError(message, stack);
-          } else if (code === HMSH_CODE_DURABLE_TIMEOUT) {
-            throw new DurableTimeoutError(message, stack);
-          } else {
-            // For any other error code, throw a DurableFatalError to stop the workflow
-            throw new DurableFatalError(message, stack);
-          }
-        }
-        return result.$error as T;
-      }
-      return result.data as T;
-    }
 
     const context = getContext();
     const { interruptionRegistry } = context;
 
-    // Core activity registration logic
-    const executeActivity = async () => {
+    // Build activityCtx so interceptors can inspect/modify args
+    const activityCtx = { activityName, args, options };
+
+    // Core function: returns stored result on replay, or registers
+    // the interruption and throws on first execution. Reads args
+    // from activityCtx so "before" interceptors can modify them.
+    const coreFunction = async () => {
+      if (didRunAlready) {
+        if (result?.$error) {
+          if (options?.retryPolicy?.throwOnError !== false) {
+            const code = result.$error.code;
+            const message = result.$error.message;
+            const stack = result.$error.stack;
+            if (code === HMSH_CODE_DURABLE_FATAL) {
+              throw new DurableFatalError(message, stack);
+            } else if (code === HMSH_CODE_DURABLE_MAXED) {
+              throw new DurableMaxedError(message, stack);
+            } else if (code === HMSH_CODE_DURABLE_TIMEOUT) {
+              throw new DurableTimeoutError(message, stack);
+            } else {
+              throw new DurableFatalError(message, stack);
+            }
+          }
+          return result.$error as T;
+        }
+        return result.data as T;
+      }
+
       const interruptionMessage = getProxyInterruptPayload(
         context,
         activityName,
         execIndex,
-        args,
+        activityCtx.args,
         options,
       );
       interruptionRegistry.push({
@@ -109,19 +115,19 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
       throw new DurableProxyError(interruptionMessage);
     };
 
-    // Check for activity interceptors
+    // Run through interceptor chain if interceptors exist
     const store = asyncLocalStorage.getStore();
     const interceptorService = store?.get('activityInterceptorService');
 
     if (interceptorService?.activityInterceptors?.length > 0) {
       return await interceptorService.executeActivityChain(
-        { activityName, args, options },
+        activityCtx,
         store,
-        executeActivity,
+        coreFunction,
       );
     }
 
-    return await executeActivity();
+    return await coreFunction();
   } as unknown as T;
 }
 

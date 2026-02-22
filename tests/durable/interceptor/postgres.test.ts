@@ -815,13 +815,21 @@ describe('DURABLE | interceptor | Postgres', () => {
         expect(result.status).toBe('completed');
         expect(result.name).toBe('ActivityInterceptorTest');
 
-        // Verify activity interceptor was called for each activity
+        // Verify activity interceptor was called for each activity (before phase)
         const beforeCalls = activityInterceptorCalls
           .filter(c => c.phase === 'before')
           .map(c => c.activityName);
         expect(beforeCalls).toContain('validateData');
         expect(beforeCalls).toContain('processData');
         expect(beforeCalls).toContain('recordResult');
+
+        // Verify after phase ran for each activity (on replay)
+        const afterCalls = activityInterceptorCalls
+          .filter(c => c.phase === 'after')
+          .map(c => c.activityName);
+        expect(afterCalls).toContain('validateData');
+        expect(afterCalls).toContain('processData');
+        expect(afterCalls).toContain('recordResult');
 
         // All before calls should have the correct workflowId
         activityInterceptorCalls
@@ -957,6 +965,118 @@ describe('DURABLE | interceptor | Postgres', () => {
         }));
       }, 60_000);
 
+      it('should receive activity output in after phase and pass it to a proxy activity', async () => {
+        // This test demonstrates the full wrapping pattern:
+        // 1. Before: interceptor sees the activity input args
+        // 2. Activity runs and produces output
+        // 3. After: interceptor receives the output and calls another
+        //    proxy activity with it (e.g., publishing to SNS)
+        Durable.clearInterceptors();
+
+        const capturedResults: { activityName: string; input: any[]; output: any }[] = [];
+
+        // Register a shared activity worker for the interceptor's own calls
+        await Durable.registerActivityWorker({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'act-intercept-after-output'
+        }, activities, 'act-intercept-after-output');
+
+        const afterOutputInterceptor: ActivityInterceptor = {
+          async execute(activityCtx, workflowCtx, next) {
+            try {
+              const result = await next();
+
+              // Capture the activity output for assertion
+              capturedResults.push({
+                activityName: activityCtx.activityName,
+                input: activityCtx.args,
+                output: result,
+              });
+
+              // Only call the after-phase proxy for workflow activities,
+              // not for the interceptor's own auditLog calls (avoids recursion)
+              if (activityCtx.activityName !== 'auditLog') {
+                // Simulate the SNS-like pattern: call a proxy activity
+                // in the after phase, passing the activity's output
+                const { auditLog } = Durable.workflow.proxyActivities<typeof activities>({
+                  activities,
+                  taskQueue: 'act-intercept-after-output',
+                  retryPolicy: { maximumAttempts: 3, throwOnError: true },
+                });
+
+                await auditLog(
+                  workflowCtx.get('workflowId'),
+                  `after:${activityCtx.activityName}:${JSON.stringify(result)}`,
+                );
+              }
+
+              return result;
+            } catch (err) {
+              if (Durable.didInterrupt(err)) throw err;
+              throw err;
+            }
+          },
+        };
+
+        Durable.registerActivityInterceptor(afterOutputInterceptor);
+
+        // Use the `example` workflow which calls processData (returns a string)
+        const worker = await Worker.create({
+          connection: { class: Postgres, options: postgres_options },
+          namespace,
+          taskQueue: 'act-intercept-after-output-test',
+          workflow: workflows.example,
+        });
+        await worker.run();
+
+        const workflowGuid = prefix + 'act-after-output-' + guid();
+        workflowGuids.push(workflowGuid);
+
+        const handle = await client.workflow.start({
+          namespace,
+          args: ['AfterOutputTest'],
+          taskQueue: 'act-intercept-after-output-test',
+          workflowName: 'example',
+          workflowId: workflowGuid,
+        });
+
+        const result = await handle.result() as any;
+
+        // Verify workflow completed
+        expect(result.status).toBe('completed');
+        expect(result.finalResult).toBe('Processed: AfterOutputTest');
+
+        // Verify the after-phase interceptor captured the actual activity outputs
+        const processDataCapture = capturedResults.find(c => c.activityName === 'processData');
+        expect(processDataCapture).toBeDefined();
+        expect(processDataCapture!.input).toEqual(['AfterOutputTest']);
+        expect(processDataCapture!.output).toBe('Processed: AfterOutputTest');
+
+        const validateDataCapture = capturedResults.find(c => c.activityName === 'validateData');
+        expect(validateDataCapture).toBeDefined();
+        expect(validateDataCapture!.input).toEqual(['AfterOutputTest']);
+        expect(validateDataCapture!.output).toBe(true);
+
+        // Verify the after-phase proxy activity calls (auditLog) actually executed.
+        // The auditLog calls also flow through the interceptor and get captured,
+        // proving they ran as real proxy activities (not no-ops).
+        const auditLogCaptures = capturedResults.filter(c => c.activityName === 'auditLog');
+        expect(auditLogCaptures.length).toBeGreaterThanOrEqual(3); // one per workflow activity
+
+        // Each auditLog received the activity output in its arguments
+        const processDataAudit = auditLogCaptures.find(
+          c => (c.input[1] as string).includes('processData')
+        );
+        expect(processDataAudit).toBeDefined();
+        expect(processDataAudit!.input[1]).toContain('"Processed: AfterOutputTest"');
+        // auditLog itself returns a string, proving it executed
+        expect(typeof processDataAudit!.output).toBe('string');
+      }, 120_000);
+
       it('should support multiple activity interceptors in onion order', async () => {
         Durable.clearInterceptors();
 
@@ -1087,6 +1207,13 @@ describe('DURABLE | interceptor | Postgres', () => {
         // Verify both interceptors were called for validateData
         expect(order).toContain('outer:before:validateData');
         expect(order).toContain('inner:before:validateData');
+
+        // Verify after-phase runs in reverse onion order (inner:after before outer:after)
+        expect(order).toContain('inner:after:validateData');
+        expect(order).toContain('outer:after:validateData');
+        const firstInnerAfter = order.findIndex(s => s.startsWith('inner:after:'));
+        const firstOuterAfter = order.findIndex(s => s.startsWith('outer:after:'));
+        expect(firstInnerAfter).toBeLessThan(firstOuterAfter);
       }, 60_000);
     });
   });

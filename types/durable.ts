@@ -720,15 +720,22 @@ export interface WorkflowInterceptor {
 }
 
 /**
- * Registry for workflow interceptors that are executed in order
- * for each workflow execution
+ * Registry for workflow and activity interceptors that are executed in order
+ * for each workflow or activity execution.
  */
 export interface InterceptorRegistry {
   /**
-   * Array of registered interceptors that will wrap workflow execution
-   * in the order they were registered (first registered = outermost wrapper)
+   * Array of registered workflow interceptors that will wrap workflow execution
+   * in the order they were registered (first registered = outermost wrapper).
    */
   interceptors: WorkflowInterceptor[];
+
+  /**
+   * Array of registered activity interceptors that will wrap individual
+   * proxied activity calls in the order they were registered
+   * (first registered = outermost wrapper).
+   */
+  activityInterceptors: ActivityInterceptor[];
 }
 
 /**
@@ -750,11 +757,21 @@ export interface ActivityInterceptorContext {
  * workflow methods (proxyActivities, sleepFor, waitFor, execChild, etc.)
  * are available.
  *
- * Activity interceptors execute BEFORE the activity registers with the
- * interruptionRegistry and throws. Any Durable operations called within
- * the interceptor will register their own interruptions first, and those
- * will be processed before the wrapped activity's interruption during
- * the replay cycle.
+ * Activity interceptors wrap proxied activity calls in an onion pattern,
+ * supporting both **before** and **after** phases:
+ *
+ * - **Before phase** (code before `await next()`): Runs before the activity
+ *   executes. The interceptor can inspect or modify `activityCtx.args` to
+ *   transform the activity input before it is sent.
+ *
+ * - **After phase** (code after `await next()`): Runs on replay once the
+ *   activity result is available. The interceptor receives the activity
+ *   output as the return value of `next()` and can inspect or transform it.
+ *
+ * On first execution, `next()` registers the activity with the interruption
+ * system and throws (the activity has not completed yet). On replay, `next()`
+ * returns the stored result and the after-phase code executes. This follows
+ * the same deterministic replay pattern as workflow interceptors.
  *
  * @example
  * ```typescript
@@ -779,11 +796,13 @@ export interface ActivityInterceptorContext {
  */
 export interface ActivityInterceptor {
   /**
-   * Called before each proxied activity invocation.
+   * Called around each proxied activity invocation. Code before `next()`
+   * runs in the before phase; code after `next()` runs in the after phase
+   * once the activity result is available on replay.
    *
-   * @param activityCtx - Metadata about the activity being called
+   * @param activityCtx - Metadata about the activity being called (args may be modified)
    * @param workflowCtx - The workflow context map (same as WorkflowInterceptor receives)
-   * @param next - Call to proceed to the next interceptor or the actual activity registration
+   * @param next - Call to proceed to the next interceptor or the core activity function
    * @returns The activity result (from replay or after interruption/re-execution)
    */
   execute(
