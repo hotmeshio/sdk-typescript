@@ -17,3 +17,4 @@
 /tsconfig.json
 /typedoc.json
 /.env
+/.claude/*
