@@ -1,5 +1,10 @@
 import { HotMesh } from '../hotmesh';
-import { DurableJobExport, ExportOptions } from '../../types/exporter';
+import {
+  DurableJobExport,
+  ExportOptions,
+  ExecutionExportOptions,
+  WorkflowExecution,
+} from '../../types/exporter';
 import { JobInterruptOptions, JobOutput } from '../../types/job';
 import { StreamError } from '../../types/stream';
 
@@ -58,6 +63,26 @@ export class WorkflowHandleService {
    */
   async export(options?: ExportOptions): Promise<DurableJobExport> {
     return this.exporter.export(this.workflowId, options);
+  }
+
+  /**
+   * Exports the workflow as a Temporal-like execution event history.
+   *
+   * **Sparse mode** (default): transforms the main workflow's timeline
+   * into a flat event list with workflow lifecycle, activity, child workflow,
+   * timer, and signal events.
+   *
+   * **Verbose mode**: recursively fetches child workflow jobs and attaches
+   * their full execution histories as nested `children`.
+   */
+  async exportExecution(
+    options?: ExecutionExportOptions,
+  ): Promise<WorkflowExecution> {
+    return this.exporter.exportExecution(
+      this.workflowId,
+      this.workflowTopic,
+      options,
+    );
   }
 
   /**

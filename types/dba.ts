@@ -35,7 +35,7 @@ export interface PruneOptions {
   /**
    * If true, hard-deletes expired jobs older than the retention window.
    * FK CASCADE on `jobs_attributes` automatically removes associated
-   * attribute rows.
+   * attribute rows. When `entities` is set, only matching jobs are deleted.
    * @default true
    */
   jobs?: boolean;
@@ -48,13 +48,38 @@ export interface PruneOptions {
   streams?: boolean;
 
   /**
-   * If true, strips execution-artifact attributes (`adata`, `hmark`,
-   * `jmark`, `status`, `other`) from completed jobs (status = 0),
-   * retaining only `jdata` (workflow return data) and `udata`
-   * (user-searchable data).
+   * If true, strips execution-artifact attributes from completed,
+   * un-pruned jobs. Preserves `jdata` (return data), `udata`
+   * (searchable data), and `jmark` (timeline/event history for
+   * Temporal-compatible export). See `keepHmark` for `hmark`.
    * @default false
    */
   attributes?: boolean;
+
+  /**
+   * Entity allowlist. When provided, only jobs whose `entity` column
+   * matches one of these values are eligible for pruning/stripping.
+   * Jobs with `entity IS NULL` are excluded unless `pruneTransient`
+   * is also true.
+   * @default undefined (all entities)
+   */
+  entities?: string[];
+
+  /**
+   * If true, hard-deletes expired jobs where `entity IS NULL`
+   * (transient workflow runs). Must also satisfy the retention
+   * window (`expire`).
+   * @default false
+   */
+  pruneTransient?: boolean;
+
+  /**
+   * If true, `hmark` attributes are preserved during stripping
+   * (along with `jdata`, `udata`, and `jmark`). If false, `hmark`
+   * rows are stripped.
+   * @default false
+   */
+  keepHmark?: boolean;
 }
 
 /**
@@ -68,4 +93,8 @@ export interface PruneResult {
   streams: number;
   /** Number of execution-artifact attribute rows stripped from completed jobs */
   attributes: number;
+  /** Number of transient (entity IS NULL) job rows hard-deleted */
+  transient: number;
+  /** Number of jobs marked as pruned (pruned_at set) */
+  marked: number;
 }

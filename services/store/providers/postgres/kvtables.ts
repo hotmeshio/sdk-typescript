@@ -236,6 +236,7 @@ export const KVTables = (context: PostgresStoreService) => ({
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 expired_at TIMESTAMP WITH TIME ZONE,
+                pruned_at TIMESTAMP WITH TIME ZONE,
                 is_live BOOLEAN DEFAULT TRUE,
                 PRIMARY KEY (id)
               ) PARTITION BY HASH (id);
@@ -273,8 +274,13 @@ export const KVTables = (context: PostgresStoreService) => ({
             `);
 
             await client.query(`
-              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_expired_at 
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_expired_at
               ON ${fullTableName} (expired_at);
+            `);
+
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_pruned_at
+              ON ${fullTableName} (pruned_at) WHERE pruned_at IS NULL;
             `);
 
             // Create function to update is_live flag in the schema
