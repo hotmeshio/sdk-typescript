@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Permanent-Memory Workflows & AI Agents",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -46,6 +46,8 @@
     "test:durable:sleep": "vitest run tests/durable/sleep/postgres.test.ts",
     "test:durable:signal": "vitest run tests/durable/signal/postgres.test.ts",
     "test:durable:unknown": "vitest run tests/durable/unknown/postgres.test.ts",
+    "test:durable:exporter": "vitest run tests/durable/exporter/exporter.test.ts",
+    "test:durable:exporter:debug": "EXPORT_DEBUG=1 HMSH_LOGLEVEL=error vitest run tests/durable/basic/postgres.test.ts",
     "test:dba": "vitest run tests/dba",
     "test:cycle": "vitest run tests/functional/cycle",
     "test:functional": "vitest run tests/functional",
