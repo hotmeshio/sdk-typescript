@@ -1670,6 +1670,146 @@ class PostgresStoreService extends StoreService<
     }
     return false;
   }
+
+  // ── Exporter queries ───────────────────────────────────────────────────────
+
+  /**
+   * Fetch activity inputs for a workflow. Used by the exporter to enrich
+   * timeline events with activity arguments.
+   */
+  async getActivityInputs(
+    workflowId: string,
+    symbolField: string,
+  ): Promise<{
+    byJobId: Map<string, any>;
+    byNameIndex: Map<string, any>;
+  }> {
+    const { GET_ACTIVITY_INPUTS } = await import('./exporter-sql');
+    const schemaName = this.kvsql().safeName(this.appId);
+    const sql = GET_ACTIVITY_INPUTS.replace(/{schema}/g, schemaName);
+
+    const jobKeyPattern = `hmsh:${this.appId}:j:-${workflowId}-%`;
+    const result = await this.pgClient.query(sql, [jobKeyPattern, symbolField]);
+
+    const byJobId = new Map<string, any>();
+    const byNameIndex = new Map<string, any>();
+
+    for (const row of result.rows) {
+      const jobKey = row.key as string;
+      const jobId = jobKey.replace(`hmsh:${this.appId}:j:`, '');
+
+      try {
+        const parsed = this.parseHmshValue(row.value);
+        byJobId.set(jobId, parsed);
+
+        // Extract activityName and executionIndex from job_id
+        // Format: -workflowId-$activityName-executionIndex
+        const match = jobId.match(/\$([^-]+)-(\d+)$/);
+        if (match) {
+          const activityName = match[1];
+          const executionIndex = match[2];
+          byNameIndex.set(`${activityName}:${executionIndex}`, parsed);
+        }
+      } catch {
+        // Skip unparseable values
+      }
+    }
+
+    return { byJobId, byNameIndex };
+  }
+
+  /**
+   * Fetch child workflow inputs in batch. Used by the exporter to enrich
+   * child workflow events with their arguments.
+   */
+  async getChildWorkflowInputs(
+    childJobKeys: string[],
+    symbolField: string,
+  ): Promise<Map<string, any>> {
+    if (childJobKeys.length === 0) {
+      return new Map();
+    }
+
+    const { buildChildWorkflowInputsQuery } = await import('./exporter-sql');
+    const schemaName = this.kvsql().safeName(this.appId);
+    const sql = buildChildWorkflowInputsQuery(childJobKeys.length, schemaName);
+
+    const result = await this.pgClient.query(sql, [...childJobKeys, symbolField]);
+
+    const childInputMap = new Map<string, any>();
+    for (const row of result.rows) {
+      const jobKey = row.key as string;
+      const childId = jobKey.replace(`hmsh:${this.appId}:j:`, '');
+
+      try {
+        const parsed = this.parseHmshValue(row.value);
+        childInputMap.set(childId, parsed);
+      } catch {
+        // Skip unparseable values
+      }
+    }
+
+    return childInputMap;
+  }
+
+  /**
+   * Fetch job record and attributes by key. Used by the exporter to
+   * reconstruct execution history for expired jobs.
+   */
+  async getJobByKeyDirect(jobKey: string): Promise<{
+    job: {
+      id: string;
+      key: string;
+      status: number;
+      created_at: Date;
+      updated_at: Date;
+      expired_at?: Date;
+      is_live: boolean;
+    };
+    attributes: Record<string, string>;
+  }> {
+    const { GET_JOB_BY_KEY, GET_JOB_ATTRIBUTES } = await import('./exporter-sql');
+    const schemaName = this.kvsql().safeName(this.appId);
+
+    const jobSql = GET_JOB_BY_KEY.replace(/{schema}/g, schemaName);
+    const jobResult = await this.pgClient.query(jobSql, [jobKey]);
+
+    if (jobResult.rows.length === 0) {
+      throw new Error(`No job found for key "${jobKey}"`);
+    }
+
+    const job = jobResult.rows[0];
+
+    const attrSql = GET_JOB_ATTRIBUTES.replace(/{schema}/g, schemaName);
+    const attrResult = await this.pgClient.query(attrSql, [job.id]);
+
+    const attributes: Record<string, string> = {};
+    for (const row of attrResult.rows) {
+      attributes[row.field] = row.value;
+    }
+
+    return { job, attributes };
+  }
+
+  /**
+   * Parse a HotMesh-encoded value string.
+   * Values may be prefixed with `/s` (JSON), `/d` (number), `/t` or `/f` (boolean), `/n` (null).
+   */
+  private parseHmshValue(raw: string): any {
+    if (typeof raw !== 'string') return undefined;
+
+    const prefix = raw.slice(0, 2);
+    const rest = raw.slice(2);
+
+    switch (prefix) {
+      case '/t': return true;
+      case '/f': return false;
+      case '/d': return Number(rest);
+      case '/n': return null;
+      case '/s': return JSON.parse(rest);
+      default: return raw;
+    }
+  }
 }
 
 export { PostgresStoreService };

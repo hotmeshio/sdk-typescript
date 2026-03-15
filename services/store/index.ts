@@ -237,6 +237,57 @@ abstract class StoreService<
   abstract setThrottleRate(options: ThrottleOptions): Promise<void>;
   abstract getThrottleRates(): Promise<StringStringType>;
   abstract getThrottleRate(topic: string): Promise<number>;
+
+  // ── Exporter queries (provider-specific, optional implementation) ────────
+
+  /**
+   * Fetch activity inputs for a workflow. Used by the exporter to enrich
+   * timeline events with activity arguments.
+   *
+   * @param workflowId - The workflow ID
+   * @param symbolField - The compressed symbol field for activity arguments
+   * @returns Map of job_id -> parsed input arguments and activityName:index -> parsed inputs
+   */
+  getActivityInputs?(
+    workflowId: string,
+    symbolField: string,
+  ): Promise<{
+    byJobId: Map<string, any>;
+    byNameIndex: Map<string, any>;
+  }>;
+
+  /**
+   * Fetch child workflow inputs in batch. Used by the exporter to enrich
+   * child workflow events with their arguments.
+   *
+   * @param childJobKeys - Array of child job keys to fetch
+   * @param symbolField - The compressed symbol field for workflow arguments
+   * @returns Map of child_workflow_id -> parsed input arguments
+   */
+  getChildWorkflowInputs?(
+    childJobKeys: string[],
+    symbolField: string,
+  ): Promise<Map<string, any>>;
+
+  /**
+   * Fetch job record and attributes by key. Used by the exporter to
+   * reconstruct execution history for expired jobs.
+   *
+   * @param jobKey - The job key (e.g., "hmsh:durable:j:workflowId")
+   * @returns Job row and all attributes
+   */
+  getJobByKeyDirect?(jobKey: string): Promise<{
+    job: {
+      id: string;
+      key: string;
+      status: number;
+      created_at: Date;
+      updated_at: Date;
+      expired_at?: Date;
+      is_live: boolean;
+    };
+    attributes: Record<string, string>;
+  }>;
 }
 
 export { StoreService };

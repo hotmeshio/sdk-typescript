@@ -148,6 +148,7 @@ export interface ActivityTaskScheduledAttributes {
   activity_type: string;
   timeline_key: string;
   execution_index: number;
+  input?: any;
 }
 
 export interface ActivityTaskCompletedAttributes {
@@ -157,6 +158,7 @@ export interface ActivityTaskCompletedAttributes {
   scheduled_event_id?: number;
   timeline_key: string;
   execution_index: number;
+  input?: any;
 }
 
 export interface ActivityTaskFailedAttributes {
@@ -166,6 +168,7 @@ export interface ActivityTaskFailedAttributes {
   scheduled_event_id?: number;
   timeline_key: string;
   execution_index: number;
+  input?: any;
 }
 
 export interface ChildWorkflowExecutionStartedAttributes {
@@ -174,6 +177,7 @@ export interface ChildWorkflowExecutionStartedAttributes {
   awaited: boolean;
   timeline_key: string;
   execution_index: number;
+  input?: any;
 }
 
 export interface ChildWorkflowExecutionCompletedAttributes {
@@ -278,4 +282,44 @@ export interface ExecutionExportOptions {
   exclude_system?: boolean;
   omit_results?: boolean;
   max_depth?: number;
+  /**
+   * When true, enriches activity and child workflow events with their inputs
+   * by querying the underlying job attributes. This enables full visibility
+   * into activity arguments without requiring separate callback queries.
+   *
+   * @default false (late-binding: only return timeline_key references)
+   */
+  enrich_inputs?: boolean;
+  /**
+   * When true, allows fallback to direct database queries for expired jobs
+   * whose in-memory handles have been pruned. Only supported with providers
+   * that implement the extended exporter query interface (e.g., Postgres).
+   *
+   * @default false
+   */
+  allow_direct_query?: boolean;
+}
+
+// ── Exporter enrichment types (provider interface) ──────────────────────────
+
+export interface JobAttributesRow {
+  field: string;
+  value: string;
+}
+
+export interface JobRow {
+  id: string;
+  key: string;
+  status: number;
+  created_at: Date;
+  updated_at: Date;
+  expired_at?: Date;
+  is_live: boolean;
+}
+
+export interface ActivityInputMap {
+  /** Maps activity job_id to parsed input arguments */
+  byJobId: Map<string, any>;
+  /** Maps "activityName:executionIndex" to parsed input arguments */
+  byNameIndex: Map<string, any>;
 }

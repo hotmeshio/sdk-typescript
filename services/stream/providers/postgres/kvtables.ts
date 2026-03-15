@@ -235,6 +235,13 @@ async function createTables(
     WHERE expired_at IS NULL;
   `);
 
+  // Index for control plane analytics (processed volume by time range)
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_streams_processed_volume
+    ON ${tableName} (expired_at, stream_name)
+    WHERE expired_at IS NOT NULL;
+  `);
+
   // TODO: revisit this index when solving automated cleanup
   // Optional index for querying by creation time, if needed
   // await client.query(`
