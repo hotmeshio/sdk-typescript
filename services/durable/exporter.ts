@@ -245,15 +245,395 @@ class ExporterService {
     workflowTopic: string,
     options: ExecutionExportOptions = {},
   ): Promise<WorkflowExecution> {
-    const raw = await this.export(jobId);
-    const execution = this.transformToExecution(raw, jobId, workflowTopic, options);
+    let execution: WorkflowExecution;
 
-    if (options.mode === 'verbose') {
-      const maxDepth = options.max_depth ?? 5;
-      execution.children = await this.fetchChildren(raw, workflowTopic, options, 1, maxDepth);
+    try {
+      const raw = await this.export(jobId);
+      execution = this.transformToExecution(raw, jobId, workflowTopic, options);
+
+      if (options.mode === 'verbose') {
+        const maxDepth = options.max_depth ?? 5;
+        execution.children = await this.fetchChildren(raw, workflowTopic, options, 1, maxDepth);
+      }
+    } catch (error) {
+      // Fallback to direct query for expired/pruned jobs
+      if (options.allow_direct_query && this.store.getJobByKeyDirect) {
+        this.logger.debug('Job export failed, attempting direct query', { jobId, error: error.message });
+        execution = await this.exportExecutionDirect(jobId, workflowTopic, options);
+      } else {
+        throw error;
+      }
+    }
+
+    // Enrich with activity/child workflow inputs if requested
+    if (options.enrich_inputs) {
+      await this.enrichExecutionInputs(execution, jobId);
     }
 
     return execution;
+  }
+
+  /**
+   * Reconstruct a WorkflowExecution from raw database rows when the job
+   * handle has expired or been pruned. Only available if the store provider
+   * implements getJobByKeyDirect.
+   */
+  private async exportExecutionDirect(
+    workflowId: string,
+    workflowTopic: string,
+    options: ExecutionExportOptions,
+  ): Promise<WorkflowExecution> {
+    if (!this.store.getJobByKeyDirect) {
+      throw new Error('Direct query not supported by this store provider');
+    }
+
+    const jobKey = `hmsh:${this.appId}:j:${workflowId}`;
+    const { job, attributes } = await this.store.getJobByKeyDirect(jobKey);
+
+    // Parse metadata for timing
+    const startTime = attributes['aoa'] ? parseTimestamp(attributes['aoa']) : job.created_at?.toISOString();
+    const closeTime = attributes['apa'] ? parseTimestamp(attributes['apa']) : job.updated_at?.toISOString();
+
+    // Parse workflow result
+    let workflowResult: any;
+    if (attributes['aBa']) {
+      const raw = attributes['aBa'].startsWith('/s') ? attributes['aBa'].slice(2) : attributes['aBa'];
+      try { workflowResult = JSON.parse(raw); } catch { /* ignore */ }
+    }
+
+    // Build events from timeline operations
+    const events: WorkflowExecutionEvent[] = [];
+    let nextId = 1;
+
+    // Helper to extract operation entries from attributes
+    const getOperationKeys = (prefix: string): Array<{ key: string; index: number; val: Record<string, any> }> => {
+      return Object.keys(attributes)
+        .filter((k) => k.startsWith(prefix))
+        .sort((a, b) => {
+          const numA = parseInt(a.replace(new RegExp(`${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}|-`, 'g'), ''));
+          const numB = parseInt(b.replace(new RegExp(`${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}|-`, 'g'), ''));
+          return numA - numB;
+        })
+        .map((key) => {
+          const raw = attributes[key].startsWith('/s') ? attributes[key].slice(2) : attributes[key];
+          try {
+            return { key, index: parseInt(key.replace(/[^0-9]/g, '')), val: JSON.parse(raw) };
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean) as Array<{ key: string; index: number; val: Record<string, any> }>;
+    };
+
+    let systemCount = 0;
+    let userCount = 0;
+    let activityCompleted = 0;
+    let activityFailed = 0;
+    let childTotal = 0;
+    let childCompleted = 0;
+    let childFailed = 0;
+    let timerCount = 0;
+    let signalCount = 0;
+
+    // Process proxy (activities)
+    for (const { key, index, val } of getOperationKeys('-proxy-')) {
+      const activityName = extractActivityName(val);
+      const isSystem = isSystemActivity(activityName);
+      const ac = val.ac as string | undefined;
+      const au = val.au as string | undefined;
+      const dur = computeDuration(ac, au);
+      const hasError = '$error' in val;
+
+      if (isSystem) systemCount++; else userCount++;
+      if (options.exclude_system && isSystem) continue;
+
+      if (ac) {
+        events.push(makeEvent(nextId++, 'activity_task_scheduled', 'activity', parseTimestamp(ac), null, isSystem, {
+          kind: 'activity_task_scheduled',
+          activity_type: activityName,
+          timeline_key: (val.job_id as string) || key,
+          execution_index: index,
+        }));
+      }
+
+      if (au) {
+        if (hasError) {
+          activityFailed++;
+          events.push(makeEvent(nextId++, 'activity_task_failed', 'activity', parseTimestamp(au), dur, isSystem, {
+            kind: 'activity_task_failed',
+            activity_type: activityName,
+            failure: val.$error,
+            timeline_key: (val.job_id as string) || key,
+            execution_index: index,
+          }));
+        } else {
+          activityCompleted++;
+          events.push(makeEvent(nextId++, 'activity_task_completed', 'activity', parseTimestamp(au), dur, isSystem, {
+            kind: 'activity_task_completed',
+            activity_type: activityName,
+            result: options.omit_results ? undefined : val.data,
+            timeline_key: (val.job_id as string) || key,
+            execution_index: index,
+          }));
+        }
+      }
+    }
+
+    // Process wait (signals)
+    for (const { key, index, val } of getOperationKeys('-wait-')) {
+      const signalName = (val.id as string) || (val.data as any)?.id || (val.data as any)?.data?.id || `signal-${index}`;
+      const ac = val.ac as string | undefined;
+      const au = val.au as string | undefined;
+      const dur = computeDuration(ac, au);
+      signalCount++;
+
+      const ts = au ? parseTimestamp(au) : ac ? parseTimestamp(ac) : startTime;
+      events.push(makeEvent(nextId++, 'workflow_execution_signaled', 'signal', ts, dur, false, {
+        kind: 'workflow_execution_signaled',
+        signal_name: signalName,
+        input: options.omit_results ? undefined : (val.data as any)?.data,
+        timeline_key: (val.job_id as string) || key,
+        execution_index: index,
+      }));
+    }
+
+    // Process sleep (timers)
+    for (const { key, index, val } of getOperationKeys('-sleep-')) {
+      const ac = val.ac as string | undefined;
+      const au = val.au as string | undefined;
+      const dur = computeDuration(ac, au);
+      timerCount++;
+
+      if (ac) {
+        events.push(makeEvent(nextId++, 'timer_started', 'timer', parseTimestamp(ac), null, false, {
+          kind: 'timer_started',
+          duration_ms: dur ?? undefined,
+          timeline_key: (val.job_id as string) || key,
+          execution_index: index,
+        }));
+      }
+      if (au) {
+        events.push(makeEvent(nextId++, 'timer_fired', 'timer', parseTimestamp(au), dur, false, {
+          kind: 'timer_fired',
+          timeline_key: (val.job_id as string) || key,
+          execution_index: index,
+        }));
+      }
+    }
+
+    // Process child (awaited child workflows)
+    for (const { key, index, val } of getOperationKeys('-child-')) {
+      const childId = (val.job_id as string) || key;
+      const ac = val.ac as string | undefined;
+      const au = val.au as string | undefined;
+      const dur = computeDuration(ac, au);
+      const hasError = '$error' in val;
+      childTotal++;
+
+      if (ac) {
+        events.push(makeEvent(nextId++, 'child_workflow_execution_started', 'child_workflow', parseTimestamp(ac), null, false, {
+          kind: 'child_workflow_execution_started',
+          child_workflow_id: childId,
+          awaited: true,
+          timeline_key: childId,
+          execution_index: index,
+        }));
+      }
+      if (au) {
+        if (hasError) {
+          childFailed++;
+          events.push(makeEvent(nextId++, 'child_workflow_execution_failed', 'child_workflow', parseTimestamp(au), dur, false, {
+            kind: 'child_workflow_execution_failed',
+            child_workflow_id: childId,
+            failure: val.$error,
+            timeline_key: childId,
+            execution_index: index,
+          }));
+        } else {
+          childCompleted++;
+          events.push(makeEvent(nextId++, 'child_workflow_execution_completed', 'child_workflow', parseTimestamp(au), dur, false, {
+            kind: 'child_workflow_execution_completed',
+            child_workflow_id: childId,
+            result: options.omit_results ? undefined : val.data,
+            timeline_key: childId,
+            execution_index: index,
+          }));
+        }
+      }
+    }
+
+    // Process start (fire-and-forget child workflows)
+    for (const { key, index, val } of getOperationKeys('-start-')) {
+      const childId = (val.job_id as string) || key;
+      const ac = val.ac as string | undefined;
+      const au = val.au as string | undefined;
+      const ts = ac ? parseTimestamp(ac) : au ? parseTimestamp(au) : startTime;
+      childTotal++;
+
+      events.push(makeEvent(nextId++, 'child_workflow_execution_started', 'child_workflow', ts, null, false, {
+        kind: 'child_workflow_execution_started',
+        child_workflow_id: childId,
+        awaited: false,
+        timeline_key: childId,
+        execution_index: index,
+      }));
+    }
+
+    // Sort chronologically and re-number
+    events.sort((a, b) => {
+      const cmp = a.event_time.localeCompare(b.event_time);
+      return cmp !== 0 ? cmp : a.event_id - b.event_id;
+    });
+    for (let i = 0; i < events.length; i++) {
+      events[i].event_id = i + 1;
+    }
+
+    // Back-references
+    const scheduledMap = new Map<string, number>();
+    const initiatedMap = new Map<string, number>();
+    for (const e of events) {
+      const attrs = e.attributes as any;
+      if (e.event_type === 'activity_task_scheduled' && attrs.timeline_key) {
+        scheduledMap.set(attrs.timeline_key, e.event_id);
+      }
+      if (e.event_type === 'child_workflow_execution_started' && attrs.timeline_key) {
+        initiatedMap.set(attrs.timeline_key, e.event_id);
+      }
+      if ((e.event_type === 'activity_task_completed' || e.event_type === 'activity_task_failed') && attrs.timeline_key) {
+        attrs.scheduled_event_id = scheduledMap.get(attrs.timeline_key) ?? null;
+      }
+      if ((e.event_type === 'child_workflow_execution_completed' || e.event_type === 'child_workflow_execution_failed') && attrs.timeline_key) {
+        attrs.initiated_event_id = initiatedMap.get(attrs.timeline_key) ?? null;
+      }
+    }
+
+    // Compute total duration
+    let totalDurationMs: number | null = null;
+    if (startTime && closeTime) {
+      const diffMs = new Date(closeTime).getTime() - new Date(startTime).getTime();
+      if (diffMs >= 0) totalDurationMs = diffMs;
+    }
+
+    const proxyTotal = systemCount + userCount;
+
+    return {
+      workflow_id: workflowId,
+      workflow_type: workflowTopic,
+      task_queue: workflowTopic,
+      status: 'completed',
+      start_time: startTime || null,
+      close_time: closeTime || null,
+      duration_ms: totalDurationMs,
+      result: workflowResult,
+      events,
+      summary: {
+        total_events: events.length,
+        activities: {
+          total: proxyTotal,
+          completed: activityCompleted,
+          failed: activityFailed,
+          system: systemCount,
+          user: userCount,
+        },
+        child_workflows: { total: childTotal, completed: childCompleted, failed: childFailed },
+        timers: timerCount,
+        signals: signalCount,
+      },
+    };
+  }
+
+  /**
+   * Enrich execution events with activity and child workflow inputs.
+   * Queries the store for activity arguments and child workflow arguments.
+   */
+  private async enrichExecutionInputs(
+    execution: WorkflowExecution,
+    workflowId: string,
+  ): Promise<void> {
+    // Check if store supports exporter queries
+    if (!this.store.getActivityInputs || !this.store.getChildWorkflowInputs) {
+      this.logger.warn('Store does not support input enrichment (provider may not implement getActivityInputs/getChildWorkflowInputs)');
+      return;
+    }
+
+    // Resolve symbol fields for activity and workflow arguments using symbol keys
+    const symbolSets = await this.store.getSymbolKeys(['activity_trigger', 'trigger']);
+    const activityArgsField = this.resolveSymbolField(symbolSets, 'activity_trigger', 'activity_trigger/output/data/arguments');
+    const workflowArgsField = this.resolveSymbolField(symbolSets, 'trigger', 'trigger/output/data/arguments');
+
+    // ── 1. Enrich activity inputs ──
+    if (activityArgsField) {
+      const activityEvents = execution.events.filter(
+        (e) => e.event_type === 'activity_task_scheduled' || e.event_type === 'activity_task_completed' || e.event_type === 'activity_task_failed',
+      );
+
+      if (activityEvents.length > 0) {
+        const { byJobId, byNameIndex } = await this.store.getActivityInputs(workflowId, activityArgsField);
+
+        for (const evt of activityEvents) {
+          const attrs = evt.attributes as any;
+          let input = attrs.timeline_key ? byJobId.get(attrs.timeline_key) : undefined;
+          if (input === undefined && attrs.activity_type && attrs.execution_index !== undefined) {
+            input = byNameIndex.get(`${attrs.activity_type}:${attrs.execution_index}`);
+          }
+          if (input !== undefined) {
+            attrs.input = input;
+          }
+        }
+      }
+    }
+
+    // ── 2. Enrich child workflow inputs ──
+    if (workflowArgsField) {
+      const childEvents = execution.events.filter(
+        (e) => e.event_type === 'child_workflow_execution_started',
+      );
+
+      if (childEvents.length > 0) {
+        const childIds = [...new Set(
+          childEvents
+            .map((e) => (e.attributes as any).child_workflow_id as string)
+            .filter(Boolean),
+        )];
+
+        if (childIds.length > 0) {
+          const childJobKeys = childIds.map((id) => `hmsh:${this.appId}:j:${id}`);
+          const childInputMap = await this.store.getChildWorkflowInputs(childJobKeys, workflowArgsField);
+
+          for (const evt of childEvents) {
+            const attrs = evt.attributes as any;
+            const input = childInputMap.get(attrs.child_workflow_id);
+            if (input !== undefined) {
+              attrs.input = input;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Resolve a symbol field from stable JSON path using the symbol registry.
+   */
+  private resolveSymbolField(
+    symbolSets: any,
+    range: string,
+    path: string,
+  ): string | null {
+    // Get the symbol map for this range
+    const symbolMap = symbolSets[range];
+    if (!symbolMap) {
+      return null;
+    }
+
+    // Look up the symbol code for this path
+    const symbolCode = symbolMap[path];
+    if (!symbolCode) {
+      return null;
+    }
+
+    // Return with dimension suffix
+    return `${symbolCode},0`;
   }
 
   /**

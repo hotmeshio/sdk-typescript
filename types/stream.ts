@@ -114,6 +114,8 @@ export interface StreamData {
     spn?: string;
     /** Current try count, used for retry logic */
     try?: number;
+    /** Workflow name (graph subscribes topic) for worker stream routing */
+    wfn?: string;
     /**
      * Indicates if the message should wait for a response.
      * If explicitly false, the connection is severed immediately

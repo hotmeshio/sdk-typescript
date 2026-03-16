@@ -18,7 +18,7 @@
  * * Master Data Management systems
  */
 
-const APP_VERSION = '5';
+const APP_VERSION = '8';
 const APP_ID = 'durable';
 
 /**
@@ -63,7 +63,13 @@ const getWorkflowYAML = (app: string, version: string): string => {
               description: the arguments to pass to the flow
               type: array
             workflowTopic:
-              description: the stream topic the worker is listening on
+              description: concatenated taskQueue-workflowName for engine-internal routing
+              type: string
+            taskQueue:
+              description: the task queue name (stream_name in worker_streams)
+              type: string
+            workflowName:
+              description: the workflow function name (workflow_name in worker_streams)
               type: string
             backoffCoefficient:
               description: the time multiple in seconds to backoff before retrying
@@ -152,7 +158,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
         worker:
           title: Main Worker - Calls linked Workflow functions
           type: worker
-          topic: '{trigger.output.data.workflowTopic}'
+          topic: '{trigger.output.data.taskQueue}'
           emit: '{$job.data.done}'
           input:
             schema:
@@ -166,6 +172,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: array
                 workflowTopic:
                   type: string
+                workflowName:
+                  type: string
                 canRetry:
                   type: boolean
                 expire:
@@ -175,6 +183,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               workflowId: '{trigger.output.data.workflowId}'
               arguments: '{trigger.output.data.arguments}'
               workflowTopic: '{trigger.output.data.workflowTopic}'
+              workflowName: '{trigger.output.data.workflowName}'
               expire: '{trigger.output.data.expire}'
               canRetry:
                 '@pipe':
@@ -345,6 +354,10 @@ const getWorkflowYAML = (app: string, version: string): string => {
               properties:
                 workflowTopic:
                   type: string
+                taskQueue:
+                  type: string
+                workflowName:
+                  type: string
                 backoffCoefficient:
                   type: number
                 maximumAttempts:
@@ -384,6 +397,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               persistent: '{worker.output.data.persistent}'
               signalIn: '{worker.output.data.signalIn}'
               workflowId: '{worker.output.data.workflowId}'
+              taskQueue: '{worker.output.data.taskQueue}'
               workflowName: '{worker.output.data.workflowName}'
               workflowTopic: '{worker.output.data.workflowTopic}'
               entity: '{worker.output.data.entity}'
@@ -890,7 +904,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
         signaler_worker:
           title: Signal In - Worker
           type: worker
-          topic: '{signaler.hook.data.workflowTopic}'
+          topic: '{signaler.hook.data.taskQueue}'
           input:
             schema:
               type: object
@@ -903,6 +917,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: string
                 arguments:
                   type: array
+                workflowName:
+                  type: string
                 canRetry:
                   type: boolean
                 expire:
@@ -912,6 +928,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               originJobId: '{trigger.output.data.originJobId}'
               workflowDimension: '{signaler.output.metadata.dad}'
               arguments: '{signaler.hook.data.arguments}'
+              workflowName: '{signaler.hook.data.workflowName}'
               expire: '{trigger.output.data.expire}'
               canRetry:
                 '@pipe':
@@ -1133,6 +1150,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               persistent: '{signaler_worker.output.data.persistent}'
               signalIn: '{signaler_worker.output.data.signalIn}'
               workflowId: '{signaler_worker.output.data.workflowId}'
+              taskQueue: '{signaler_worker.output.data.taskQueue}'
               workflowName: '{signaler_worker.output.data.workflowName}'
               workflowTopic: '{signaler_worker.output.data.workflowTopic}'
               entity: '{signaler_worker.output.data.entity}'
@@ -1938,6 +1956,11 @@ const getWorkflowYAML = (app: string, version: string): string => {
                 '@pipe':
                   - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                   - ['{@array.get}', workflowId]
+                  - ['{@object.get}']
+              taskQueue:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', taskQueue]
                   - ['{@object.get}']
               workflowName:
                 '@pipe':

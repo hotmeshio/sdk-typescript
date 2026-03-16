@@ -220,6 +220,15 @@ class Worker extends Activity {
 
   async execActivity(transaction: ProviderTransaction): Promise<string> {
     const topic = Pipe.resolve(this.config.subtype, this.context);
+    // Extract workflow name from job data (set by durable client) or derive from subscribes
+    const jobData = this.context.data as Record<string, unknown>;
+    let wfn = (jobData?.workflowName as string) || '';
+    if (!wfn && this.config.subscribes) {
+      // Fallback: derive from subscribes by removing topic prefix
+      wfn = this.config.subscribes.startsWith(`${topic}-`)
+        ? this.config.subscribes.substring(topic.length + 1)
+        : this.config.subscribes;
+    }
     const streamData: StreamData = {
       metadata: {
         guid: guid(),
@@ -228,6 +237,7 @@ class Worker extends Activity {
         dad: this.metadata.dad,
         aid: this.metadata.aid,
         topic,
+        wfn,
         spn: this.context['$self'].output.metadata.l1s,
         trc: this.context.metadata.trc,
       },

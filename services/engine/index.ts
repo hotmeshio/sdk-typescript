@@ -1,4 +1,5 @@
 import { KeyType, VALSEP } from '../../modules/key';
+import { StreamConsumerRegistry } from '../stream/registry';
 import {
   HMSH_OTT_WAIT_TIME,
   HMSH_CODE_SUCCESS,
@@ -146,14 +147,20 @@ class EngineService {
       );
 
       instance.router = await instance.initRouter(config);
-      const streamName = instance.store.mintKey(KeyType.STREAMS, {
-        appId: instance.appId,
-      });
-      instance.router.consumeMessages(
-        streamName,
-        'ENGINE',
-        instance.guid,
+
+      // Use singleton consumer via registry for engine stream
+      await StreamConsumerRegistry.registerEngine(
+        namespace,
+        appId,
+        guid,
         instance.processStreamMessage.bind(instance),
+        instance.stream,
+        instance.store,
+        logger,
+        {
+          reclaimDelay: config.engine.reclaimDelay,
+          reclaimCount: config.engine.reclaimCount,
+        },
       );
 
       instance.taskService = new TaskService(instance.store, logger);

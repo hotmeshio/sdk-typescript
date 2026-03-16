@@ -155,9 +155,16 @@ type HotMeshEngine = {
 
 type HotMeshWorker = {
   /**
-   * the topic that the worker subscribes to
+   * the topic/task queue that the worker subscribes to (stream_name)
    */
   topic: string;
+
+  /**
+   * the workflow function name for dispatch routing (workflow_name column).
+   * When set, workers sharing the same topic use a singleton consumer
+   * that fetches batches and dispatches by workflowName.
+   */
+  workflowName?: string;
 
   /**
    * set by hotmesh once the connnector service instances the provider

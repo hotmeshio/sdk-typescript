@@ -91,7 +91,13 @@ type WorkflowContext = {
   workflowDimension: string;
 
   /**
-   * a concatenation of the task queue and workflow name (e.g., `${taskQueueName}-${workflowName}`)
+   * the task queue name (stream_name in worker_streams)
+   */
+  taskQueue: string;
+
+  /**
+   * a concatenation of the task queue and workflow name (e.g., `${taskQueueName}-${workflowName}`);
+   * used for engine-internal routing (graph.subscribes)
    */
   workflowTopic: string;
 

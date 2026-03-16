@@ -11,7 +11,7 @@ npm install @hotmeshio/hotmesh
 ## Use HotMesh for
 
 - **Durable pipelines** — Orchestrate long-running, multi-step pipelines transactionally.
-- **Temporal alternative** — The `Durable` module provides a Temporal-compatible API (`Client`, `Worker`, `proxyActivities`, `sleepFor`, `startChild`, signals) that runs directly on Postgres. No app server required.
+- **Familiar Temporal syntax** — The `Durable` module provides a Temporal-compatible API (`Client`, `Worker`, `proxyActivities`, `sleepFor`, `startChild`, signals) that runs directly on Postgres. No app server required.
 - **Distributed state machines** — Build stateful applications where every component can [fail and recover](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md).
 - **AI and training pipelines** — Multi-step AI workloads where each stage is expensive and must not be repeated on failure. A crashed pipeline resumes from the last committed step, not from the beginning.
 

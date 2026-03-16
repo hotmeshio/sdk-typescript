@@ -23,111 +23,20 @@ import { NotificationManager, getFallbackInterval } from './notifications';
 import * as Lifecycle from './lifecycle';
 
 /**
+ * Resolved stream target containing the table name and simplified stream name.
+ */
+export interface StreamTarget {
+  tableName: string;
+  streamName: string;
+  isEngine: boolean;
+}
+
+/**
  * PostgreSQL Stream Service
- * 
- * High-performance stream message provider using PostgreSQL with LISTEN/NOTIFY.
- * 
- * ## Module Organization
- * 
- * This service is organized into focused modules following KISS principles:
- * - `postgres.ts` (this file) - Main orchestrator and service interface
- * - `kvtables.ts` - Schema deployment and table management
- * - `messages.ts` - Message CRUD operations (publish, fetch, ack, delete)
- * - `stats.ts` - Statistics and query operations
- * - `scout.ts` - Scout role coordination for polling visible messages
- * - `notifications.ts` - LISTEN/NOTIFY notification system with static state management
- * - `lifecycle.ts` - Stream and consumer group lifecycle operations
- * 
- * ## Lifecycle
- * 
- * ### Initialization (`init`)
- * 1. Deploy PostgreSQL schema (tables, indexes, triggers, functions)
- * 2. Create ScoutManager for coordinating visibility timeout polling
- * 3. Create NotificationManager for LISTEN/NOTIFY event handling
- * 4. Set up notification handler (once per client, shared across instances)
- * 5. Start fallback poller (backup for missed notifications)
- * 6. Start router scout poller (for visibility timeout processing)
- * 
- * ### Shutdown (`cleanup`)
- * 1. Stop router scout polling loop
- * 2. Release scout role if held
- * 3. Stop notification consumers for this instance
- * 4. UNLISTEN from channels when last instance disconnects
- * 5. Clean up fallback poller when last instance disconnects
- * 6. Remove notification handlers when last instance disconnects
- * 
- * ## Notification System (LISTEN/NOTIFY)
- * 
- * ### Real-time Message Delivery
- * - PostgreSQL trigger on INSERT sends NOTIFY when messages are immediately visible
- * - Messages with visibility timeout are NOT notified on INSERT
- * - Multiple service instances share the same client and notification handlers
- * - Static state ensures only ONE LISTEN per channel across all instances
- * 
- * ### Components
- * - **Notification Handler**: Listens for PostgreSQL NOTIFY events
- * - **Fallback Poller**: Polls every 30s (default) for missed messages
- * - **Router Scout**: Active role-holder polls visible messages frequently (~100ms)
- * - **Visibility Function**: `notify_visible_messages()` checks for expired timeouts
- * 
- * ## Scout Role (Visibility Timeout Processing)
- * 
- * When messages are published with visibility timeouts (delays), they need to be
- * processed when they become visible. The scout role ensures this happens efficiently:
- * 
- * 1. **Role Acquisition**: One instance per app acquires "router" scout role
- * 2. **Fast Polling**: Scout polls `notify_visible_messages()` every ~100ms
- * 3. **Notification**: Function triggers NOTIFY for streams with visible messages
- * 4. **Role Rotation**: Role expires after interval, another instance can claim it
- * 5. **Fallback**: Non-scouts sleep longer, try to acquire role periodically
- * 
- * ## Message Flow
- * 
- * ### Publishing
- * 1. Messages inserted into partitioned table
- * 2. If immediately visible → INSERT trigger sends NOTIFY
- * 3. If visibility timeout → no NOTIFY (scout will handle when visible)
- * 
- * ### Consuming (Event-Driven)
- * 1. Consumer calls `consumeMessages` with notification callback
- * 2. Service executes LISTEN on channel `stream_{name}_{group}`
- * 3. On NOTIFY → fetch messages → invoke callback
- * 4. Initial fetch done immediately (catch any queued messages)
- * 
- * ### Consuming (Polling)
- * 1. Consumer calls `consumeMessages` without callback
- * 2. Service directly queries and reserves messages
- * 3. Returns messages synchronously
- * 
- * ## Reliability Guarantees
- * 
- * - **Notification Fallback**: Poller catches missed notifications every 30s
- * - **Visibility Scout**: Ensures delayed messages are processed when visible
- * - **Graceful Degradation**: Falls back to polling if LISTEN fails
- * - **Shared State**: Multiple instances coordinate via static maps
- * - **Race Condition Safe**: SKIP LOCKED prevents message duplication
- * 
- * @example
- * ```typescript
- * // Initialize service
- * const service = new PostgresStreamService(client, storeClient, config);
- * await service.init('namespace', 'appId', logger);
- * 
- * // Event-driven consumption (recommended)
- * await service.consumeMessages('stream', 'group', 'consumer', {
- *   notificationCallback: (messages) => {
- *     // Process messages in real-time
- *   }
- * });
- * 
- * // Polling consumption
- * const messages = await service.consumeMessages('stream', 'group', 'consumer', {
- *   batchSize: 10
- * });
- * 
- * // Cleanup on shutdown
- * await service.cleanup();
- * ```
+ *
+ * Uses separate `engine_streams` and `worker_streams` tables for
+ * security isolation and independent scaling. The `worker_streams`
+ * table includes a `workflow_name` column for routing.
  */
 class PostgresStreamService extends StreamService<
   PostgresClientType & ProviderClient,
@@ -161,7 +70,7 @@ class PostgresStreamService extends StreamService<
     this.scoutManager = new ScoutManager(
       this.streamClient,
       this.appId,
-      this.getTableName.bind(this),
+      this.getEngineTableName.bind(this),
       this.mintKey.bind(this),
       this.logger,
     );
@@ -169,7 +78,7 @@ class PostgresStreamService extends StreamService<
     // Initialize notification manager
     this.notificationManager = new NotificationManager(
       this.streamClient,
-      this.getTableName.bind(this),
+      this.getEngineTableName.bind(this),
       () => getFallbackInterval(this.config),
       this.logger,
     );
@@ -228,6 +137,29 @@ class PostgresStreamService extends StreamService<
     return `${streamName}:${groupName}`;
   }
 
+  /**
+   * Resolves a conjoined stream key (e.g., `hmsh:appId:x:topic`) into
+   * the correct table name and simplified stream name.
+   */
+  resolveStreamTarget(streamKey: string): StreamTarget {
+    const isEngine = streamKey.endsWith(':');
+    if (isEngine) {
+      return {
+        tableName: this.getEngineTableName(),
+        streamName: this.appId,
+        isEngine: true,
+      };
+    }
+    // Extract the bare topic from hmsh:appId:x:topicName
+    const parts = streamKey.split(':');
+    const topic = parts[parts.length - 1];
+    return {
+      tableName: this.getWorkerTableName(),
+      streamName: topic,
+      isEngine: false,
+    };
+  }
+
   mintKey(type: KeyType, params: KeyStoreParams): string {
     if (!this.namespace) throw new Error('namespace not set');
     return KeyService.mintKey(this.namespace, type, {
@@ -240,8 +172,12 @@ class PostgresStreamService extends StreamService<
     return {} as ProviderTransaction;
   }
 
-  getTableName(): string {
-    return `${this.safeName(this.appId)}.streams`;
+  getEngineTableName(): string {
+    return `${this.safeName(this.appId)}.engine_streams`;
+  }
+
+  getWorkerTableName(): string {
+    return `${this.safeName(this.appId)}.worker_streams`;
   }
 
   safeName(appId: string): string {
@@ -253,10 +189,26 @@ class PostgresStreamService extends StreamService<
   }
 
   async deleteStream(streamName: string): Promise<boolean> {
+    if (streamName === '*') {
+      // Delete from both tables
+      await Lifecycle.deleteStream(
+        this.streamClient,
+        this.getEngineTableName(),
+        '*',
+        this.logger,
+      );
+      return Lifecycle.deleteStream(
+        this.streamClient,
+        this.getWorkerTableName(),
+        '*',
+        this.logger,
+      );
+    }
+    const target = this.resolveStreamTarget(streamName);
     return Lifecycle.deleteStream(
       this.streamClient,
-      this.getTableName(),
-      streamName,
+      target.tableName,
+      target.streamName,
       this.logger,
     );
   }
@@ -272,41 +224,31 @@ class PostgresStreamService extends StreamService<
     streamName: string,
     groupName: string,
   ): Promise<boolean> {
+    const target = this.resolveStreamTarget(streamName);
     return Lifecycle.deleteConsumerGroup(
       this.streamClient,
-      this.getTableName(),
-      streamName,
-      groupName,
+      target.tableName,
+      target.streamName,
       this.logger,
     );
   }
 
   /**
    * `publishMessages` can be roped into a transaction by the `store`
-   * service. If so, it will add the SQL and params to the
-   * transaction. [Process Overview]: The engine keeps a reference
-   * to the `store` and `stream` providers; it asks the `store` to
-   * create a transaction and then starts adding store commands to the
-   * transaction. The engine then calls the router to publish a
-   * message using the `stream` provider (which the router keeps
-   * a reference to), and provides the transaction object.
-   * The `stream` provider then calls this method to generate
-   * the SQL and params for the transaction (but, of course, the sql
-   * is not executed until the engine calls the `exec` method on
-   * the transaction object provided by `store`).
-   *
-   * NOTE: this strategy keeps `stream` and `store` operations separate but
-   * allows calls to the stream to be roped into a single SQL transaction.
+   * service. The `stream` provider generates SQL and params that are
+   * added to the transaction for atomic execution.
    */
   async publishMessages(
     streamName: string,
     messages: string[],
     options?: PublishMessageConfig,
   ): Promise<string[] | ProviderTransaction> {
+    const target = this.resolveStreamTarget(streamName);
     return Messages.publishMessages(
       this.streamClient,
-      this.getTableName(),
-      streamName,
+      target.tableName,
+      target.streamName,
+      target.isEngine,
       messages,
       options,
       this.logger,
@@ -318,9 +260,11 @@ class PostgresStreamService extends StreamService<
     messages: string[],
     options?: PublishMessageConfig,
   ): { sql: string; params: any[] } {
+    const target = this.resolveStreamTarget(streamName);
     return Messages.buildPublishSQL(
-      this.getTableName(),
-      streamName,
+      target.tableName,
+      target.streamName,
+      target.isEngine,
       messages,
       options,
     );
@@ -334,14 +278,13 @@ class PostgresStreamService extends StreamService<
       batchSize?: number;
       blockTimeout?: number;
       autoAck?: boolean;
-      reservationTimeout?: number; // in seconds
-      enableBackoff?: boolean; // enable backoff
-      initialBackoff?: number; // Initial backoff in ms
-      maxBackoff?: number; // Maximum backoff in ms
-      maxRetries?: number; // Maximum retries before giving up
-      // New notification options
-      enableNotifications?: boolean; // Override global setting
-      notificationCallback?: (messages: StreamMessage[]) => void; // For event-driven consumption
+      reservationTimeout?: number;
+      enableBackoff?: boolean;
+      initialBackoff?: number;
+      maxBackoff?: number;
+      maxRetries?: number;
+      enableNotifications?: boolean;
+      notificationCallback?: (messages: StreamMessage[]) => void;
     },
   ): Promise<StreamMessage[]> {
     // If notification callback is provided and notifications are enabled, set up listener
@@ -364,11 +307,7 @@ class PostgresStreamService extends StreamService<
   }): boolean {
     const globalEnabled = this.isNotificationsEnabled();
     const optionEnabled = options?.enableNotifications;
-
-    // If option is explicitly set, use that; otherwise use global setting
     const enabled = optionEnabled !== undefined ? optionEnabled : globalEnabled;
-
-    // Also check if client supports notifications
     return enabled && this.streamClient.on !== undefined;
   }
 
@@ -410,7 +349,6 @@ class PostgresStreamService extends StreamService<
             fetchDuration: Date.now() - fetchStart,
           });
 
-          // If we got messages, call the callback
           if (initialMessages.length > 0) {
             callback(initialMessages);
           }
@@ -423,10 +361,8 @@ class PostgresStreamService extends StreamService<
         }
       });
 
-      // Return empty array immediately to avoid blocking
       return [];
     } catch (error) {
-      // Fall back to polling if setup fails
       return this.fetchMessages(streamName, groupName, consumerName, options);
     }
   }
@@ -450,18 +386,19 @@ class PostgresStreamService extends StreamService<
       batchSize?: number;
       blockTimeout?: number;
       autoAck?: boolean;
-      reservationTimeout?: number; // in seconds
-      enableBackoff?: boolean; // enable backoff
-      initialBackoff?: number; // Initial backoff in ms
-      maxBackoff?: number; // Maximum backoff in ms
-      maxRetries?: number; // Maximum retries before giving up
+      reservationTimeout?: number;
+      enableBackoff?: boolean;
+      initialBackoff?: number;
+      maxBackoff?: number;
+      maxRetries?: number;
     },
   ): Promise<StreamMessage[]> {
+    const target = this.resolveStreamTarget(streamName);
     return Messages.fetchMessages(
       this.streamClient,
-      this.getTableName(),
-      streamName,
-      groupName,
+      target.tableName,
+      target.streamName,
+      target.isEngine,
       consumerName,
       options || {},
       this.logger,
@@ -473,11 +410,11 @@ class PostgresStreamService extends StreamService<
     groupName: string,
     messageIds: string[],
   ): Promise<number> {
+    const target = this.resolveStreamTarget(streamName);
     return Messages.ackAndDelete(
       this.streamClient,
-      this.getTableName(),
-      streamName,
-      groupName,
+      target.tableName,
+      target.streamName,
       messageIds,
       this.logger,
     );
@@ -498,11 +435,11 @@ class PostgresStreamService extends StreamService<
     messageIds: string[],
     options?: StringAnyType,
   ): Promise<number> {
+    const target = this.resolveStreamTarget(streamName);
     return Messages.deleteMessages(
       this.streamClient,
-      this.getTableName(),
-      streamName,
-      groupName,
+      target.tableName,
+      target.streamName,
       messageIds,
       this.logger,
     );
@@ -524,19 +461,21 @@ class PostgresStreamService extends StreamService<
   }
 
   async getStreamStats(streamName: string): Promise<StreamStats> {
+    const target = this.resolveStreamTarget(streamName);
     return Stats.getStreamStats(
       this.streamClient,
-      this.getTableName(),
-      streamName,
+      target.tableName,
+      target.streamName,
       this.logger,
     );
   }
 
   async getStreamDepth(streamName: string): Promise<number> {
+    const target = this.resolveStreamTarget(streamName);
     return Stats.getStreamDepth(
       this.streamClient,
-      this.getTableName(),
-      streamName,
+      target.tableName,
+      target.streamName,
       this.logger,
     );
   }
@@ -544,12 +483,44 @@ class PostgresStreamService extends StreamService<
   async getStreamDepths(
     streamNames: { stream: string }[],
   ): Promise<{ stream: string; depth: number }[]> {
-    return Stats.getStreamDepths(
-      this.streamClient,
-      this.getTableName(),
-      streamNames,
-      this.logger,
-    );
+    // Partition stream names by table type and query each table separately
+    const engineStreams: { stream: string }[] = [];
+    const workerStreams: { stream: string }[] = [];
+    const streamNameMap = new Map<string, string>(); // resolvedName -> originalKey
+
+    for (const s of streamNames) {
+      const target = this.resolveStreamTarget(s.stream);
+      streamNameMap.set(target.streamName, s.stream);
+      if (target.isEngine) {
+        engineStreams.push({ stream: target.streamName });
+      } else {
+        workerStreams.push({ stream: target.streamName });
+      }
+    }
+
+    const results: { stream: string; depth: number }[] = [];
+
+    if (engineStreams.length > 0) {
+      const engineResults = await Stats.getStreamDepths(
+        this.streamClient,
+        this.getEngineTableName(),
+        engineStreams,
+        this.logger,
+      );
+      results.push(...engineResults);
+    }
+
+    if (workerStreams.length > 0) {
+      const workerResults = await Stats.getStreamDepths(
+        this.streamClient,
+        this.getWorkerTableName(),
+        workerStreams,
+        this.logger,
+      );
+      results.push(...workerResults);
+    }
+
+    return results;
   }
 
   async trimStream(
@@ -560,10 +531,11 @@ class PostgresStreamService extends StreamService<
       exactLimit?: boolean;
     },
   ): Promise<number> {
+    const target = this.resolveStreamTarget(streamName);
     return Stats.trimStream(
       this.streamClient,
-      this.getTableName(),
-      streamName,
+      target.tableName,
+      target.streamName,
       options,
       this.logger,
     );
@@ -573,14 +545,11 @@ class PostgresStreamService extends StreamService<
     return Stats.getProviderSpecificFeatures(this.config);
   }
 
-  // Cleanup method to be called when shutting down
   async cleanup(): Promise<void> {
-    // Stop router scout polling loop
     if (this.scoutManager) {
       await this.scoutManager.stopRouterScoutPoller();
     }
 
-    // Clean up notification consumers
     if (this.notificationManager) {
       await this.notificationManager.cleanup(this);
     }

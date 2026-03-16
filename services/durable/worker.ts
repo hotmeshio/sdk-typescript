@@ -446,9 +446,11 @@ export class WorkerService {
     const workflow = config.workflow;
     const [workflowFunctionName, workflowFunction] =
       WorkerService.resolveWorkflowTarget(workflow);
-    const baseTopic = `${config.taskQueue}-${workflowFunctionName}`;
-    const activityTopic = `${baseTopic}-activity`;
-    const workflowTopic = `${baseTopic}`;
+    // Separate taskQueue from workflowName - no concatenation for stream_name
+    const taskQueue = config.taskQueue;
+    const activityTopic = `${taskQueue}-activity`;
+    // workflowTopic remains concatenated for engine-internal routing (graph.subscribes)
+    const workflowTopic = `${taskQueue}-${workflowFunctionName}`;
 
     //initialize supporting workflows
     const worker = new WorkerService();
@@ -458,6 +460,8 @@ export class WorkerService {
     );
     worker.workflowRunner = await worker.initWorkflowWorker(
       config,
+      taskQueue,
+      workflowFunctionName,
       workflowTopic,
       workflowFunction,
     );
@@ -603,6 +607,8 @@ export class WorkerService {
    */
   async initWorkflowWorker(
     config: WorkerConfig,
+    taskQueue: string,
+    workflowFunctionName: string,
     workflowTopic: string,
     workflowFunction: Function,
   ): Promise<HotMesh> {
@@ -618,11 +624,13 @@ export class WorkerService {
       engine: { connection: providerConfig },
       workers: [
         {
-          topic: workflowTopic,
+          topic: taskQueue,
+          workflowName: workflowFunctionName,
           connection: providerConfig,
           callback: this.wrapWorkflowFunction(
             workflowFunction,
             workflowTopic,
+            workflowFunctionName,
             config,
           ).bind(this),
         },
@@ -650,6 +658,7 @@ export class WorkerService {
   wrapWorkflowFunction(
     workflowFunction: Function,
     workflowTopic: string,
+    workflowFunctionName: string,
     config: WorkerConfig,
   ): Function {
     return async (data: StreamData): Promise<StreamDataResponse> => {
@@ -687,7 +696,8 @@ export class WorkerService {
           replayQuery = '-*[ehklptydr]-*';
         }
         context.set('workflowTopic', workflowTopic);
-        context.set('workflowName', workflowTopic.split('-').pop());
+        context.set('workflowName', workflowFunctionName);
+        context.set('taskQueue', config.taskQueue);
         context.set('workflowTrace', data.metadata.trc);
         context.set('workflowSpan', data.metadata.spn);
         const store = this.workflowRunner.engine.store;
@@ -873,6 +883,8 @@ export class WorkerService {
               workflowDimension: err.workflowDimension,
               workflowId: err.workflowId,
               workflowTopic: err.workflowTopic,
+              taskQueue: err.taskQueue,
+              workflowName: err.workflowName,
             },
           } as StreamDataResponse;
         }

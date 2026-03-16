@@ -283,6 +283,13 @@ export const KVTables = (context: PostgresStoreService) => ({
               ON ${fullTableName} (pruned_at) WHERE pruned_at IS NULL;
             `);
 
+            // Index for paginated entity listing with sort (dashboard entity queries)
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_entity_created
+              ON ${fullTableName} (entity, created_at DESC)
+              WHERE entity IS NOT NULL;
+            `);
+
             // Create function to update is_live flag in the schema
             await client.query(`
               CREATE OR REPLACE FUNCTION ${schemaName}.update_is_live()

@@ -124,10 +124,16 @@ export async function hook(options: HookOptions): Promise<string> {
       );
     }
 
+    // Extract taskQueue and workflowName from targetTopic
+    const hookTaskQueue = options.taskQueue ?? options.entity ?? targetTopic.split('-')[0];
+    const hookWorkflowName = options.workflowName ?? options.entity ??
+      (targetTopic.startsWith(`${hookTaskQueue}-`) ? targetTopic.substring(hookTaskQueue.length + 1) : targetTopic);
     const payload = {
       arguments: [...options.args],
       id: targetWorkflowId,
       workflowTopic: targetTopic,
+      taskQueue: hookTaskQueue,
+      workflowName: hookWorkflowName,
       backoffCoefficient:
         options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
       maximumAttempts:

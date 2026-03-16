@@ -101,12 +101,16 @@ class DurableChildError extends Error {
   parentWorkflowId: string;
   workflowId: string;
   workflowTopic: string;
+  taskQueue: string;
+  workflowName: string;
   type = 'DurableChildError';
   constructor(params: DurableChildErrorType) {
     super(`ExecChild Interruption`);
     this.arguments = params.arguments;
     this.workflowId = params.workflowId;
     this.workflowTopic = params.workflowTopic;
+    this.taskQueue = params.taskQueue;
+    this.workflowName = params.workflowName;
     this.parentWorkflowId = params.parentWorkflowId;
     this.expire = params.expire;
     this.persistent = params.persistent;

@@ -14,6 +14,8 @@ export type DurableChildErrorType = {
   workflowDimension: string;
   workflowId: string;
   workflowTopic: string;
+  taskQueue?: string;
+  workflowName?: string;
 };
 
 export type DurableWaitForAllErrorType = {

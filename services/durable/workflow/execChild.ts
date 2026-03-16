@@ -29,7 +29,7 @@ function getChildInterruptPayload(
   options: WorkflowOptions,
   execIndex: number,
 ): DurableChildErrorType {
-  const { workflowId, originJobId, workflowDimension, expire } = context;
+  const { workflowId, originJobId, workflowDimension, expire, taskQueue: parentTaskQueue } = context;
   let childJobId: string;
   if (options.workflowId) {
     childJobId = options.workflowId;
@@ -40,7 +40,8 @@ function getChildInterruptPayload(
   }
 
   const parentWorkflowId = workflowId;
-  const taskQueueName = options.taskQueue ?? options.entity;
+  // Use explicit taskQueue, or parent's taskQueue, or entity as fallback
+  const taskQueueName = options.taskQueue ?? parentTaskQueue ?? options.entity;
   const workflowName = options.taskQueue
     ? options.workflowName
     : options.entity ?? options.workflowName;
@@ -65,6 +66,8 @@ function getChildInterruptPayload(
     workflowDimension: workflowDimension,
     workflowId: childJobId,
     workflowTopic,
+    taskQueue: taskQueueName,
+    workflowName: workflowName,
   };
 }
 
