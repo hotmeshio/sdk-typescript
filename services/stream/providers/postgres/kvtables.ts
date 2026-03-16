@@ -18,12 +18,10 @@ export async function deploySchema(
 
   try {
     const schemaName = appId.replace(/[^a-zA-Z0-9_]/g, '_');
-    const tableName = `${schemaName}.streams`;
 
     // First, check if tables already exist (no lock needed)
-    const tablesExist = await checkIfTablesExist(client, schemaName, tableName);
+    const tablesExist = await checkIfTablesExist(client, schemaName);
     if (tablesExist) {
-      // Tables already exist, no need to acquire lock or create tables
       return;
     }
 
@@ -42,11 +40,10 @@ export async function deploySchema(
         const tablesStillMissing = !(await checkIfTablesExist(
           client,
           schemaName,
-          tableName,
         ));
         if (tablesStillMissing) {
-          await createTables(client, schemaName, tableName);
-          await createNotificationTriggers(client, schemaName, tableName);
+          await createTables(client, schemaName);
+          await createNotificationTriggers(client, schemaName);
         }
 
         await client.query('COMMIT');
@@ -64,7 +61,6 @@ export async function deploySchema(
         streamClient,
         lockId,
         schemaName,
-        tableName,
         logger,
       );
       return; // Already released client, don't release again in finally
@@ -99,17 +95,21 @@ function hashStringToInt(str: string): number {
 async function checkIfTablesExist(
   client: any,
   schemaName: string,
-  tableName: string,
 ): Promise<boolean> {
-  // Check both streams table exists AND roles table (from store provider)
-  // The roles table is created by the store provider and is used for scout role coordination
+  // Check engine_streams, worker_streams, AND roles table
   const result = await client.query(
-    `SELECT 
-       to_regclass($1) AS streams_table,
-       to_regclass($2) AS roles_table`,
-    [tableName, `${schemaName}.roles`]
+    `SELECT
+       to_regclass($1) AS engine_table,
+       to_regclass($2) AS worker_table,
+       to_regclass($3) AS roles_table`,
+    [
+      `${schemaName}.engine_streams`,
+      `${schemaName}.worker_streams`,
+      `${schemaName}.roles`,
+    ]
   );
-  return result.rows[0].streams_table !== null && 
+  return result.rows[0].engine_table !== null &&
+         result.rows[0].worker_table !== null &&
          result.rows[0].roles_table !== null;
 }
 
@@ -117,7 +117,6 @@ async function waitForTablesCreation(
   streamClient: any,
   lockId: number,
   schemaName: string,
-  tableName: string,
   logger: ILogger,
 ): Promise<void> {
   let retries = 0;
@@ -132,14 +131,8 @@ async function waitForTablesCreation(
     const client = isPool ? await streamClient.connect() : streamClient;
 
     try {
-      // Check if tables exist directly (most efficient check)
-      const tablesExist = await checkIfTablesExist(
-        client,
-        schemaName,
-        tableName,
-      );
+      const tablesExist = await checkIfTablesExist(client, schemaName);
       if (tablesExist) {
-        // Tables now exist, deployment is complete
         return;
       }
 
@@ -149,12 +142,7 @@ async function waitForTablesCreation(
         [lockId],
       );
       if (lockCheck.rows[0].unlocked) {
-        // Lock has been released, tables should exist now
-        const tablesExistAfterLock = await checkIfTablesExist(
-          client,
-          schemaName,
-          tableName,
-        );
+        const tablesExistAfterLock = await checkIfTablesExist(client, schemaName);
         if (tablesExistAfterLock) {
           return;
         }
@@ -168,23 +156,22 @@ async function waitForTablesCreation(
     retries++;
   }
 
-  logger.error('stream-table-create-timeout', { schemaName, tableName });
+  logger.error('stream-table-create-timeout', { schemaName });
   throw new Error('Timeout waiting for stream table creation');
 }
 
 async function createTables(
   client: any,
   schemaName: string,
-  tableName: string,
 ): Promise<void> {
   await client.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName};`);
 
-  // Main table creation with partitions
+  // ---- ENGINE_STREAMS table ----
+  const engineTable = `${schemaName}.engine_streams`;
   await client.query(`
-    CREATE TABLE IF NOT EXISTS ${tableName} (
+    CREATE TABLE IF NOT EXISTS ${engineTable} (
       id BIGSERIAL,
       stream_name TEXT NOT NULL,
-      group_name TEXT NOT NULL DEFAULT 'ENGINE',
       message TEXT NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       reserved_at TIMESTAMPTZ,
@@ -200,105 +187,179 @@ async function createTables(
   `);
 
   for (let i = 0; i < 8; i++) {
-    const partitionTableName = `${schemaName}.streams_part_${i}`;
     await client.query(`
-      CREATE TABLE IF NOT EXISTS ${partitionTableName}
-      PARTITION OF ${tableName}
+      CREATE TABLE IF NOT EXISTS ${schemaName}.engine_streams_part_${i}
+      PARTITION OF ${engineTable}
       FOR VALUES WITH (modulus 8, remainder ${i});
     `);
   }
 
-  // Index for active messages (includes visible_at for visibility timeout support)
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_streams_active_messages 
-    ON ${tableName} (group_name, stream_name, reserved_at, visible_at, id)
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_active_messages
+    ON ${engineTable} (stream_name, reserved_at, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
 
-  // Optimized index for the simplified fetchMessages query (includes visible_at)
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_streams_message_fetch 
-    ON ${tableName} (stream_name, group_name, visible_at, id)
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_message_fetch
+    ON ${engineTable} (stream_name, visible_at, id)
     WHERE expired_at IS NULL;
   `);
 
-  // Index for expired messages
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_streams_expired_at 
-    ON ${tableName} (expired_at);
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_expired_at
+    ON ${engineTable} (expired_at);
   `);
 
-  // New index for stream stats optimization
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_stream_name_expired_at
-    ON ${tableName} (stream_name)
+    CREATE INDEX IF NOT EXISTS idx_engine_stream_name_expired_at
+    ON ${engineTable} (stream_name)
     WHERE expired_at IS NULL;
   `);
 
-  // Index for control plane analytics (processed volume by time range)
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_streams_processed_volume
-    ON ${tableName} (expired_at, stream_name)
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_processed_volume
+    ON ${engineTable} (expired_at, stream_name)
     WHERE expired_at IS NOT NULL;
   `);
 
-  // TODO: revisit this index when solving automated cleanup
-  // Optional index for querying by creation time, if needed
-  // await client.query(`
-  //   CREATE INDEX IF NOT EXISTS idx_streams_created_at
-  //   ON ${tableName} (created_at);
-  // `);
+  // ---- WORKER_STREAMS table ----
+  const workerTable = `${schemaName}.worker_streams`;
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${workerTable} (
+      id BIGSERIAL,
+      stream_name TEXT NOT NULL,
+      workflow_name TEXT NOT NULL DEFAULT '',
+      message TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      reserved_at TIMESTAMPTZ,
+      reserved_by TEXT,
+      expired_at TIMESTAMPTZ,
+      max_retry_attempts INT DEFAULT 3,
+      backoff_coefficient NUMERIC DEFAULT 10,
+      maximum_interval_seconds INT DEFAULT 120,
+      visible_at TIMESTAMPTZ DEFAULT NOW(),
+      retry_attempt INT DEFAULT 0,
+      PRIMARY KEY (stream_name, id)
+    ) PARTITION BY HASH (stream_name);
+  `);
+
+  for (let i = 0; i < 8; i++) {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ${schemaName}.worker_streams_part_${i}
+      PARTITION OF ${workerTable}
+      FOR VALUES WITH (modulus 8, remainder ${i});
+    `);
+  }
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_active_messages
+    ON ${workerTable} (stream_name, reserved_at, visible_at, id)
+    WHERE reserved_at IS NULL AND expired_at IS NULL;
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
+    ON ${workerTable} (stream_name, visible_at, id)
+    WHERE expired_at IS NULL;
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_expired_at
+    ON ${workerTable} (expired_at);
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_stream_name_expired_at
+    ON ${workerTable} (stream_name)
+    WHERE expired_at IS NULL;
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_processed_volume
+    ON ${workerTable} (expired_at, stream_name)
+    WHERE expired_at IS NOT NULL;
+  `);
 }
 
 async function createNotificationTriggers(
   client: any,
   schemaName: string,
-  tableName: string,
 ): Promise<void> {
-  // Create the notification function for INSERT events
+  const engineTable = `${schemaName}.engine_streams`;
+  const workerTable = `${schemaName}.worker_streams`;
+
+  // ---- ENGINE notification trigger ----
   await client.query(`
-    CREATE OR REPLACE FUNCTION ${schemaName}.notify_new_stream_message()
+    CREATE OR REPLACE FUNCTION ${schemaName}.notify_new_engine_stream_message()
     RETURNS TRIGGER AS $$
     DECLARE
       channel_name TEXT;
       payload JSON;
     BEGIN
-      -- Only notify if message is immediately visible
-      -- Messages with visibility timeout will be notified when they become visible
       IF NEW.visible_at <= NOW() THEN
-        -- Create channel name: stream_{stream_name}_{group_name}
-        -- Truncate if too long (PostgreSQL channel names limited to 63 chars)
-        channel_name := 'stream_' || NEW.stream_name || '_' || NEW.group_name;
+        channel_name := 'eng_' || NEW.stream_name;
         IF length(channel_name) > 63 THEN
           channel_name := left(channel_name, 63);
         END IF;
-        
-        -- Create minimal payload with only required fields
+
         payload := json_build_object(
           'stream_name', NEW.stream_name,
-          'group_name', NEW.group_name
+          'table_type', 'engine'
         );
-        
-        -- Send notification
+
         PERFORM pg_notify(channel_name, payload::text);
       END IF;
-      
+
       RETURN NEW;
     END;
     $$ LANGUAGE plpgsql;
   `);
 
-  // Create trigger only on the main table - it will automatically apply to all partitions
   await client.query(`
-    DROP TRIGGER IF EXISTS notify_stream_insert ON ${tableName};
-    CREATE TRIGGER notify_stream_insert
-      AFTER INSERT ON ${tableName}
+    DROP TRIGGER IF EXISTS notify_engine_stream_insert ON ${engineTable};
+    CREATE TRIGGER notify_engine_stream_insert
+      AFTER INSERT ON ${engineTable}
       FOR EACH ROW
-      EXECUTE FUNCTION ${schemaName}.notify_new_stream_message();
+      EXECUTE FUNCTION ${schemaName}.notify_new_engine_stream_message();
   `);
 
-  // Create helper function to notify about messages with expired visibility timeouts
-  // This is called periodically by the router scout for responsive retry processing
+  // ---- WORKER notification trigger ----
+  await client.query(`
+    CREATE OR REPLACE FUNCTION ${schemaName}.notify_new_worker_stream_message()
+    RETURNS TRIGGER AS $$
+    DECLARE
+      channel_name TEXT;
+      payload JSON;
+    BEGIN
+      IF NEW.visible_at <= NOW() THEN
+        channel_name := 'wrk_' || NEW.stream_name;
+        IF length(channel_name) > 63 THEN
+          channel_name := left(channel_name, 63);
+        END IF;
+
+        payload := json_build_object(
+          'stream_name', NEW.stream_name,
+          'table_type', 'worker'
+        );
+
+        PERFORM pg_notify(channel_name, payload::text);
+      END IF;
+
+      RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  await client.query(`
+    DROP TRIGGER IF EXISTS notify_worker_stream_insert ON ${workerTable};
+    CREATE TRIGGER notify_worker_stream_insert
+      AFTER INSERT ON ${workerTable}
+      FOR EACH ROW
+      EXECUTE FUNCTION ${schemaName}.notify_new_worker_stream_message();
+  `);
+
+  // ---- Visibility timeout notification function (queries both tables) ----
   await client.query(`
     CREATE OR REPLACE FUNCTION ${schemaName}.notify_visible_messages()
     RETURNS INTEGER AS $$
@@ -308,32 +369,52 @@ async function createNotificationTriggers(
       payload JSON;
       notification_count INTEGER := 0;
     BEGIN
-      -- Find all distinct streams with messages that are now visible
-      -- Router will drain all messages when notified, so we just notify each channel once
-      FOR msg IN 
-        SELECT DISTINCT stream_name, group_name
-        FROM ${tableName}
+      -- Engine streams
+      FOR msg IN
+        SELECT DISTINCT stream_name
+        FROM ${engineTable}
         WHERE visible_at <= NOW()
           AND reserved_at IS NULL
           AND expired_at IS NULL
-        LIMIT 100  -- Prevent overwhelming the system
+        LIMIT 50
       LOOP
-        -- Create channel name (same logic as INSERT trigger)
-        channel_name := 'stream_' || msg.stream_name || '_' || msg.group_name;
+        channel_name := 'eng_' || msg.stream_name;
         IF length(channel_name) > 63 THEN
           channel_name := left(channel_name, 63);
         END IF;
-        
-        -- Send minimal notification with only required fields
+
         payload := json_build_object(
           'stream_name', msg.stream_name,
-          'group_name', msg.group_name
+          'table_type', 'engine'
         );
-        
+
         PERFORM pg_notify(channel_name, payload::text);
         notification_count := notification_count + 1;
       END LOOP;
-      
+
+      -- Worker streams
+      FOR msg IN
+        SELECT DISTINCT stream_name
+        FROM ${workerTable}
+        WHERE visible_at <= NOW()
+          AND reserved_at IS NULL
+          AND expired_at IS NULL
+        LIMIT 50
+      LOOP
+        channel_name := 'wrk_' || msg.stream_name;
+        IF length(channel_name) > 63 THEN
+          channel_name := left(channel_name, 63);
+        END IF;
+
+        payload := json_build_object(
+          'stream_name', msg.stream_name,
+          'table_type', 'worker'
+        );
+
+        PERFORM pg_notify(channel_name, payload::text);
+        notification_count := notification_count + 1;
+      END LOOP;
+
       RETURN notification_count;
     END;
     $$ LANGUAGE plpgsql;
@@ -342,9 +423,10 @@ async function createNotificationTriggers(
 
 export function getNotificationChannelName(
   streamName: string,
-  groupName: string,
+  isEngine: boolean,
 ): string {
-  const channelName = `stream_${streamName}_${groupName}`;
+  const prefix = isEngine ? 'eng_' : 'wrk_';
+  const channelName = `${prefix}${streamName}`;
   // PostgreSQL channel names are limited to 63 characters
   return channelName.length > 63 ? channelName.substring(0, 63) : channelName;
 }

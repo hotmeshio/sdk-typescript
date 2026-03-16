@@ -13,7 +13,7 @@ import {
 
 /**
  * Publish messages to a stream. Can be used within a transaction.
- * 
+ *
  * When a transaction is provided, the SQL is added to the transaction
  * and executed atomically with other operations.
  */
@@ -21,17 +21,17 @@ export async function publishMessages(
   client: PostgresClientType & ProviderClient,
   tableName: string,
   streamName: string,
+  isEngine: boolean,
   messages: string[],
   options: PublishMessageConfig | undefined,
   logger: ILogger,
 ): Promise<string[] | ProviderTransaction> {
-  const { sql, params } = buildPublishSQL(tableName, streamName, messages, options);
-  
+  const { sql, params } = buildPublishSQL(tableName, streamName, isEngine, messages, options);
+
   if (
     options?.transaction &&
     typeof options.transaction.addCommand === 'function'
   ) {
-    // Add to transaction and return the transaction object
     options.transaction.addCommand(
       sql,
       params,
@@ -58,31 +58,34 @@ export async function publishMessages(
 
 /**
  * Build SQL for publishing messages with retry policies and visibility delays.
- * Optimizes the INSERT statement based on whether retry config is present.
+ * Routes to engine_streams or worker_streams based on isEngine flag.
+ * Worker messages include a workflow_name column extracted from metadata.wfn.
  */
 export function buildPublishSQL(
   tableName: string,
   streamName: string,
+  isEngine: boolean,
   messages: string[],
   options?: PublishMessageConfig,
 ): { sql: string; params: any[] } {
-  const groupName = streamName.endsWith(':') ? 'ENGINE' : 'WORKER';
-  
-  // Parse messages to extract retry config and visibility options
+  // Parse messages to extract retry config, visibility options, and workflow name
   const parsedMessages = messages.map(msg => {
     const data = JSON.parse(msg);
     const retryConfig = data._streamRetryConfig;
     const visibilityDelayMs = data._visibilityDelayMs;
     const retryAttempt = data._retryAttempt;
-    
+
     // Remove internal fields from message payload
     delete data._streamRetryConfig;
     delete data._visibilityDelayMs;
     delete data._retryAttempt;
-    
+
+    // Extract workflow name for worker streams
+    const workflowName = data.metadata?.wfn || '';
+
     // Determine if this message has explicit retry config
     const hasExplicitConfig = (retryConfig && 'max_retry_attempts' in retryConfig) || options?.retryPolicy;
-    
+
     let normalizedPolicy = null;
     if (retryConfig && 'max_retry_attempts' in retryConfig) {
       normalizedPolicy = retryConfig;
@@ -93,77 +96,123 @@ export function buildPublishSQL(
         maximumInterval: 120,
       });
     }
-    
+
     return {
       message: JSON.stringify(data),
       hasExplicitConfig,
       retryPolicy: normalizedPolicy,
       visibilityDelayMs: visibilityDelayMs || 0,
       retryAttempt: retryAttempt || 0,
+      workflowName,
     };
   });
-  
-  const params: any[] = [streamName, groupName];
+
+  const params: any[] = [streamName];
   let valuesClauses: string[] = [];
   let insertColumns: string;
-  
-  // Check if ALL messages have explicit config or ALL don't
+
   const allHaveConfig = parsedMessages.every(pm => pm.hasExplicitConfig);
   const noneHaveConfig = parsedMessages.every(pm => !pm.hasExplicitConfig);
   const hasVisibilityDelays = parsedMessages.some(pm => pm.visibilityDelayMs > 0);
-  
-  if (noneHaveConfig && !hasVisibilityDelays) {
-    // Omit retry columns entirely - let DB defaults apply
-    insertColumns = '(stream_name, group_name, message)';
-    parsedMessages.forEach((pm, idx) => {
-      const base = idx * 1;
-      valuesClauses.push(`($1, $2, $${base + 3})`);
-      params.push(pm.message);
-    });
-  } else if (noneHaveConfig && hasVisibilityDelays) {
-    // Only visibility delays, no retry config
-    insertColumns = '(stream_name, group_name, message, visible_at, retry_attempt)';
-    parsedMessages.forEach((pm, idx) => {
-      const base = idx * 2;
-      if (pm.visibilityDelayMs > 0) {
-        const visibleAtSQL = `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`;
-        valuesClauses.push(`($1, $2, $${base + 3}, ${visibleAtSQL}, $${base + 4})`);
-        params.push(pm.message, pm.retryAttempt);
-      } else {
-        valuesClauses.push(`($1, $2, $${base + 3}, DEFAULT, $${base + 4})`);
-        params.push(pm.message, pm.retryAttempt);
-      }
-    });
+
+  if (isEngine) {
+    // Engine table: no group_name, no workflow_name
+    if (noneHaveConfig && !hasVisibilityDelays) {
+      insertColumns = '(stream_name, message)';
+      parsedMessages.forEach((pm, idx) => {
+        const base = idx * 1;
+        valuesClauses.push(`($1, $${base + 2})`);
+        params.push(pm.message);
+      });
+    } else if (noneHaveConfig && hasVisibilityDelays) {
+      insertColumns = '(stream_name, message, visible_at, retry_attempt)';
+      parsedMessages.forEach((pm, idx) => {
+        const base = idx * 2;
+        if (pm.visibilityDelayMs > 0) {
+          const visibleAtSQL = `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`;
+          valuesClauses.push(`($1, $${base + 2}, ${visibleAtSQL}, $${base + 3})`);
+          params.push(pm.message, pm.retryAttempt);
+        } else {
+          valuesClauses.push(`($1, $${base + 2}, DEFAULT, $${base + 3})`);
+          params.push(pm.message, pm.retryAttempt);
+        }
+      });
+    } else {
+      insertColumns = '(stream_name, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)';
+      parsedMessages.forEach((pm) => {
+        const visibleAtClause = pm.visibilityDelayMs > 0
+          ? `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`
+          : 'DEFAULT';
+
+        if (pm.hasExplicitConfig) {
+          const paramOffset = params.length + 1;
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, ${visibleAtClause}, $${paramOffset + 4})`);
+          params.push(
+            pm.message,
+            pm.retryPolicy.max_retry_attempts,
+            pm.retryPolicy.backoff_coefficient,
+            pm.retryPolicy.maximum_interval_seconds,
+            pm.retryAttempt
+          );
+        } else {
+          const paramOffset = params.length + 1;
+          valuesClauses.push(`($1, $${paramOffset}, DEFAULT, DEFAULT, DEFAULT, ${visibleAtClause}, $${paramOffset + 1})`);
+          params.push(pm.message, pm.retryAttempt);
+        }
+      });
+    }
   } else {
-    // Include retry columns and optionally visibility
-    insertColumns = '(stream_name, group_name, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)';
-    parsedMessages.forEach((pm, idx) => {
-      const visibleAtClause = pm.visibilityDelayMs > 0 
-        ? `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`
-        : 'DEFAULT';
-      
-      if (pm.hasExplicitConfig) {
-        const paramOffset = params.length + 1; // Current param count + 1 for next param
-        valuesClauses.push(`($1, $2, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, ${visibleAtClause}, $${paramOffset + 4})`);
-        params.push(
-          pm.message,
-          pm.retryPolicy.max_retry_attempts,
-          pm.retryPolicy.backoff_coefficient,
-          pm.retryPolicy.maximum_interval_seconds,
-          pm.retryAttempt
-        );
-      } else {
-        // This message doesn't have config but others do - use DEFAULT keyword
+    // Worker table: includes workflow_name, no group_name
+    if (noneHaveConfig && !hasVisibilityDelays) {
+      insertColumns = '(stream_name, workflow_name, message)';
+      parsedMessages.forEach((pm) => {
         const paramOffset = params.length + 1;
-        valuesClauses.push(`($1, $2, $${paramOffset}, DEFAULT, DEFAULT, DEFAULT, ${visibleAtClause}, $${paramOffset + 1})`);
-        params.push(pm.message, pm.retryAttempt);
-      }
-    });
+        valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1})`);
+        params.push(pm.workflowName, pm.message);
+      });
+    } else if (noneHaveConfig && hasVisibilityDelays) {
+      insertColumns = '(stream_name, workflow_name, message, visible_at, retry_attempt)';
+      parsedMessages.forEach((pm) => {
+        const paramOffset = params.length + 1;
+        if (pm.visibilityDelayMs > 0) {
+          const visibleAtSQL = `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`;
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, ${visibleAtSQL}, $${paramOffset + 2})`);
+          params.push(pm.workflowName, pm.message, pm.retryAttempt);
+        } else {
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, DEFAULT, $${paramOffset + 2})`);
+          params.push(pm.workflowName, pm.message, pm.retryAttempt);
+        }
+      });
+    } else {
+      insertColumns = '(stream_name, workflow_name, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)';
+      parsedMessages.forEach((pm) => {
+        const visibleAtClause = pm.visibilityDelayMs > 0
+          ? `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`
+          : 'DEFAULT';
+
+        if (pm.hasExplicitConfig) {
+          const paramOffset = params.length + 1;
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, $${paramOffset + 4}, ${visibleAtClause}, $${paramOffset + 5})`);
+          params.push(
+            pm.workflowName,
+            pm.message,
+            pm.retryPolicy.max_retry_attempts,
+            pm.retryPolicy.backoff_coefficient,
+            pm.retryPolicy.maximum_interval_seconds,
+            pm.retryAttempt
+          );
+        } else {
+          const paramOffset = params.length + 1;
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, DEFAULT, DEFAULT, DEFAULT, ${visibleAtClause}, $${paramOffset + 2})`);
+          params.push(pm.workflowName, pm.message, pm.retryAttempt);
+        }
+      });
+    }
   }
 
   return {
     sql: `INSERT INTO ${tableName} ${insertColumns}
-      VALUES ${valuesClauses.join(', ')} 
+      VALUES ${valuesClauses.join(', ')}
       RETURNING id`,
     params,
   };
@@ -172,32 +221,38 @@ export function buildPublishSQL(
 /**
  * Fetch messages from the stream with optional exponential backoff.
  * Uses SKIP LOCKED for high-concurrency consumption.
+ * No group_name filter needed - the table itself determines engine vs worker.
  */
 export async function fetchMessages(
   client: PostgresClientType & ProviderClient,
   tableName: string,
   streamName: string,
-  groupName: string,
+  isEngine: boolean,
   consumerName: string,
   options: {
     batchSize?: number;
     blockTimeout?: number;
     autoAck?: boolean;
-    reservationTimeout?: number; // in seconds
-    enableBackoff?: boolean; // enable backoff
-    initialBackoff?: number; // Initial backoff in ms
-    maxBackoff?: number; // Maximum backoff in ms
-    maxRetries?: number; // Maximum retries before giving up
+    reservationTimeout?: number;
+    enableBackoff?: boolean;
+    initialBackoff?: number;
+    maxBackoff?: number;
+    maxRetries?: number;
   } = {},
   logger: ILogger,
 ): Promise<StreamMessage[]> {
   const enableBackoff = options?.enableBackoff ?? false;
-  const initialBackoff = options?.initialBackoff ?? 100; // Default initial backoff: 100ms
-  const maxBackoff = options?.maxBackoff ?? 3000; // Default max backoff: 3 seconds
-  const maxRetries = options?.maxRetries ?? 3; // Set a finite default, e.g., 3 retries
+  const initialBackoff = options?.initialBackoff ?? 100;
+  const maxBackoff = options?.maxBackoff ?? 3000;
+  const maxRetries = options?.maxRetries ?? 3;
 
   let backoff = initialBackoff;
   let retries = 0;
+
+  // Include workflow_name in RETURNING for worker streams
+  const returningClause = isEngine
+    ? 'id, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, retry_attempt'
+    : 'id, message, workflow_name, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, retry_attempt';
 
   try {
     while (retries < maxRetries) {
@@ -205,35 +260,31 @@ export async function fetchMessages(
       const batchSize = options?.batchSize || 1;
       const reservationTimeout = options?.reservationTimeout || 30;
 
-      // Simplified query for better performance - especially for notification-triggered fetches
       const res = await client.query(
-        `UPDATE ${tableName} 
-         SET reserved_at = NOW(), reserved_by = $4
+        `UPDATE ${tableName}
+         SET reserved_at = NOW(), reserved_by = $3
          WHERE id IN (
            SELECT id FROM ${tableName}
-           WHERE stream_name = $1 
-             AND group_name = $2
+           WHERE stream_name = $1
              AND (reserved_at IS NULL OR reserved_at < NOW() - INTERVAL '${reservationTimeout} seconds')
              AND expired_at IS NULL
              AND visible_at <= NOW()
            ORDER BY id
-           LIMIT $3
+           LIMIT $2
            FOR UPDATE SKIP LOCKED
          )
-         RETURNING id, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, retry_attempt`,
-        [streamName, groupName, batchSize, consumerName],
+         RETURNING ${returningClause}`,
+        [streamName, batchSize, consumerName],
       );
 
       const messages: StreamMessage[] = res.rows.map((row: any) => {
         const data = parseStreamMessage(row.message);
-        
-        // Inject retry policy only if not using default values
-        // Default values indicate old retry mechanism should be used (policies.retry)
-        const hasDefaultRetryPolicy = 
+
+        const hasDefaultRetryPolicy =
           (row.max_retry_attempts === 3 || row.max_retry_attempts === 5) &&
           parseFloat(row.backoff_coefficient) === 10 &&
           row.maximum_interval_seconds === 120;
-        
+
         if (row.max_retry_attempts !== null && !hasDefaultRetryPolicy) {
           data._streamRetryConfig = {
             max_retry_attempts: row.max_retry_attempts,
@@ -241,12 +292,18 @@ export async function fetchMessages(
             maximum_interval_seconds: row.maximum_interval_seconds,
           };
         }
-        
-        // Inject retry_attempt from database
+
         if (row.retry_attempt !== undefined && row.retry_attempt !== null) {
           data._retryAttempt = row.retry_attempt;
         }
-        
+
+        // Inject workflow_name from DB column into metadata for dispatch routing
+        if (!isEngine && row.workflow_name) {
+          if (data.metadata) {
+            data.metadata.wfn = row.workflow_name;
+          }
+        }
+
         return {
           id: row.id.toString(),
           data,
@@ -262,12 +319,10 @@ export async function fetchMessages(
         return messages;
       }
 
-      // Apply backoff if enabled and no messages found
       await sleepFor(backoff);
-      backoff = Math.min(backoff * 2, maxBackoff); // Exponential backoff
+      backoff = Math.min(backoff * 2, maxBackoff);
     }
 
-    // Return empty array if maxRetries is reached and still no messages
     return [];
   } catch (error) {
     logger.error(`postgres-stream-consumer-error-${streamName}`, {
@@ -283,30 +338,28 @@ export async function fetchMessages(
 export async function acknowledgeMessages(
   messageIds: string[],
 ): Promise<number> {
-  // No-op for this implementation
   return messageIds.length;
 }
 
 /**
  * Delete messages by soft-deleting them (setting expired_at).
+ * No group_name needed - stream_name + table is sufficient.
  */
 export async function deleteMessages(
   client: PostgresClientType & ProviderClient,
   tableName: string,
   streamName: string,
-  groupName: string,
   messageIds: string[],
   logger: ILogger,
 ): Promise<number> {
   try {
     const ids = messageIds.map((id) => parseInt(id));
 
-    // Perform a soft delete by setting `expired_at` to the current timestamp
     await client.query(
       `UPDATE ${tableName}
        SET expired_at = NOW()
-       WHERE stream_name = $1 AND id = ANY($2::bigint[]) AND group_name = $3`,
-      [streamName, ids, groupName],
+       WHERE stream_name = $1 AND id = ANY($2::bigint[])`,
+      [streamName, ids],
     );
 
     return messageIds.length;
@@ -325,11 +378,10 @@ export async function ackAndDelete(
   client: PostgresClientType & ProviderClient,
   tableName: string,
   streamName: string,
-  groupName: string,
   messageIds: string[],
   logger: ILogger,
 ): Promise<number> {
-  return await deleteMessages(client, tableName, streamName, groupName, messageIds, logger);
+  return await deleteMessages(client, tableName, streamName, messageIds, logger);
 }
 
 /**
@@ -347,7 +399,5 @@ export async function retryMessages(
     limit?: number;
   },
 ): Promise<StreamMessage[]> {
-  // Implement retry logic if needed
   return [];
 }
-

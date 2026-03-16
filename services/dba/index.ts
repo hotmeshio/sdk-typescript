@@ -19,7 +19,8 @@ import {
  * |---|---|
  * | `{appId}.jobs` | Completed/expired jobs with `expired_at` set |
  * | `{appId}.jobs_attributes` | Execution artifacts (`adata`, `hmark`, `status`, `other`) that are only needed during workflow execution |
- * | `{appId}.streams` | Processed stream messages with `expired_at` set |
+ * | `{appId}.engine_streams` | Processed engine stream messages with `expired_at` set |
+ * | `{appId}.worker_streams` | Processed worker stream messages with `expired_at` set |
  *
  * The `DBA` service addresses this with two methods:
  *
@@ -204,6 +205,7 @@ class DBA {
         v_stripped_attributes BIGINT := 0;
         v_deleted_transient BIGINT := 0;
         v_marked_pruned BIGINT := 0;
+        v_temp_count BIGINT := 0;
       BEGIN
         -- 1. Hard-delete expired jobs older than the retention window.
         --    FK CASCADE on jobs_attributes handles attribute cleanup.
@@ -226,11 +228,18 @@ class DBA {
         END IF;
 
         -- 3. Hard-delete expired stream messages older than the retention window.
+        --    Deletes from both engine_streams and worker_streams tables.
         IF prune_streams THEN
-          DELETE FROM ${schema}.streams
+          DELETE FROM ${schema}.engine_streams
           WHERE expired_at IS NOT NULL
             AND expired_at < NOW() - retention;
           GET DIAGNOSTICS v_deleted_streams = ROW_COUNT;
+
+          DELETE FROM ${schema}.worker_streams
+          WHERE expired_at IS NOT NULL
+            AND expired_at < NOW() - retention;
+          GET DIAGNOSTICS v_temp_count = ROW_COUNT;
+          v_deleted_streams := v_deleted_streams + v_temp_count;
         END IF;
 
         -- 4. Strip execution artifacts from completed, live, un-pruned jobs.

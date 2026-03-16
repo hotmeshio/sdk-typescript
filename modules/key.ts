@@ -146,7 +146,7 @@ class KeyService {
       case 'v':
         return 'versions';
       case 'x':
-        return id === '' ? 'streams' : 'stream_topics';
+        return id === '' ? 'engine_streams' : 'worker_streams';
       case 'hooks':
         return 'signal_patterns';
       case 'signals':
@@ -178,7 +178,8 @@ class KeyService {
         return 's';
       case 'versions':
         return 'v';
-      case 'streams':
+      case 'engine_streams':
+      case 'worker_streams':
         return 'x';
       case 'signal_patterns':
         return 'hooks';

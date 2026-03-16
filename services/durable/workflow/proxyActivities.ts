@@ -29,14 +29,13 @@ function getProxyInterruptPayload(
   args: any[],
   options?: ActivityConfig,
 ): DurableProxyErrorType {
-  const { workflowDimension, workflowId, originJobId, workflowTopic, expire } =
+  const { workflowDimension, workflowId, originJobId, taskQueue, expire } =
     context;
-  
-  // Use explicitly provided taskQueue, otherwise derive from workflow (original behavior)
-  // This keeps backward compatibility while allowing explicit global/custom queues
-  const activityTopic = options?.taskQueue 
+
+  // Activity topic uses the task queue directly (no workflow name concatenation)
+  const activityTopic = options?.taskQueue
     ? `${options.taskQueue}-activity`
-    : `${workflowTopic}-activity`;
+    : `${taskQueue}-activity`;
     
   const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
   let maximumInterval: number;

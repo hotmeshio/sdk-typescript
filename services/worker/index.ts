@@ -1,4 +1,5 @@
 import { KeyType } from '../../modules/key';
+import { StreamConsumerRegistry } from '../stream/registry';
 import {
   XSleepFor,
   formatISODate,
@@ -103,18 +104,41 @@ class WorkerService {
           service.guid,
         );
         await service.initStreamChannel(service, worker.stream, worker.store);
-        service.router = await service.initRouter(worker, logger);
 
-        const key = service.store.mintKey(KeyType.STREAMS, {
-          appId: service.appId,
-          topic: worker.topic,
-        });
-        await service.router.consumeMessages(
-          key,
-          'WORKER',
-          service.guid,
-          worker.callback,
-        );
+        if (worker.workflowName) {
+          // Use singleton consumer via registry (batched fetch + dispatch by workflow_name)
+          await StreamConsumerRegistry.registerWorker(
+            namespace,
+            appId,
+            guid,
+            worker.topic,
+            worker.workflowName,
+            worker.callback,
+            service.stream,
+            service.store,
+            logger,
+            {
+              reclaimDelay: worker.reclaimDelay,
+              reclaimCount: worker.reclaimCount,
+              retryPolicy: worker.retryPolicy,
+            },
+          );
+          // Still need a router for publishing responses back to engine
+          service.router = await service.initRouter(worker, logger);
+        } else {
+          // Legacy: own Router per worker (no workflowName = no singleton dispatch)
+          service.router = await service.initRouter(worker, logger);
+          const key = service.store.mintKey(KeyType.STREAMS, {
+            appId: service.appId,
+            topic: worker.topic,
+          });
+          await service.router.consumeMessages(
+            key,
+            'WORKER',
+            service.guid,
+            worker.callback,
+          );
+        }
         service.inited = formatISODate(new Date());
         services.push(service);
       }

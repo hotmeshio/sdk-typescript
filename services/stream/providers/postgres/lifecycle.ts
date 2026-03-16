@@ -10,7 +10,7 @@ export async function createStream(streamName: string): Promise<boolean> {
 }
 
 /**
- * Delete a stream or all streams.
+ * Delete a stream or all streams from a specific table.
  */
 export async function deleteStream(
   client: PostgresClientType & ProviderClient,
@@ -46,27 +46,26 @@ export async function createConsumerGroup(
 }
 
 /**
- * Delete a consumer group (removes all messages for that group).
+ * Delete messages for a stream from a specific table.
+ * No group_name needed since engine and worker are separate tables.
  */
 export async function deleteConsumerGroup(
   client: PostgresClientType & ProviderClient,
   tableName: string,
   streamName: string,
-  groupName: string,
   logger: ILogger,
 ): Promise<boolean> {
   try {
     await client.query(
-      `DELETE FROM ${tableName} WHERE stream_name = $1 AND group_name = $2`,
-      [streamName, groupName],
+      `DELETE FROM ${tableName} WHERE stream_name = $1`,
+      [streamName],
     );
     return true;
   } catch (error) {
     logger.error(
-      `postgres-stream-delete-group-error-${streamName}.${groupName}`,
+      `postgres-stream-delete-group-error-${streamName}`,
       { error },
     );
     throw error;
   }
 }
-

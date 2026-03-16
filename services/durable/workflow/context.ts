@@ -55,6 +55,7 @@ export function getContext(): WorkflowContext {
   const interruptionRegistry = store.get('interruptionRegistry');
   const workflowDimension = store.get('workflowDimension') ?? '';
   const workflowTopic = store.get('workflowTopic');
+  const taskQueue = store.get('taskQueue');
   const connection = store.get('connection');
   const namespace = store.get('namespace');
   const originJobId = store.get('originJobId');
@@ -76,6 +77,7 @@ export function getContext(): WorkflowContext {
     originJobId,
     raw,
     replay,
+    taskQueue,
     workflowId,
     workflowDimension,
     workflowTopic,

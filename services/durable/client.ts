@@ -238,6 +238,8 @@ export class ClientService {
         parentWorkflowId: options.parentWorkflowId,
         workflowId: options.workflowId || HotMesh.guid(),
         workflowTopic: workflowTopic,
+        taskQueue: taskQueueName,
+        workflowName: workflowName,
         backoffCoefficient:
           options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
         maximumAttempts:
@@ -297,11 +299,14 @@ export class ClientService {
      */
     hook: async (options: HookOptions): Promise<string> => {
       const taskQueue = options.taskQueue ?? options.entity;
-      const workflowTopic = `${taskQueue}-${options.entity ?? options.workflowName}`;
+      const hookWorkflowName = options.entity ?? options.workflowName;
+      const workflowTopic = `${taskQueue}-${hookWorkflowName}`;
       const payload = {
         arguments: [...options.args],
         id: options.workflowId,
         workflowTopic,
+        taskQueue,
+        workflowName: hookWorkflowName,
         backoffCoefficient:
           options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
         maximumAttempts:

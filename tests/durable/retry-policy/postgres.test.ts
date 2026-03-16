@@ -202,7 +202,7 @@ describe('DURABLE | Retry Policy | Postgres', () => {
           backoff_coefficient,
           maximum_interval_seconds,
           message
-        FROM durable.streams
+        FROM durable.worker_streams
         WHERE stream_name LIKE '%payments-activity%'
           AND expired_at IS NULL
         LIMIT 1
@@ -396,7 +396,7 @@ describe('DURABLE | Retry Policy | Postgres', () => {
           AVG(max_retry_attempts) as avg_attempts,
           AVG(backoff_coefficient) as avg_backoff,
           AVG(maximum_interval_seconds) as avg_interval
-        FROM durable.streams
+        FROM durable.worker_streams
         WHERE stream_name LIKE '%ops-activity%'
           AND expired_at IS NULL
         GROUP BY stream_name
@@ -431,7 +431,7 @@ describe('DURABLE | Retry Policy | Postgres', () => {
           MAX(max_retry_attempts) as max_max_attempts,
           AVG(backoff_coefficient) as avg_backoff,
           AVG(maximum_interval_seconds) as avg_max_interval
-        FROM durable.streams
+        FROM durable.worker_streams
         WHERE stream_name LIKE '%-activity%'
         GROUP BY stream_name
         ORDER BY total_messages DESC
@@ -459,7 +459,7 @@ describe('DURABLE | Retry Policy | Postgres', () => {
           max_retry_attempts,
           backoff_coefficient,
           maximum_interval_seconds
-        FROM durable.streams
+        FROM durable.worker_streams
         WHERE max_retry_attempts > 5
           AND expired_at IS NULL
         ORDER BY max_retry_attempts DESC
@@ -476,7 +476,7 @@ describe('DURABLE | Retry Policy | Postgres', () => {
           stream_name,
           backoff_coefficient,
           maximum_interval_seconds
-        FROM durable.streams
+        FROM durable.worker_streams
         WHERE backoff_coefficient < 5
           AND expired_at IS NULL
         ORDER BY backoff_coefficient ASC

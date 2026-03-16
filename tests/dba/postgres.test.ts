@@ -133,10 +133,10 @@ describe('DBA | Postgres', () => {
 
     it('should prune expired stream messages', async () => {
       await pgClient.query(`
-        INSERT INTO ${schema}.streams
-          (stream_name, group_name, message, expired_at)
+        INSERT INTO ${schema}.engine_streams
+          (stream_name, message, expired_at)
         VALUES
-          ('prune-test-stream', 'ENGINE', '{}',
+          ('prune-test-stream', '{}',
            NOW() - INTERVAL '10 days')
       `);
 
@@ -528,10 +528,10 @@ describe('DBA | Postgres', () => {
 
     it('should skip streams when streams is false', async () => {
       await pgClient.query(`
-        INSERT INTO ${schema}.streams
-          (stream_name, group_name, message, expired_at)
+        INSERT INTO ${schema}.engine_streams
+          (stream_name, message, expired_at)
         VALUES
-          ('skip-streams-test', 'ENGINE', '{}',
+          ('skip-streams-test', '{}',
            NOW() - INTERVAL '10 days')
       `);
 
@@ -547,14 +547,14 @@ describe('DBA | Postgres', () => {
 
       // verify the row is still there
       const check = await pgClient.query(
-        `SELECT COUNT(*) as cnt FROM ${schema}.streams
+        `SELECT COUNT(*) as cnt FROM ${schema}.engine_streams
          WHERE stream_name = 'skip-streams-test'`,
       );
       expect(Number(check.rows[0].cnt)).toBe(1);
 
       // cleanup
       await pgClient.query(
-        `DELETE FROM ${schema}.streams
+        `DELETE FROM ${schema}.engine_streams
          WHERE stream_name = 'skip-streams-test'`,
       );
     });
@@ -584,9 +584,9 @@ describe('DBA | Postgres', () => {
                 NOW() - INTERVAL '10 days')
       `);
       await pgClient.query(`
-        INSERT INTO ${schema}.streams
-          (stream_name, group_name, message, expired_at)
-        VALUES ('attrs-only-stream', 'ENGINE', '{}',
+        INSERT INTO ${schema}.engine_streams
+          (stream_name, message, expired_at)
+        VALUES ('attrs-only-stream', '{}',
                 NOW() - INTERVAL '10 days')
       `);
 
@@ -620,7 +620,7 @@ describe('DBA | Postgres', () => {
       expect(Number(expiredJob.rows[0].cnt)).toBe(1);
 
       const expiredStream = await pgClient.query(
-        `SELECT COUNT(*) as cnt FROM ${schema}.streams
+        `SELECT COUNT(*) as cnt FROM ${schema}.engine_streams
          WHERE stream_name = 'attrs-only-stream'`,
       );
       expect(Number(expiredStream.rows[0].cnt)).toBe(1);
@@ -630,17 +630,17 @@ describe('DBA | Postgres', () => {
         `DELETE FROM ${schema}.jobs WHERE key IN ('attrs-only-test', 'attrs-only-expired')`,
       );
       await pgClient.query(
-        `DELETE FROM ${schema}.streams WHERE stream_name = 'attrs-only-stream'`,
+        `DELETE FROM ${schema}.engine_streams WHERE stream_name = 'attrs-only-stream'`,
       );
     });
 
     it('should prune streams only with a short retention', async () => {
       // Insert an expired stream message (2 days old)
       await pgClient.query(`
-        INSERT INTO ${schema}.streams
-          (stream_name, group_name, message, expired_at)
+        INSERT INTO ${schema}.engine_streams
+          (stream_name, message, expired_at)
         VALUES
-          ('hourly-prune-stream', 'ENGINE', '{}',
+          ('hourly-prune-stream', '{}',
            NOW() - INTERVAL '2 days')
       `);
 

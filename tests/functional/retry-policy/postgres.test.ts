@@ -72,7 +72,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       // Query database to verify values were stored
       const result = await postgresClient.query(
         `SELECT max_retry_attempts, backoff_coefficient, maximum_interval_seconds
-         FROM retrypolicytest.streams
+         FROM retrypolicytest.worker_streams
          WHERE stream_name = $1 AND expired_at IS NULL`,
         [TEST_STREAM],
       );
@@ -121,7 +121,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       // Query database directly to verify columns
       const result = await postgresClient.query(
         `SELECT max_retry_attempts, backoff_coefficient, maximum_interval_seconds
-         FROM retrypolicytest.streams
+         FROM retrypolicytest.worker_streams
          WHERE stream_name = $1 AND expired_at IS NULL`,
         [TEST_STREAM],
       );
@@ -144,7 +144,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
 
       const result = await postgresClient.query(
         `SELECT max_retry_attempts, backoff_coefficient, maximum_interval_seconds
-         FROM retrypolicytest.streams
+         FROM retrypolicytest.worker_streams
          WHERE stream_name = $1 AND expired_at IS NULL`,
         [TEST_STREAM],
       );
@@ -223,7 +223,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
 
       const result = await postgresClient.query(
         `SELECT id, max_retry_attempts, backoff_coefficient, maximum_interval_seconds
-         FROM retrypolicytest.streams
+         FROM retrypolicytest.worker_streams
          WHERE stream_name = $1 AND expired_at IS NULL
          ORDER BY id ASC`,
         [TEST_STREAM],
@@ -271,7 +271,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       // Query for aggressive retry policies (> 5 attempts)
       const aggressive = await postgresClient.query(
         `SELECT stream_name, max_retry_attempts
-         FROM retrypolicytest.streams
+         FROM retrypolicytest.worker_streams
          WHERE max_retry_attempts > 5 AND expired_at IS NULL`,
       );
 
@@ -282,7 +282,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       // Query for fast retry policies (coefficient < 5)
       const fast = await postgresClient.query(
         `SELECT stream_name, backoff_coefficient
-         FROM retrypolicytest.streams
+         FROM retrypolicytest.worker_streams
          WHERE backoff_coefficient < 5 AND expired_at IS NULL`,
       );
 
@@ -362,7 +362,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
         SELECT column_name, data_type, column_default
         FROM information_schema.columns
         WHERE table_schema = 'retrypolicytest'
-          AND table_name = 'streams'
+          AND table_name = 'worker_streams'
           AND column_name IN ('max_retry_attempts', 'backoff_coefficient', 'maximum_interval_seconds')
         ORDER BY column_name
       `);
@@ -465,7 +465,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
     beforeEach(async () => {
       // Clean up all test streams
       await postgresClient.query(
-        `UPDATE retrypolicytest.streams SET expired_at = NOW() WHERE stream_name LIKE 'perf-%'`,
+        `UPDATE retrypolicytest.worker_streams SET expired_at = NOW() WHERE stream_name LIKE 'perf-%'`,
       );
     });
 
@@ -493,7 +493,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
           AVG(max_retry_attempts) as avg_attempts,
           AVG(backoff_coefficient) as avg_backoff,
           AVG(maximum_interval_seconds) as avg_interval
-        FROM retrypolicytest.streams
+        FROM retrypolicytest.worker_streams
         WHERE stream_name LIKE 'perf-%' AND expired_at IS NULL
         GROUP BY stream_name
         ORDER BY stream_name
@@ -519,7 +519,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
 
       // Use EXPLAIN to verify index usage (optional, for performance testing)
       const explain = await postgresClient.query(`
-        EXPLAIN SELECT * FROM retrypolicytest.streams
+        EXPLAIN SELECT * FROM retrypolicytest.worker_streams
         WHERE max_retry_attempts > 5 AND expired_at IS NULL
       `);
 

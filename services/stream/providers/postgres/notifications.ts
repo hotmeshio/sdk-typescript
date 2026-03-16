@@ -8,6 +8,9 @@ import { getNotificationChannelName } from './kvtables';
 /**
  * Manages PostgreSQL LISTEN/NOTIFY for stream message notifications.
  * Handles static state shared across all service instances using the same client.
+ *
+ * Channel naming uses table-type prefixes (eng_ / wrk_) instead of group_name,
+ * since engine_streams and worker_streams are separate tables.
  */
 export class NotificationManager<TService> {
   // Static maps shared across all instances with the same client
@@ -39,7 +42,6 @@ export class NotificationManager<TService> {
       return;
     }
 
-    // Initialize notification consumer map for this client
     if (!NotificationManager.clientNotificationConsumers.has(this.client)) {
       NotificationManager.clientNotificationConsumers.set(
         this.client,
@@ -47,10 +49,7 @@ export class NotificationManager<TService> {
       );
     }
 
-    // Set up the notification handler
     this.client.on('notification', this.notificationHandlerBound);
-
-    // Mark this client as having a notification handler
     NotificationManager.clientNotificationHandlers.set(this.client, true);
   }
 
@@ -80,7 +79,6 @@ export class NotificationManager<TService> {
 
   /**
    * Check for missed messages (fallback polling).
-   * Handles errors gracefully to avoid noise during shutdown.
    */
   async checkForMissedMessages(
     fetchMessages: (
@@ -107,10 +105,7 @@ export class NotificationManager<TService> {
         });
       }
     } catch (error) {
-      // Silently ignore errors during shutdown (client closed, etc.)
-      // Function might not exist in older schemas
       if (error.message?.includes('Client was closed')) {
-        // Client is shutting down, silently return
         return;
       }
       this.logger.debug('postgres-stream-visibility-function-unavailable', {
@@ -126,7 +121,6 @@ export class NotificationManager<TService> {
       return;
     }
 
-    // Check consumers that haven't been checked recently
     for (const [
       consumerKey,
       instanceMap,
@@ -153,9 +147,7 @@ export class NotificationManager<TService> {
 
             consumer.lastFallbackCheck = now;
           } catch (error) {
-            // Silently ignore errors during shutdown
             if (error.message?.includes('Client was closed')) {
-              // Client is shutting down, stop checking this consumer
               consumer.isListening = false;
               return;
             }
@@ -172,11 +164,12 @@ export class NotificationManager<TService> {
 
   /**
    * Handle incoming PostgreSQL notification.
+   * Channels use table-type prefixes: eng_ for engine, wrk_ for worker.
    */
   private handleNotification(notification: PostgresNotification): void {
     try {
-      // Only handle stream notifications
-      if (!notification.channel.startsWith('stream_')) {
+      // Only handle stream notifications (eng_ or wrk_ prefixed)
+      if (!notification.channel.startsWith('eng_') && !notification.channel.startsWith('wrk_')) {
         this.logger.debug('postgres-stream-ignoring-sub-notification', {
           channel: notification.channel,
           payloadPreview: notification.payload.substring(0, 100),
@@ -189,16 +182,18 @@ export class NotificationManager<TService> {
       });
 
       const payload = JSON.parse(notification.payload);
-      const { stream_name, group_name } = payload;
+      const { stream_name, table_type } = payload;
 
-      if (!stream_name || !group_name) {
+      if (!stream_name || !table_type) {
         this.logger.warn('postgres-stream-invalid-notification', {
           notification,
         });
         return;
       }
 
-      const consumerKey = this.getConsumerKey(stream_name, group_name);
+      // Derive groupName from table_type for consumer key lookup
+      const groupName = table_type === 'engine' ? 'ENGINE' : 'WORKER';
+      const consumerKey = this.getConsumerKey(stream_name, groupName);
       const clientNotificationConsumers =
         NotificationManager.clientNotificationConsumers.get(this.client);
 
@@ -211,7 +206,6 @@ export class NotificationManager<TService> {
         return;
       }
 
-      // Trigger immediate message fetch for all instances with this consumer
       for (const [instance, consumer] of instanceMap.entries()) {
         if (consumer.isListening) {
           const serviceInstance = instance as any;
@@ -230,6 +224,7 @@ export class NotificationManager<TService> {
 
   /**
    * Set up notification consumer for a stream/group.
+   * Uses table-type channel naming (eng_ / wrk_).
    */
   async setupNotificationConsumer(
     serviceInstance: TService,
@@ -239,8 +234,19 @@ export class NotificationManager<TService> {
     callback: (messages: StreamMessage[]) => void,
   ): Promise<void> {
     const startTime = Date.now();
-    const consumerKey = this.getConsumerKey(streamName, groupName);
-    const channelName = getNotificationChannelName(streamName, groupName);
+    const isEngine = groupName === 'ENGINE';
+
+    // Resolve the stream name to get the simplified form for channel naming and consumer key
+    const serviceAny = serviceInstance as any;
+    let resolvedStreamName = streamName;
+    if (serviceAny.resolveStreamTarget) {
+      const target = serviceAny.resolveStreamTarget(streamName);
+      resolvedStreamName = target.streamName;
+    }
+
+    // Use resolved stream name for consumer key so it matches notification payloads
+    const consumerKey = this.getConsumerKey(resolvedStreamName, groupName);
+    const channelName = getNotificationChannelName(resolvedStreamName, isEngine);
 
     // Get or create notification consumer map for this client
     let clientNotificationConsumers =
@@ -276,7 +282,7 @@ export class NotificationManager<TService> {
           channelName,
           error,
         });
-        throw error; // Propagate error to caller
+        throw error;
       }
     }
 
@@ -291,8 +297,6 @@ export class NotificationManager<TService> {
     };
 
     instanceMap.set(serviceInstance, consumer);
-
-    // Track this consumer for cleanup
     this.instanceNotificationConsumers.add(consumerKey);
 
     this.logger.debug('postgres-stream-notification-setup-complete', {
@@ -311,7 +315,15 @@ export class NotificationManager<TService> {
     streamName: string,
     groupName: string,
   ): Promise<void> {
-    const consumerKey = this.getConsumerKey(streamName, groupName);
+    const isEngine = groupName === 'ENGINE';
+    const serviceAny = serviceInstance as any;
+    let resolvedStreamName = streamName;
+    if (serviceAny.resolveStreamTarget) {
+      const target = serviceAny.resolveStreamTarget(streamName);
+      resolvedStreamName = target.streamName;
+    }
+
+    const consumerKey = this.getConsumerKey(resolvedStreamName, groupName);
     const clientNotificationConsumers =
       NotificationManager.clientNotificationConsumers.get(this.client);
 
@@ -328,14 +340,12 @@ export class NotificationManager<TService> {
     if (consumer) {
       consumer.isListening = false;
       instanceMap.delete(serviceInstance);
-
-      // Remove from instance tracking
       this.instanceNotificationConsumers.delete(consumerKey);
 
-      // If no more instances for this consumer key, stop listening
       if (instanceMap.size === 0) {
         clientNotificationConsumers.delete(consumerKey);
-        const channelName = getNotificationChannelName(streamName, groupName);
+        const channelName = getNotificationChannelName(resolvedStreamName, isEngine);
+
         try {
           await this.client.query(`UNLISTEN "${channelName}"`);
           this.logger.debug('postgres-stream-unlisten', {
@@ -357,12 +367,11 @@ export class NotificationManager<TService> {
 
   /**
    * Clean up notification consumers for this instance.
-   * Stops fallback poller FIRST to prevent race conditions during shutdown.
    */
   async cleanup(serviceInstance: TService): Promise<void> {
     const clientNotificationConsumers =
       NotificationManager.clientNotificationConsumers.get(this.client);
-    
+
     // FIRST: Stop fallback poller to prevent queries during cleanup
     const fallbackIntervalId =
       NotificationManager.clientFallbackPollers.get(this.client);
@@ -372,7 +381,6 @@ export class NotificationManager<TService> {
     }
 
     if (clientNotificationConsumers) {
-      // Remove this instance from all consumer maps
       for (const consumerKey of this.instanceNotificationConsumers) {
         const instanceMap = clientNotificationConsumers.get(consumerKey);
         if (instanceMap) {
@@ -381,13 +389,15 @@ export class NotificationManager<TService> {
             consumer.isListening = false;
             instanceMap.delete(serviceInstance);
 
-            // If no more instances for this consumer, stop listening
             if (instanceMap.size === 0) {
               clientNotificationConsumers.delete(consumerKey);
-              const channelName = getNotificationChannelName(
-                consumer.streamName,
-                consumer.groupName,
-              );
+
+              // Extract resolved stream name and isEngine from the consumer key
+              // Consumer key format: resolvedStreamName:groupName
+              const isEngine = consumer.groupName === 'ENGINE';
+              const resolvedStreamName = consumerKey.substring(0, consumerKey.lastIndexOf(':'));
+              const channelName = getNotificationChannelName(resolvedStreamName, isEngine);
+
               try {
                 await this.client.query(`UNLISTEN "${channelName}"`);
                 this.logger.debug('postgres-stream-cleanup-unlisten', {
@@ -396,7 +406,6 @@ export class NotificationManager<TService> {
                   channelName,
                 });
               } catch (error) {
-                // Silently ignore errors during shutdown
                 if (!error.message?.includes('Client was closed')) {
                   this.logger.error('postgres-stream-cleanup-unlisten-error', {
                     streamName: consumer.streamName,
@@ -412,18 +421,12 @@ export class NotificationManager<TService> {
       }
     }
 
-    // Clear instance tracking
     this.instanceNotificationConsumers.clear();
 
-    // If no more consumers exist for this client, clean up static resources
     if (clientNotificationConsumers && clientNotificationConsumers.size === 0) {
-      // Remove client from static maps
       NotificationManager.clientNotificationConsumers.delete(this.client);
       NotificationManager.clientNotificationHandlers.delete(this.client);
 
-      // Fallback poller already stopped above
-
-      // Remove notification handler
       if (this.client.removeAllListeners) {
         this.client.removeAllListeners('notification');
       } else if (this.client.off && this.notificationHandlerBound) {
@@ -448,6 +451,5 @@ export function getFallbackInterval(config: any): number {
 }
 
 export function getNotificationTimeout(config: any): number {
-  return config?.postgres?.notificationTimeout || 5000; // Default: 5 seconds
+  return config?.postgres?.notificationTimeout || 5000;
 }
-
