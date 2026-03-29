@@ -99,6 +99,8 @@ export const MAX_STREAM_RETRIES =
   parseInt(process.env.MAX_STREAM_RETRIES, 10) || 2;
 export const MAX_DELAY = 2147483647; // Maximum allowed delay in milliseconds for setTimeout
 export const HMSH_MAX_RETRIES = parseInt(process.env.HMSH_MAX_RETRIES, 10) || 3;
+export const HMSH_POISON_MESSAGE_THRESHOLD =
+  parseInt(process.env.HMSH_POISON_MESSAGE_THRESHOLD, 10) || 5;
 export const HMSH_MAX_TIMEOUT_MS =
   parseInt(process.env.HMSH_MAX_TIMEOUT_MS, 10) || 60000;
 export const HMSH_GRADUATED_INTERVAL_MS =

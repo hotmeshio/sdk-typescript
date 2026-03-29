@@ -177,6 +177,7 @@ async function createTables(
       reserved_at TIMESTAMPTZ,
       reserved_by TEXT,
       expired_at TIMESTAMPTZ,
+      dead_lettered_at TIMESTAMPTZ,
       max_retry_attempts INT DEFAULT 3,
       backoff_coefficient NUMERIC DEFAULT 10,
       maximum_interval_seconds INT DEFAULT 120,
@@ -223,6 +224,20 @@ async function createTables(
     WHERE expired_at IS NOT NULL;
   `);
 
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_dead_lettered
+    ON ${engineTable} (dead_lettered_at, stream_name)
+    WHERE dead_lettered_at IS NOT NULL;
+  `);
+
+  // Migration: add dead_lettered_at column to existing tables
+  await client.query(`
+    DO $$ BEGIN
+      ALTER TABLE ${engineTable} ADD COLUMN IF NOT EXISTS dead_lettered_at TIMESTAMPTZ;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
   // ---- WORKER_STREAMS table ----
   const workerTable = `${schemaName}.worker_streams`;
   await client.query(`
@@ -235,6 +250,7 @@ async function createTables(
       reserved_at TIMESTAMPTZ,
       reserved_by TEXT,
       expired_at TIMESTAMPTZ,
+      dead_lettered_at TIMESTAMPTZ,
       max_retry_attempts INT DEFAULT 3,
       backoff_coefficient NUMERIC DEFAULT 10,
       maximum_interval_seconds INT DEFAULT 120,
@@ -279,6 +295,20 @@ async function createTables(
     CREATE INDEX IF NOT EXISTS idx_worker_streams_processed_volume
     ON ${workerTable} (expired_at, stream_name)
     WHERE expired_at IS NOT NULL;
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_dead_lettered
+    ON ${workerTable} (dead_lettered_at, stream_name)
+    WHERE dead_lettered_at IS NOT NULL;
+  `);
+
+  // Migration: add dead_lettered_at column to existing tables
+  await client.query(`
+    DO $$ BEGIN
+      ALTER TABLE ${workerTable} ADD COLUMN IF NOT EXISTS dead_lettered_at TIMESTAMPTZ;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
   `);
 }
 

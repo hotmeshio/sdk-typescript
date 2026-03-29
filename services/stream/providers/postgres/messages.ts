@@ -385,6 +385,35 @@ export async function ackAndDelete(
 }
 
 /**
+ * Move messages to the dead-letter state by setting dead_lettered_at
+ * and expired_at. The message payload is preserved for inspection.
+ */
+export async function deadLetterMessages(
+  client: PostgresClientType & ProviderClient,
+  tableName: string,
+  streamName: string,
+  messageIds: string[],
+  logger: ILogger,
+): Promise<number> {
+  try {
+    const ids = messageIds.map((id) => parseInt(id));
+    const res = await client.query(
+      `UPDATE ${tableName}
+       SET dead_lettered_at = NOW(), expired_at = NOW()
+       WHERE stream_name = $1 AND id = ANY($2::bigint[])`,
+      [streamName, ids],
+    );
+    return res.rowCount;
+  } catch (error) {
+    logger.error(`postgres-stream-dead-letter-error-${streamName}`, {
+      error,
+      messageIds,
+    });
+    throw error;
+  }
+}
+
+/**
  * Retry messages (placeholder for future implementation).
  */
 export async function retryMessages(

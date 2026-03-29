@@ -370,6 +370,11 @@ class EngineService {
     context?: JobState,
   ): Promise<Await | Cycle | Hook | Signal | Trigger | Worker | Interrupt> {
     const [activityId, schema] = await this.getSchema(topic);
+    if (!schema) {
+      throw new Error(
+        `Activity schema not found for "${activityId}" (topic: ${topic}) in app ${this.appId}`,
+      );
+    }
     const ActivityHandler = Activities[schema.type];
     if (ActivityHandler) {
       const utc = formatISODate(new Date());
