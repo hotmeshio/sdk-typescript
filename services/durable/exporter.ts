@@ -610,6 +610,54 @@ class ExporterService {
         }
       }
     }
+
+    // ── 3. Stream-based fallback for unenriched activity events ──
+    // When job attributes have been pruned, recover inputs from worker_streams
+    if (this.store.getStreamHistory) {
+      const unenrichedEvents = execution.events.filter(
+        (e) =>
+          (e.event_type === 'activity_task_scheduled' ||
+            e.event_type === 'activity_task_completed' ||
+            e.event_type === 'activity_task_failed') &&
+          (e.attributes as any).input === undefined,
+      );
+
+      if (unenrichedEvents.length > 0) {
+        const streamHistory = await this.store.getStreamHistory(workflowId, {
+          types: ['worker'],
+        });
+
+        // Build a map of aid -> stream message data (the worker invocation inputs)
+        const streamInputsByAid = new Map<string, any>();
+        for (const entry of streamHistory) {
+          if (entry.msg_type === 'worker' && entry.data) {
+            const key = `${entry.aid}:${entry.dad || ''}`;
+            if (!streamInputsByAid.has(key)) {
+              streamInputsByAid.set(key, entry.data);
+            }
+          }
+        }
+
+        for (const evt of unenrichedEvents) {
+          const attrs = evt.attributes as any;
+          // Try matching by activity_type + dimensional address
+          const key = `${attrs.activity_type}:${attrs.timeline_key || ''}`;
+          let input = streamInputsByAid.get(key);
+          if (input === undefined) {
+            // Fallback: match by activity name alone (first occurrence)
+            for (const [k, v] of streamInputsByAid) {
+              if (k.startsWith(`${attrs.activity_type}:`)) {
+                input = v;
+                break;
+              }
+            }
+          }
+          if (input !== undefined) {
+            attrs.input = input;
+          }
+        }
+      }
+    }
   }
 
   /**

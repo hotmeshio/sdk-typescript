@@ -270,6 +270,21 @@ describe('FUNCTIONAL | Retry | Postgres', () => {
       //NOTE: dependencies are suppressed for now; expect '0'
       expect(exported.dependencies.length).toBe(0);
       expect(exported.process['0'].calculate).not.toBeUndefined();
+
+      // Enriched export: verify activities array with input/output
+      const enriched = await hotMesh.export(jobId, { enrich_inputs: true });
+      expect(enriched.activities).toBeDefined();
+      expect(Array.isArray(enriched.activities)).toBe(true);
+      if (enriched.activities!.length > 0) {
+        for (const activity of enriched.activities!) {
+          expect(activity.name).toBeDefined();
+          expect(activity.dimension).toBeDefined();
+          expect(activity.input).toBeDefined();
+          expect(typeof activity.input).toBe('object');
+          expect(activity.started_at).toBeDefined();
+        }
+      }
+
       await hotMesh.unsub(`calculated.${jobId}`);
     });
 

@@ -28,6 +28,14 @@ export interface ExportOptions {
    * @default true
    */
   values?: boolean;
+
+  /**
+   * When true, fetches stream message history and produces a structured
+   * `activities` array with input/output per activity, timing, dimensional
+   * cycle info, and retry attempts. This is the dashboard-friendly format.
+   * @default false
+   */
+  enrich_inputs?: boolean;
 }
 
 export type JobAction = {
@@ -95,10 +103,25 @@ export interface DurableJobExport {
   transitions?: TransitionType[];
 }
 
+export interface ActivityDetail {
+  name: string;
+  type: string;
+  dimension: string;
+  input?: Record<string, any>;
+  output?: Record<string, any>;
+  started_at?: string;
+  completed_at?: string;
+  duration_ms?: number;
+  retry_attempt?: number;
+  cycle_iteration?: number;
+  error?: string | null;
+}
+
 export interface JobExport {
   dependencies: DependencyExport[];
   process: StringAnyType;
   status: string;
+  activities?: ActivityDetail[];
 }
 
 // ── Temporal-compatible workflow execution export types ────────────────────────
@@ -275,6 +298,7 @@ export interface WorkflowExecution {
   events: WorkflowExecutionEvent[];
   summary: WorkflowExecutionSummary;
   children?: WorkflowExecution[];
+  stream_history?: StreamHistoryEntry[];
 }
 
 export interface ExecutionExportOptions {
@@ -298,6 +322,32 @@ export interface ExecutionExportOptions {
    * @default false
    */
   allow_direct_query?: boolean;
+  /**
+   * When true, fetches the full stream message history for this workflow
+   * from the worker_streams table and attaches it as `stream_history`.
+   * This provides raw activity input/output data from the original stream
+   * messages, enabling Temporal-grade export fidelity.
+   *
+   * @default false
+   */
+  include_stream_history?: boolean;
+}
+
+// ── Stream history types (export fidelity) ───────────────────────────────────
+
+export interface StreamHistoryEntry {
+  id: number;
+  jid: string;
+  aid: string;
+  dad: string;
+  msg_type: string;
+  topic: string;
+  workflow_name: string;
+  data: Record<string, any>;
+  status?: string;
+  code?: number;
+  created_at: string;
+  expired_at?: string;
 }
 
 // ── Exporter enrichment types (provider interface) ──────────────────────────
