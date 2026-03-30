@@ -10,7 +10,6 @@ import { dropTables, postgres_options } from '../../$setup/postgres';
 import { WorkflowExecution } from '../../../types/exporter';
 
 import * as workflows from './src/workflows';
-import * as activities from './src/activities';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -42,7 +41,6 @@ describe('DURABLE | exporter | enrichment | Postgres', () => {
         },
         taskQueue: 'exporter-enrichment-test',
         workflow: workflows.testWorkflow,
-        activities,
       });
       await worker.run();
       expect(worker).toBeDefined();
@@ -68,7 +66,7 @@ describe('DURABLE | exporter | enrichment | Postgres', () => {
     }, 10_000);
 
     it('should complete the workflow', async () => {
-      const result = await handle.result();
+      const result = await handle.result() as { greeting: string; doubled: number };
       expect(result).toBeDefined();
       expect(result.greeting).toBe('Hello, HotMesh!');
       expect(result.doubled).toBe(84);
