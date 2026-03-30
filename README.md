@@ -11,14 +11,14 @@ npm install @hotmeshio/hotmesh
 ## Use HotMesh for
 
 - **Durable pipelines** — Orchestrate long-running, multi-step pipelines transactionally.
-- **Familiar Temporal syntax** — The `Durable` module provides a Temporal-compatible API (`Client`, `Worker`, `proxyActivities`, `sleepFor`, `startChild`, signals) that runs directly on Postgres. No app server required.
+- **Crash-safe execution** — Every step is a committed row. If the process dies, it picks up where it left off.
 - **Distributed state machines** — Build stateful applications where every component can [fail and recover](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md).
 - **AI and training pipelines** — Multi-step AI workloads where each stage is expensive and must not be repeated on failure. A crashed pipeline resumes from the last committed step, not from the beginning.
 
 ## How it works in 30 seconds
 
 1. **You write workflow functions.** Plain TypeScript — branching, loops, error handling. HotMesh also supports a YAML syntax for declarative, functional workflows.
-2. **HotMesh compiles them into a transactional execution plan.** Each step becomes a committed database row. If the process crashes mid-workflow, it resumes from the last committed step.
+2. **HotMesh compiles them into a transactional execution plan.** Each step becomes a committed database row backed by Postgres ACID guarantees and monotonic integers for ordering. If the process crashes mid-workflow, it resumes from the last committed step.
 3. **Your Postgres database is the engine.** It stores state, coordinates retries, and delivers messages. Every connected client participates in execution — there is no central server.
 
 ## Quickstart
@@ -56,7 +56,7 @@ export async function notifyBackorder(itemId: string): Promise<void> {
 }
 ```
 
-### Option 1: Code (Temporal-compatible API)
+### Option 1: Code
 
 ```typescript
 // workflows.ts
@@ -305,8 +305,6 @@ ORDER BY
 
 What happened? Consult the database. What's still running? Query the semaphore. What failed? Read the row. The execution state isn't reconstructed from a log — it was committed transactionally as each step ran.
 
-You can also use the Temporal-compatible API:
-
 ```typescript
 const handle = client.workflow.getHandle('orders', 'orderWorkflow', 'order-456');
 
@@ -331,14 +329,6 @@ There is no proprietary dashboard. Workflow state lives in Postgres, so use what
 
 For a deep dive into the transactional execution model — how every step is crash-safe, how the monotonic collation ledger guarantees exactly-once delivery, and how cycles and retries remain correct under arbitrary failure — see the [Collation Design Document](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md). The symbolic system (how to design workflows) and lifecycle details (how to deploy workflows) are covered in the [Architectural Overview](https://zenodo.org/records/12168558).
 
-## Familiar with Temporal?
-
-Durable is designed as a drop-in-compatible alternative for common Temporal patterns.
-
-**What's the same:** `Client`, `Worker`, `proxyActivities`, `sleepFor`, `startChild`/`execChild`, signals (`waitFor`/`signal`), retry policies, and the overall workflow-as-code programming model.
-
-**What's different:** Postgres is the only infrastructure dependency — it stores state and coordinates workers.
-
 ## Running tests
 
 Tests run inside Docker. Start the services and run the full suite:
@@ -351,8 +341,8 @@ docker compose exec hotmesh npm test
 Run a specific test group:
 
 ```bash
-docker compose exec hotmesh npm run test:durable         # all Durable tests (Temporal pattern coverage proofs)
-docker compose exec hotmesh npm run test:durable:hello   # single Durable test (hello world proxyActivity proof)
+docker compose exec hotmesh npm run test:durable         # all Durable tests
+docker compose exec hotmesh npm run test:durable:hello   # single Durable test (hello world)
 docker compose exec hotmesh npm run test:virtual         # all Virtual network function (VNF) tests
 ```
 
