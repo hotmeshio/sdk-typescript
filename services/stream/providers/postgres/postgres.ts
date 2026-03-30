@@ -420,6 +420,21 @@ class PostgresStreamService extends StreamService<
     );
   }
 
+  async deadLetterMessages(
+    streamName: string,
+    groupName: string,
+    messageIds: string[],
+  ): Promise<number> {
+    const target = this.resolveStreamTarget(streamName);
+    return Messages.deadLetterMessages(
+      this.streamClient,
+      target.tableName,
+      target.streamName,
+      messageIds,
+      this.logger,
+    );
+  }
+
   async acknowledgeMessages(
     streamName: string,
     groupName: string,

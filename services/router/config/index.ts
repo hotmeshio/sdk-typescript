@@ -13,6 +13,7 @@ import {
   MAX_STREAM_BACKOFF,
   INITIAL_STREAM_BACKOFF,
   MAX_STREAM_RETRIES,
+  HMSH_POISON_MESSAGE_THRESHOLD,
 } from '../../../modules/enums';
 import { RouterConfig } from '../../../types/stream';
 
@@ -58,4 +59,5 @@ export {
   MAX_STREAM_BACKOFF,
   INITIAL_STREAM_BACKOFF,
   MAX_STREAM_RETRIES,
+  HMSH_POISON_MESSAGE_THRESHOLD,
 };

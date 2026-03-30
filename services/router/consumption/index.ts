@@ -13,6 +13,7 @@ import {
   MAX_STREAM_BACKOFF,
   INITIAL_STREAM_BACKOFF,
   MAX_STREAM_RETRIES,
+  HMSH_POISON_MESSAGE_THRESHOLD,
 } from '../config';
 import {
   StreamData,
@@ -540,6 +541,74 @@ export class ConsumptionManager<
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
   ): Promise<void> {
     this.logger.debug(`stream-read-one`, { group, stream, id });
+
+    // Poison message circuit breaker. This is a SAFETY NET that sits above
+    // the normal retry mechanism (ErrorHandler.handleRetry / shouldRetry).
+    //
+    // Normal retry flow: handleRetry() checks metadata.try against the
+    // configured retryPolicy.maximumAttempts (or _streamRetryConfig) and
+    // applies exponential backoff + visibility delays. That mechanism is
+    // the primary retry budget and is what developers configure via
+    // HotMesh.init({ workers: [{ retryPolicy: { maximumAttempts, ... } }] }).
+    //
+    // This check catches messages that have somehow exceeded the normal
+    // budget — e.g., when no retryPolicy is configured, when the retry
+    // logic is bypassed by an infrastructure error, or when a message
+    // re-enters the stream through a path that doesn't increment
+    // metadata.try. The threshold is the HIGHER of the configured retry
+    // budget and the system-wide HMSH_POISON_MESSAGE_THRESHOLD, so it
+    // never interferes with legitimate developer-configured retries.
+    const retryAttempt = (input as any)._retryAttempt || 0;
+    const configuredMax =
+      (input as any)._streamRetryConfig?.max_retry_attempts
+      ?? this.retryPolicy?.maximumAttempts
+      ?? 0;
+    const poisonThreshold = Math.max(configuredMax, HMSH_POISON_MESSAGE_THRESHOLD);
+    if (retryAttempt >= poisonThreshold) {
+      this.logger.error(`stream-poison-message-detected`, {
+        group,
+        stream,
+        id,
+        retryAttempt,
+        poisonThreshold,
+        configuredMaxAttempts: configuredMax,
+        systemThreshold: HMSH_POISON_MESSAGE_THRESHOLD,
+        topic: input.metadata?.topic,
+        activityId: input.metadata?.aid,
+        jobId: input.metadata?.jid,
+        metadata: input.metadata,
+      });
+      const errorOutput = this.errorHandler.structureUnhandledError(
+        input,
+        new Error(
+          `Poison message detected: retry attempt ${retryAttempt} reached ` +
+          `threshold ${poisonThreshold} (configured: ${configuredMax}, ` +
+          `system: ${HMSH_POISON_MESSAGE_THRESHOLD}). Discarding message ` +
+          `for activity "${input.metadata?.aid || 'unknown'}" ` +
+          `(topic: ${input.metadata?.topic || 'unknown'}, ` +
+          `job: ${input.metadata?.jid || 'unknown'}).`,
+        ),
+      );
+      try {
+        await this.publishMessage(null, errorOutput as StreamData);
+      } catch (publishErr) {
+        this.logger.error(`stream-poison-message-publish-error`, {
+          error: publishErr,
+          stream,
+          id,
+          retryAttempt,
+          poisonThreshold,
+        });
+      }
+      // Mark as dead-lettered if the provider supports it; otherwise just ack
+      if (this.stream.deadLetterMessages) {
+        await this.stream.deadLetterMessages(stream, group, [id]);
+      } else {
+        await this.ackAndDelete(stream, group, id);
+      }
+      return;
+    }
+
     let output: StreamDataResponse | void;
     const telemetry = new RouterTelemetry(this.appId);
     try {
@@ -550,12 +619,26 @@ export class ConsumptionManager<
     } catch (err) {
       this.logger.error(`stream-read-one-error`, { group, stream, id, err });
       telemetry.setStreamErrorFromException(err);
+      output = this.errorHandler.structureUnhandledError(
+        input,
+        err instanceof Error ? err : new Error(String(err)),
+      );
     }
-    const messageId = await this.publishResponse(input, output);
-    telemetry.setStreamAttributes({ 'app.worker.mid': messageId });
-    await this.ackAndDelete(stream, group, id);
-    telemetry.endStreamSpan();
-    this.logger.debug(`stream-read-one-end`, { group, stream, id });
+    try {
+      const messageId = await this.publishResponse(input, output);
+      telemetry.setStreamAttributes({ 'app.worker.mid': messageId });
+    } catch (publishErr) {
+      // If publishResponse fails, still ack the message to prevent
+      // infinite reprocessing. Log the error for debugging.
+      this.logger.error(`stream-publish-response-error`, {
+        group, stream, id, error: publishErr,
+      });
+      this.errorCount++;
+    } finally {
+      await this.ackAndDelete(stream, group, id);
+      telemetry.endStreamSpan();
+      this.logger.debug(`stream-read-one-end`, { group, stream, id });
+    }
   }
 
   async execStreamLeg(

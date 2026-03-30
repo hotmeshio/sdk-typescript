@@ -97,7 +97,7 @@ export async function trimStream(
       const res = await client.query(
         `WITH to_expire AS (
           SELECT id FROM ${tableName}
-          WHERE stream_name = $1
+          WHERE stream_name = $1 AND dead_lettered_at IS NULL
           ORDER BY id ASC
           OFFSET $2
         )
@@ -113,7 +113,8 @@ export async function trimStream(
       const res = await client.query(
         `UPDATE ${tableName}
         SET expired_at = NOW()
-        WHERE stream_name = $1 AND created_at < NOW() - INTERVAL '${options.maxAge} milliseconds'`,
+        WHERE stream_name = $1 AND dead_lettered_at IS NULL
+          AND created_at < NOW() - INTERVAL '${options.maxAge} milliseconds'`,
         [streamName],
       );
       expiredCount += res.rowCount;

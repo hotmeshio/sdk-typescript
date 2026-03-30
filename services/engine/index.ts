@@ -42,7 +42,7 @@ import { TaskService } from '../task';
 import { AppVID } from '../../types/app';
 import { ActivityMetadata, ActivityType, Consumes } from '../../types/activity';
 import { CacheMode } from '../../types/cache';
-import { JobExport } from '../../types/exporter';
+import { ExportOptions, JobExport } from '../../types/exporter';
 import {
   JobState,
   JobData,
@@ -370,6 +370,11 @@ class EngineService {
     context?: JobState,
   ): Promise<Await | Cycle | Hook | Signal | Trigger | Worker | Interrupt> {
     const [activityId, schema] = await this.getSchema(topic);
+    if (!schema) {
+      throw new Error(
+        `Activity schema not found for "${activityId}" (topic: ${topic}) in app ${this.appId}`,
+      );
+    }
     const ActivityHandler = Activities[schema.type];
     if (ActivityHandler) {
       const utc = formatISODate(new Date());
@@ -1071,8 +1076,8 @@ class EngineService {
   /**
    * @private
    */
-  async export(jobId: string): Promise<JobExport> {
-    return await this.exporter.export(jobId);
+  async export(jobId: string, options: ExportOptions = {}): Promise<JobExport> {
+    return await this.exporter.export(jobId, options);
   }
   /**
    * @private

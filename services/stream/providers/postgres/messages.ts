@@ -80,8 +80,13 @@ export function buildPublishSQL(
     delete data._visibilityDelayMs;
     delete data._retryAttempt;
 
-    // Extract workflow name for worker streams
+    // Extract metadata for worker stream columns
     const workflowName = data.metadata?.wfn || '';
+    const jid = data.metadata?.jid || '';
+    const aid = data.metadata?.aid || '';
+    const dad = data.metadata?.dad || '';
+    const msgType = data.type || '';
+    const topic = data.metadata?.topic || '';
 
     // Determine if this message has explicit retry config
     const hasExplicitConfig = (retryConfig && 'max_retry_attempts' in retryConfig) || options?.retryPolicy;
@@ -104,6 +109,11 @@ export function buildPublishSQL(
       visibilityDelayMs: visibilityDelayMs || 0,
       retryAttempt: retryAttempt || 0,
       workflowName,
+      jid,
+      aid,
+      dad,
+      msgType,
+      topic,
     };
   });
 
@@ -162,29 +172,29 @@ export function buildPublishSQL(
       });
     }
   } else {
-    // Worker table: includes workflow_name, no group_name
+    // Worker table: includes workflow_name + export fidelity columns, no group_name
     if (noneHaveConfig && !hasVisibilityDelays) {
-      insertColumns = '(stream_name, workflow_name, message)';
+      insertColumns = '(stream_name, workflow_name, jid, aid, dad, msg_type, topic, message)';
       parsedMessages.forEach((pm) => {
         const paramOffset = params.length + 1;
-        valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1})`);
-        params.push(pm.workflowName, pm.message);
+        valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, $${paramOffset + 4}, $${paramOffset + 5}, $${paramOffset + 6})`);
+        params.push(pm.workflowName, pm.jid, pm.aid, pm.dad, pm.msgType, pm.topic, pm.message);
       });
     } else if (noneHaveConfig && hasVisibilityDelays) {
-      insertColumns = '(stream_name, workflow_name, message, visible_at, retry_attempt)';
+      insertColumns = '(stream_name, workflow_name, jid, aid, dad, msg_type, topic, message, visible_at, retry_attempt)';
       parsedMessages.forEach((pm) => {
         const paramOffset = params.length + 1;
         if (pm.visibilityDelayMs > 0) {
           const visibleAtSQL = `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`;
-          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, ${visibleAtSQL}, $${paramOffset + 2})`);
-          params.push(pm.workflowName, pm.message, pm.retryAttempt);
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, $${paramOffset + 4}, $${paramOffset + 5}, $${paramOffset + 6}, ${visibleAtSQL}, $${paramOffset + 7})`);
+          params.push(pm.workflowName, pm.jid, pm.aid, pm.dad, pm.msgType, pm.topic, pm.message, pm.retryAttempt);
         } else {
-          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, DEFAULT, $${paramOffset + 2})`);
-          params.push(pm.workflowName, pm.message, pm.retryAttempt);
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, $${paramOffset + 4}, $${paramOffset + 5}, $${paramOffset + 6}, DEFAULT, $${paramOffset + 7})`);
+          params.push(pm.workflowName, pm.jid, pm.aid, pm.dad, pm.msgType, pm.topic, pm.message, pm.retryAttempt);
         }
       });
     } else {
-      insertColumns = '(stream_name, workflow_name, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)';
+      insertColumns = '(stream_name, workflow_name, jid, aid, dad, msg_type, topic, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)';
       parsedMessages.forEach((pm) => {
         const visibleAtClause = pm.visibilityDelayMs > 0
           ? `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`
@@ -192,9 +202,14 @@ export function buildPublishSQL(
 
         if (pm.hasExplicitConfig) {
           const paramOffset = params.length + 1;
-          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, $${paramOffset + 4}, ${visibleAtClause}, $${paramOffset + 5})`);
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, $${paramOffset + 4}, $${paramOffset + 5}, $${paramOffset + 6}, $${paramOffset + 7}, $${paramOffset + 8}, $${paramOffset + 9}, ${visibleAtClause}, $${paramOffset + 10})`);
           params.push(
             pm.workflowName,
+            pm.jid,
+            pm.aid,
+            pm.dad,
+            pm.msgType,
+            pm.topic,
             pm.message,
             pm.retryPolicy.max_retry_attempts,
             pm.retryPolicy.backoff_coefficient,
@@ -203,8 +218,8 @@ export function buildPublishSQL(
           );
         } else {
           const paramOffset = params.length + 1;
-          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, DEFAULT, DEFAULT, DEFAULT, ${visibleAtClause}, $${paramOffset + 2})`);
-          params.push(pm.workflowName, pm.message, pm.retryAttempt);
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, $${paramOffset + 4}, $${paramOffset + 5}, $${paramOffset + 6}, DEFAULT, DEFAULT, DEFAULT, ${visibleAtClause}, $${paramOffset + 7})`);
+          params.push(pm.workflowName, pm.jid, pm.aid, pm.dad, pm.msgType, pm.topic, pm.message, pm.retryAttempt);
         }
       });
     }
@@ -382,6 +397,35 @@ export async function ackAndDelete(
   logger: ILogger,
 ): Promise<number> {
   return await deleteMessages(client, tableName, streamName, messageIds, logger);
+}
+
+/**
+ * Move messages to the dead-letter state by setting dead_lettered_at
+ * and expired_at. The message payload is preserved for inspection.
+ */
+export async function deadLetterMessages(
+  client: PostgresClientType & ProviderClient,
+  tableName: string,
+  streamName: string,
+  messageIds: string[],
+  logger: ILogger,
+): Promise<number> {
+  try {
+    const ids = messageIds.map((id) => parseInt(id));
+    const res = await client.query(
+      `UPDATE ${tableName}
+       SET dead_lettered_at = NOW(), expired_at = NOW()
+       WHERE stream_name = $1 AND id = ANY($2::bigint[])`,
+      [streamName, ids],
+    );
+    return res.rowCount;
+  } catch (error) {
+    logger.error(`postgres-stream-dead-letter-error-${streamName}`, {
+      error,
+      messageIds,
+    });
+    throw error;
+  }
 }
 
 /**

@@ -15,7 +15,7 @@ import {
   ExtensionType,
 } from '../../types/job';
 import { HotMeshConfig, HotMeshManifest } from '../../types/hotmesh';
-import { JobExport } from '../../types/exporter';
+import { ExportOptions, JobExport } from '../../types/exporter';
 import { ProviderConfig, ProvidersConfig } from '../../types/provider';
 import {
   JobMessageCallback,
@@ -869,8 +869,8 @@ class HotMesh {
    * activity data, transitions, and dependency chains. Useful for
    * debugging, auditing, and visualizing workflow execution.
    */
-  async export(jobId: string): Promise<JobExport> {
-    return await this.engine?.export(jobId);
+  async export(jobId: string, options: ExportOptions = {}): Promise<JobExport> {
+    return await this.engine?.export(jobId, options);
   }
   /**
    * Returns all raw key-value pairs for a job's HASH record. This is

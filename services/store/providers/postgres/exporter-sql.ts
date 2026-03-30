@@ -36,6 +36,49 @@ export const GET_ACTIVITY_INPUTS = `
 `;
 
 /**
+ * Fetch all worker stream messages for a job AND its child activities.
+ * Child activity jobs use the pattern: -{parentJobId}-$activityName-N
+ * Uses the partial index on (jid, created_at) WHERE jid != '' for efficiency.
+ * Includes both active and expired messages for full execution history.
+ */
+export const GET_STREAM_HISTORY_BY_JID = `
+  SELECT
+    id, jid, aid, dad, msg_type, topic, workflow_name,
+    message, created_at, expired_at
+  FROM {schema}.worker_streams
+  WHERE jid = $1 OR jid LIKE '-' || $1 || '-%'
+  ORDER BY created_at, id
+`;
+
+/**
+ * Fetch worker stream messages for a job filtered by message type.
+ * Includes child activity messages.
+ */
+export const GET_STREAM_HISTORY_BY_JID_AND_TYPE = `
+  SELECT
+    id, jid, aid, dad, msg_type, topic, workflow_name,
+    message, created_at, expired_at
+  FROM {schema}.worker_streams
+  WHERE (jid = $1 OR jid LIKE '-' || $1 || '-%')
+    AND msg_type = ANY($2::text[])
+  ORDER BY created_at, id
+`;
+
+/**
+ * Fetch worker stream messages for a job filtered by activity ID.
+ * Includes child activity messages.
+ */
+export const GET_STREAM_HISTORY_BY_JID_AND_AID = `
+  SELECT
+    id, jid, aid, dad, msg_type, topic, workflow_name,
+    message, created_at, expired_at
+  FROM {schema}.worker_streams
+  WHERE (jid = $1 OR jid LIKE '-' || $1 || '-%')
+    AND aid = $2
+  ORDER BY created_at, id
+`;
+
+/**
  * Fetch child workflow inputs in batch.
  * Uses parameterized IN clause for exact-match efficiency.
  * Note: This query template must be built dynamically with the correct number of placeholders.

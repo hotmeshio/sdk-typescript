@@ -270,6 +270,22 @@ abstract class StoreService<
   ): Promise<Map<string, any>>;
 
   /**
+   * Fetch stream message history for a job from worker_streams.
+   * Returns raw activity input/output data from soft-deleted messages.
+   *
+   * @param jobId - The job ID (metadata.jid in stream messages)
+   * @param options - Optional filters for activity or message types
+   * @returns Array of stream history entries ordered by creation time
+   */
+  getStreamHistory?(
+    jobId: string,
+    options?: {
+      activity?: string;
+      types?: string[];
+    },
+  ): Promise<import('../../types/exporter').StreamHistoryEntry[]>;
+
+  /**
    * Fetch job record and attributes by key. Used by the exporter to
    * reconstruct execution history for expired jobs.
    *

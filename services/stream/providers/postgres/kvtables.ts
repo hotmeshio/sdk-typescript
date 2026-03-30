@@ -177,6 +177,7 @@ async function createTables(
       reserved_at TIMESTAMPTZ,
       reserved_by TEXT,
       expired_at TIMESTAMPTZ,
+      dead_lettered_at TIMESTAMPTZ,
       max_retry_attempts INT DEFAULT 3,
       backoff_coefficient NUMERIC DEFAULT 10,
       maximum_interval_seconds INT DEFAULT 120,
@@ -223,6 +224,20 @@ async function createTables(
     WHERE expired_at IS NOT NULL;
   `);
 
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_dead_lettered
+    ON ${engineTable} (dead_lettered_at, stream_name)
+    WHERE dead_lettered_at IS NOT NULL;
+  `);
+
+  // Migration: add dead_lettered_at column to existing tables
+  await client.query(`
+    DO $$ BEGIN
+      ALTER TABLE ${engineTable} ADD COLUMN IF NOT EXISTS dead_lettered_at TIMESTAMPTZ;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
   // ---- WORKER_STREAMS table ----
   const workerTable = `${schemaName}.worker_streams`;
   await client.query(`
@@ -230,11 +245,17 @@ async function createTables(
       id BIGSERIAL,
       stream_name TEXT NOT NULL,
       workflow_name TEXT NOT NULL DEFAULT '',
+      jid TEXT NOT NULL DEFAULT '',
+      aid TEXT NOT NULL DEFAULT '',
+      dad TEXT NOT NULL DEFAULT '',
+      msg_type TEXT NOT NULL DEFAULT '',
+      topic TEXT NOT NULL DEFAULT '',
       message TEXT NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       reserved_at TIMESTAMPTZ,
       reserved_by TEXT,
       expired_at TIMESTAMPTZ,
+      dead_lettered_at TIMESTAMPTZ,
       max_retry_attempts INT DEFAULT 3,
       backoff_coefficient NUMERIC DEFAULT 10,
       maximum_interval_seconds INT DEFAULT 120,
@@ -279,6 +300,53 @@ async function createTables(
     CREATE INDEX IF NOT EXISTS idx_worker_streams_processed_volume
     ON ${workerTable} (expired_at, stream_name)
     WHERE expired_at IS NOT NULL;
+  `);
+
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_dead_lettered
+    ON ${workerTable} (dead_lettered_at, stream_name)
+    WHERE dead_lettered_at IS NOT NULL;
+  `);
+
+  // Migration: add dead_lettered_at column to existing tables
+  await client.query(`
+    DO $$ BEGIN
+      ALTER TABLE ${workerTable} ADD COLUMN IF NOT EXISTS dead_lettered_at TIMESTAMPTZ;
+    EXCEPTION WHEN duplicate_column THEN NULL;
+    END $$;
+  `);
+
+  // ---- Export fidelity columns and indexes ----
+  // These columns surface stream message metadata for efficient job history queries.
+  // Migration: add columns to existing tables (no-op on fresh installs)
+  for (const col of ['jid', 'aid', 'dad', 'msg_type', 'topic']) {
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE ${workerTable} ADD COLUMN IF NOT EXISTS ${col} TEXT NOT NULL DEFAULT '';
+      EXCEPTION WHEN duplicate_column THEN NULL;
+      END $$;
+    `);
+  }
+
+  // All messages for a job, ordered by time
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_jid_created
+    ON ${workerTable} (jid, created_at)
+    WHERE jid != '';
+  `);
+
+  // Activity-specific lookups within a job
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_jid_aid
+    ON ${workerTable} (jid, aid, created_at)
+    WHERE jid != '';
+  `);
+
+  // Type-filtered queries (e.g., only worker invocations + responses)
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_jid_type
+    ON ${workerTable} (jid, msg_type, created_at)
+    WHERE jid != '';
   `);
 }
 

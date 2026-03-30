@@ -144,6 +144,13 @@ export abstract class StreamService<
     maxBatchSize: number;
   };
 
+  // Optional dead-letter support (implemented by providers that support it)
+  deadLetterMessages?(
+    streamName: string,
+    groupName: string,
+    messageIds: string[],
+  ): Promise<number>;
+
   // Optional notification management methods (implemented by providers that support them)
   stopNotificationConsumer?(
     streamName: string,

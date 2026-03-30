@@ -1792,6 +1792,70 @@ class PostgresStoreService extends StoreService<
   }
 
   /**
+   * Fetch stream message history for a job from worker_streams.
+   * Returns raw activity input/output data from soft-deleted messages.
+   */
+  async getStreamHistory(
+    jobId: string,
+    options?: {
+      activity?: string;
+      types?: string[];
+    },
+  ): Promise<import('../../../../types/exporter').StreamHistoryEntry[]> {
+    const {
+      GET_STREAM_HISTORY_BY_JID,
+      GET_STREAM_HISTORY_BY_JID_AND_TYPE,
+      GET_STREAM_HISTORY_BY_JID_AND_AID,
+    } = await import('./exporter-sql');
+    const schemaName = this.kvsql().safeName(this.appId);
+
+    let sql: string;
+    let params: any[];
+
+    if (options?.activity) {
+      sql = GET_STREAM_HISTORY_BY_JID_AND_AID.replace(/{schema}/g, schemaName);
+      params = [jobId, options.activity];
+    } else if (options?.types?.length) {
+      sql = GET_STREAM_HISTORY_BY_JID_AND_TYPE.replace(/{schema}/g, schemaName);
+      params = [jobId, options.types];
+    } else {
+      sql = GET_STREAM_HISTORY_BY_JID.replace(/{schema}/g, schemaName);
+      params = [jobId];
+    }
+
+    const result = await this.pgClient.query(sql, params);
+
+    return result.rows.map((row: any) => {
+      let parsed: any = {};
+      try {
+        parsed = JSON.parse(row.message);
+      } catch {
+        // message may not be valid JSON
+      }
+      return {
+        id: parseInt(row.id),
+        jid: row.jid,
+        aid: row.aid,
+        dad: row.dad,
+        msg_type: row.msg_type,
+        topic: row.topic,
+        workflow_name: row.workflow_name,
+        data: parsed.data || {},
+        status: parsed.status,
+        code: parsed.code,
+        created_at: row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at),
+        expired_at: row.expired_at
+          ? (row.expired_at instanceof Date
+            ? row.expired_at.toISOString()
+            : String(row.expired_at))
+          : undefined,
+      };
+    });
+  }
+
+  /**
    * Parse a HotMesh-encoded value string.
    * Values may be prefixed with `/s` (JSON), `/d` (number), `/t` or `/f` (boolean), `/n` (null).
    */
