@@ -88,6 +88,8 @@ describe('DBA | Postgres', () => {
       expect(result).toEqual({
         jobs: 0,
         streams: 0,
+        engineStreams: 0,
+        workerStreams: 0,
         attributes: 0,
         transient: 0,
         marked: 0,
@@ -673,6 +675,128 @@ describe('DBA | Postgres', () => {
       await pgClient.query(
         `DELETE FROM ${schema}.jobs WHERE key = 'hourly-prune-job'`,
       );
+    });
+  });
+
+  describe('independent stream retention', () => {
+    it('should prune engine_streams aggressively while preserving worker_streams', async () => {
+      // Insert expired rows in both tables (3 days old)
+      await pgClient.query(`
+        INSERT INTO ${schema}.engine_streams
+          (stream_name, message, expired_at)
+        VALUES
+          ('engine-retention-test', '{}', NOW() - INTERVAL '3 days')
+      `);
+      await pgClient.query(`
+        INSERT INTO ${schema}.worker_streams
+          (stream_name, message, jid, aid, dad, topic, expired_at)
+        VALUES
+          ('worker-retention-test', '{"data":{}}', 'wf-1', 'worker', '', 'test',
+           NOW() - INTERVAL '3 days')
+      `);
+
+      // Prune engine streams at 24h (catches 3-day-old row),
+      // but worker streams at 30 days (skips the 3-day-old row)
+      const result = await DBA.prune({
+        appId,
+        connection,
+        jobs: false,
+        streams: false,
+        engineStreams: true,
+        engineStreamsExpire: '24 hours',
+        workerStreams: true,
+        workerStreamsExpire: '30 days',
+      });
+
+      expect(result.engineStreams).toBe(1);
+      expect(result.workerStreams).toBe(0);
+      expect(result.streams).toBe(1); // total = engine + worker
+
+      // worker stream row still exists
+      const workerCheck = await pgClient.query(
+        `SELECT COUNT(*) as cnt FROM ${schema}.worker_streams
+         WHERE stream_name = 'worker-retention-test'`,
+      );
+      expect(Number(workerCheck.rows[0].cnt)).toBe(1);
+
+      // cleanup
+      await pgClient.query(
+        `DELETE FROM ${schema}.worker_streams
+         WHERE stream_name = 'worker-retention-test'`,
+      );
+    });
+
+    it('should prune only engine_streams when workerStreams is false', async () => {
+      await pgClient.query(`
+        INSERT INTO ${schema}.engine_streams
+          (stream_name, message, expired_at)
+        VALUES
+          ('engine-only-test', '{}', NOW() - INTERVAL '10 days')
+      `);
+      await pgClient.query(`
+        INSERT INTO ${schema}.worker_streams
+          (stream_name, message, jid, aid, dad, topic, expired_at)
+        VALUES
+          ('worker-only-test', '{"data":{}}', 'wf-2', 'worker', '', 'test',
+           NOW() - INTERVAL '10 days')
+      `);
+
+      const result = await DBA.prune({
+        appId,
+        connection,
+        jobs: false,
+        streams: false,
+        engineStreams: true,
+        workerStreams: false,
+        expire: '7 days',
+      });
+
+      expect(result.engineStreams).toBe(1);
+      expect(result.workerStreams).toBe(0);
+      expect(result.streams).toBe(1);
+
+      // worker stream still there
+      const workerCheck = await pgClient.query(
+        `SELECT COUNT(*) as cnt FROM ${schema}.worker_streams
+         WHERE stream_name = 'worker-only-test'`,
+      );
+      expect(Number(workerCheck.rows[0].cnt)).toBe(1);
+
+      // cleanup
+      await pgClient.query(
+        `DELETE FROM ${schema}.worker_streams
+         WHERE stream_name = 'worker-only-test'`,
+      );
+    });
+
+    it('should fall back to streams flag when per-table overrides are not set', async () => {
+      await pgClient.query(`
+        INSERT INTO ${schema}.engine_streams
+          (stream_name, message, expired_at)
+        VALUES
+          ('fallback-engine', '{}', NOW() - INTERVAL '10 days')
+      `);
+      await pgClient.query(`
+        INSERT INTO ${schema}.worker_streams
+          (stream_name, message, jid, aid, dad, topic, expired_at)
+        VALUES
+          ('fallback-worker', '{"data":{}}', 'wf-3', 'worker', '', 'test',
+           NOW() - INTERVAL '10 days')
+      `);
+
+      // Use legacy streams: true with no per-table overrides
+      const result = await DBA.prune({
+        appId,
+        connection,
+        expire: '7 days',
+        jobs: false,
+        streams: true,
+      });
+
+      // Both should be pruned (backward compatible)
+      expect(result.engineStreams).toBeGreaterThanOrEqual(1);
+      expect(result.workerStreams).toBeGreaterThanOrEqual(1);
+      expect(result.streams).toBe(result.engineStreams + result.workerStreams);
     });
   });
 });

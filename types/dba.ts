@@ -42,10 +42,46 @@ export interface PruneOptions {
 
   /**
    * If true, hard-deletes expired stream messages older than the
-   * retention window.
+   * retention window from both `engine_streams` and `worker_streams`.
+   * Use `engineStreams` / `workerStreams` for independent control.
    * @default true
    */
   streams?: boolean;
+
+  /**
+   * Override for `engine_streams` cleanup. When set, takes precedence
+   * over `streams` for the engine table. Engine streams contain internal
+   * routing messages and can be pruned aggressively.
+   * @default undefined (falls back to `streams`)
+   */
+  engineStreams?: boolean;
+
+  /**
+   * Override for `worker_streams` cleanup. When set, takes precedence
+   * over `streams` for the worker table. Worker streams contain workflow
+   * input arguments and activity payloads needed by the exporter — use
+   * a longer retention to preserve export fidelity.
+   * @default undefined (falls back to `streams`)
+   */
+  workerStreams?: boolean;
+
+  /**
+   * Retention override for `engine_streams`. When set, uses this interval
+   * instead of the global `expire` for engine stream cleanup.
+   * @default undefined (falls back to `expire`)
+   *
+   * @example '24 hours'
+   */
+  engineStreamsExpire?: string;
+
+  /**
+   * Retention override for `worker_streams`. When set, uses this interval
+   * instead of the global `expire` for worker stream cleanup.
+   * @default undefined (falls back to `expire`)
+   *
+   * @example '90 days'
+   */
+  workerStreamsExpire?: string;
 
   /**
    * If true, strips execution-artifact attributes from completed,
@@ -89,8 +125,12 @@ export interface PruneOptions {
 export interface PruneResult {
   /** Number of expired job rows hard-deleted */
   jobs: number;
-  /** Number of expired stream message rows hard-deleted */
+  /** Number of expired stream message rows hard-deleted (engine + worker) */
   streams: number;
+  /** Number of expired engine_streams rows hard-deleted */
+  engineStreams: number;
+  /** Number of expired worker_streams rows hard-deleted */
+  workerStreams: number;
   /** Number of execution-artifact attribute rows stripped from completed jobs */
   attributes: number;
   /** Number of transient (entity IS NULL) job rows hard-deleted */
