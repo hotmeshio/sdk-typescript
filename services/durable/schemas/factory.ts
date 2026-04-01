@@ -2,8 +2,7 @@
  *********** HOTMESH 'DURABLE' MODULE APPLICATION GRAPH **********
  *
  * This HotMesh application spec uses 50 activities and 25 transitions
- * to model and emulate the Temporal Application & Query servers using
- * a pluggable backend.
+ * to model a durable workflow engine using a pluggable backend.
  *
  * This YAML file can also serve as a useful starting point for building
  * Integration/BPM/Workflow servers in general (MuleSoft, etc) without the need

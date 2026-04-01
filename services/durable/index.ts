@@ -14,9 +14,9 @@ import { didInterrupt } from './workflow/interruption';
 import { InterceptorService } from './interceptor';
 
 /**
- * The Durable service provides a Temporal-compatible workflow framework backed
- * by Postgres. It offers entity-based memory management and composable,
- * fault-tolerant workflows.
+ * The Durable service provides a workflow framework backed by Postgres.
+ * It offers entity-based memory management and composable, fault-tolerant
+ * workflows authored in a familiar procedural style.
  *
  * ## Core Features
  *
@@ -282,13 +282,13 @@ class DurableClass {
   constructor() {}
   /**
    * The Durable `Client` service is functionally
-   * equivalent to the Temporal `Client` service.
+   * provides methods for starting, signaling, and querying workflows.
    */
   static Client: typeof ClientService = ClientService;
 
   /**
-   * The Durable `Connection` service is functionally
-   * equivalent to the Temporal `Connection` service.
+   * The Durable `Connection` service
+   * manages database connections for the durable workflow engine.
    */
   static Connection: typeof ConnectionService = ConnectionService;
 
@@ -311,8 +311,8 @@ class DurableClass {
   static Handle: typeof WorkflowHandleService = WorkflowHandleService;
 
   /**
-   * The Durable `Worker` service is functionally
-   * equivalent to the Temporal `Worker` service.
+   * The Durable `Worker` service
+   * registers workflow and activity workers and connects them to the mesh.
    */
   static Worker: typeof WorkerService = WorkerService;
 
@@ -369,10 +369,9 @@ class DurableClass {
   static activity: typeof ActivityService = ActivityService;
 
   /**
-   * The Durable `workflow` service is functionally
-   * equivalent to the Temporal `Workflow` service
-   * with additional methods for managing workflows,
-   * including: `execChild`, `waitFor`, `sleep`, etc
+   * The Durable `workflow` service
+   * provides the workflow-internal API surface with methods for
+   * managing workflows, including: `execChild`, `waitFor`, `sleep`, etc
    */
   static workflow: typeof WorkflowService = WorkflowService;
 

@@ -232,7 +232,7 @@ class ExporterService {
   }
 
   /**
-   * Export a workflow execution as a Temporal-compatible event history.
+   * Export a workflow execution as a structured event history.
    *
    * **Sparse mode** (default): transforms the main workflow's timeline
    * into a flat event list. No additional I/O beyond the initial export.
@@ -708,7 +708,7 @@ class ExporterService {
 
   /**
    * Pure transformation: convert a raw DurableJobExport into a
-   * Temporal-compatible WorkflowExecution event history.
+   * WorkflowExecution event history.
    */
   transformToExecution(
     raw: DurableJobExport,
@@ -918,7 +918,7 @@ class ExporterService {
       events[i].event_id = i + 1;
     }
 
-    // ── Back-references (Temporal-compatible) ────────────────────
+    // ── Back-references ────────────────────────────────────────
     const scheduledMap = new Map<string, number>();
     const initiatedMap = new Map<string, number>();
     for (const e of events) {

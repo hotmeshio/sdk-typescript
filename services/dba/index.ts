@@ -36,7 +36,7 @@ import {
  * from completed jobs while preserving:
  * - `jdata` — workflow return data
  * - `udata` — user-searchable data
- * - `jmark` — timeline markers needed for Temporal-compatible export
+ * - `jmark` — timeline markers needed for workflow execution export
  *
  * Set `keepHmark: true` to also preserve `hmark` (activity state markers).
  *

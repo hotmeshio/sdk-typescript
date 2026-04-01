@@ -87,7 +87,7 @@ export interface PruneOptions {
    * If true, strips execution-artifact attributes from completed,
    * un-pruned jobs. Preserves `jdata` (return data), `udata`
    * (searchable data), and `jmark` (timeline/event history for
-   * Temporal-compatible export). See `keepHmark` for `hmark`.
+   * workflow execution export). See `keepHmark` for `hmark`.
    * @default false
    */
   attributes?: boolean;

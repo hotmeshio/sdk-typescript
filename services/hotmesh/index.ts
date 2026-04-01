@@ -192,7 +192,7 @@ import { MAX_DELAY, DEFAULT_TASK_QUEUE } from '../../modules/enums';
  * ## Higher-Level Modules
  *
  * For most use cases, prefer the higher-level wrappers:
- * - **Durable** — Temporal-style durable workflow functions.
+ * - **Durable** — Durable workflow functions with replay and retry.
  * - **Virtual** — Virtual network functions and idempotent RPC.
  *
  * @see {@link https://hotmeshio.github.io/sdk-typescript/} - API reference
