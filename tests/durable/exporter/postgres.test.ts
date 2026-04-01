@@ -73,6 +73,49 @@ describe('DURABLE | exporter | enrichment | Postgres', () => {
     }, 10_000);
   });
 
+  describe('Workflow input payload', () => {
+    it('should not include workflow input args in job hash (raw export data field)', async () => {
+      const raw = await handle.export();
+      // The trigger job.maps only writes `done: false`.
+      // Workflow arguments are transient — passed to the worker via
+      // worker_streams but not persisted as _-prefixed keys in the job hash.
+      expect(raw.data).toEqual({});
+    }, 10_000);
+
+    it('should enrich workflow_execution_started with input args from worker_streams', async () => {
+      const execution: WorkflowExecution = await handle.exportExecution({
+        enrich_inputs: true,
+      });
+
+      const startedEvent = execution.events.find(
+        (e) => e.event_type === 'workflow_execution_started',
+      );
+      expect(startedEvent).toBeDefined();
+
+      // With enrich_inputs, the exporter recovers the workflow's input
+      // arguments from the first worker invocation in worker_streams.
+      const input = (startedEvent?.attributes as any).input;
+      expect(input).toBeDefined();
+      expect(Array.isArray(input)).toBe(true);
+      expect(input).toEqual(['HotMesh', 42]);
+    }, 10_000);
+
+    it('should NOT include workflow input args without enrich_inputs', async () => {
+      const execution: WorkflowExecution = await handle.exportExecution({
+        enrich_inputs: false,
+      });
+
+      const startedEvent = execution.events.find(
+        (e) => e.event_type === 'workflow_execution_started',
+      );
+      expect(startedEvent).toBeDefined();
+
+      // Without enrichment, input comes from raw.data which is empty
+      const input = (startedEvent?.attributes as any).input;
+      expect(input).toEqual({});
+    }, 10_000);
+  });
+
   describe('Late-binding Export (sparse, no input enrichment)', () => {
     it('should export without enriching inputs', async () => {
       const execution: WorkflowExecution = await handle.exportExecution({

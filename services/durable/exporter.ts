@@ -611,10 +611,12 @@ class ExporterService {
       }
     }
 
-    // ── 3. Stream-based fallback for unenriched activity events ──
-    // When job attributes have been pruned, recover inputs from worker_streams
+    // ── 3. Stream-based enrichment from worker_streams ──
+    // Fetches worker invocation messages to recover:
+    // - Workflow input arguments (for workflow_execution_started)
+    // - Activity inputs when job attributes have been pruned
     if (this.store.getStreamHistory) {
-      const unenrichedEvents = execution.events.filter(
+      const unenrichedActivityEvents = execution.events.filter(
         (e) =>
           (e.event_type === 'activity_task_scheduled' ||
             e.event_type === 'activity_task_completed' ||
@@ -622,15 +624,20 @@ class ExporterService {
           (e.attributes as any).input === undefined,
       );
 
-      if (unenrichedEvents.length > 0) {
-        const streamHistory = await this.store.getStreamHistory(workflowId, {
-          types: ['worker'],
-        });
+      const startedEvent = execution.events.find(
+        (e) => e.event_type === 'workflow_execution_started',
+      );
+      const startedNeedsInput = startedEvent &&
+        (!((startedEvent.attributes as any).input) ||
+          Object.keys((startedEvent.attributes as any).input).length === 0);
+
+      if (unenrichedActivityEvents.length > 0 || startedNeedsInput) {
+        const streamHistory = await this.store.getStreamHistory(workflowId);
 
         // Build a map of aid -> stream message data (the worker invocation inputs)
         const streamInputsByAid = new Map<string, any>();
         for (const entry of streamHistory) {
-          if (entry.msg_type === 'worker' && entry.data) {
+          if (entry.data) {
             const key = `${entry.aid}:${entry.dad || ''}`;
             if (!streamInputsByAid.has(key)) {
               streamInputsByAid.set(key, entry.data);
@@ -638,7 +645,22 @@ class ExporterService {
           }
         }
 
-        for (const evt of unenrichedEvents) {
+        // Enrich workflow_execution_started with input arguments from the
+        // first worker invocation message (aid="worker", data.arguments=[...])
+        if (startedNeedsInput) {
+          const workerEntry = streamHistory.find(
+            (entry) =>
+              entry.aid === 'worker' &&
+              entry.jid === workflowId &&
+              entry.data?.arguments,
+          );
+          if (workerEntry) {
+            (startedEvent!.attributes as any).input = workerEntry.data.arguments;
+          }
+        }
+
+        // Enrich unenriched activity events
+        for (const evt of unenrichedActivityEvents) {
           const attrs = evt.attributes as any;
           // Try matching by activity_type + dimensional address
           const key = `${attrs.activity_type}:${attrs.timeline_key || ''}`;
