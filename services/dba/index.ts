@@ -36,7 +36,7 @@ import {
  * from completed jobs while preserving:
  * - `jdata` — workflow return data
  * - `udata` — user-searchable data
- * - `jmark` — timeline markers needed for Temporal-compatible export
+ * - `jmark` — timeline markers needed for workflow execution export
  *
  * Set `keepHmark: true` to also preserve `hmark` (activity state markers).
  *
@@ -70,11 +70,14 @@ import {
  *   jobs: false, streams: false, attributes: true,
  * });
  *
- * // Cron 2 — Hourly: remove processed stream messages older than 24h
+ * // Cron 2 — Hourly: aggressive engine stream cleanup, conservative worker streams
  * await DBA.prune({
  *   appId: 'myapp', connection,
- *   expire: '24 hours',
- *   jobs: false, streams: true,
+ *   jobs: false, attributes: false,
+ *   engineStreams: true,
+ *   engineStreamsExpire: '24 hours',
+ *   workerStreams: true,
+ *   workerStreamsExpire: '90 days',  // preserve for export fidelity
  * });
  *
  * // Cron 3 — Weekly: remove expired 'book' jobs older than 30 days
@@ -108,6 +111,13 @@ import {
  *
  * -- Prune everything older than 7 days and strip attributes
  * SELECT * FROM myapp.prune('7 days', true, true, true);
+ *
+ * -- Independent stream retention: engine 24h, worker 90 days
+ * SELECT * FROM myapp.prune(
+ *   '7 days', true, false, false, NULL, false, false,
+ *   true, true,                          -- prune_engine_streams, prune_worker_streams
+ *   INTERVAL '24 hours', INTERVAL '90 days'  -- per-table retention
+ * );
  * ```
  */
 class DBA {
@@ -188,11 +198,17 @@ class DBA {
         strip_attributes BOOLEAN DEFAULT FALSE,
         entity_list TEXT[] DEFAULT NULL,
         prune_transient BOOLEAN DEFAULT FALSE,
-        keep_hmark BOOLEAN DEFAULT FALSE
+        keep_hmark BOOLEAN DEFAULT FALSE,
+        prune_engine_streams BOOLEAN DEFAULT NULL,
+        prune_worker_streams BOOLEAN DEFAULT NULL,
+        engine_streams_retention INTERVAL DEFAULT NULL,
+        worker_streams_retention INTERVAL DEFAULT NULL
       )
       RETURNS TABLE(
         deleted_jobs BIGINT,
         deleted_streams BIGINT,
+        deleted_engine_streams BIGINT,
+        deleted_worker_streams BIGINT,
         stripped_attributes BIGINT,
         deleted_transient BIGINT,
         marked_pruned BIGINT
@@ -201,12 +217,22 @@ class DBA {
       AS $$
       DECLARE
         v_deleted_jobs BIGINT := 0;
-        v_deleted_streams BIGINT := 0;
+        v_deleted_engine_streams BIGINT := 0;
+        v_deleted_worker_streams BIGINT := 0;
         v_stripped_attributes BIGINT := 0;
         v_deleted_transient BIGINT := 0;
         v_marked_pruned BIGINT := 0;
-        v_temp_count BIGINT := 0;
+        v_do_engine BOOLEAN;
+        v_do_worker BOOLEAN;
+        v_engine_retention INTERVAL;
+        v_worker_retention INTERVAL;
       BEGIN
+        -- Resolve per-table overrides (fall back to legacy prune_streams + retention)
+        v_do_engine := COALESCE(prune_engine_streams, prune_streams);
+        v_do_worker := COALESCE(prune_worker_streams, prune_streams);
+        v_engine_retention := COALESCE(engine_streams_retention, retention);
+        v_worker_retention := COALESCE(worker_streams_retention, retention);
+
         -- 1. Hard-delete expired jobs older than the retention window.
         --    FK CASCADE on jobs_attributes handles attribute cleanup.
         --    Optionally scoped to an entity allowlist.
@@ -227,22 +253,23 @@ class DBA {
           GET DIAGNOSTICS v_deleted_transient = ROW_COUNT;
         END IF;
 
-        -- 3. Hard-delete expired stream messages older than the retention window.
-        --    Deletes from both engine_streams and worker_streams tables.
-        IF prune_streams THEN
+        -- 3. Hard-delete expired engine stream messages.
+        IF v_do_engine THEN
           DELETE FROM ${schema}.engine_streams
           WHERE expired_at IS NOT NULL
-            AND expired_at < NOW() - retention;
-          GET DIAGNOSTICS v_deleted_streams = ROW_COUNT;
-
-          DELETE FROM ${schema}.worker_streams
-          WHERE expired_at IS NOT NULL
-            AND expired_at < NOW() - retention;
-          GET DIAGNOSTICS v_temp_count = ROW_COUNT;
-          v_deleted_streams := v_deleted_streams + v_temp_count;
+            AND expired_at < NOW() - v_engine_retention;
+          GET DIAGNOSTICS v_deleted_engine_streams = ROW_COUNT;
         END IF;
 
-        -- 4. Strip execution artifacts from completed, live, un-pruned jobs.
+        -- 4. Hard-delete expired worker stream messages.
+        IF v_do_worker THEN
+          DELETE FROM ${schema}.worker_streams
+          WHERE expired_at IS NOT NULL
+            AND expired_at < NOW() - v_worker_retention;
+          GET DIAGNOSTICS v_deleted_worker_streams = ROW_COUNT;
+        END IF;
+
+        -- 5. Strip execution artifacts from completed, live, un-pruned jobs.
         --    Always preserves: jdata, udata, jmark (timeline/export history).
         --    Optionally preserves: hmark (when keep_hmark is true).
         IF strip_attributes THEN
@@ -277,7 +304,9 @@ class DBA {
         END IF;
 
         deleted_jobs := v_deleted_jobs;
-        deleted_streams := v_deleted_streams;
+        deleted_streams := v_deleted_engine_streams + v_deleted_worker_streams;
+        deleted_engine_streams := v_deleted_engine_streams;
+        deleted_worker_streams := v_deleted_worker_streams;
         stripped_attributes := v_stripped_attributes;
         deleted_transient := v_deleted_transient;
         marked_pruned := v_marked_pruned;
@@ -378,18 +407,29 @@ class DBA {
     const pruneTransient = options.pruneTransient ?? false;
     const keepHmark = options.keepHmark ?? false;
 
+    // Per-table overrides (NULL = fall back to streams/expire in SQL)
+    const engineStreams = options.engineStreams ?? null;
+    const workerStreams = options.workerStreams ?? null;
+    const engineStreamsExpire = options.engineStreamsExpire ?? null;
+    const workerStreamsExpire = options.workerStreamsExpire ?? null;
+
     await DBA.deploy(options.connection, options.appId);
 
     const { client, release } = await DBA.getClient(options.connection);
     try {
       const result = await client.query(
-        `SELECT * FROM ${schema}.prune($1::interval, $2::boolean, $3::boolean, $4::boolean, $5::text[], $6::boolean, $7::boolean)`,
-        [expire, jobs, streams, attributes, entities, pruneTransient, keepHmark],
+        `SELECT * FROM ${schema}.prune($1::interval, $2::boolean, $3::boolean, $4::boolean, $5::text[], $6::boolean, $7::boolean, $8::boolean, $9::boolean, $10::interval, $11::interval)`,
+        [
+          expire, jobs, streams, attributes, entities, pruneTransient, keepHmark,
+          engineStreams, workerStreams, engineStreamsExpire, workerStreamsExpire,
+        ],
       );
       const row = result.rows[0];
       return {
         jobs: Number(row.deleted_jobs),
         streams: Number(row.deleted_streams),
+        engineStreams: Number(row.deleted_engine_streams),
+        workerStreams: Number(row.deleted_worker_streams),
         attributes: Number(row.stripped_attributes),
         transient: Number(row.deleted_transient),
         marked: Number(row.marked_pruned),

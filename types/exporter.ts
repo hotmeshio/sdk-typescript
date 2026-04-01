@@ -124,7 +124,7 @@ export interface JobExport {
   activities?: ActivityDetail[];
 }
 
-// ── Temporal-compatible workflow execution export types ────────────────────────
+// ── Workflow execution export types ───────────────────────────────────────────
 
 export type ExportMode = 'sparse' | 'verbose';
 
@@ -326,7 +326,7 @@ export interface ExecutionExportOptions {
    * When true, fetches the full stream message history for this workflow
    * from the worker_streams table and attaches it as `stream_history`.
    * This provides raw activity input/output data from the original stream
-   * messages, enabling Temporal-grade export fidelity.
+   * messages, enabling full export fidelity.
    *
    * @default false
    */

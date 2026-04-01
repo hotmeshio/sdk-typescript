@@ -44,6 +44,7 @@ function getProxyInterruptPayload(
   }
   return {
     arguments: args,
+    argumentMetadata: options?.argumentMetadata ?? undefined,
     workflowDimension,
     index: execIndex,
     originJobId: originJobId || workflowId,
@@ -79,7 +80,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
     const coreFunction = async () => {
       if (didRunAlready) {
         if (result?.$error) {
-          if (options?.retryPolicy?.throwOnError !== false) {
+          if (activityCtx.options?.retryPolicy?.throwOnError !== false) {
             const code = result.$error.code;
             const message = result.$error.message;
             const stack = result.$error.stack;
@@ -103,7 +104,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
         activityName,
         execIndex,
         activityCtx.args,
-        options,
+        activityCtx.options,
       );
       interruptionRegistry.push({
         code: HMSH_CODE_DURABLE_PROXY,

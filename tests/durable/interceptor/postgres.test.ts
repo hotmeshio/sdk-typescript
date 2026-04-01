@@ -1216,5 +1216,266 @@ describe('DURABLE | interceptor | Postgres', () => {
         expect(firstInnerAfter).toBeLessThan(firstOuterAfter);
       }, 60_000);
     });
+
+    describe('argumentMetadata', () => {
+      it('should propagate argumentMetadata to activity via Durable.activity.getContext()', async () => {
+        Durable.clearInterceptors();
+        Durable.clearActivityInterceptors();
+
+        const worker = await Worker.create({
+          connection: { class: Postgres, options: postgres_options },
+          namespace,
+          taskQueue: 'metadata-test',
+          workflow: workflows.metadataExample,
+        });
+        await worker.run();
+
+        const workflowGuid = prefix + 'metadata-' + guid();
+        workflowGuids.push(workflowGuid);
+
+        const handle = await client.workflow.start({
+          namespace,
+          args: ['MetadataTest'],
+          taskQueue: 'metadata-test',
+          workflowName: 'metadataExample',
+          workflowId: workflowGuid,
+        });
+
+        const result = await handle.result() as any;
+
+        expect(result.status).toBe('completed');
+        expect(result.activityResult).toBeDefined();
+        expect(result.activityResult.data).toBe('MetadataTest');
+        expect(result.activityResult.activityName).toBe('metadataAwareActivity');
+        expect(result.activityResult.argumentMetadata).toEqual({
+          tenantId: 'acme',
+          traceId: 'trace-123',
+          custom: { nested: true },
+        });
+      }, 60_000);
+
+      it('should return empty metadata when argumentMetadata is not provided', async () => {
+        Durable.clearInterceptors();
+        Durable.clearActivityInterceptors();
+
+        const worker = await Worker.create({
+          connection: { class: Postgres, options: postgres_options },
+          namespace,
+          taskQueue: 'no-metadata-test',
+          workflow: workflows.noMetadataExample,
+        });
+        await worker.run();
+
+        const workflowGuid = prefix + 'no-metadata-' + guid();
+        workflowGuids.push(workflowGuid);
+
+        const handle = await client.workflow.start({
+          namespace,
+          args: ['NoMetadataTest'],
+          taskQueue: 'no-metadata-test',
+          workflowName: 'noMetadataExample',
+          workflowId: workflowGuid,
+        });
+
+        const result = await handle.result() as any;
+
+        expect(result.status).toBe('completed');
+        expect(result.activityResult.data).toBe('NoMetadataTest');
+        expect(result.activityResult.argumentMetadata).toEqual({});
+      }, 60_000);
+
+      it('should support different metadata per proxyActivities group', async () => {
+        Durable.clearInterceptors();
+        Durable.clearActivityInterceptors();
+
+        const worker = await Worker.create({
+          connection: { class: Postgres, options: postgres_options },
+          namespace,
+          taskQueue: 'multi-metadata-test',
+          workflow: workflows.multiMetadataExample,
+        });
+        await worker.run();
+
+        const workflowGuid = prefix + 'multi-metadata-' + guid();
+        workflowGuids.push(workflowGuid);
+
+        const handle = await client.workflow.start({
+          namespace,
+          args: ['MultiMetadataTest'],
+          taskQueue: 'multi-metadata-test',
+          workflowName: 'multiMetadataExample',
+          workflowId: workflowGuid,
+        });
+
+        const result = await handle.result() as any;
+
+        expect(result.status).toBe('completed');
+        expect(result.operations).toEqual(['group-a-called', 'group-b-called']);
+
+        // Group A received its metadata
+        expect(result.resultA.argumentMetadata).toEqual({
+          group: 'A',
+          priority: 'high',
+        });
+        expect(result.resultA.data).toBe('MultiMetadataTest-A');
+
+        // Group B received its metadata
+        expect(result.resultB.argumentMetadata).toEqual({
+          group: 'B',
+          priority: 'low',
+        });
+        expect(result.resultB.data).toBe('MultiMetadataTest-B');
+      }, 60_000);
+
+      it('should make metadata available alongside activity errors', async () => {
+        Durable.clearInterceptors();
+        Durable.clearActivityInterceptors();
+
+        // Workflow that calls a failing activity with metadata
+        const failingMetadataWorkflow = async (): Promise<any> => {
+          const { alwaysFailValidation } = Durable.workflow.proxyActivities<typeof activities>({
+            activities,
+            argumentMetadata: { requestId: 'req-456' },
+            retryPolicy: { maximumAttempts: 1, throwOnError: true },
+          });
+
+          return await alwaysFailValidation();
+        };
+
+        const worker = await Worker.create({
+          connection: { class: Postgres, options: postgres_options },
+          namespace,
+          taskQueue: 'metadata-error-test',
+          workflow: failingMetadataWorkflow,
+        });
+        await worker.run();
+
+        const workflowGuid = prefix + 'metadata-error-' + guid();
+        workflowGuids.push(workflowGuid);
+
+        const handle = await client.workflow.start({
+          namespace,
+          args: [],
+          taskQueue: 'metadata-error-test',
+          workflowName: 'failingMetadataWorkflow',
+          workflowId: workflowGuid,
+          config: { maximumAttempts: 1, throwOnError: true },
+        });
+
+        // Activity should still fail — metadata doesn't affect error behavior
+        try {
+          await handle.result();
+          expect.fail('Expected workflow to throw');
+        } catch (error) {
+          expect(error.message).toContain('Validation always fails');
+        }
+      }, 60_000);
+
+      it('should allow activity interceptor to inject argumentMetadata via lookupUserProfile proxy activity', async () => {
+        // This test proves the full security principal injection pattern:
+        // 1. Activity interceptor calls lookupUserProfile (a real proxy activity)
+        // 2. Interceptor injects the profile as argumentMetadata on activityCtx.options
+        // 3. securedActivity reads the principal via Durable.activity.getContext()
+        // 4. The workflow itself never touches argumentMetadata — it's invisible
+        Durable.clearInterceptors();
+        Durable.clearActivityInterceptors();
+
+        // Register a shared activity worker for the interceptor's lookupUserProfile calls
+        await Durable.registerActivityWorker({
+          connection: {
+            class: Postgres,
+            options: postgres_options,
+          },
+          namespace,
+          taskQueue: 'security-lookup',
+        }, activities, 'security-lookup');
+
+        // The security interceptor: looks up a user profile, then injects it
+        // as argumentMetadata so downstream activities receive it as context
+        const securityInterceptor: ActivityInterceptor = {
+          async execute(activityCtx, workflowCtx, next) {
+            try {
+              // Skip injection for the interceptor's own lookupUserProfile calls
+              // to avoid infinite recursion
+              if (activityCtx.activityName === 'lookupUserProfile') {
+                return await next();
+              }
+
+              // Call lookupUserProfile as a real proxy activity (durable, retried)
+              const { lookupUserProfile } = Durable.workflow.proxyActivities<typeof activities>({
+                activities,
+                taskQueue: 'security-lookup',
+                retryPolicy: { maximumAttempts: 3, throwOnError: true },
+              });
+
+              // Simulate: the userId comes from the workflow context
+              // (set when the workflow was started)
+              const userId = workflowCtx.get('workflowId').slice(0, 8);
+              const profile = await lookupUserProfile(userId);
+
+              // Inject the profile as argumentMetadata on the activity options
+              // This is the key: the interceptor enriches the call with a principal
+              activityCtx.options = {
+                ...activityCtx.options,
+                argumentMetadata: {
+                  ...(activityCtx.options?.argumentMetadata ?? {}),
+                  principal: profile,
+                },
+              };
+
+              return await next();
+            } catch (err) {
+              if (Durable.didInterrupt(err)) throw err;
+              throw err;
+            }
+          },
+        };
+
+        Durable.registerActivityInterceptor(securityInterceptor);
+
+        // Create the workflow worker — securedWorkflow calls securedActivity
+        // WITHOUT setting argumentMetadata in its proxyActivities config
+        const worker = await Worker.create({
+          connection: { class: Postgres, options: postgres_options },
+          namespace,
+          taskQueue: 'secured-workflow-test',
+          workflow: workflows.securedWorkflow,
+        });
+        await worker.run();
+
+        const workflowGuid = prefix + 'secured-' + guid();
+        workflowGuids.push(workflowGuid);
+
+        const handle = await client.workflow.start({
+          namespace,
+          args: [workflowGuid.slice(0, 8)],
+          taskQueue: 'secured-workflow-test',
+          workflowName: 'securedWorkflow',
+          workflowId: workflowGuid,
+        });
+
+        const result = await handle.result() as any;
+
+        // Verify workflow completed
+        expect(result.status).toBe('completed');
+        expect(result.operations).toEqual(['read-secrets', 'write-config']);
+
+        // Verify the interceptor-injected principal arrived at the activity
+        expect(result.result1.authorized).toBe(true);
+        expect(result.result1.action).toBe('read-secrets');
+        expect(result.result1.principal).toEqual({
+          userId: workflowGuid.slice(0, 8),
+          role: 'admin',
+          tenantId: 'acme-corp',
+          permissions: ['read', 'write', 'delete'],
+          displayName: `User ${workflowGuid.slice(0, 8)}`,
+        });
+
+        // Verify second activity call also received the principal
+        expect(result.result2.authorized).toBe(true);
+        expect(result.result2.action).toBe('write-config');
+        expect(result.result2.principal.userId).toBe(workflowGuid.slice(0, 8));
+      }, 120_000);
+    });
   });
 });

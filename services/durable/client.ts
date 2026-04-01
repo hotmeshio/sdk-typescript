@@ -25,8 +25,8 @@ import { WorkflowHandleService } from './handle';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 
 /**
- * The Durable `Client` service is functionally
- * equivalent to the Temporal `Client` service.
+ * The Durable `Client` service provides methods for
+ * starting, signaling, and querying workflows.
  * Start a new workflow execution by calling
  * `workflow.start`. Note the direct connection to
  * Postgres.
@@ -204,8 +204,8 @@ export class ClientService {
   };
 
   /**
-   * The Durable `Client` service is functionally
-   * equivalent to the Temporal `Client` service.
+   * The Durable `Client` service provides methods for
+   * starting, signaling, and querying workflows.
    * Starting a workflow is the primary use case and
    * is accessed by calling workflow.start().
    */

@@ -10,7 +10,7 @@ import { getContext } from './context';
  * If that `sessionId` already exists in the `replay` hash (loaded from
  * the job's stored state), the previously persisted result is
  * deserialized and returned — skipping re-execution entirely. This is
- * analogous to Temporal's event history replay.
+ * analogous to event history replay in durable workflow engines.
  *
  * ## Session ID Format
  *

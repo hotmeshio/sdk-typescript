@@ -66,7 +66,7 @@ export class WorkflowHandleService {
   }
 
   /**
-   * Exports the workflow as a Temporal-like execution event history.
+   * Exports the workflow as an execution event history.
    *
    * **Sparse mode** (default): transforms the main workflow's timeline
    * into a flat event list with workflow lifecycle, activity, child workflow,
