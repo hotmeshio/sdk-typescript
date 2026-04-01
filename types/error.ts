@@ -31,6 +31,7 @@ export type DurableWaitForAllErrorType = {
 
 export type DurableProxyErrorType = {
   arguments: string[];
+  argumentMetadata?: Record<string, any>;
   activityName: string;
   backoffCoefficient?: number;
   index: number;

@@ -19,7 +19,7 @@ import {
   DurableTimeoutError,
   DurableWaitForError,
 } from '../../modules/errors';
-import { asyncLocalStorage } from '../../modules/storage';
+import { asyncLocalStorage, activityAsyncLocalStorage } from '../../modules/storage';
 import { formatISODate, guid, hashOptions, s } from '../../modules/utils';
 import { HotMesh } from '../hotmesh';
 import {
@@ -331,14 +331,21 @@ export class WorkerService {
         const activityInput = data.data as unknown as ActivityWorkflowDataType;
         const activityName = activityInput.activityName;
         const activityFunction = WorkerService.activityRegistry[activityName];
-        
+
         if (!activityFunction) {
           throw new Error(`Activity '${activityName}' not found in registry`);
         }
-        
-        const pojoResponse = await activityFunction.apply(
-          null,
-          activityInput.arguments,
+
+        const activityContext = new Map<string, any>();
+        activityContext.set('activityName', activityName);
+        activityContext.set('arguments', activityInput.arguments);
+        activityContext.set('argumentMetadata', activityInput.argumentMetadata ?? {});
+        activityContext.set('workflowId', activityInput.workflowId);
+        activityContext.set('workflowTopic', activityInput.workflowTopic);
+
+        const pojoResponse = await activityAsyncLocalStorage.run(
+          activityContext,
+          () => activityFunction.apply(null, activityInput.arguments),
         );
 
         return {
@@ -545,9 +552,17 @@ export class WorkerService {
         const activityInput = data.data as unknown as ActivityWorkflowDataType;
         const activityName = activityInput.activityName;
         const activityFunction = WorkerService.activityRegistry[activityName];
-        const pojoResponse = await activityFunction.apply(
-          this,
-          activityInput.arguments,
+
+        const activityContext = new Map<string, any>();
+        activityContext.set('activityName', activityName);
+        activityContext.set('arguments', activityInput.arguments);
+        activityContext.set('argumentMetadata', activityInput.argumentMetadata ?? {});
+        activityContext.set('workflowId', activityInput.workflowId);
+        activityContext.set('workflowTopic', activityInput.workflowTopic);
+
+        const pojoResponse = await activityAsyncLocalStorage.run(
+          activityContext,
+          () => activityFunction.apply(this, activityInput.arguments),
         );
 
         return {
@@ -838,6 +853,7 @@ export class WorkerService {
                 dimension: err.workflowDimension,
               }),
               arguments: err.arguments,
+              argumentMetadata: err.argumentMetadata,
               workflowDimension: err.workflowDimension,
               index: err.index,
               originJobId: err.originJobId,

@@ -6,6 +6,7 @@ import { ClientService } from './client';
 import { ConnectionService } from './connection';
 import { Search } from './search';
 import { Entity } from './entity';
+import { ActivityService } from './activity';
 import { WorkerService } from './worker';
 import { WorkflowService } from './workflow';
 import { WorkflowHandleService } from './handle';
@@ -358,6 +359,14 @@ class DurableClass {
    * ```
    */
   static registerActivityWorker = WorkerService.registerActivityWorker;
+
+  /**
+   * The Durable `activity` service provides context to
+   * executing activity functions. Call `Durable.activity.getContext()`
+   * inside an activity to access metadata, workflow ID, and other
+   * context passed from the parent workflow.
+   */
+  static activity: typeof ActivityService = ActivityService;
 
   /**
    * The Durable `workflow` service is functionally

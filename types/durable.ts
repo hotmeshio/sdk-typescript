@@ -128,6 +128,24 @@ type WorkflowContext = {
 };
 
 /**
+ * Context available inside an executing activity function via
+ * `Durable.activity.getContext()`. Populated by the activity worker
+ * using `activityAsyncLocalStorage`.
+ */
+type DurableActivityContext = {
+  /** The name of the activity function being executed */
+  activityName: string;
+  /** The arguments passed to the activity */
+  arguments: any[];
+  /** Optional metadata provided via `proxyActivities({ argumentMetadata })` */
+  argumentMetadata: Record<string, any>;
+  /** The workflow ID of the parent workflow that dispatched this activity */
+  workflowId: string;
+  /** The workflow topic of the parent workflow */
+  workflowTopic: string;
+};
+
+/**
  * The schema for the full-text-search
  * @deprecated
  */
@@ -428,6 +446,7 @@ type SignalOptions = {
 type ActivityWorkflowDataType = {
   activityName: string;
   arguments: any[];
+  argumentMetadata?: Record<string, any>;
   workflowId: string;
   workflowTopic: string;
 };
@@ -598,6 +617,11 @@ type ActivityConfig = {
    * ```
    */
   taskQueue?: string;
+
+  /** Optional metadata to pass alongside activity arguments. This metadata
+   *  is transported as a dedicated schema field (not inside args) and made
+   *  available to the activity function via `Durable.activity.getContext()`. */
+  argumentMetadata?: Record<string, any>;
 
   /** Retry policy configuration for activities */
   retryPolicy?: {
@@ -820,6 +844,7 @@ export interface ActivityInterceptor {
 
 export {
   ActivityConfig,
+  DurableActivityContext,
   ActivityWorkflowDataType,
   ChildResponseType,
   ClientConfig,

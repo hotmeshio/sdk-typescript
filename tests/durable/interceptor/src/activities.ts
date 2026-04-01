@@ -39,4 +39,41 @@ export async function metricsCollect(workflowId: string, metric: string, value: 
 
 export async function interceptorActivity(message: string): Promise<string> {
   return `Interceptor processed: ${message}`;
-} 
+}
+
+import { Durable } from '../../../../services/durable';
+
+// Activity that reads metadata from Durable.activity.getContext()
+export async function metadataAwareActivity(data: string): Promise<Record<string, any>> {
+  const ctx = Durable.activity.getContext();
+  return {
+    data,
+    activityName: ctx.activityName,
+    argumentMetadata: ctx.argumentMetadata,
+    workflowId: ctx.workflowId,
+  };
+}
+
+// Simulates a DB lookup for a user profile (used by the security interceptor)
+export async function lookupUserProfile(userId: string): Promise<Record<string, any>> {
+  // In production, this would be a real DB call
+  return {
+    userId,
+    role: 'admin',
+    tenantId: 'acme-corp',
+    permissions: ['read', 'write', 'delete'],
+    displayName: `User ${userId}`,
+  };
+}
+
+// Activity that reads the injected principal from argumentMetadata
+// and returns what it sees — proving the interceptor-injected metadata arrived
+export async function securedActivity(action: string): Promise<Record<string, any>> {
+  const ctx = Durable.activity.getContext();
+  const principal = ctx.argumentMetadata?.principal;
+  return {
+    action,
+    principal,
+    authorized: !!principal?.userId,
+  };
+}

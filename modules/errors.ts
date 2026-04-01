@@ -54,6 +54,7 @@ class DurableWaitForError extends Error {
 class DurableProxyError extends Error {
   activityName: string;
   arguments: string[];
+  argumentMetadata?: Record<string, any>;
   backoffCoefficient: number;
   code: number;
   index: number;
@@ -69,6 +70,7 @@ class DurableProxyError extends Error {
   constructor(params: DurableProxyErrorType) {
     super(`ProxyActivity Interruption`);
     this.arguments = params.arguments;
+    this.argumentMetadata = params.argumentMetadata;
     this.workflowId = params.workflowId;
     this.workflowTopic = params.workflowTopic;
     this.parentWorkflowId = params.parentWorkflowId;

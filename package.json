@@ -1,7 +1,7 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.12.1",
-  "description": "Permanent-Memory Workflows & AI Agents",
+  "version": "0.13.0",
+  "description": "Durable Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
   "homepage": "https://github.com/hotmeshio/sdk-typescript/",
@@ -33,6 +33,7 @@
     "test:durable:fatal": "vitest run tests/durable/fatal",
     "test:durable:goodbye": "HMSH_LOGLEVEL=debug vitest run tests/durable/goodbye/postgres.test.ts",
     "test:durable:interceptor": "HMSH_LOGLEVEL=info vitest run tests/durable/interceptor/postgres.test.ts",
+    "test:durable:metadata": "HMSH_LOGLEVEL=info vitest run tests/durable/interceptor/postgres.test.ts -t 'argumentMetadata'",
     "test:durable:entity": "HMSH_LOGLEVEL=debug vitest run tests/durable/entity/postgres.test.ts",
     "test:durable:agent": "HMSH_LOGLEVEL=debug vitest run tests/durable/agent/postgres.test.ts",
     "test:durable:hello": "HMSH_TELEMETRY=debug HMSH_LOGLEVEL=info vitest run tests/durable/helloworld/postgres.test.ts",
