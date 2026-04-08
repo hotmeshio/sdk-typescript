@@ -40,8 +40,8 @@ export async function example(name: string, language: string = 'en'): Promise<an
 
   // Wait for both hooks to complete and send signals
   const [result1, result2] = await Promise.all([
-    Durable.workflow.waitFor<any>('hook1-complete'),
-    Durable.workflow.waitFor<any>('hook2-complete')
+    Durable.workflow.condition<any>('hook1-complete'),
+    Durable.workflow.condition<any>('hook2-complete')
   ]);
 
   // Merge hook results into entity
@@ -96,7 +96,7 @@ export async function example(name: string, language: string = 'en'): Promise<an
 export async function hook1(name: string, hookType: string, ...rest: any[]): Promise<any> {
   
   // Simulate some processing work
-  await Durable.workflow.sleepFor('2 seconds');
+  await Durable.workflow.sleep('2 seconds');
   
   const result = {
     hook: 'hook1',
@@ -129,7 +129,7 @@ export async function hook2(name: string, hookType: string): Promise<void> {
   const user = await entity.merge({ user: { age: 30 } });
 
   // Simulate different processing time
-  await Durable.workflow.sleepFor('1 second');
+  await Durable.workflow.sleep('1 second');
 
   const result = {
     hookType,
@@ -206,7 +206,7 @@ export async function testExecHook(name: string): Promise<any> {
     completedAt: new Date().toISOString(),
     metrics: {
       hookCount: 1,
-      totalProcessingTime: 2000 // 2 seconds from hook1's sleepFor
+      totalProcessingTime: 2000 // 2 seconds from hook1's sleep
     }
   });
   
@@ -248,7 +248,7 @@ export async function testExecChildWithEntity(userName: string): Promise<any> {
   await userEntity.set(initialUserData);
   
   // User entity creates a product entity via execChild
-  const productResult = await Durable.workflow.execChild<any>({
+  const productResult = await Durable.workflow.executeChild<any>({
     entity: 'product', // This is the key - different entity type
     args: [userName, 'Laptop', 999.99],
     taskQueue: 'entityqueue',
@@ -334,7 +334,7 @@ export async function createProduct(createdBy: string, productName: string, pric
   await productEntity.set<typeof productData>(productData);
   
   // Simulate some product creation processing
-  await Durable.workflow.sleepFor('1 second');
+  await Durable.workflow.sleep('1 second');
   
   await productEntity.append('operations', 'product-initialized');
   await productEntity.append('operations', 'inventory-updated');

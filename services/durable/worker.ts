@@ -263,7 +263,7 @@ export class WorkerService {
    *   taskQueue: 'shared'
    * }, { auditLog, collectMetrics }, 'shared');
    * 
-   * const interceptor: WorkflowInterceptor = {
+   * const interceptor: WorkflowInboundCallsInterceptor = {
    *   async execute(ctx, next) {
    *     const { auditLog } = Durable.workflow.proxyActivities<{
    *       auditLog: (id: string, action: string) => Promise<void>;
@@ -339,13 +339,24 @@ export class WorkerService {
         const activityContext = new Map<string, any>();
         activityContext.set('activityName', activityName);
         activityContext.set('arguments', activityInput.arguments);
-        activityContext.set('argumentMetadata', activityInput.argumentMetadata ?? {});
+        activityContext.set('headers', activityInput.headers ?? {});
         activityContext.set('workflowId', activityInput.workflowId);
         activityContext.set('workflowTopic', activityInput.workflowTopic);
 
+        const interceptorService = Durable.getInterceptorService();
         const pojoResponse = await activityAsyncLocalStorage.run(
           activityContext,
-          () => activityFunction.apply(null, activityInput.arguments),
+          () => {
+            const executeFn = () => activityFunction.apply(null, activityInput.arguments);
+            if (interceptorService?.activityInbound?.length > 0) {
+              return interceptorService.executeActivityInboundChain(
+                activityName,
+                activityInput.arguments,
+                executeFn,
+              );
+            }
+            return executeFn();
+          },
         );
 
         return {
@@ -459,6 +470,11 @@ export class WorkerService {
     // workflowTopic remains concatenated for engine-internal routing (graph.subscribes)
     const workflowTopic = `${taskQueue}-${workflowFunctionName}`;
 
+    // Register activities passed via config
+    if (config.activities) {
+      WorkerService.registerActivities(config.activities);
+    }
+
     //initialize supporting workflows
     const worker = new WorkerService();
     worker.activityRunner = await worker.initActivityWorker(
@@ -556,13 +572,24 @@ export class WorkerService {
         const activityContext = new Map<string, any>();
         activityContext.set('activityName', activityName);
         activityContext.set('arguments', activityInput.arguments);
-        activityContext.set('argumentMetadata', activityInput.argumentMetadata ?? {});
+        activityContext.set('headers', activityInput.headers ?? {});
         activityContext.set('workflowId', activityInput.workflowId);
         activityContext.set('workflowTopic', activityInput.workflowTopic);
 
+        const interceptorService = Durable.getInterceptorService();
         const pojoResponse = await activityAsyncLocalStorage.run(
           activityContext,
-          () => activityFunction.apply(this, activityInput.arguments),
+          () => {
+            const executeFn = () => activityFunction.apply(this, activityInput.arguments);
+            if (interceptorService?.activityInbound?.length > 0) {
+              return interceptorService.executeActivityInboundChain(
+                activityName,
+                activityInput.arguments,
+                executeFn,
+              );
+            }
+            return executeFn();
+          },
         );
 
         return {
@@ -742,7 +769,7 @@ export class WorkerService {
             };
 
             // Execute the workflow through the interceptor chain
-            return await interceptorService.executeChain(context, execWorkflow);
+            return await interceptorService.executeInboundChain(context, execWorkflow);
           },
         );
 
@@ -790,7 +817,7 @@ export class WorkerService {
         ) {
           isProcessing = true;
 
-          //NOTE: this type is spawned when `Promise.all` is used OR if the interruption is a `waitFor`
+          //NOTE: this type is spawned when `Promise.all` is used OR if the interruption is a `condition`
           const workflowInput = data.data as unknown as WorkflowDataType;
           const execIndex = counter.counter - interruptionRegistry.length + 1;
           const {
@@ -853,7 +880,7 @@ export class WorkerService {
                 dimension: err.workflowDimension,
               }),
               arguments: err.arguments,
-              argumentMetadata: err.argumentMetadata,
+              headers: err.headers,
               workflowDimension: err.workflowDimension,
               index: err.index,
               originJobId: err.originJobId,

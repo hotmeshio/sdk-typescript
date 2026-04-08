@@ -16,13 +16,13 @@ export async function parentExample(
   const activityOutput = await parentActivity(name);
   //tests signal suppression within collated sets
   const [childWorkflowOutput] = await Promise.all([
-    Durable.workflow.execChild<string>({
+    Durable.workflow.executeChild<string>({
       args: [`${name} to CHILD`],
       taskQueue: 'child-world',
       workflowName: 'childExample',
       signalIn,
     }),
-    Durable.workflow.execChild<string>({
+    Durable.workflow.executeChild<string>({
       args: [`${name} to CHILD 2`],
       taskQueue: 'child-world',
       workflowName: 'childExample',

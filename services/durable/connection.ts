@@ -17,7 +17,7 @@ export class ConnectionService {
   constructor() {}
 
   /**
-   * Instance initializer
+   * Create a connection configuration.
    */
   static async connect(
     config: ProviderConfig | ProvidersConfig,
@@ -30,4 +30,9 @@ export class ConnectionService {
           provider: config.provider,
         } as Connection);
   }
+
+  /**
+   * Alias for {@link connect}.
+   */
+  static create = ConnectionService.connect;
 }

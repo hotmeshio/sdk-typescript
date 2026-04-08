@@ -137,8 +137,8 @@ type DurableActivityContext = {
   activityName: string;
   /** The arguments passed to the activity */
   arguments: any[];
-  /** Optional metadata provided via `proxyActivities({ argumentMetadata })` */
-  argumentMetadata: Record<string, any>;
+  /** Optional metadata provided via `proxyActivities({ headers })` */
+  headers: Record<string, any>;
   /** The workflow ID of the parent workflow that dispatched this activity */
   workflowId: string;
   /** The workflow topic of the parent workflow */
@@ -446,7 +446,7 @@ type SignalOptions = {
 type ActivityWorkflowDataType = {
   activityName: string;
   arguments: any[];
-  argumentMetadata?: Record<string, any>;
+  headers?: Record<string, any>;
   workflowId: string;
   workflowTopic: string;
 };
@@ -485,6 +485,15 @@ type WorkerConfig = {
 
   /** Target function or a record type with a name (string) and reference function */
   workflow: Function | Record<string | symbol, Function>;
+
+  /**
+   * Optional activity functions to register with this worker's task queue.
+   * When provided, these activities are registered and served on `{taskQueue}-activity`.
+   * Workflows can then call them via `proxyActivities()` without passing activities inline.
+   *
+   * Workflows can then call them via `proxyActivities()` without passing activities inline.
+   */
+  activities?: Record<string, Function>;
 
   /** Additional options for configuring the worker */
   options?: WorkerOptions;
@@ -621,7 +630,7 @@ type ActivityConfig = {
   /** Optional metadata to pass alongside activity arguments. This metadata
    *  is transported as a dedicated schema field (not inside args) and made
    *  available to the activity function via `Durable.activity.getContext()`. */
-  argumentMetadata?: Record<string, any>;
+  headers?: Record<string, any>;
 
   /** Retry policy configuration for activities */
   retryPolicy?: {
@@ -695,7 +704,7 @@ interface ClientWorkflow {
  * @example
  * ```typescript
  * // Simple logging interceptor
- * const loggingInterceptor: WorkflowInterceptor = {
+ * const loggingInterceptor: WorkflowInboundCallsInterceptor = {
  *   async execute(ctx, next) {
  *     console.log('Before workflow');
  *     try {
@@ -713,7 +722,7 @@ interface ClientWorkflow {
  * Durable.registerInterceptor(loggingInterceptor);
  * ```
  */
-export interface WorkflowInterceptor {
+export interface WorkflowInboundCallsInterceptor {
   /**
    * Called before workflow execution to wrap the workflow in custom logic
    *
@@ -755,24 +764,30 @@ export interface WorkflowInterceptor {
  */
 export interface InterceptorRegistry {
   /**
-   * Array of registered workflow interceptors that will wrap workflow execution
+   * Array of registered inbound interceptors that will wrap workflow execution
    * in the order they were registered (first registered = outermost wrapper).
    */
-  interceptors: WorkflowInterceptor[];
+  inbound: WorkflowInboundCallsInterceptor[];
 
   /**
-   * Array of registered activity interceptors that will wrap individual
+   * Array of registered outbound interceptors that will wrap individual
    * proxied activity calls in the order they were registered
    * (first registered = outermost wrapper).
    */
-  activityInterceptors: ActivityInterceptor[];
+  outbound: WorkflowOutboundCallsInterceptor[];
+
+  /**
+   * Array of registered activity inbound interceptors that wrap the actual
+   * activity function execution on the activity worker side.
+   */
+  activityInbound: ActivityInboundCallsInterceptor[];
 }
 
 /**
  * Context provided to an activity interceptor, containing metadata
  * about the proxied activity being invoked.
  */
-export interface ActivityInterceptorContext {
+export interface WorkflowOutboundCallsInterceptorContext {
   /** The name of the activity function being called */
   activityName: string;
   /** The arguments passed to the activity call */
@@ -805,7 +820,7 @@ export interface ActivityInterceptorContext {
  *
  * @example
  * ```typescript
- * const auditInterceptor: ActivityInterceptor = {
+ * const auditInterceptor: WorkflowOutboundCallsInterceptor = {
  *   async execute(activityCtx, workflowCtx, next) {
  *     const { auditLog } = Durable.workflow.proxyActivities<{
  *       auditLog: (id: string, action: string) => Promise<void>;
@@ -821,23 +836,66 @@ export interface ActivityInterceptorContext {
  *   },
  * };
  *
- * Durable.registerActivityInterceptor(auditInterceptor);
+ * Durable.registerWorkflowOutboundCallsInterceptor(auditInterceptor);
  * ```
  */
-export interface ActivityInterceptor {
+export interface WorkflowOutboundCallsInterceptor {
   /**
    * Called around each proxied activity invocation. Code before `next()`
    * runs in the before phase; code after `next()` runs in the after phase
    * once the activity result is available on replay.
    *
    * @param activityCtx - Metadata about the activity being called (args may be modified)
-   * @param workflowCtx - The workflow context map (same as WorkflowInterceptor receives)
+   * @param workflowCtx - The workflow context map (same as WorkflowInboundCallsInterceptor receives)
    * @param next - Call to proceed to the next interceptor or the core activity function
    * @returns The activity result (from replay or after interruption/re-execution)
    */
   execute(
-    activityCtx: ActivityInterceptorContext,
+    activityCtx: WorkflowOutboundCallsInterceptorContext,
     workflowCtx: Map<string, any>,
+    next: () => Promise<any>,
+  ): Promise<any>;
+}
+
+/**
+ * Interceptor for activity function execution on the activity worker side.
+ * Runs inside the activity's `activityAsyncLocalStorage` context, wrapping
+ * the actual activity function invocation — not the proxy call in the workflow.
+ *
+ * Unlike workflow-side interceptors, this runs where the activity actually executes.
+ * Use it for cross-cutting concerns like logging, metrics, auth validation,
+ * or error enrichment at the point where the activity actually executes.
+ *
+ * @example
+ * ```typescript
+ * Durable.registerActivityInboundInterceptor({
+ *   async execute(activityName, args, next) {
+ *     console.log(`Activity ${activityName} starting with`, args);
+ *     const start = Date.now();
+ *     try {
+ *       const result = await next();
+ *       console.log(`Activity ${activityName} completed in ${Date.now() - start}ms`);
+ *       return result;
+ *     } catch (err) {
+ *       console.error(`Activity ${activityName} failed`, err);
+ *       throw err;
+ *     }
+ *   }
+ * });
+ * ```
+ */
+export interface ActivityInboundCallsInterceptor {
+  /**
+   * Called around the actual activity function execution on the worker.
+   *
+   * @param activityName - The name of the activity being executed
+   * @param args - The arguments passed to the activity
+   * @param next - Call to execute the next interceptor or the activity itself
+   * @returns The activity function's return value
+   */
+  execute(
+    activityName: string,
+    args: any[],
     next: () => Promise<any>,
   ): Promise<any>;
 }

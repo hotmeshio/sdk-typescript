@@ -200,7 +200,7 @@ export async function basicTest(name: string): Promise<any> {
   await entity.merge({ status: 'testing' });
 
   // Wait a moment
-  await Durable.workflow.sleepFor('1 second');
+  await Durable.workflow.sleep('1 second');
 
   await entity.append('operations', 'test-completed');
   await entity.merge({ 

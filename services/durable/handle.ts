@@ -88,7 +88,7 @@ export class WorkflowHandleService {
   /**
    * Sends a signal to the workflow. This is a way to send
    * a message to a workflow that is paused due to having
-   * executed `Durable.workflow.waitFor`. The workflow
+   * executed `Durable.workflow.condition`. The workflow
    * will awaken if no other signals are pending.
    */
   async signal(signalId: string, data: Record<any, any>): Promise<void> {

@@ -7,7 +7,7 @@ import { isSideEffectAllowed } from './isSideEffectAllowed';
 import { trace } from './trace';
 import { enrich } from './enrich';
 import { emit } from './emit';
-import { execChild, executeChild, startChild } from './execChild';
+import { executeChild, startChild } from './execChild';
 import { execHook } from './execHook';
 import { execHookBatch } from './execHookBatch';
 import { proxyActivities } from './proxyActivities';
@@ -18,8 +18,8 @@ import { hook } from './hook';
 import { interrupt } from './interrupt';
 import { didInterrupt } from './interruption';
 import { all } from './all';
-import { sleepFor } from './sleepFor';
-import { waitFor } from './waitFor';
+import { sleep } from './sleepFor';
+import { condition } from './waitFor';
 import { asyncLocalStorage, WorkerService, HotMesh } from './common';
 import { entity } from './entityMethods';
 
@@ -34,10 +34,10 @@ import { entity } from './entityMethods';
  * | Method | Purpose |
  * |--------|---------|
  * | {@link proxyActivities} | Create durable activity proxies with retry |
- * | {@link sleepFor} | Durable, crash-safe sleep |
- * | {@link waitFor} | Pause until a signal is received |
+ * | {@link sleep} | Durable, crash-safe sleep |
+ * | {@link condition} | Pause until a signal is received |
  * | {@link signal} | Send data to a waiting workflow |
- * | {@link execChild} | Spawn and await a child workflow |
+ * | {@link executeChild} | Spawn and await a child workflow |
  * | {@link startChild} | Spawn a child workflow (fire-and-forget) |
  * | {@link execHook} | Spawn a hook and await its signal response |
  * | {@link execHookBatch} | Spawn multiple hooks in parallel |
@@ -80,7 +80,7 @@ import { entity } from './entityMethods';
  *   await validateOrder(orderId);
  *
  *   // Durable sleep (survives restarts)
- *   await Durable.workflow.sleepFor('5 seconds');
+ *   await Durable.workflow.sleep('5 seconds');
  *
  *   const receipt = await processPayment(orderId);
  *
@@ -88,7 +88,7 @@ import { entity } from './entityMethods';
  *   await Durable.workflow.enrich({ orderId, status: 'paid' });
  *
  *   // Wait for external approval signal
- *   const approval = await Durable.workflow.waitFor<{ ok: boolean }>('approve');
+ *   const approval = await Durable.workflow.condition<{ ok: boolean }>('approve');
  *   if (!approval.ok) return 'cancelled';
  *
  *   await sendReceipt(orderId, receipt);
@@ -110,7 +110,6 @@ export class WorkflowService {
   static trace = trace;
   static enrich = enrich;
   static emit = emit;
-  static execChild = execChild;
   static executeChild = executeChild;
   static startChild = startChild;
   static execHook = execHook;
@@ -124,8 +123,8 @@ export class WorkflowService {
   static didInterrupt = didInterrupt;
   static interrupt = interrupt;
   static all = all;
-  static sleepFor = sleepFor;
-  static waitFor = waitFor;
+  static sleep = sleep;
+  static condition = condition;
 
   /**
    * Return a handle to the HotMesh client hosting the workflow execution.

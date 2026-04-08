@@ -61,7 +61,7 @@ import { isSideEffectAllowed } from './isSideEffectAllowed';
  *   });
  *
  *   // Manually wait for the hook to signal back
- *   return await Durable.workflow.waitFor<string>(signalId);
+ *   return await Durable.workflow.condition<string>(signalId);
  * }
  * ```
  *

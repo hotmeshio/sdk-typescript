@@ -1,6 +1,6 @@
 import { HookOptions } from './common';
 import { hook } from './hook';
-import { waitFor } from './waitFor';
+import { condition } from './waitFor';
 import { didInterrupt } from './interruption';
 
 /**
@@ -96,7 +96,7 @@ export async function execHook<T>(options: ExecHookOptions): Promise<T> {
     await hook(hookOptions);
 
     // Wait for the signal response and return it
-    return await waitFor<T>(options.signalId);
+    return await condition<T>(options.signalId);
   } catch (error) {
     if (didInterrupt(error)) {
       throw error;

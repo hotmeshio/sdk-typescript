@@ -28,7 +28,7 @@ import { isSideEffectAllowed } from './isSideEffectAllowed';
  *   });
  *
  *   // Wait for a timeout, then cancel the child
- *   await Durable.workflow.sleepFor('5 minutes');
+ *   await Durable.workflow.sleep('5 minutes');
  *   await Durable.workflow.interrupt(childId, {
  *     reason: 'Timed out waiting for child',
  *     descend: true,     // also interrupt any grandchild workflows

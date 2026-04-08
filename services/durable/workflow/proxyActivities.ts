@@ -44,7 +44,7 @@ function getProxyInterruptPayload(
   }
   return {
     arguments: args,
-    argumentMetadata: options?.argumentMetadata ?? undefined,
+    headers: options?.headers ?? undefined,
     workflowDimension,
     index: execIndex,
     originJobId: originJobId || workflowId,
@@ -119,8 +119,8 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
     const store = asyncLocalStorage.getStore();
     const interceptorService = store?.get('activityInterceptorService');
 
-    if (interceptorService?.activityInterceptors?.length > 0) {
-      return await interceptorService.executeActivityChain(
+    if (interceptorService?.outbound?.length > 0) {
+      return await interceptorService.executeOutboundChain(
         activityCtx,
         store,
         coreFunction,
@@ -202,7 +202,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
  *
  * ```typescript
  * // Interceptor with shared activity pool
- * const auditInterceptor: WorkflowInterceptor = {
+ * const auditInterceptor: WorkflowInboundCallsInterceptor = {
  *   async execute(ctx, next) {
  *     const { auditLog } = Durable.workflow.proxyActivities<{
  *       auditLog: (id: string, action: string) => Promise<void>;

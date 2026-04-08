@@ -123,14 +123,14 @@ export async function durableInterceptorExample(name: string): Promise<any> {
 }
 
 // Workflow that calls securedActivity — the activity interceptor injects the principal.
-// Note: NO argumentMetadata in config — the interceptor provides it.
+// Note: NO headers in config — the interceptor provides it.
 export async function securedWorkflow(userId: string): Promise<any> {
   const entity = await Durable.workflow.entity();
 
   try {
     await entity.set({ userId, status: 'started', operations: [] });
 
-    // No argumentMetadata here — the interceptor will inject it
+    // No headers here — the interceptor will inject it
     const { securedActivity } = Durable.workflow.proxyActivities<typeof activities>({
       activities,
       retryPolicy: { maximumAttempts: 1, throwOnError: true },
@@ -158,7 +158,7 @@ export async function securedWorkflow(userId: string): Promise<any> {
   }
 }
 
-// Workflow that demonstrates argumentMetadata propagation to activities
+// Workflow that demonstrates headers propagation to activities
 export async function metadataExample(name: string): Promise<any> {
   const entity = await Durable.workflow.entity();
 
@@ -169,10 +169,10 @@ export async function metadataExample(name: string): Promise<any> {
       operations: [],
     });
 
-    // Proxy with argumentMetadata
+    // Proxy with headers
     const { metadataAwareActivity } = Durable.workflow.proxyActivities<typeof activities>({
       activities,
-      argumentMetadata: { tenantId: 'acme', traceId: 'trace-123', custom: { nested: true } },
+      headers: { tenantId: 'acme', traceId: 'trace-123', custom: { nested: true } },
       retryPolicy: {
         maximumAttempts: 1,
         throwOnError: true,
@@ -210,14 +210,14 @@ export async function multiMetadataExample(name: string): Promise<any> {
     // First proxy group with metadata A
     const groupA = Durable.workflow.proxyActivities<typeof activities>({
       activities,
-      argumentMetadata: { group: 'A', priority: 'high' },
+      headers: { group: 'A', priority: 'high' },
       retryPolicy: { maximumAttempts: 1, throwOnError: true },
     });
 
     // Second proxy group with metadata B
     const groupB = Durable.workflow.proxyActivities<typeof activities>({
       activities,
-      argumentMetadata: { group: 'B', priority: 'low' },
+      headers: { group: 'B', priority: 'low' },
       retryPolicy: { maximumAttempts: 1, throwOnError: true },
     });
 
@@ -243,7 +243,7 @@ export async function multiMetadataExample(name: string): Promise<any> {
   }
 }
 
-// Workflow that calls activities WITHOUT argumentMetadata (fallback test)
+// Workflow that calls activities WITHOUT headers (fallback test)
 export async function noMetadataExample(name: string): Promise<any> {
   const entity = await Durable.workflow.entity();
 
@@ -267,6 +267,12 @@ export async function noMetadataExample(name: string): Promise<any> {
     await entity.merge({ status: 'failed', error: err.message });
     throw err;
   }
+}
+
+// Simple workflow for testing activity inbound interceptors
+export async function simpleExample(name: string): Promise<string> {
+  const result = await processData(name);
+  return result;
 }
 
 // NEW: Workflow that demonstrates interceptor with proxy activities

@@ -15,8 +15,8 @@ import {
  * control-flow signal rather than a genuine application error.
  *
  * Durable uses thrown errors internally to suspend workflow execution
- * for durable operations like `sleepFor`, `waitFor`, `proxyActivities`,
- * and `execChild`. These errors must be re-thrown (not swallowed) so
+ * for durable operations like `sleep`, `condition`, `proxyActivities`,
+ * and `executeChild`. These errors must be re-thrown (not swallowed) so
  * the engine can persist state and schedule the next step.
  *
  * **Always use `didInterrupt` in `catch` blocks inside workflow
@@ -51,7 +51,7 @@ import {
  *
  * ```typescript
  * // Common pattern in interceptors
- * const interceptor: WorkflowInterceptor = {
+ * const interceptor: WorkflowInboundCallsInterceptor = {
  *   async execute(ctx, next) {
  *     try {
  *       return await next();

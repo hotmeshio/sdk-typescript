@@ -3,7 +3,7 @@ import { getContext } from './context';
 
 /**
  * The core of the deterministic replay mechanism. Every durable operation
- * (`proxyActivities`, `execChild`, `sleepFor`, `waitFor`, etc.) calls
+ * (`proxyActivities`, `executeChild`, `sleep`, `condition`, etc.) calls
  * `didRun` before executing. It increments a shared counter to produce
  * a unique `sessionId` of the form `-{prefix}{dimension}-{index}-`.
  *

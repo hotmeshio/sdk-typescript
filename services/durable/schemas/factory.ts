@@ -554,7 +554,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   description: the arguments to pass to the activity
                   items:
                     type: string
-                argumentMetadata:
+                headers:
                   type: object
                   description: optional metadata to pass alongside activity arguments
                 expire:
@@ -568,7 +568,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
             maps:
               activityName: '{worker.output.data.activityName}'
               arguments: '{worker.output.data.arguments}'
-              argumentMetadata: '{worker.output.data.argumentMetadata}'
+              headers: '{worker.output.data.headers}'
               workflowDimension: '{worker.output.data.workflowDimension}'
               index: '{worker.output.data.index}'
               originJobId: '{worker.output.data.originJobId}'
@@ -1311,7 +1311,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   description: the arguments to pass to the activity
                   items:
                     type: string
-                argumentMetadata:
+                headers:
                   type: object
                   description: optional metadata to pass alongside activity arguments
                 expire:
@@ -1325,7 +1325,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
             maps:
               activityName: '{signaler_worker.output.data.activityName}'
               arguments: '{signaler_worker.output.data.arguments}'
-              argumentMetadata: '{signaler_worker.output.data.argumentMetadata}'
+              headers: '{signaler_worker.output.data.headers}'
               workflowDimension: '{signaler_worker.output.data.workflowDimension}'
               index: '{signaler_worker.output.data.index}'
               originJobId: '{signaler_worker.output.data.originJobId}'
@@ -2127,7 +2127,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   description: the arguments to pass to the activity
                   items:
                     type: string
-                argumentMetadata:
+                headers:
                   type: object
                   description: optional metadata to pass alongside activity arguments
                 expire:
@@ -2149,10 +2149,10 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                   - ['{@array.get}', arguments]
                   - ['{@object.get}']
-              argumentMetadata:
+              headers:
                 '@pipe':
                   - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
-                  - ['{@array.get}', argumentMetadata]
+                  - ['{@array.get}', headers]
                   - ['{@object.get}']
               workflowDimension:
                 '@pipe':
@@ -2378,7 +2378,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               type: string
             arguments:
               type: array
-            argumentMetadata:
+            headers:
               type: object
             backoffCoefficient:
               type: number
@@ -2447,7 +2447,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: string
                 arguments:
                   type: array
-                argumentMetadata:
+                headers:
                   type: object
             maps:
               parentWorkflowId: '{activity_trigger.output.data.parentWorkflowId}'
@@ -2455,7 +2455,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
               workflowTopic: '{activity_trigger.output.data.workflowTopic}'
               activityName: '{activity_trigger.output.data.activityName}'
               arguments: '{activity_trigger.output.data.arguments}'
-              argumentMetadata: '{activity_trigger.output.data.argumentMetadata}'
+              headers: '{activity_trigger.output.data.headers}'
           output:
             schema:
               type: object

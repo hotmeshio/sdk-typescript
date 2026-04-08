@@ -1,5 +1,5 @@
 import { HotMesh } from '../hotmesh';
-import { ContextType, WorkflowInterceptor, ActivityInterceptor } from '../../types/durable';
+import { ContextType, WorkflowInboundCallsInterceptor, WorkflowOutboundCallsInterceptor, ActivityInboundCallsInterceptor } from '../../types/durable';
 import { guid } from '../../modules/utils';
 
 import { ClientService } from './client';
@@ -59,8 +59,8 @@ import { InterceptorService } from './interceptor';
  *
  * // Wait for both perspectives
  * await Promise.all([
- *   Durable.workflow.waitFor('optimistic-complete'),
- *   Durable.workflow.waitFor('skeptical-complete')
+ *   Durable.workflow.condition('optimistic-complete'),
+ *   Durable.workflow.condition('skeptical-complete')
  * ]);
  * ```
  *
@@ -110,7 +110,7 @@ import { InterceptorService } from './interceptor';
  * Build complex workflows through composition:
  * ```typescript
  * // Start a child workflow
- * const childResult = await Durable.workflow.execChild({
+ * const childResult = await Durable.workflow.executeChild({
  *   taskQueue: 'analysis',
  *   workflowName: 'detailedAnalysis',
  *   args: [data],
@@ -142,7 +142,7 @@ import { InterceptorService } from './interceptor';
  * }, { auditLog }, 'interceptor-activities');
  *
  * // Add audit interceptor that uses activities with explicit taskQueue
- * Durable.registerInterceptor({
+ * Durable.registerInboundInterceptor({
  *   async execute(ctx, next) {
  *     try {
  *       // Interceptors use explicit taskQueue to prevent per-workflow queues
@@ -175,12 +175,12 @@ import { InterceptorService } from './interceptor';
  * Unlike workflow interceptors (which wrap the entire workflow), activity
  * interceptors execute around each `proxyActivities` call. They run inside
  * the workflow's execution context and have access to all Durable workflow
- * methods (`proxyActivities`, `sleepFor`, `waitFor`, `execChild`, etc.).
+ * methods (`proxyActivities`, `sleep`, `condition`, `executeChild`, etc.).
  * Multiple activity interceptors execute in onion order (first registered
  * is outermost).
  * ```typescript
  * // Simple logging interceptor
- * Durable.registerActivityInterceptor({
+ * Durable.registerOutboundInterceptor({
  *   async execute(activityCtx, workflowCtx, next) {
  *     console.log(`Activity ${activityCtx.activityName} starting`);
  *     try {
@@ -204,7 +204,7 @@ import { InterceptorService } from './interceptor';
  *   taskQueue: 'audit-activities'
  * }, { auditLog }, 'audit-activities');
  *
- * Durable.registerActivityInterceptor({
+ * Durable.registerOutboundInterceptor({
  *   async execute(activityCtx, workflowCtx, next) {
  *     try {
  *       const { auditLog } = Durable.workflow.proxyActivities<{
@@ -371,7 +371,7 @@ class DurableClass {
   /**
    * The Durable `workflow` service
    * provides the workflow-internal API surface with methods for
-   * managing workflows, including: `execChild`, `waitFor`, `sleep`, etc
+   * managing workflows, including: `executeChild`, `condition`, `sleep`, etc
    */
   static workflow: typeof WorkflowService = WorkflowService;
 
@@ -393,8 +393,8 @@ class DurableClass {
    * logging, metrics, or tracing.
    *
    * Workflow interceptors run inside the workflow's async local storage context,
-   * so all Durable workflow methods (`proxyActivities`, `sleepFor`, `waitFor`,
-   * `execChild`, etc.) are available. When using Durable functions, always check
+   * so all Durable workflow methods (`proxyActivities`, `sleep`, `condition`,
+   * `executeChild`, etc.) are available. When using Durable functions, always check
    * for interruptions with `Durable.didInterrupt(err)` and rethrow them.
    *
    * @param interceptor The interceptor to register
@@ -402,7 +402,7 @@ class DurableClass {
    * @example
    * ```typescript
    * // Logging interceptor
-   * Durable.registerInterceptor({
+   * Durable.registerInboundInterceptor({
    *   async execute(ctx, next) {
    *     console.log(`Workflow ${ctx.get('workflowName')} starting`);
    *     try {
@@ -418,34 +418,34 @@ class DurableClass {
    * });
    * ```
    */
-  static registerInterceptor(interceptor: WorkflowInterceptor): void {
-    DurableClass.interceptorService.register(interceptor);
+  static registerInboundInterceptor(interceptor: WorkflowInboundCallsInterceptor): void {
+    DurableClass.interceptorService.registerInbound(interceptor);
   }
 
   /**
-   * Clear all registered interceptors (both workflow and activity).
+   * Clear all registered interceptors (both inbound and outbound).
    */
   static clearInterceptors(): void {
     DurableClass.interceptorService.clear();
   }
 
   /**
-   * Register an activity interceptor that wraps individual proxied
+   * Register an outbound interceptor that wraps individual proxied
    * activity calls within workflows. Interceptors execute in registration
    * order (first registered is outermost) using the onion pattern.
    *
-   * Activity interceptors run inside the workflow's execution context
+   * Outbound interceptors run inside the workflow's execution context
    * and have access to all Durable workflow methods (`proxyActivities`,
-   * `sleepFor`, `waitFor`, `execChild`, etc.). The `activityCtx` parameter
+   * `sleep`, `condition`, `executeChild`, etc.). The `activityCtx` parameter
    * provides `activityName`, `args`, and `options` for the call being
    * intercepted. The `workflowCtx` map provides workflow metadata
    * (`workflowId`, `workflowName`, `namespace`, etc.).
    *
-   * @param interceptor The activity interceptor to register
+   * @param interceptor The outbound interceptor to register
    *
    * @example
    * ```typescript
-   * Durable.registerActivityInterceptor({
+   * Durable.registerOutboundInterceptor({
    *   async execute(activityCtx, workflowCtx, next) {
    *     const start = Date.now();
    *     try {
@@ -460,15 +460,34 @@ class DurableClass {
    * });
    * ```
    */
-  static registerActivityInterceptor(interceptor: ActivityInterceptor): void {
-    DurableClass.interceptorService.registerActivity(interceptor);
+  static registerOutboundInterceptor(interceptor: WorkflowOutboundCallsInterceptor): void {
+    DurableClass.interceptorService.registerOutbound(interceptor);
   }
 
   /**
-   * Clear all registered activity interceptors
+   * Clear all registered outbound interceptors
    */
-  static clearActivityInterceptors(): void {
-    DurableClass.interceptorService.clearActivity();
+  static clearOutboundInterceptors(): void {
+    DurableClass.interceptorService.clearOutbound();
+  }
+
+  /**
+   * Register an activity inbound interceptor that wraps the actual activity
+   * function execution on the activity worker side. This runs inside the
+   * activity's `AsyncLocalStorage` context, NOT the workflow context.
+   *
+   * Use for logging, metrics, auth validation, or error enrichment at
+   * the point where the activity actually executes.
+   */
+  static registerActivityInboundInterceptor(interceptor: ActivityInboundCallsInterceptor): void {
+    DurableClass.interceptorService.registerActivityInbound(interceptor);
+  }
+
+  /**
+   * Clear all registered activity inbound interceptors.
+   */
+  static clearActivityInboundInterceptors(): void {
+    DurableClass.interceptorService.clearActivityInbound();
   }
 
   /**

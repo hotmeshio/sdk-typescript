@@ -11,11 +11,11 @@ import { didRun } from './didRun';
  * The workflow suspends durably — it survives process restarts and will
  * resume exactly once when the matching `signal()` call delivers data.
  *
- * `waitFor` is the **receive** side of the signal coordination pair.
+ * `condition` is the **receive** side of the signal coordination pair.
  * The **send** side is `signal()`, which can be called from another
  * workflow, a hook function, or externally via `Durable.Client.workflow.signal()`.
  *
- * On replay, `waitFor` returns the previously stored signal payload
+ * On replay, `condition` returns the previously stored signal payload
  * immediately (no actual suspension occurs).
  *
  * ## Examples
@@ -30,7 +30,7 @@ import { didRun } from './didRun';
  *   await submitForReview(orderId);
  *
  *   // Pause indefinitely until a human approves or rejects
- *   const decision = await Durable.workflow.waitFor<{ approved: boolean }>('approval');
+ *   const decision = await Durable.workflow.condition<{ approved: boolean }>('approval');
  *
  *   return decision.approved;
  * }
@@ -43,8 +43,8 @@ import { didRun } from './didRun';
  * // Fan-in: wait for multiple signals in parallel
  * export async function gatherWorkflow(): Promise<[string, number]> {
  *   const [name, score] = await Promise.all([
- *     Durable.workflow.waitFor<string>('name-signal'),
- *     Durable.workflow.waitFor<number>('score-signal'),
+ *     Durable.workflow.condition<string>('name-signal'),
+ *     Durable.workflow.condition<number>('score-signal'),
  *   ]);
  *   return [name, score];
  * }
@@ -63,7 +63,7 @@ import { didRun } from './didRun';
  *   });
  *
  *   // Wait for the hook to signal completion
- *   return await Durable.workflow.waitFor<string>(signalId);
+ *   return await Durable.workflow.condition<string>(signalId);
  * }
  * ```
  *
@@ -71,7 +71,7 @@ import { didRun } from './didRun';
  * @param {string} signalId - A unique signal identifier shared by the sender and receiver.
  * @returns {Promise<T>} The data payload associated with the received signal.
  */
-export async function waitFor<T>(signalId: string): Promise<T> {
+export async function condition<T>(signalId: string): Promise<T> {
   const [didRunAlready, execIndex, result] = await didRun('wait');
   if (didRunAlready) {
     return (result as { id: string; data: { data: T } }).data.data as T;
@@ -92,6 +92,6 @@ export async function waitFor<T>(signalId: string): Promise<T> {
   interruptionRegistry.push(interruptionMessage);
 
   await sleepImmediate();
-  //if you are seeing this error in the logs, you might have forgotten to `await waitFor(...)`
+  //if you are seeing this error in the logs, you might have forgotten to `await condition(...)`
   throw new DurableWaitForError(interruptionMessage);
 }

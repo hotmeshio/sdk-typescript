@@ -1,6 +1,6 @@
 import { HookOptions } from './common';
 import { hook } from './hook';
-import { waitFor } from './waitFor';
+import { condition } from './waitFor';
 import { ExecHookOptions } from './execHook';
 
 /**
@@ -141,7 +141,7 @@ export async function execHookBatch<T extends Record<string, any>>(
   // before any DurableWaitForError is thrown (via setImmediate mechanism)
   const results = await Promise.all(
     processedConfigs.map(config => 
-      waitFor<T[typeof config.key]>(config.options.signalId!)
+      condition<T[typeof config.key]>(config.options.signalId!)
     )
   );
   

@@ -95,7 +95,7 @@ function getChildInterruptPayload(
  *
  * // Spawn a child workflow and await its result
  * export async function parentWorkflow(orderId: string): Promise<string> {
- *   const result = await Durable.workflow.execChild<{ status: string }>({
+ *   const result = await Durable.workflow.executeChild<{ status: string }>({
  *     taskQueue: 'payments',
  *     workflowName: 'processPayment',
  *     args: [orderId, 99.99],
@@ -113,7 +113,7 @@ function getChildInterruptPayload(
  * export async function batchWorkflow(items: string[]): Promise<string[]> {
  *   const results = await Promise.all(
  *     items.map((item) =>
- *       Durable.workflow.execChild<string>({
+ *       Durable.workflow.executeChild<string>({
  *         taskQueue: 'processors',
  *         workflowName: 'processItem',
  *         args: [item],
@@ -126,7 +126,7 @@ function getChildInterruptPayload(
  *
  * ```typescript
  * // Entity-based child (uses entity name as task queue)
- * const user = await Durable.workflow.execChild<UserRecord>({
+ * const user = await Durable.workflow.executeChild<UserRecord>({
  *   entity: 'user',
  *   args: [{ name: 'Alice', email: 'alice@example.com' }],
  *   workflowId: 'user-alice',          // deterministic ID
@@ -138,7 +138,7 @@ function getChildInterruptPayload(
  * @param {WorkflowOptions} options - Child workflow configuration.
  * @returns {Promise<T>} The child workflow's return value.
  */
-export async function execChild<T>(options: WorkflowOptions): Promise<T> {
+export async function executeChild<T>(options: WorkflowOptions): Promise<T> {
   const isStartChild = options.await === false;
   const prefix = isStartChild ? 'start' : 'child';
   const [didRunAlready, execIndex, result] = await didRun(prefix);
@@ -182,43 +182,7 @@ export async function execChild<T>(options: WorkflowOptions): Promise<T> {
   throw new DurableChildError(interruptionMessage);
 }
 
-/**
- * Alias for {@link execChild}.
- */
-export const executeChild = execChild;
-
-/**
- * Spawns a child workflow in fire-and-forget mode. The parent workflow
- * continues immediately without waiting for the child to complete.
- * Returns the child's job ID for later reference (e.g., to interrupt
- * or query the child).
- *
- * This is a convenience wrapper around `execChild` with `await: false`.
- *
- * ## Example
- *
- * ```typescript
- * import { Durable } from '@hotmeshio/hotmesh';
- *
- * export async function dispatchWorkflow(taskId: string): Promise<string> {
- *   // Fire-and-forget: start the child and continue immediately
- *   const childJobId = await Durable.workflow.startChild({
- *     taskQueue: 'background',
- *     workflowName: 'longRunningTask',
- *     args: [taskId],
- *   });
- *
- *   // Optionally store the child ID for monitoring
- *   const search = await Durable.workflow.search();
- *   await search.set({ childJobId });
- *
- *   return childJobId;
- * }
- * ```
- *
- * @param {WorkflowOptions} options - Child workflow configuration.
- * @returns {Promise<string>} The child workflow's job ID.
- */
 export async function startChild(options: WorkflowOptions): Promise<string> {
-  return execChild({ ...options, await: false });
+  return executeChild({ ...options, await: false });
 }
+

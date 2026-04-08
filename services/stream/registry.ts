@@ -191,10 +191,13 @@ class StreamConsumerRegistry {
 
       const callback = entry.callbacks.get(wfn);
       if (!callback) {
-        entry.logger.debug('stream-consumer-registry-no-callback', {
+        entry.logger.info('stream-consumer-registry-replay', {
           key,
           wfn,
           registered: [...entry.callbacks.keys()],
+          reason: 'worker-not-yet-registered',
+          action: 'republish-with-delay',
+          delayMs: 500,
         });
         // Worker not registered yet. Re-publish with short visibility delay
         // so it retries after the worker has time to register.

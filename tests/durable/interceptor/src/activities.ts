@@ -49,7 +49,7 @@ export async function metadataAwareActivity(data: string): Promise<Record<string
   return {
     data,
     activityName: ctx.activityName,
-    argumentMetadata: ctx.argumentMetadata,
+    headers: ctx.headers,
     workflowId: ctx.workflowId,
   };
 }
@@ -66,11 +66,11 @@ export async function lookupUserProfile(userId: string): Promise<Record<string, 
   };
 }
 
-// Activity that reads the injected principal from argumentMetadata
+// Activity that reads the injected principal from headers
 // and returns what it sees — proving the interceptor-injected metadata arrived
 export async function securedActivity(action: string): Promise<Record<string, any>> {
   const ctx = Durable.activity.getContext();
-  const principal = ctx.argumentMetadata?.principal;
+  const principal = ctx.headers?.principal;
   return {
     action,
     principal,

@@ -12,7 +12,7 @@ import { didRun } from './didRun';
  * `setTimeout`, this sleep survives process restarts — the engine persists
  * the wake-up time and resumes the workflow when the timer expires.
  *
- * On replay, `sleepFor` returns immediately with the stored duration
+ * On replay, `sleep` returns immediately with the stored duration
  * (no actual waiting occurs). This makes it safe for deterministic
  * re-execution.
  *
@@ -32,11 +32,11 @@ import { didRun } from './didRun';
  *   const { sendReminder } = Durable.workflow.proxyActivities<typeof activities>();
  *
  *   // Wait 24 hours (survives server restarts)
- *   await Durable.workflow.sleepFor('24 hours');
+ *   await Durable.workflow.sleep('24 hours');
  *   await sendReminder(userId, 'Your trial expires tomorrow');
  *
  *   // Wait another 6 days
- *   await Durable.workflow.sleepFor('6 days');
+ *   await Durable.workflow.sleep('6 days');
  *   await sendReminder(userId, 'Your trial has expired');
  * }
  * ```
@@ -52,7 +52,7 @@ import { didRun } from './didRun';
  *
  *     // Exponential backoff: 1s, 2s, 4s, 8s, ...
  *     const delay = Math.pow(2, attempt);
- *     await Durable.workflow.sleepFor(`${delay} seconds`);
+ *     await Durable.workflow.sleep(`${delay} seconds`);
  *   }
  *   return 'timeout';
  * }
@@ -62,14 +62,14 @@ import { didRun } from './didRun';
  * // Race a sleep against an activity
  * const [result, _] = await Promise.all([
  *   activities.fetchData(id),
- *   Durable.workflow.sleepFor('30 seconds'),
+ *   Durable.workflow.sleep('30 seconds'),
  * ]);
  * ```
  *
  * @param {string} duration - A human-readable duration string.
  * @returns {Promise<number>} The resolved duration in seconds.
  */
-export async function sleepFor(duration: string): Promise<number> {
+export async function sleep(duration: string): Promise<number> {
   const [didRunAlready, execIndex, result] = await didRun('sleep');
   if (didRunAlready) {
     return (result as { completion: string; duration: number }).duration;

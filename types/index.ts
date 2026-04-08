@@ -24,8 +24,9 @@ export { CollationFaultType, CollationStage } from './collator';
 export {
   ActivityConfig,
   DurableActivityContext,
-  ActivityInterceptor,
-  ActivityInterceptorContext,
+  WorkflowOutboundCallsInterceptor,
+  WorkflowOutboundCallsInterceptorContext,
+  ActivityInboundCallsInterceptor,
   ActivityWorkflowDataType,
   ChildResponseType,
   ClientConfig,
@@ -50,7 +51,7 @@ export {
   WorkflowSearchSchema,
   WorkflowDataType,
   WorkflowOptions,
-  WorkflowInterceptor,
+  WorkflowInboundCallsInterceptor,
   InterceptorRegistry,
 } from './durable';
 export {

@@ -37,7 +37,7 @@ import { asyncLocalStorage, WorkflowContext } from './common';
  * export async function parentWorkflow(): Promise<void> {
  *   const { workflowId } = Durable.workflow.getContext();
  *
- *   await Durable.workflow.execChild({
+ *   await Durable.workflow.executeChild({
  *     taskQueue: 'children',
  *     workflowName: 'childWorkflow',
  *     args: [workflowId],  // pass parent ID to child
