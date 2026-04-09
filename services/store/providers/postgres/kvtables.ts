@@ -341,12 +341,13 @@ export const KVTables = (context: PostgresStoreService) => ({
             await client.query(`
               CREATE TABLE IF NOT EXISTS ${attributesTableName} (
                 job_id UUID NOT NULL,
-                field TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                dimension TEXT NOT NULL DEFAULT '',
                 value TEXT,
                 type ${schemaName}.type_enum NOT NULL,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                 updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                PRIMARY KEY (job_id, field),
+                PRIMARY KEY (job_id, symbol, dimension),
                 FOREIGN KEY (job_id) REFERENCES ${fullTableName} (id) ON DELETE CASCADE
               ) PARTITION BY HASH (job_id);
             `);
@@ -390,13 +391,13 @@ export const KVTables = (context: PostgresStoreService) => ({
 
             // Create indexes for attributes table
             await client.query(`
-              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_type_field 
-              ON ${attributesTableName} (type, field);
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_type_symbol
+              ON ${attributesTableName} (type, symbol);
             `);
 
             await client.query(`
-              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_field 
-              ON ${attributesTableName} (field);
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_attributes_symbol
+              ON ${attributesTableName} (symbol);
             `);
             break;
 

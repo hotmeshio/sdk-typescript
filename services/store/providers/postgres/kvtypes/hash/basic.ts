@@ -9,6 +9,7 @@ import {
 import {
   isJobsTable,
   deriveType,
+  splitField,
   processJobsRows,
   processRegularRows,
 } from './utils';
@@ -383,21 +384,23 @@ export function _hset(
     const schemaName = context.safeName(context.appId);
     const conflictAction = options?.nx
       ? 'ON CONFLICT DO NOTHING'
-      : `ON CONFLICT (job_id, field) DO UPDATE SET value = EXCLUDED.value`;
+      : `ON CONFLICT (job_id, symbol, dimension) DO UPDATE SET value = EXCLUDED.value`;
 
     const placeholders = fieldEntries
       .map(([field, value], index) => {
-        const baseIndex = index * 3 + 2; // Adjusted baseIndex
-        params.push(field, value, deriveType(field));
-        return `($${baseIndex}, $${baseIndex + 1}, $${baseIndex + 2}::${schemaName}.type_enum)`;
+        const baseIndex = index * 4 + 2;
+        const { symbol, dimension } = splitField(field);
+        params.push(symbol, dimension, value, deriveType(field));
+        return `($${baseIndex}, $${baseIndex + 1}, $${baseIndex + 2}, $${baseIndex + 3}::${schemaName}.type_enum)`;
       })
       .join(', ');
 
     sql = `
-      INSERT INTO ${targetTable} (job_id, field, value, type)
-      SELECT 
+      INSERT INTO ${targetTable} (job_id, symbol, dimension, value, type)
+      SELECT
         job.id,
-        vals.field,
+        vals.symbol,
+        vals.dimension,
         vals.value,
         vals.type
       FROM (
@@ -405,7 +408,7 @@ export function _hset(
       ) AS job
       CROSS JOIN (
         VALUES ${placeholders}
-      ) AS vals(field, value, type)
+      ) AS vals(symbol, dimension, value, type)
       ${conflictAction}
       RETURNING 1 as count
     `;
@@ -463,6 +466,7 @@ export function _hget(
     return { sql, params: [key] };
   } else if (isJobsTableResult) {
     // Fetch a specific field from the attributes table for a job
+    const { symbol, dimension } = splitField(field);
     const sql = `
       SELECT value
       FROM ${tableName}_attributes
@@ -470,9 +474,9 @@ export function _hget(
         SELECT id FROM ${tableName}
         WHERE key = $1 AND is_live
       )
-        AND field = $2
+        AND symbol = $2 AND dimension = $3
     `;
-    return { sql, params: [key, field] };
+    return { sql, params: [key, symbol, dimension] };
   } else {
     // Non-jobs tables
     const baseQuery = `
@@ -494,10 +498,9 @@ export function _hdel(
   const isJobsTableResult = isJobsTable(tableName);
   const targetTable = isJobsTableResult ? `${tableName}_attributes` : tableName;
 
-  const fieldPlaceholders = fields.map((_, i) => `$${i + 2}`).join(', ');
-  const params = [key, ...fields];
-
   if (isJobsTableResult) {
+    const symbols = fields.map((f) => splitField(f).symbol);
+    const dimensions = fields.map((f) => splitField(f).dimension);
     const sql = `
       WITH valid_job AS (
         SELECT id
@@ -506,13 +509,15 @@ export function _hdel(
       ),
       deleted AS (
         DELETE FROM ${targetTable}
-        WHERE job_id IN (SELECT id FROM valid_job) AND field IN (${fieldPlaceholders})
+        WHERE job_id IN (SELECT id FROM valid_job)
+          AND (symbol, dimension) IN (SELECT unnest($2::text[]), unnest($3::text[]))
         RETURNING 1
       )
       SELECT COUNT(*) as count FROM deleted
     `;
-    return { sql, params };
+    return { sql, params: [key, symbols, dimensions] };
   } else {
+    const fieldPlaceholders = fields.map((_, i) => `$${i + 2}`).join(', ');
     const sql = `
       WITH deleted AS (
         DELETE FROM ${targetTable}
@@ -521,7 +526,7 @@ export function _hdel(
       )
       SELECT COUNT(*) as count FROM deleted
     `;
-    return { sql, params };
+    return { sql, params: [key, ...fields] };
   }
 }
 
@@ -534,43 +539,45 @@ export function _hmget(
   const isJobsTableResult = isJobsTable(tableName);
 
   if (isJobsTableResult) {
+    const symbols = fields.map((f) => splitField(f).symbol);
+    const dimensions = fields.map((f) => splitField(f).dimension);
     const sql = `
       WITH valid_job AS (
         SELECT id, status, context
         FROM ${tableName}
-        WHERE key = $1 
+        WHERE key = $1
         AND (expired_at IS NULL OR expired_at > NOW())
         LIMIT 1
       ),
       job_fields AS (
         -- Include both status and context fields from jobs table
-        SELECT 
+        SELECT
           'status' AS field,
           status::text AS value
         FROM valid_job
-        
+
         UNION ALL
-        
-        SELECT 
+
+        SELECT
           'context' AS field,
           context::text AS value
         FROM valid_job
-        
+
         UNION ALL
-        
+
         -- Get attribute fields with proper type handling
-        SELECT 
-          a.field,
+        SELECT
+          a.symbol || a.dimension AS field,
           a.value
         FROM ${tableName}_attributes a
         JOIN valid_job j ON j.id = a.job_id
-        WHERE a.field = ANY($2::text[])
+        WHERE (a.symbol, a.dimension) IN (SELECT unnest($2::text[]), unnest($3::text[]))
       )
       SELECT field, value
       FROM job_fields
       ORDER BY field
     `;
-    return { sql, params: [key, fields] };
+    return { sql, params: [key, symbols, dimensions] };
   } else {
     // Non-job tables logic remains the same
     const baseQuery = `
@@ -602,15 +609,15 @@ export function _hgetall(
         SELECT 'status' AS field, status::text AS value
         FROM ${tableName}
         WHERE key = $1 AND is_live
-        
+
         UNION ALL
-        
+
         SELECT 'context' AS field, context::text AS value
         FROM ${tableName}
         WHERE key = $1 AND is_live
       ),
       attribute_data AS (
-        SELECT field, value
+        SELECT symbol || dimension AS field, value
         FROM ${tableName}_attributes
         WHERE job_id IN (SELECT id FROM valid_job)
       )
@@ -652,23 +659,23 @@ export function _hincrbyfloat(
     `;
     return { sql, params: [key, increment] };
   } else if (isJobsTableResult) {
-    // Update the condition here
+    const { symbol, dimension } = splitField(field);
     const sql = `
       WITH valid_job AS (
         SELECT id
         FROM ${tableName}
         WHERE key = $1 AND is_live
       )
-      INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-      SELECT id, $2, ($3::double precision)::text, $4
+      INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+      SELECT id, $2, $3, ($4::double precision)::text, $5
       FROM valid_job
-      ON CONFLICT (job_id, field) DO UPDATE
+      ON CONFLICT (job_id, symbol, dimension) DO UPDATE
       SET
-        value = ((COALESCE(${tableName}_attributes.value, '0')::double precision) + $3::double precision)::text,
+        value = ((COALESCE(${tableName}_attributes.value, '0')::double precision) + $4::double precision)::text,
         type = EXCLUDED.type
       RETURNING value;
     `;
-    return { sql, params: [key, field, increment, deriveType(field)] };
+    return { sql, params: [key, symbol, dimension, increment, deriveType(field)] };
   } else {
     const sql = `
       INSERT INTO ${tableName} (key, field, value)
@@ -709,27 +716,30 @@ export function _collateLeg2Entry(
   }
 
   const attrsTable = `${jobsTableName}_attributes`;
+  const { symbol: actSym, dimension: actDim } = splitField(activityField);
+  const { symbol: guidSym, dimension: guidDim } = splitField(guidField);
 
   const sql = `
     WITH activity_update AS (
-      INSERT INTO ${attrsTable} (job_id, field, value, type)
-      SELECT id, $2, ($3::double precision)::text, $4
+      INSERT INTO ${attrsTable} (job_id, symbol, dimension, value, type)
+      SELECT id, $2, $3, ($4::double precision)::text, $5
       FROM ${jobsTableName}
       WHERE key = $1 AND is_live
-      ON CONFLICT (job_id, field) DO UPDATE
-      SET value = ((COALESCE(${attrsTable}.value, '0')::double precision) + $3::double precision)::text,
+      ON CONFLICT (job_id, symbol, dimension) DO UPDATE
+      SET value = ((COALESCE(${attrsTable}.value, '0')::double precision) + $4::double precision)::text,
           type = EXCLUDED.type
       RETURNING job_id, value::double precision AS activity_value
     ),
     guid_upsert AS (
-      INSERT INTO ${attrsTable} (job_id, field, value, type)
+      INSERT INTO ${attrsTable} (job_id, symbol, dimension, value, type)
       SELECT
         job_id,
-        $5,
+        $6,
+        $7,
         ((activity_value::bigint) % 100000000)::text,
-        $6
+        $8
       FROM activity_update
-      ON CONFLICT (job_id, field) DO UPDATE
+      ON CONFLICT (job_id, symbol, dimension) DO UPDATE
       SET value = ${attrsTable}.value
       RETURNING value::double precision AS guid_value
     )
@@ -742,11 +752,13 @@ export function _collateLeg2Entry(
     sql,
     params: [
       key,                          // $1
-      activityField,                // $2
-      increment,                    // $3
-      deriveType(activityField),    // $4
-      guidField,                    // $5
-      deriveType(guidField),        // $6
+      actSym,                       // $2
+      actDim,                       // $3
+      increment,                    // $4
+      deriveType(activityField),    // $5
+      guidSym,                      // $6
+      guidDim,                      // $7
+      deriveType(guidField),        // $8
     ],
   };
 }
@@ -781,6 +793,8 @@ export function _setStatusAndCollateGuid(
     );
   }
 
+  const { symbol: guidSym, dimension: guidDim } = splitField(guidField);
+
   const sql = `
     WITH status_update AS (
       UPDATE ${jobsTableName}
@@ -795,14 +809,15 @@ export function _setStatusAndCollateGuid(
         CASE WHEN status_after = $3 THEN ($4::double precision) ELSE 0::double precision END AS guid_increment
       FROM status_update
     )
-    INSERT INTO ${jobsTableName}_attributes (job_id, field, value, type)
+    INSERT INTO ${jobsTableName}_attributes (job_id, symbol, dimension, value, type)
     SELECT
       job_id,
-      $5 AS field,
+      $5,
+      $6,
       (guid_increment)::text AS value,
-      $6
+      $7
     FROM hit
-    ON CONFLICT (job_id, field) DO UPDATE
+    ON CONFLICT (job_id, symbol, dimension) DO UPDATE
     SET
       value = ((COALESCE(${jobsTableName}_attributes.value, '0')::double precision) + EXCLUDED.value::double precision)::text,
       type = EXCLUDED.type
@@ -816,8 +831,9 @@ export function _setStatusAndCollateGuid(
       statusDelta,              // $2
       threshold,                // $3
       guidWeight,               // $4 (typically 100_000_000_000)
-      guidField,                // $5
-      deriveType(guidField),    // $6
+      guidSym,                  // $5
+      guidDim,                  // $6
+      deriveType(guidField),    // $7
     ],
   };
 }

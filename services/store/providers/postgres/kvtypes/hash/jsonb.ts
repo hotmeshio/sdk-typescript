@@ -1,5 +1,5 @@
 import { HashContext, SqlResult, HSetOptions } from './types';
-import { isJobsTable, deriveType } from './utils';
+import { isJobsTable, deriveType, splitField } from './utils';
 
 export function createJsonbOperations(context: HashContext['context']) {
   return {
@@ -30,6 +30,7 @@ export function createJsonbOperations(context: HashContext['context']) {
 
     if (options?.nx) {
       if (replayId) {
+        const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
         sql = `
           WITH inserted_job AS (
             INSERT INTO ${tableName} (id, key, context)
@@ -41,16 +42,16 @@ export function createJsonbOperations(context: HashContext['context']) {
             RETURNING id, context::text as new_value
           ),
           replay_insert AS (
-            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-            SELECT id, $3, new_value, $4
+            INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+            SELECT id, $3, $4, new_value, $5
             FROM inserted_job
-            ON CONFLICT (job_id, field) DO UPDATE
+            ON CONFLICT (job_id, symbol, dimension) DO UPDATE
             SET value = EXCLUDED.value
             RETURNING 1
           )
           SELECT new_value FROM inserted_job
         `;
-        params.push(key, fields['@context'], replayId, deriveType(replayId));
+        params.push(key, fields['@context'], replaySym, replayDim, deriveType(replayId));
       } else {
         sql = `
           INSERT INTO ${tableName} (id, key, context)
@@ -65,6 +66,7 @@ export function createJsonbOperations(context: HashContext['context']) {
       }
     } else {
       if (replayId) {
+        const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
         sql = `
           WITH updated_job AS (
             UPDATE ${tableName}
@@ -73,16 +75,16 @@ export function createJsonbOperations(context: HashContext['context']) {
             RETURNING id, context::text as new_value
           ),
           replay_insert AS (
-            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-            SELECT id, $3, new_value, $4
+            INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+            SELECT id, $3, $4, new_value, $5
             FROM updated_job
-            ON CONFLICT (job_id, field) DO UPDATE
+            ON CONFLICT (job_id, symbol, dimension) DO UPDATE
             SET value = EXCLUDED.value
             RETURNING 1
           )
           SELECT new_value FROM updated_job
         `;
-        params.push(key, fields['@context'], replayId, deriveType(replayId));
+        params.push(key, fields['@context'], replaySym, replayDim, deriveType(replayId));
       } else {
         sql = `
           UPDATE ${tableName}
@@ -122,12 +124,13 @@ export function createJsonbOperations(context: HashContext['context']) {
       params.push(key, fields['@context:merge']);
     } else {
       if (replayId) {
+        const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
         sql = `
           WITH updated_job AS (
             UPDATE ${tableName}
             SET context = (
               WITH RECURSIVE deep_merge(original, new_data, result) AS (
-                SELECT 
+                SELECT
                   COALESCE(context, '{}'::jsonb) as original,
                   $2::jsonb as new_data,
                   COALESCE(context, '{}'::jsonb) as result
@@ -135,11 +138,11 @@ export function createJsonbOperations(context: HashContext['context']) {
                 WHERE key = $1 AND is_live
               ),
               merged_data AS (
-                SELECT 
+                SELECT
                   (
                     SELECT jsonb_object_agg(
                       key,
-                      CASE 
+                      CASE
                         WHEN jsonb_typeof(original -> key) = 'object' AND jsonb_typeof(new_data -> key) = 'object'
                         THEN (
                           WITH nested_keys AS (
@@ -147,7 +150,7 @@ export function createJsonbOperations(context: HashContext['context']) {
                           )
                           SELECT jsonb_object_agg(
                             nested_key,
-                            CASE 
+                            CASE
                               WHEN (new_data -> key) ? nested_key
                               THEN (new_data -> key) -> nested_key
                               ELSE (original -> key) -> nested_key
@@ -172,10 +175,10 @@ export function createJsonbOperations(context: HashContext['context']) {
             RETURNING id, context::text as new_value
           ),
           replay_insert AS (
-            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-            SELECT id, $3, new_value, $4
+            INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+            SELECT id, $3, $4, new_value, $5
             FROM updated_job
-            ON CONFLICT (job_id, field) DO UPDATE
+            ON CONFLICT (job_id, symbol, dimension) DO UPDATE
             SET value = EXCLUDED.value
             RETURNING 1
           )
@@ -184,7 +187,8 @@ export function createJsonbOperations(context: HashContext['context']) {
         params.push(
           key,
           fields['@context:merge'],
-          replayId,
+          replaySym,
+          replayDim,
           deriveType(replayId),
         );
       } else {
@@ -192,11 +196,11 @@ export function createJsonbOperations(context: HashContext['context']) {
           UPDATE ${tableName}
           SET context = (
             WITH merged_data AS (
-              SELECT 
+              SELECT
                 (
                   SELECT jsonb_object_agg(
                     key,
-                    CASE 
+                    CASE
                       WHEN jsonb_typeof(original -> key) = 'object' AND jsonb_typeof(new_data -> key) = 'object'
                       THEN (
                         WITH nested_keys AS (
@@ -204,7 +208,7 @@ export function createJsonbOperations(context: HashContext['context']) {
                         )
                         SELECT jsonb_object_agg(
                           nested_key,
-                          CASE 
+                          CASE
                             WHEN (new_data -> key) ? nested_key
                             THEN (new_data -> key) -> nested_key
                             ELSE (original -> key) -> nested_key
@@ -222,7 +226,7 @@ export function createJsonbOperations(context: HashContext['context']) {
                   ) all_keys
                 ) as merged_context
               FROM (
-                SELECT 
+                SELECT
                   COALESCE(context, '{}'::jsonb) as original,
                   $2::jsonb as new_data
                 FROM ${tableName}
@@ -258,6 +262,7 @@ export function createJsonbOperations(context: HashContext['context']) {
     if (pathParts.length === 1) {
       // Simple key deletion
       if (replayId) {
+        const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
         sql = `
           WITH updated_job AS (
             UPDATE ${tableName}
@@ -266,16 +271,16 @@ export function createJsonbOperations(context: HashContext['context']) {
             RETURNING id, context::text as new_value
           ),
           replay_insert AS (
-            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-            SELECT id, $3, new_value, $4
+            INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+            SELECT id, $3, $4, new_value, $5
             FROM updated_job
-            ON CONFLICT (job_id, field) DO UPDATE
+            ON CONFLICT (job_id, symbol, dimension) DO UPDATE
             SET value = EXCLUDED.value
             RETURNING 1
           )
           SELECT new_value FROM updated_job
         `;
-        params.push(key, path, replayId, deriveType(replayId));
+        params.push(key, path, replaySym, replayDim, deriveType(replayId));
       } else {
         sql = `
           UPDATE ${tableName}
@@ -288,6 +293,7 @@ export function createJsonbOperations(context: HashContext['context']) {
     } else {
       // Nested path deletion using jsonb_set with null to remove
       if (replayId) {
+        const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
         sql = `
           WITH updated_job AS (
             UPDATE ${tableName}
@@ -296,16 +302,16 @@ export function createJsonbOperations(context: HashContext['context']) {
             RETURNING id, context::text as new_value
           ),
           replay_insert AS (
-            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-            SELECT id, $3, new_value, $4
+            INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+            SELECT id, $3, $4, new_value, $5
             FROM updated_job
-            ON CONFLICT (job_id, field) DO UPDATE
+            ON CONFLICT (job_id, symbol, dimension) DO UPDATE
             SET value = EXCLUDED.value
             RETURNING 1
           )
           SELECT new_value FROM updated_job
         `;
-        params.push(key, pathParts, replayId, deriveType(replayId));
+        params.push(key, pathParts, replaySym, replayDim, deriveType(replayId));
       } else {
         sql = `
           UPDATE ${tableName}
@@ -335,6 +341,7 @@ export function createJsonbOperations(context: HashContext['context']) {
     let sql = '';
 
     if (replayId) {
+      const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
       sql = `
         WITH updated_job AS (
           UPDATE ${tableName}
@@ -348,10 +355,10 @@ export function createJsonbOperations(context: HashContext['context']) {
           RETURNING id, (context #> $2::text[])::text as new_value
         ),
         replay_insert AS (
-          INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-          SELECT id, $4, new_value, $5
+          INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+          SELECT id, $4, $5, new_value, $6
           FROM updated_job
-          ON CONFLICT (job_id, field) DO UPDATE
+          ON CONFLICT (job_id, symbol, dimension) DO UPDATE
           SET value = EXCLUDED.value
           RETURNING 1
         )
@@ -361,7 +368,8 @@ export function createJsonbOperations(context: HashContext['context']) {
         key,
         pathParts,
         JSON.stringify([value]),
-        replayId,
+        replaySym,
+        replayDim,
         deriveType(replayId),
       );
     } else {
@@ -397,6 +405,7 @@ export function createJsonbOperations(context: HashContext['context']) {
     let sql = '';
 
     if (replayId) {
+      const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
       sql = `
         WITH updated_job AS (
           UPDATE ${tableName}
@@ -410,10 +419,10 @@ export function createJsonbOperations(context: HashContext['context']) {
           RETURNING id, (context #> $2::text[])::text as new_value
         ),
         replay_insert AS (
-          INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-          SELECT id, $4, new_value, $5
+          INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+          SELECT id, $4, $5, new_value, $6
           FROM updated_job
-          ON CONFLICT (job_id, field) DO UPDATE
+          ON CONFLICT (job_id, symbol, dimension) DO UPDATE
           SET value = EXCLUDED.value
           RETURNING 1
         )
@@ -423,7 +432,8 @@ export function createJsonbOperations(context: HashContext['context']) {
         key,
         pathParts,
         JSON.stringify([value]),
-        replayId,
+        replaySym,
+        replayDim,
         deriveType(replayId),
       );
     } else {
@@ -459,6 +469,7 @@ export function createJsonbOperations(context: HashContext['context']) {
     let sql = '';
 
     if (replayId) {
+      const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
       sql = `
         WITH updated_job AS (
           UPDATE ${tableName}
@@ -479,16 +490,16 @@ export function createJsonbOperations(context: HashContext['context']) {
           RETURNING id, (context #> $2::text[])::text as new_value
         ),
         replay_insert AS (
-          INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-          SELECT id, $4, new_value, $5
+          INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+          SELECT id, $4, $5, new_value, $6
           FROM updated_job
-          ON CONFLICT (job_id, field) DO UPDATE
+          ON CONFLICT (job_id, symbol, dimension) DO UPDATE
           SET value = EXCLUDED.value
           RETURNING 1
         )
         SELECT new_value FROM updated_job
       `;
-      params.push(key, pathParts, index, replayId, deriveType(replayId));
+      params.push(key, pathParts, index, replaySym, replayDim, deriveType(replayId));
     } else {
       sql = `
         UPDATE ${tableName}
@@ -529,6 +540,7 @@ export function createJsonbOperations(context: HashContext['context']) {
     let sql = '';
 
     if (replayId) {
+      const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
       sql = `
         WITH updated_job AS (
           UPDATE ${tableName}
@@ -542,16 +554,16 @@ export function createJsonbOperations(context: HashContext['context']) {
           RETURNING id, (context #> $2::text[])::text as new_value
         ),
         replay_insert AS (
-          INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-          SELECT id, $4, new_value, $5
+          INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+          SELECT id, $4, $5, new_value, $6
           FROM updated_job
-          ON CONFLICT (job_id, field) DO UPDATE
+          ON CONFLICT (job_id, symbol, dimension) DO UPDATE
           SET value = EXCLUDED.value
           RETURNING 1
         )
         SELECT new_value FROM updated_job
       `;
-      params.push(key, pathParts, value, replayId, deriveType(replayId));
+      params.push(key, pathParts, value, replaySym, replayDim, deriveType(replayId));
     } else {
       sql = `
         UPDATE ${tableName}
@@ -585,6 +597,7 @@ export function createJsonbOperations(context: HashContext['context']) {
     let sql = '';
 
     if (replayId) {
+      const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
       sql = `
         WITH updated_job AS (
           UPDATE ${tableName}
@@ -598,16 +611,16 @@ export function createJsonbOperations(context: HashContext['context']) {
           RETURNING id, (context #> $2::text[])::text as new_value
         ),
         replay_insert AS (
-          INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-          SELECT id, $3, new_value, $4
+          INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+          SELECT id, $3, $4, new_value, $5
           FROM updated_job
-          ON CONFLICT (job_id, field) DO UPDATE
+          ON CONFLICT (job_id, symbol, dimension) DO UPDATE
           SET value = EXCLUDED.value
           RETURNING 1
         )
         SELECT new_value FROM updated_job
       `;
-      params.push(key, pathParts, replayId, deriveType(replayId));
+      params.push(key, pathParts, replaySym, replayDim, deriveType(replayId));
     } else {
       sql = `
         UPDATE ${tableName}
@@ -641,11 +654,12 @@ export function createJsonbOperations(context: HashContext['context']) {
     let sql = '';
 
     if (replayId) {
+      const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
       sql = `
         WITH updated_job AS (
           UPDATE ${tableName}
-          SET context = CASE 
-            WHEN context #> $2::text[] IS NULL THEN 
+          SET context = CASE
+            WHEN context #> $2::text[] IS NULL THEN
               jsonb_set(COALESCE(context, '{}'::jsonb), $2::text[], $3::jsonb, true)
             ELSE context
           END
@@ -653,10 +667,10 @@ export function createJsonbOperations(context: HashContext['context']) {
           RETURNING id, (context #> $2::text[])::text as new_value
         ),
         replay_insert AS (
-          INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-          SELECT id, $4, new_value, $5
+          INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+          SELECT id, $4, $5, new_value, $6
           FROM updated_job
-          ON CONFLICT (job_id, field) DO UPDATE
+          ON CONFLICT (job_id, symbol, dimension) DO UPDATE
           SET value = EXCLUDED.value
           RETURNING 1
         )
@@ -666,14 +680,15 @@ export function createJsonbOperations(context: HashContext['context']) {
         key,
         pathParts,
         JSON.stringify(value),
-        replayId,
+        replaySym,
+        replayDim,
         deriveType(replayId),
       );
     } else {
       sql = `
         UPDATE ${tableName}
-        SET context = CASE 
-          WHEN context #> $2::text[] IS NULL THEN 
+        SET context = CASE
+          WHEN context #> $2::text[] IS NULL THEN
             jsonb_set(COALESCE(context, '{}'::jsonb), $2::text[], $3::jsonb, true)
           ELSE context
         END
@@ -697,28 +712,30 @@ export function createJsonbOperations(context: HashContext['context']) {
     );
     const pathKey = getField.replace('@context:get:', '');
     const pathParts = JSON.parse(fields[getField]);
+    const { symbol: getSym, dimension: getDim } = splitField(getField);
     const params = [];
 
     // Extract the specific path and store it as a temporary field
     const sql = `
-      INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-      SELECT 
+      INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+      SELECT
         job.id,
         $2,
-        COALESCE((job.context #> $3::text[])::text, 'null'),
-        $4
+        $3,
+        COALESCE((job.context #> $4::text[])::text, 'null'),
+        $5
       FROM (
         SELECT id, context FROM ${tableName} WHERE key = $1 AND is_live
       ) AS job
-      ON CONFLICT (job_id, field) DO UPDATE
+      ON CONFLICT (job_id, symbol, dimension) DO UPDATE
       SET value = COALESCE((
-        SELECT context #> $3::text[]
-        FROM ${tableName} 
+        SELECT context #> $4::text[]
+        FROM ${tableName}
         WHERE key = $1 AND is_live
       )::text, 'null')
       RETURNING 1 as count
     `;
-    params.push(key, getField, pathParts, deriveType(getField));
+    params.push(key, getSym, getDim, pathParts, deriveType(getField));
 
     return { sql, params };
   }
@@ -739,6 +756,7 @@ export function createJsonbOperations(context: HashContext['context']) {
     if (path === '') {
       // Get entire context
       if (replayId) {
+        const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
         sql = `
           WITH job_data AS (
             SELECT id, context::text as context_value
@@ -746,17 +764,17 @@ export function createJsonbOperations(context: HashContext['context']) {
             WHERE key = $1 AND is_live
           ),
           replay_insert AS (
-            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-            SELECT id, $2, context_value, $3
+            INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+            SELECT id, $2, $3, context_value, $4
             FROM job_data
             WHERE id IS NOT NULL
-            ON CONFLICT (job_id, field) DO UPDATE
+            ON CONFLICT (job_id, symbol, dimension) DO UPDATE
             SET value = EXCLUDED.value
             RETURNING 1
           )
           SELECT context_value as new_value FROM job_data
         `;
-        params.push(key, replayId, deriveType(replayId));
+        params.push(key, replaySym, replayDim, deriveType(replayId));
       } else {
         sql = `
           SELECT context::text as new_value
@@ -769,6 +787,7 @@ export function createJsonbOperations(context: HashContext['context']) {
       // Get specific path
       const pathParts = path.split('.');
       if (replayId) {
+        const { symbol: replaySym, dimension: replayDim } = splitField(replayId);
         sql = `
           WITH job_data AS (
             SELECT id, COALESCE((context #> $2::text[])::text, 'null') as path_value
@@ -776,17 +795,17 @@ export function createJsonbOperations(context: HashContext['context']) {
             WHERE key = $1 AND is_live
           ),
           replay_insert AS (
-            INSERT INTO ${tableName}_attributes (job_id, field, value, type)
-            SELECT id, $3, path_value, $4
+            INSERT INTO ${tableName}_attributes (job_id, symbol, dimension, value, type)
+            SELECT id, $3, $4, path_value, $5
             FROM job_data
             WHERE id IS NOT NULL
-            ON CONFLICT (job_id, field) DO UPDATE
+            ON CONFLICT (job_id, symbol, dimension) DO UPDATE
             SET value = EXCLUDED.value
             RETURNING 1
           )
           SELECT path_value as new_value FROM job_data
         `;
-        params.push(key, pathParts, replayId, deriveType(replayId));
+        params.push(key, pathParts, replaySym, replayDim, deriveType(replayId));
       } else {
         sql = `
           SELECT COALESCE((context #> $2::text[])::text, 'null') as new_value

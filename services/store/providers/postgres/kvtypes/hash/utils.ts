@@ -8,23 +8,35 @@ export function isJobsTable(tableName: string): boolean {
 }
 
 /**
+ * Splits a merged field string into its symbol and dimension components.
+ * The first comma separates symbol from dimension.
+ * If no comma is present, dimension is empty string.
+ *
+ * Examples:
+ *   'ab,0,1,0'   → { symbol: 'ab',       dimension: ',0,1,0' }
+ *   '-proxy,0,0'  → { symbol: '-proxy',   dimension: ',0,0' }
+ *   '_email'       → { symbol: '_email',   dimension: '' }
+ *   'jid'          → { symbol: 'jid',      dimension: '' }
+ *   ':'            → { symbol: ':',        dimension: '' }
+ */
+export function splitField(field: string): { symbol: string; dimension: string } {
+  const i = field.indexOf(',');
+  if (i === -1) return { symbol: field, dimension: '' };
+  return { symbol: field.substring(0, i), dimension: field.substring(i) };
+}
+
+/**
  * Derives the enumerated `type` value based on the field name when
  * setting a field in a jobs table (a 'jobshash' table type).
  */
 export function deriveType(fieldName: string): PostgresJobEnumType {
-  if (fieldName === ':') {
-    return 'status';
-  } else if (fieldName.startsWith('_')) {
-    return 'udata';
-  } else if (fieldName.startsWith('-')) {
-    return fieldName.includes(',') ? 'hmark' : 'jmark';
-  } else if (fieldName.length === 3) {
-    return 'jdata';
-  } else if (fieldName.includes(',')) {
-    return 'adata';
-  } else {
-    return 'other';
-  }
+  const { symbol, dimension } = splitField(fieldName);
+  if (symbol === ':') return 'status';
+  if (symbol.startsWith('_')) return 'udata';
+  if (symbol.startsWith('-')) return dimension ? 'hmark' : 'jmark';
+  if (dimension) return 'adata';
+  if (symbol.length === 3) return 'jdata';
+  return 'other';
 }
 
 /**
