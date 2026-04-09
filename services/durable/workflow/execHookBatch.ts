@@ -1,6 +1,6 @@
 import { HookOptions } from './common';
 import { hook } from './hook';
-import { condition } from './waitFor';
+import { condition } from './condition';
 import { ExecHookOptions } from './execHook';
 
 /**

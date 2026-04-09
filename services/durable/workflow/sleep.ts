@@ -1,6 +1,7 @@
 import {
   sleepImmediate,
   DurableSleepError,
+  DurableTelemetryService,
   HMSH_CODE_DURABLE_SLEEP,
   s,
   asyncLocalStorage,
@@ -72,9 +73,49 @@ import { didRun } from './didRun';
 export async function sleep(duration: string): Promise<number> {
   const [didRunAlready, execIndex, result] = await didRun('sleep');
   if (didRunAlready) {
+    // Emit RETURN span in debug mode
+    if (DurableTelemetryService.isVerbose() && result) {
+      const store = asyncLocalStorage.getStore();
+      const workflowTrace = store.get('workflowTrace');
+      const workflowSpan = store.get('workflowSpan');
+      if (workflowTrace && workflowSpan && result.ac && result.au) {
+        DurableTelemetryService.emitDurationSpan(
+          workflowTrace,
+          workflowSpan,
+          `RETURN/sleep/${duration}/${execIndex}`,
+          DurableTelemetryService.parseTimestamp(result.ac),
+          DurableTelemetryService.parseTimestamp(result.au),
+          {
+            'durable.operation.type': 'sleep',
+            'durable.sleep.duration': duration,
+            'durable.exec.index': execIndex,
+          },
+        );
+      }
+    }
     return (result as { completion: string; duration: number }).duration;
   }
+
   const store = asyncLocalStorage.getStore();
+
+  // Emit DISPATCH span in debug mode
+  if (DurableTelemetryService.isVerbose()) {
+    const workflowTrace = store.get('workflowTrace');
+    const workflowSpan = store.get('workflowSpan');
+    if (workflowTrace && workflowSpan) {
+      DurableTelemetryService.emitPointSpan(
+        workflowTrace,
+        workflowSpan,
+        `DISPATCH/sleep/${duration}/${execIndex}`,
+        {
+          'durable.operation.type': 'sleep',
+          'durable.sleep.duration': duration,
+          'durable.exec.index': execIndex,
+        },
+      );
+    }
+  }
+
   const interruptionRegistry = store.get('interruptionRegistry');
   const workflowId = store.get('workflowId');
   const workflowDimension = store.get('workflowDimension') ?? '';

@@ -6,6 +6,7 @@ import {
   DurableMaxedError,
   DurableTimeoutError,
   DurableRetryError,
+  DurableTelemetryService,
   HMSH_CODE_DURABLE_CHILD,
   HMSH_CODE_DURABLE_FATAL,
   HMSH_CODE_DURABLE_MAXED,
@@ -146,6 +147,26 @@ export async function executeChild<T>(options: WorkflowOptions): Promise<T> {
   const { canRetry, interruptionRegistry } = context;
 
   if (didRunAlready) {
+    // Emit RETURN span in debug mode
+    if (DurableTelemetryService.isVerbose() && result) {
+      const { workflowTrace, workflowSpan } = context;
+      if (workflowTrace && workflowSpan && result.ac && result.au) {
+        const workflowName = options.workflowName || options.entity || 'unknown';
+        DurableTelemetryService.emitDurationSpan(
+          workflowTrace,
+          workflowSpan,
+          `RETURN/${prefix}/${workflowName}/${execIndex}`,
+          DurableTelemetryService.parseTimestamp(result.ac),
+          DurableTelemetryService.parseTimestamp(result.au),
+          {
+            'durable.operation.type': prefix,
+            'durable.workflow.name': workflowName,
+            'durable.exec.index': execIndex,
+          },
+        );
+      }
+    }
+
     if (result?.$error && (!result.$error.is_stream_error || !canRetry)) {
       if (options?.config?.throwOnError !== false) {
         const code = result.$error.code;
@@ -164,6 +185,24 @@ export async function executeChild<T>(options: WorkflowOptions): Promise<T> {
       return result.$error as T;
     } else if (!result?.$error) {
       return result.data as T;
+    }
+  }
+
+  // Emit DISPATCH span in debug mode
+  if (DurableTelemetryService.isVerbose()) {
+    const { workflowTrace, workflowSpan } = context;
+    if (workflowTrace && workflowSpan) {
+      const workflowName = options.workflowName || options.entity || 'unknown';
+      DurableTelemetryService.emitPointSpan(
+        workflowTrace,
+        workflowSpan,
+        `DISPATCH/${prefix}/${workflowName}/${execIndex}`,
+        {
+          'durable.operation.type': prefix,
+          'durable.workflow.name': workflowName,
+          'durable.exec.index': execIndex,
+        },
+      );
     }
   }
 

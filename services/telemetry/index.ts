@@ -30,6 +30,13 @@ class TelemetryService {
   context: JobState;
   leg = 1;
 
+  /**
+   * Namespaces registered by the durable module. Engine-layer spans
+   * for these namespaces are suppressed in 'info' mode — the
+   * DurableTelemetryService emits the user-facing story instead.
+   */
+  static durableNamespaces = new Set<string>();
+
   constructor(
     appId: string,
     config?: ActivityType,
@@ -42,10 +49,19 @@ class TelemetryService {
     this.context = context;
   }
 
+  private isDurableApp(): boolean {
+    return TelemetryService.durableNamespaces.has(this.appId);
+  }
+
   /**
-   * too chatty for production; only output traces, jobs, triggers and workers
+   * Gate engine-layer span creation. For durable namespaces in 'info'
+   * mode, returns false — DurableTelemetryService handles telemetry
+   * at the right abstraction level. In 'debug' mode, both layers emit.
    */
   private shouldCreateSpan(): boolean {
+    if (this.isDurableApp() && HMSH_TELEMETRY !== 'debug') {
+      return false;
+    }
     return (
       HMSH_TELEMETRY === 'debug' ||
       this.config?.type === 'trigger' ||
@@ -107,9 +123,9 @@ class TelemetryService {
 
   getActivityParentSpanId(leg: number): string | undefined {
     if (leg === 1) {
-      return this.context[this.config.parent].output?.metadata?.l2s;
+      return this.context?.[this.config?.parent]?.output?.metadata?.l2s;
     } else {
-      return this.context['$self'].output?.metadata?.l1s;
+      return this.context?.['$self']?.output?.metadata?.l1s;
     }
   }
 
@@ -118,6 +134,14 @@ class TelemetryService {
   }
 
   startJobSpan(): TelemetryService {
+    if (this.isDurableApp() && HMSH_TELEMETRY !== 'debug') {
+      const trc = this.context?.metadata?.trc ?? '';
+      const spn = this.context?.metadata?.spn ?? '';
+      this.jobSpan = TelemetryService.createNoopSpan(trc, spn);
+      this.traceId = trc;
+      this.spanId = spn;
+      return this;
+    }
     const spanName = `JOB/${this.appId}/${this.config.subscribes}/1`;
     const traceId = this.getTraceId();
     const spanId = this.getJobParentSpanId();
@@ -169,6 +193,14 @@ class TelemetryService {
   }
 
   startActivitySpan(leg = this.leg): TelemetryService {
+    if (this.isDurableApp() && HMSH_TELEMETRY !== 'debug') {
+      const trc = this.context?.metadata?.trc ?? '';
+      const spn = this.context?.metadata?.spn ?? '';
+      this.span = TelemetryService.createNoopSpan(trc, spn);
+      this.traceId = trc;
+      this.spanId = spn;
+      return this;
+    }
     const spanName = `${this.config.type.toUpperCase()}/${this.appId}/${this.metadata.aid}/${leg}`;
     const traceId = this.getTraceId();
     const spanId = this.getActivityParentSpanId(leg);
@@ -195,10 +227,15 @@ class TelemetryService {
       type = 'FANOUT'; //exiting engine router (to worker router)
     }
 
-    // `EXECUTE` refers to the 'worker router' NOT the 'worker activity' run by the 'engine router'
-    // (Regardless, it's worker-related, so it matters and will be traced)
-    // `SYSTEM` refers to catastrophic errors, which are always traced
-    if (this.shouldCreateSpan() || type === 'EXECUTE' || type === 'SYSTEM') {
+    // For durable namespaces in 'info' mode, only SYSTEM spans pass —
+    // DurableTelemetryService emits the user-facing workflow story.
+    // In 'debug' mode or for non-durable apps, original gating applies:
+    // `EXECUTE` = worker router, `SYSTEM` = catastrophic errors (always traced).
+    if (
+      this.isDurableApp() && HMSH_TELEMETRY !== 'debug'
+        ? type === 'SYSTEM'
+        : this.shouldCreateSpan() || type === 'EXECUTE' || type === 'SYSTEM'
+    ) {
       const topic = data.metadata.topic ? `/${data.metadata.topic}` : '';
       const spanName = `${type}/${this.appId}/${data.metadata.aid}${topic}`;
       const attributes = this.getStreamSpanAttrs(data);

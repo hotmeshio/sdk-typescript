@@ -12,6 +12,7 @@ import {
   HMSH_CODE_DURABLE_TIMEOUT,
   HMSH_CODE_DURABLE_PROXY,
   DurableProxyErrorType,
+  DurableTelemetryService,
   s,
   asyncLocalStorage,
 } from './common';
@@ -79,6 +80,25 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
     // from activityCtx so "before" interceptors can modify them.
     const coreFunction = async () => {
       if (didRunAlready) {
+        // Emit RETURN span in debug mode
+        if (DurableTelemetryService.isVerbose() && result) {
+          const { workflowTrace, workflowSpan } = context;
+          if (workflowTrace && workflowSpan && result.ac && result.au) {
+            DurableTelemetryService.emitDurationSpan(
+              workflowTrace,
+              workflowSpan,
+              `RETURN/proxy/${activityName}/${execIndex}`,
+              DurableTelemetryService.parseTimestamp(result.ac),
+              DurableTelemetryService.parseTimestamp(result.au),
+              {
+                'durable.operation.type': 'proxy',
+                'durable.activity.name': activityName,
+                'durable.exec.index': execIndex,
+              },
+            );
+          }
+        }
+
         if (result?.$error) {
           if (activityCtx.options?.retryPolicy?.throwOnError !== false) {
             const code = result.$error.code;
@@ -97,6 +117,23 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
           return result.$error as T;
         }
         return result.data as T;
+      }
+
+      // Emit DISPATCH span in debug mode
+      if (DurableTelemetryService.isVerbose()) {
+        const { workflowTrace, workflowSpan } = context;
+        if (workflowTrace && workflowSpan) {
+          DurableTelemetryService.emitPointSpan(
+            workflowTrace,
+            workflowSpan,
+            `DISPATCH/proxy/${activityName}/${execIndex}`,
+            {
+              'durable.operation.type': 'proxy',
+              'durable.activity.name': activityName,
+              'durable.exec.index': execIndex,
+            },
+          );
+        }
       }
 
       const interruptionMessage = getProxyInterruptPayload(

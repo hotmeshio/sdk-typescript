@@ -51,6 +51,7 @@ import {
   DurableProxyErrorType,
 } from '../../../types/error';
 import { TelemetryService } from '../../telemetry';
+import { DurableTelemetryService } from '../telemetry';
 import { QuorumMessage } from '../../../types';
 import { UserMessage } from '../../../types/quorum';
 import { Search } from '../search';
@@ -105,6 +106,7 @@ export {
   DurableChildErrorType,
   DurableProxyErrorType,
   TelemetryService,
+  DurableTelemetryService,
   QuorumMessage,
   UserMessage,
   Search,

@@ -38,12 +38,47 @@ import {
 
 import { Search } from './search';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
+import { DurableTelemetryService } from './telemetry';
+import { TelemetryService } from '../telemetry';
+import { SpanStatusCode } from '../../types/telemetry';
 
 import { Durable } from './index';
 
 /**
- * The *Worker* service Registers worker functions and connects them to the mesh,
- * using the target backend provider/s (Postgres, NATS, etc).
+ * The *Worker* service registers workflow and activity functions and
+ * connects them to the mesh using the target backend (Postgres, etc).
+ *
+ * ## Telemetry
+ *
+ * Workers automatically emit OpenTelemetry spans when an OTel SDK is
+ * registered. Initialize the SDK **before** calling `create()`:
+ *
+ * ```typescript
+ * import { NodeSDK } from '@opentelemetry/sdk-node';
+ * import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+ * import { resourceFromAttributes } from '@opentelemetry/resources';
+ * import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
+ *
+ * // 1. Start OTel SDK (Honeycomb, Jaeger, Tempo, etc.)
+ * const sdk = new NodeSDK({
+ *   resource: resourceFromAttributes({ [ATTR_SERVICE_NAME]: 'my-service' }),
+ *   traceExporter: new OTLPTraceExporter({
+ *     url: 'https://api.honeycomb.io/v1/traces',
+ *     headers: { 'x-honeycomb-team': process.env.HONEYCOMB_API_KEY },
+ *   }),
+ * });
+ * sdk.start();
+ *
+ * // 2. Create worker — spans flow automatically
+ * const worker = await Durable.Worker.create({ ... });
+ * ```
+ *
+ * Control verbosity with the `HMSH_TELEMETRY` env var:
+ *
+ * | Value | Spans emitted |
+ * |-------|---------------|
+ * | `'info'` (default) | `WORKFLOW/START`, `WORKFLOW/COMPLETE`, `WORKFLOW/ERROR`, `ACTIVITY/{name}` |
+ * | `'debug'` | All `info` spans + `DISPATCH/RETURN` per operation + engine internals |
  *
  * @example
  * ```typescript
@@ -282,16 +317,18 @@ export class WorkerService {
     activities: any,
     activityTaskQueue?: string,
   ): Promise<HotMesh> {
+    // Register as durable namespace so engine-layer spans are suppressed in 'info' mode
+    const targetNamespace = config?.namespace ?? APP_ID;
+    TelemetryService.durableNamespaces.add(targetNamespace);
+
     // Register activities globally in the registry
     WorkerService.registerActivities(activities);
-    
+
     // Use provided activityTaskQueue or fall back to config.taskQueue
     const taskQueue = activityTaskQueue || config.taskQueue || 'durable-activities';
-    
+
     // Append '-activity' suffix for the worker topic
     const activityTopic = `${taskQueue}-activity`;
-    
-    const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${activityTopic}`;
 
@@ -326,6 +363,7 @@ export class WorkerService {
    */
   static createActivityCallback(): (payload: StreamData) => Promise<StreamDataResponse> {
     return async (data: StreamData): Promise<StreamDataResponse> => {
+      let activitySpan: import('../../types/telemetry').Span | null = null;
       try {
         //always run the activity function when instructed; return the response
         const activityInput = data.data as unknown as ActivityWorkflowDataType;
@@ -343,6 +381,22 @@ export class WorkerService {
         activityContext.set('workflowId', activityInput.workflowId);
         activityContext.set('workflowTopic', activityInput.workflowTopic);
 
+        // Start an ACTIVITY span if telemetry is enabled
+        const trc = data.metadata.trc;
+        const spn = data.metadata.spn;
+        activitySpan =
+          DurableTelemetryService.isEnabled() && trc && spn
+            ? DurableTelemetryService.startSpan(
+                trc,
+                spn,
+                `ACTIVITY/${activityName}`,
+                {
+                  'durable.activity.name': activityName,
+                  'durable.workflow.id': activityInput.workflowId,
+                },
+              )
+            : null;
+
         const interceptorService = Durable.getInterceptorService();
         const pojoResponse = await activityAsyncLocalStorage.run(
           activityContext,
@@ -359,12 +413,19 @@ export class WorkerService {
           },
         );
 
+        activitySpan?.end();
+
         return {
           status: StreamStatus.SUCCESS,
           metadata: { ...data.metadata },
           data: { response: pojoResponse },
         };
       } catch (err) {
+        activitySpan?.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: err.message,
+        });
+        activitySpan?.end();
         // Log error (note: we don't have access to this.activityRunner here)
         console.error('durable-worker-activity-err', {
           name: err.name,
@@ -461,6 +522,10 @@ export class WorkerService {
    * ```
    */
   static async create(config: WorkerConfig): Promise<WorkerService> {
+    // Register as durable namespace so engine-layer spans are suppressed in 'info' mode
+    const targetNamespace = config?.namespace ?? APP_ID;
+    TelemetryService.durableNamespaces.add(targetNamespace);
+
     const workflow = config.workflow;
     const [workflowFunctionName, workflowFunction] =
       WorkerService.resolveWorkflowTarget(workflow);
@@ -563,6 +628,7 @@ export class WorkerService {
    */
   wrapActivityFunctions(): Function {
     return async (data: StreamData): Promise<StreamDataResponse> => {
+      let activitySpan: import('../../types/telemetry').Span | null = null;
       try {
         //always run the activity function when instructed; return the response
         const activityInput = data.data as unknown as ActivityWorkflowDataType;
@@ -577,6 +643,23 @@ export class WorkerService {
         activityContext.set('workflowTopic', activityInput.workflowTopic);
 
         const interceptorService = Durable.getInterceptorService();
+
+        // Start an ACTIVITY span if telemetry is enabled
+        const trc = data.metadata.trc;
+        const spn = data.metadata.spn;
+        activitySpan =
+          DurableTelemetryService.isEnabled() && trc && spn
+            ? DurableTelemetryService.startSpan(
+                trc,
+                spn,
+                `ACTIVITY/${activityName}`,
+                {
+                  'durable.activity.name': activityName,
+                  'durable.workflow.id': activityInput.workflowId,
+                },
+              )
+            : null;
+
         const pojoResponse = await activityAsyncLocalStorage.run(
           activityContext,
           () => {
@@ -592,12 +675,19 @@ export class WorkerService {
           },
         );
 
+        activitySpan?.end();
+
         return {
           status: StreamStatus.SUCCESS,
           metadata: { ...data.metadata },
           data: { response: pojoResponse },
         };
       } catch (err) {
+        activitySpan?.setStatus({
+          code: SpanStatusCode.ERROR,
+          message: err.message,
+        });
+        activitySpan?.end();
         this.activityRunner.engine.logger.error('durable-worker-activity-err', {
           name: err.name,
           message: err.message,
@@ -757,6 +847,23 @@ export class WorkerService {
         const workflowResponse = await asyncLocalStorage.run(
           context,
           async () => {
+            // Emit WORKFLOW/START on first execution (not replay)
+            if (
+              DurableTelemetryService.isEnabled() &&
+              Object.keys(replay).length === 0
+            ) {
+              DurableTelemetryService.emitPointSpan(
+                data.metadata.trc,
+                data.metadata.spn,
+                `WORKFLOW/START/${workflowFunctionName}`,
+                {
+                  'durable.workflow.id': workflowInput.workflowId,
+                  'durable.workflow.name': workflowFunctionName,
+                  'durable.workflow.topic': workflowTopic,
+                },
+              );
+            }
+
             // Get the interceptor service
             const interceptorService = Durable.getInterceptorService();
 
@@ -772,6 +879,20 @@ export class WorkerService {
             return await interceptorService.executeInboundChain(context, execWorkflow);
           },
         );
+
+        // Emit WORKFLOW/COMPLETE when the workflow finishes successfully
+        if (DurableTelemetryService.isEnabled()) {
+          DurableTelemetryService.emitPointSpan(
+            data.metadata.trc,
+            data.metadata.spn,
+            `WORKFLOW/COMPLETE/${workflowFunctionName}`,
+            {
+              'durable.workflow.id': workflowInput.workflowId,
+              'durable.workflow.name': workflowFunctionName,
+              'durable.workflow.topic': workflowTopic,
+            },
+          );
+        }
 
         //if the embedded function has a try/catch, it can interrup the throw
         // throw here to interrupt the workflow if the embedded function caught and suppressed
@@ -934,6 +1055,22 @@ export class WorkerService {
 
         // ALL other errors are actual fatal errors (598, 597, 596)
         //  OR will be retried (599)
+        if (DurableTelemetryService.isEnabled()) {
+          DurableTelemetryService.emitPointSpan(
+            data.metadata.trc,
+            data.metadata.spn,
+            `WORKFLOW/ERROR/${workflowFunctionName}`,
+            {
+              'durable.workflow.id':
+                (data.data as unknown as WorkflowDataType).workflowId,
+              'durable.workflow.name': workflowFunctionName,
+              'error.message': err.message,
+              'error.type': err.name || 'Error',
+            },
+            SpanStatusCode.ERROR,
+            err.message,
+          );
+        }
         isProcessing = true;
         return {
           status: StreamStatus.SUCCESS,

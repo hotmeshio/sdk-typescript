@@ -1,6 +1,7 @@
 import {
   sleepImmediate,
   DurableWaitForError,
+  DurableTelemetryService,
   HMSH_CODE_DURABLE_WAIT,
   asyncLocalStorage,
 } from './common';
@@ -74,10 +75,49 @@ import { didRun } from './didRun';
 export async function condition<T>(signalId: string): Promise<T> {
   const [didRunAlready, execIndex, result] = await didRun('wait');
   if (didRunAlready) {
+    // Emit RETURN span in debug mode
+    if (DurableTelemetryService.isVerbose() && result) {
+      const store = asyncLocalStorage.getStore();
+      const workflowTrace = store.get('workflowTrace');
+      const workflowSpan = store.get('workflowSpan');
+      if (workflowTrace && workflowSpan && result.ac && result.au) {
+        DurableTelemetryService.emitDurationSpan(
+          workflowTrace,
+          workflowSpan,
+          `RETURN/wait/${signalId}/${execIndex}`,
+          DurableTelemetryService.parseTimestamp(result.ac),
+          DurableTelemetryService.parseTimestamp(result.au),
+          {
+            'durable.operation.type': 'wait',
+            'durable.signal.id': signalId,
+            'durable.exec.index': execIndex,
+          },
+        );
+      }
+    }
     return (result as { id: string; data: { data: T } }).data.data as T;
   }
 
   const store = asyncLocalStorage.getStore();
+
+  // Emit DISPATCH span in debug mode
+  if (DurableTelemetryService.isVerbose()) {
+    const workflowTrace = store.get('workflowTrace');
+    const workflowSpan = store.get('workflowSpan');
+    if (workflowTrace && workflowSpan) {
+      DurableTelemetryService.emitPointSpan(
+        workflowTrace,
+        workflowSpan,
+        `DISPATCH/wait/${signalId}/${execIndex}`,
+        {
+          'durable.operation.type': 'wait',
+          'durable.signal.id': signalId,
+          'durable.exec.index': execIndex,
+        },
+      );
+    }
+  }
+
   const interruptionRegistry = store.get('interruptionRegistry');
   const workflowId = store.get('workflowId');
   const workflowDimension = store.get('workflowDimension') ?? '';
