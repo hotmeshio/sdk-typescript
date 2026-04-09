@@ -555,6 +555,9 @@ class DurableClass {
   /** List all provisioned worker roles. Delegates to {@link HotMesh.listWorkerRoles}. */
   static listWorkerRoles = HotMesh.listWorkerRoles;
 
+  /** Register a global payload codec. Delegates to {@link HotMesh.registerCodec}. */
+  static registerCodec = HotMesh.registerCodec;
+
   /**
    * Shutdown everything. All connections, workers, and clients will be closed.
    * Include in your signal handlers to ensure a clean shutdown.

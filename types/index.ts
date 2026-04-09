@@ -19,6 +19,7 @@ export {
 } from './activity';
 export { App, AppVID, AppTransitions, AppSubscriptions } from './app';
 export { AsyncSignal } from './async';
+export { PayloadCodec } from './codec';
 export { CacheMode } from './cache';
 export { CollationFaultType, CollationStage } from './collator';
 export {

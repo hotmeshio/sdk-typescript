@@ -1,5 +1,6 @@
 import { getSymVal } from '../../modules/utils';
 import { Consumes } from '../../types/activity';
+import { PayloadCodec } from '../../types/codec';
 import {
   StringStringType,
   StringAnyType,
@@ -53,6 +54,34 @@ export class SerializerService {
   symReverseKeys: SymbolMaps;
   symValMaps: SymbolMap;
   symValReverseMaps: SymbolMap;
+
+  private static codec: PayloadCodec | null = null;
+
+  /**
+   * Register a global payload codec for encoding/decoding serialized
+   * object data. Once registered, all object values are stored as
+   * `/b{encoded}` instead of `/s{json}`.
+   *
+   * Pass `null` to remove a previously registered codec.
+   *
+   * @example
+   * ```typescript
+   * SerializerService.registerCodec({
+   *   encode(json) { return Buffer.from(json).toString('base64'); },
+   *   decode(encoded) { return Buffer.from(encoded, 'base64').toString('utf8'); },
+   * });
+   * ```
+   */
+  static registerCodec(codec: PayloadCodec | null): void {
+    SerializerService.codec = codec;
+  }
+
+  /**
+   * Returns the currently registered codec, or `null` if none.
+   */
+  static getCodec(): PayloadCodec | null {
+    return SerializerService.codec;
+  }
 
   constructor() {
     this.resetSymbols({}, {}, {});
@@ -275,7 +304,12 @@ export class SerializerService {
         if (value === null) {
           value = '/n';
         } else {
-          value = '/s' + JSON.stringify(value);
+          const json = JSON.stringify(value);
+          if (SerializerService.codec) {
+            value = '/b' + SerializerService.codec.encode(json);
+          } else {
+            value = '/s' + json;
+          }
         }
         break;
     }
@@ -295,6 +329,13 @@ export class SerializerService {
         return Number(rest);
       case '/n': // null
         return null;
+      case '/b': { // encoded object (codec)
+        const json = SerializerService.codec.decode(rest);
+        if (dateReg.exec(json)) {
+          return new Date(JSON.parse(json));
+        }
+        return JSON.parse(json);
+      }
       case '/s': // object (JSON string)
         if (dateReg.exec(rest)) {
           return new Date(JSON.parse(rest));

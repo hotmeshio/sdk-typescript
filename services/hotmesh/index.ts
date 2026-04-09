@@ -44,7 +44,9 @@ import * as Quorum from './quorum';
 import * as Deployment from './deployment';
 import * as Jobs from './jobs';
 
-// Credential lifecycle (worker-layer concern, re-exported here for convenience)
+// Codec and credential re-exports
+import { SerializerService } from '../serializer';
+import type { PayloadCodec } from '../../types/codec';
 import * as WorkerCredentials from '../worker/credentials';
 import type {
   WorkerCredential,
@@ -415,6 +417,34 @@ class HotMesh {
     return await this.engine?.compress(terms);
   }
 
+  // ************* CODEC *************
+
+  /**
+   * Register a global payload codec for encoding/decoding serialized
+   * object data at rest. Once registered, all object values flowing
+   * through the serializer are stored as `/b{encoded}` instead of
+   * `/s{json}`. Use this for encryption, compression, or custom encoding.
+   *
+   * The codec is global — it applies to all HotMesh and Durable instances
+   * in the process. Pass `null` to remove a previously registered codec.
+   *
+   * **Constraints:** The codec must be synchronous and its output must be
+   * a valid UTF-8 string. Use base64 encoding for binary output.
+   *
+   * @example
+   * ```typescript
+   * import { HotMesh } from '@hotmeshio/hotmesh';
+   *
+   * HotMesh.registerCodec({
+   *   encode(json) { return Buffer.from(json).toString('base64'); },
+   *   decode(encoded) { return Buffer.from(encoded, 'base64').toString('utf8'); },
+   * });
+   * ```
+   */
+  static registerCodec(codec: PayloadCodec | null): void {
+    SerializerService.registerCodec(codec);
+  }
+
   // ************* WORKER CREDENTIALS *************
 
   static provisionWorkerRole = WorkerCredentials.provisionWorkerRole;
@@ -424,4 +454,5 @@ class HotMesh {
 }
 
 export { HotMesh };
+export type { PayloadCodec };
 export type { WorkerCredential, WorkerCredentialInfo };
