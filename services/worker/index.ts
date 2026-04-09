@@ -103,7 +103,12 @@ class WorkerService {
           appId,
           service.guid,
         );
-        await service.initStreamChannel(service, worker.stream, worker.store);
+        await service.initStreamChannel(
+          service,
+          worker.stream,
+          worker.store,
+          !!worker.workerCredentials,
+        );
 
         if (worker.workflowName) {
           // Use singleton consumer via registry (batched fetch + dispatch by workflow_name)
@@ -199,6 +204,7 @@ class WorkerService {
     service: WorkerService,
     stream: ProviderClient,
     store: ProviderClient,
+    securedWorker = false,
   ) {
     service.stream = await StreamServiceFactory.init(
       stream,
@@ -207,6 +213,9 @@ class WorkerService {
       service.appId,
       service.logger,
     );
+    if (securedWorker && 'securedMode' in service.stream) {
+      (service.stream as any).securedMode = true;
+    }
   }
 
   /**

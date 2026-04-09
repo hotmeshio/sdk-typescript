@@ -46,13 +46,20 @@ import { entity } from './entityMethods';
  *
  * ## Data & Observability
  *
- * | Method | Purpose |
- * |--------|---------|
- * | {@link search} | Read/write flat HASH key-value data |
- * | {@link enrich} | One-shot HASH enrichment |
- * | {@link entity} | Structured JSONB document storage |
- * | {@link emit} | Publish events to the event bus |
- * | {@link trace} | Emit OpenTelemetry trace spans |
+ * | Method | Purpose | Secured Workers |
+ * |--------|---------|-----------------|
+ * | {@link search} | Read/write flat HASH key-value data | Not available |
+ * | {@link enrich} | One-shot HASH enrichment | Not available |
+ * | {@link entity} | Structured JSONB document storage | Not available |
+ * | {@link emit} | Publish events to the event bus | Available |
+ * | {@link trace} | Emit OpenTelemetry trace spans | Available |
+ *
+ * **Secured Workers:** `search()`, `enrich()`, and `entity()` write
+ * directly to the `jobs`/`jobs_attributes` tables and are **not available**
+ * to workers connecting with `workerCredentials`. Those workers are
+ * restricted to SECURITY DEFINER stored procedures and have zero direct
+ * table access. Use these methods only in workflows running with full
+ * database credentials.
  *
  * ## Utilities
  *

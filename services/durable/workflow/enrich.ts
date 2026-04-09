@@ -33,6 +33,11 @@ import { search } from './searchMethods';
  * }
  * ```
  *
+ * **Not available with `workerCredentials`.** This is a convenience
+ * wrapper around `search().set()` and inherits the same restriction:
+ * it writes directly to tables, bypassing the stored procedures that
+ * scoped worker roles are restricted to.
+ *
  * @param {StringStringType} fields - Key-value fields to write to the workflow record.
  * @returns {Promise<boolean>} `true` when enrichment is completed.
  */

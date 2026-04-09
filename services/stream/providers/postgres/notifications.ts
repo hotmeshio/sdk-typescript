@@ -268,7 +268,16 @@ export class NotificationManager<TService> {
       // Set up LISTEN for this channel (only once per channel)
       try {
         const listenStart = Date.now();
-        await this.client.query(`LISTEN "${channelName}"`);
+        // In secured mode, use stored procedure for validated LISTEN
+        if (serviceAny.securedMode && serviceAny.safeName) {
+          const schema = serviceAny.safeName(serviceAny.appId);
+          await this.client.query(
+            `SELECT ${schema}.worker_listen($1)`,
+            [resolvedStreamName],
+          );
+        } else {
+          await this.client.query(`LISTEN "${channelName}"`);
+        }
         this.logger.debug('postgres-stream-listen-start', {
           streamName,
           groupName,
@@ -347,7 +356,16 @@ export class NotificationManager<TService> {
         const channelName = getNotificationChannelName(resolvedStreamName, isEngine);
 
         try {
-          await this.client.query(`UNLISTEN "${channelName}"`);
+          // In secured mode, use stored procedure for validated UNLISTEN
+          if (serviceAny.securedMode && serviceAny.safeName) {
+            const schema = serviceAny.safeName(serviceAny.appId);
+            await this.client.query(
+              `SELECT ${schema}.worker_unlisten($1)`,
+              [resolvedStreamName],
+            );
+          } else {
+            await this.client.query(`UNLISTEN "${channelName}"`);
+          }
           this.logger.debug('postgres-stream-unlisten', {
             streamName,
             groupName,

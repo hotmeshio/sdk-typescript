@@ -504,6 +504,58 @@ class DurableClass {
   static guid = guid;
 
   /**
+   * Provision a scoped Postgres role for a worker router. The role
+   * can only dequeue/ack/respond on the specified stream names via
+   * SECURITY DEFINER stored procedures — it has zero direct table access.
+   *
+   * @example
+   * ```typescript
+   * const cred = await Durable.provisionWorkerRole({
+   *   connection: adminConnection,
+   *   namespace: 'durable',
+   *   streamNames: ['payment-activity'],
+   * });
+   *
+   * // Use the scoped credentials when creating a worker
+   * await Durable.registerActivityWorker({
+   *   connection: { class: Postgres, options: pgOptions },
+   *   taskQueue: 'payment',
+   *   workerCredentials: cred,
+   * }, activities);
+   * ```
+   */
+  /**
+   * Provision a scoped Postgres role for a worker router.
+   * Delegates to {@link HotMesh.provisionWorkerRole} — the canonical
+   * implementation lives at the HotMesh layer since worker isolation
+   * is a core mesh capability, not a Durable-specific feature.
+   *
+   * @example
+   * ```typescript
+   * const cred = await Durable.provisionWorkerRole({
+   *   connection: { class: Postgres, options: adminOptions },
+   *   streamNames: ['payment-activity'],
+   * });
+   *
+   * await Durable.registerActivityWorker({
+   *   connection: { class: Postgres, options: { host: 'pg.prod', database: 'hotmesh' } },
+   *   taskQueue: 'payment',
+   *   workerCredentials: cred,
+   * }, activities);
+   * ```
+   */
+  static provisionWorkerRole = HotMesh.provisionWorkerRole;
+
+  /** Rotate a worker role's password. Delegates to {@link HotMesh.rotateWorkerPassword}. */
+  static rotateWorkerPassword = HotMesh.rotateWorkerPassword;
+
+  /** Revoke a worker role (disables login). Delegates to {@link HotMesh.revokeWorkerRole}. */
+  static revokeWorkerRole = HotMesh.revokeWorkerRole;
+
+  /** List all provisioned worker roles. Delegates to {@link HotMesh.listWorkerRoles}. */
+  static listWorkerRoles = HotMesh.listWorkerRoles;
+
+  /**
    * Shutdown everything. All connections, workers, and clients will be closed.
    * Include in your signal handlers to ensure a clean shutdown.
    */

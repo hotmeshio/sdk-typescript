@@ -48,6 +48,63 @@ import { Durable } from './index';
  * The *Worker* service registers workflow and activity functions and
  * connects them to the mesh using the target backend (Postgres, etc).
  *
+ * ## Connection Modes
+ *
+ * ### Standard (legacy) — full admin access
+ *
+ * The worker connects with the same Postgres credentials as the engine.
+ * Simple to set up; all workers share the same connection pool.
+ *
+ * ```typescript
+ * const worker = await Durable.Worker.create({
+ *   connection: {
+ *     class: Postgres,
+ *     options: { connectionString: 'postgres://user:pass@host:5432/hotmesh' },
+ *   },
+ *   taskQueue: 'orders',
+ *   workflow: orderWorkflow,
+ * });
+ * ```
+ *
+ * ### Secured — scoped Postgres role (recommended for production)
+ *
+ * The worker connects as a restricted Postgres role that can only
+ * dequeue/ack/respond on its assigned stream names. All data access
+ * goes through SECURITY DEFINER stored procedures that validate the
+ * role's `app.allowed_streams` session variable before executing.
+ *
+ * **Step 1**: Provision a scoped credential (run once, from the engine/admin):
+ * ```typescript
+ * const cred = await Durable.provisionWorkerRole({
+ *   connection: { class: Postgres, options: adminPgOptions },
+ *   namespace: 'durable',
+ *   streamNames: ['orders-activity'],
+ * });
+ * // cred = { roleName: 'hmsh_wrk_durable_orders_activity', password: '...' }
+ * ```
+ *
+ * **Step 2**: Pass the credential when creating the worker:
+ * ```typescript
+ * const worker = await Durable.Worker.create({
+ *   connection: {
+ *     class: Postgres,
+ *     options: { host: 'pg.prod', port: 5432, database: 'hotmesh' },
+ *   },
+ *   taskQueue: 'orders',
+ *   workflow: orderWorkflow,
+ *   workerCredentials: { user: cred.roleName, password: cred.password },
+ * });
+ * ```
+ *
+ * The worker role **cannot**:
+ * - SELECT/INSERT/UPDATE/DELETE any table directly
+ * - Access `jobs`, `jobs_attributes`, or any engine tables
+ * - Dequeue messages from other workers' streams
+ * - LISTEN on other workers' notification channels
+ *
+ * See `HotMesh.provisionWorkerRole()` (or the convenience alias
+ * `Durable.provisionWorkerRole()`) for credential lifecycle management.
+ *
  * ## Telemetry
  *
  * Workers automatically emit OpenTelemetry spans when an OTel SDK is
@@ -59,7 +116,6 @@ import { Durable } from './index';
  * import { resourceFromAttributes } from '@opentelemetry/resources';
  * import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
  *
- * // 1. Start OTel SDK (Honeycomb, Jaeger, Tempo, etc.)
  * const sdk = new NodeSDK({
  *   resource: resourceFromAttributes({ [ATTR_SERVICE_NAME]: 'my-service' }),
  *   traceExporter: new OTLPTraceExporter({
@@ -68,37 +124,12 @@ import { Durable } from './index';
  *   }),
  * });
  * sdk.start();
- *
- * // 2. Create worker — spans flow automatically
- * const worker = await Durable.Worker.create({ ... });
  * ```
  *
- * Control verbosity with the `HMSH_TELEMETRY` env var:
- *
- * | Value | Spans emitted |
+ * | `HMSH_TELEMETRY` | Spans emitted |
  * |-------|---------------|
  * | `'info'` (default) | `WORKFLOW/START`, `WORKFLOW/COMPLETE`, `WORKFLOW/ERROR`, `ACTIVITY/{name}` |
  * | `'debug'` | All `info` spans + `DISPATCH/RETURN` per operation + engine internals |
- *
- * @example
- * ```typescript
- * import { Durable } from '@hotmeshio/hotmesh';
- * import { Client as Postgres } from 'pg';
- * import * as workflows from './workflows';
- *
- * async function run() {
- *   const worker = await Durable.Worker.create({
- *     connection: {
- *       class: Postgres,
- *       options: { connectionString: 'postgres://user:password@localhost:5432/db' }
- *     },
- *     taskQueue: 'default',
- *     workflow: workflows.example,
- *   });
- *
- *   await worker.run();
- * }
- * ```
  */
 export class WorkerService {
   /**
@@ -311,6 +342,23 @@ export class WorkerService {
    *   }
    * };
    * ```
+   *
+   * @example
+   * ```typescript
+   * // Secured worker with scoped Postgres credentials (VNF-style isolation)
+   * // Step 1: Admin provisions a credential (one-time)
+   * const cred = await Durable.provisionWorkerRole({
+   *   connection: { class: Postgres, options: adminOptions },
+   *   streamNames: ['payment-activity'],
+   * });
+   *
+   * // Step 2: Worker connects with scoped role — can only access payment-activity
+   * await Durable.registerActivityWorker({
+   *   connection: { class: Postgres, options: { host: 'pg.prod', database: 'hotmesh' } },
+   *   taskQueue: 'payment',
+   *   workerCredentials: { user: cred.roleName, password: cred.password },
+   * }, { processPayment, refundPayment });
+   * ```
    */
   static async registerActivityWorker(
     config: Partial<WorkerConfig>,
@@ -338,19 +386,21 @@ export class WorkerService {
     }
 
     // Create activity worker that listens on '{taskQueue}-activity' topic
+    const workerEntry: any = {
+      topic: activityTopic,
+      connection: config.connection,
+      callback: WorkerService.createActivityCallback(),
+    };
+    if (config.workerCredentials) {
+      workerEntry.workerCredentials = config.workerCredentials;
+    }
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid ? `${config.guid}XA` : undefined,
       taskQueue,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
       engine: { connection: config.connection },
-      workers: [
-        {
-          topic: activityTopic,
-          connection: config.connection,
-          callback: WorkerService.createActivityCallback(),
-        },
-      ],
+      workers: [workerEntry],
     });
 
     WorkerService.instances.set(targetTopic, hotMeshWorker);
@@ -605,19 +655,21 @@ export class WorkerService {
       return await WorkerService.instances.get(targetTopic);
     }
     
+    const workerEntry: any = {
+      topic: activityTopic,
+      connection: providerConfig,
+      callback: this.wrapActivityFunctions().bind(this),
+    };
+    if (config.workerCredentials) {
+      workerEntry.workerCredentials = config.workerCredentials;
+    }
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid ? `${config.guid}XA` : undefined,
       taskQueue: config.taskQueue,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: targetNamespace,
       engine: { connection: providerConfig },
-      workers: [
-        {
-          topic: activityTopic,
-          connection: providerConfig,
-          callback: this.wrapActivityFunctions().bind(this),
-        },
-      ],
+      workers: [workerEntry],
     });
     WorkerService.instances.set(targetTopic, hotMeshWorker);
     return hotMeshWorker;
@@ -748,25 +800,27 @@ export class WorkerService {
     const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
+    const workerEntry: any = {
+      topic: taskQueue,
+      workflowName: workflowFunctionName,
+      connection: providerConfig,
+      callback: this.wrapWorkflowFunction(
+        workflowFunction,
+        workflowTopic,
+        workflowFunctionName,
+        config,
+      ).bind(this),
+    };
+    if (config.workerCredentials) {
+      workerEntry.workerCredentials = config.workerCredentials;
+    }
     const hotMeshWorker = await HotMesh.init({
       guid: config.guid,
       taskQueue: config.taskQueue,
       logLevel: config.options?.logLevel ?? HMSH_LOGLEVEL,
       appId: config.namespace ?? APP_ID,
       engine: { connection: providerConfig },
-      workers: [
-        {
-          topic: taskQueue,
-          workflowName: workflowFunctionName,
-          connection: providerConfig,
-          callback: this.wrapWorkflowFunction(
-            workflowFunction,
-            workflowTopic,
-            workflowFunctionName,
-            config,
-          ).bind(this),
-        },
-      ],
+      workers: [workerEntry],
     });
     WorkerService.instances.set(targetTopic, hotMeshWorker);
     return hotMeshWorker;

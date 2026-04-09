@@ -37,6 +37,12 @@ export class ConnectorService {
 
   /**
    * Initialize `store`, `stream`, and `subscription` clients for any provider.
+   *
+   * When the target has `workerCredentials`, the `user` and `password`
+   * in all connection options are overridden with the scoped Postgres
+   * role credentials, and `securedWorker` is set so downstream stream
+   * services use SECURITY DEFINER stored procedures.
+   *
    * @private
    */
   static async initClients(
@@ -51,6 +57,20 @@ export class ConnectorService {
         stream: { ...connection },
         sub: { ...connection },
       };
+    }
+
+    // Apply scoped worker credentials if provided
+    const workerCreds = (target as HotMeshWorker).workerCredentials;
+    if (workerCreds) {
+      for (const key of ['store', 'stream', 'sub'] as const) {
+        if (connection[key]?.options) {
+          connection[key].options = {
+            ...connection[key].options,
+            user: workerCreds.user,
+            password: workerCreds.password,
+          };
+        }
+      }
     }
 
     // Extract taskQueue from target for connection pooling

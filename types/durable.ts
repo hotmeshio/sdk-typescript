@@ -507,6 +507,17 @@ type WorkerConfig = {
    * when identifying the point of presence within the mesh.
    */
   guid?: string;
+
+  /**
+   * Scoped Postgres credentials for database-level worker isolation.
+   * When provided, the worker connects as a restricted Postgres role
+   * that can only dequeue/ack/respond on its allowed stream names
+   * via SECURITY DEFINER stored procedures.
+   *
+   * Provision credentials via `HotMesh.provisionWorkerRole()` (or
+   * the convenience alias `Durable.provisionWorkerRole()`).
+   */
+  workerCredentials?: { user: string; password: string };
 };
 
 type FindWhereQuery = {

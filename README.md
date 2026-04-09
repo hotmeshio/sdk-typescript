@@ -290,7 +290,8 @@ SELECT
   j.key          AS job_key,
   j.status       AS semaphore,
   j.entity       AS workflow,
-  a.field        AS attribute,
+  a.symbol       AS attribute,
+  a.dimension    AS dimension,
   a.value        AS value,
   j.created_at,
   j.updated_at
@@ -300,7 +301,7 @@ FROM
 WHERE
   j.key = 'order-456'
 ORDER BY
-  a.field;
+  a.symbol, a.dimension;
 ```
 
 What happened? Consult the database. What's still running? Query the semaphore. What failed? Read the row. The execution state isn't reconstructed from a log — it was committed transactionally as each step ran.

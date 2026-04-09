@@ -49,6 +49,13 @@ import { asyncLocalStorage, WorkerService, Search } from './common';
  * }
  * ```
  *
+ * **Not available with `workerCredentials`.** This method writes directly
+ * to the `jobs` and `jobs_attributes` tables, bypassing the SECURITY
+ * DEFINER stored procedures that scoped worker roles are restricted to.
+ * Workers connecting with `workerCredentials` will receive a permission
+ * error. Use `search()` only in workflows running with full database
+ * credentials.
+ *
  * @returns {Promise<Search>} A search session scoped to the current workflow job.
  */
 export async function search(): Promise<Search> {
