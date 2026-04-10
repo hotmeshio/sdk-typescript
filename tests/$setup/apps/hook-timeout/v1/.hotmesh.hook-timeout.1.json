@@ -1,0 +1,345 @@
+{
+  "app": {
+    "id": "hook-timeout",
+    "version": "1",
+    "graphs": [
+      {
+        "subscribes": "hook.timeout.test",
+        "publishes": "hook.timeout.tested",
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "job_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "signaled": {
+                "type": "boolean"
+              },
+              "signal_data": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "expire": 120,
+        "activities": {
+          "trigger": {
+            "title": "Entry Point",
+            "type": "trigger",
+            "stats": {
+              "id": "{$self.input.data.job_id}"
+            },
+            "job": {
+              "maps": {
+                "signaled": false
+              }
+            }
+          },
+          "wait_with_timeout": {
+            "title": "Wait for signal with a 10s timeout",
+            "type": "hook",
+            "sleep": 10,
+            "hook": {
+              "type": "object",
+              "properties": {
+                "done": {
+                  "type": "boolean"
+                },
+                "payload": {
+                  "type": "string"
+                }
+              }
+            },
+            "job": {
+              "maps": {
+                "signaled": {
+                  "@pipe": [
+                    [
+                      "{$self.hook.data.done}",
+                      false
+                    ],
+                    [
+                      "{@conditional.nullish}"
+                    ]
+                  ]
+                },
+                "signal_data": {
+                  "@pipe": [
+                    [
+                      "{$self.hook.data.payload}",
+                      "timeout"
+                    ],
+                    [
+                      "{@conditional.nullish}"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "done": {
+            "title": "Terminal",
+            "type": "hook"
+          }
+        },
+        "transitions": {
+          "trigger": [
+            {
+              "to": "wait_with_timeout"
+            }
+          ],
+          "wait_with_timeout": [
+            {
+              "to": "done"
+            }
+          ]
+        },
+        "hooks": {
+          "hook.timeout.resume": [
+            {
+              "to": "wait_with_timeout",
+              "conditions": {
+                "match": [
+                  {
+                    "expected": "{$job.metadata.jid}",
+                    "actual": "{$self.hook.data.id}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "subscribes": "hook.expire.test",
+        "publishes": "hook.expire.tested",
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "job_id": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "signaled": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "expire": 120,
+        "activities": {
+          "expire_trigger": {
+            "title": "Entry Point",
+            "type": "trigger",
+            "stats": {
+              "id": "{$self.input.data.job_id}"
+            },
+            "job": {
+              "maps": {
+                "signaled": false
+              }
+            }
+          },
+          "wait_for_timeout": {
+            "title": "Wait for signal with a 5s timeout (no signal will arrive)",
+            "type": "hook",
+            "sleep": 5,
+            "hook": {
+              "type": "object",
+              "properties": {
+                "done": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "job": {
+              "maps": {
+                "signaled": {
+                  "@pipe": [
+                    [
+                      "{$self.hook.data.done}",
+                      false
+                    ],
+                    [
+                      "{@conditional.nullish}"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "expire_done": {
+            "title": "Terminal",
+            "type": "hook"
+          }
+        },
+        "transitions": {
+          "expire_trigger": [
+            {
+              "to": "wait_for_timeout"
+            }
+          ],
+          "wait_for_timeout": [
+            {
+              "to": "expire_done"
+            }
+          ]
+        },
+        "hooks": {
+          "hook.expire.resume": [
+            {
+              "to": "wait_for_timeout",
+              "conditions": {
+                "match": [
+                  {
+                    "expected": "{$job.metadata.jid}",
+                    "actual": "{$self.hook.data.id}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "subscribes": "hook.dynamic.test",
+        "publishes": "hook.dynamic.tested",
+        "input": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "job_id": {
+                "type": "string"
+              },
+              "timeout": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "output": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "signaled": {
+                "type": "boolean"
+              },
+              "signal_data": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "expire": 120,
+        "activities": {
+          "dynamic_trigger": {
+            "title": "Entry Point",
+            "type": "trigger",
+            "stats": {
+              "id": "{$self.input.data.job_id}"
+            },
+            "job": {
+              "maps": {
+                "signaled": false
+              }
+            }
+          },
+          "dynamic_wait": {
+            "title": "Hook with dynamic sleep (null = no timeout, number = timeout)",
+            "type": "hook",
+            "sleep": {
+              "@pipe": [
+                [
+                  "{dynamic_trigger.output.data.timeout}"
+                ]
+              ]
+            },
+            "hook": {
+              "type": "object",
+              "properties": {
+                "done": {
+                  "type": "boolean"
+                },
+                "payload": {
+                  "type": "string"
+                }
+              }
+            },
+            "job": {
+              "maps": {
+                "signaled": {
+                  "@pipe": [
+                    [
+                      "{$self.hook.data.done}",
+                      false
+                    ],
+                    [
+                      "{@conditional.nullish}"
+                    ]
+                  ]
+                },
+                "signal_data": {
+                  "@pipe": [
+                    [
+                      "{$self.hook.data.payload}",
+                      "timeout"
+                    ],
+                    [
+                      "{@conditional.nullish}"
+                    ]
+                  ]
+                }
+              }
+            }
+          },
+          "dynamic_done": {
+            "title": "Terminal",
+            "type": "hook"
+          }
+        },
+        "transitions": {
+          "dynamic_trigger": [
+            {
+              "to": "dynamic_wait"
+            }
+          ],
+          "dynamic_wait": [
+            {
+              "to": "dynamic_done"
+            }
+          ]
+        },
+        "hooks": {
+          "hook.dynamic.resume": [
+            {
+              "to": "dynamic_wait",
+              "conditions": {
+                "match": [
+                  {
+                    "expected": "{$job.metadata.jid}",
+                    "actual": "{$self.hook.data.id}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

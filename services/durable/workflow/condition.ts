@@ -3,6 +3,7 @@ import {
   DurableWaitForError,
   DurableTelemetryService,
   HMSH_CODE_DURABLE_WAIT,
+  s,
   asyncLocalStorage,
 } from './common';
 import { didRun } from './didRun';
@@ -70,9 +71,13 @@ import { didRun } from './didRun';
  *
  * @template T - The type of data expected in the signal payload.
  * @param {string} signalId - A unique signal identifier shared by the sender and receiver.
- * @returns {Promise<T>} The data payload associated with the received signal.
+ * @param {string} [timeout] - Optional duration (e.g., '30s', '5m', '1h'). Returns `false` on timeout.
+ * @returns {Promise<T | false>} The signal data, or `false` if the timeout expired first.
  */
-export async function condition<T>(signalId: string): Promise<T> {
+export async function condition<T>(
+  signalId: string,
+  timeout?: string,
+): Promise<T | false> {
   const [didRunAlready, execIndex, result] = await didRun('wait');
   if (didRunAlready) {
     // Emit RETURN span in debug mode
@@ -94,6 +99,10 @@ export async function condition<T>(signalId: string): Promise<T> {
           },
         );
       }
+    }
+    // If the condition timed out (timeout won the race), return false
+    if (result?.timedOut) {
+      return false;
     }
     return (result as { id: string; data: { data: T } }).data.data as T;
   }
@@ -128,6 +137,7 @@ export async function condition<T>(signalId: string): Promise<T> {
     workflowDimension,
     type: 'DurableWaitForError',
     code: HMSH_CODE_DURABLE_WAIT,
+    ...(timeout ? { duration: s(timeout) } : {}),
   };
   interruptionRegistry.push(interruptionMessage);
 

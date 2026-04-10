@@ -17,7 +17,7 @@
  * * Master Data Management systems
  */
 
-const APP_VERSION = '9';
+const APP_VERSION = '10';
 const APP_ID = 'durable';
 
 /**
@@ -1856,8 +1856,13 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   - ['{@object.create}']
 
         collator_waiter:
-          title: Waits for a matching signal to be sent to the collator workflow
+          title: Waits for a matching signal or optional timeout
           type: hook
+          sleep:
+            '@pipe':
+              - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+              - ['{@array.get}', duration]
+              - ['{@object.get}']
           hook:
             type: object
             properties:
@@ -1867,12 +1872,18 @@ const getWorkflowYAML = (app: string, version: string): string => {
             maps:
               response[25]:
                 '@pipe':
-                  - ['{collator_trigger.output.data.items}']
                   - '@pipe':
                     - ['{collator_cycle_hook.output.data.cur_index}']
                   - '@pipe':
-                    - [type, wait, data, '{$self.hook.data}', ac, '{$job.metadata.jc}', au, '{$self.output.metadata.au}']
-                    - ['{@object.create}']
+                    - '@pipe':
+                      - ['{$self.hook.data.id}']
+                    - '@pipe':
+                      - [type, wait, data, '{$self.hook.data}', ac, '{$job.metadata.jc}', au, '{$self.output.metadata.au}']
+                      - ['{@object.create}']
+                    - '@pipe':
+                      - [type, wait, timedOut, true, ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
+                      - ['{@object.create}']
+                    - ['{@conditional.ternary}']
                   - ['{@object.create}']
 
         collator_childer:
