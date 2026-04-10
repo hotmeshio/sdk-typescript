@@ -20,6 +20,7 @@ import { didInterrupt } from './interruption';
 import { all } from './all';
 import { sleep } from './sleep';
 import { condition } from './condition';
+import { continueAsNew } from './continueAsNew';
 import { asyncLocalStorage, WorkerService, HotMesh } from './common';
 import { entity } from './entityMethods';
 
@@ -43,6 +44,7 @@ import { entity } from './entityMethods';
  * | {@link execHookBatch} | Spawn multiple hooks in parallel |
  * | {@link hook} | Low-level hook spawning |
  * | {@link interrupt} | Terminate a running workflow |
+ * | {@link continueAsNew} | Complete and restart with new args |
  *
  * ## Data & Observability
  *
@@ -132,6 +134,7 @@ export class WorkflowService {
   static all = all;
   static sleep = sleep;
   static condition = condition;
+  static continueAsNew = continueAsNew;
 
   /**
    * Return a handle to the HotMesh client hosting the workflow execution.

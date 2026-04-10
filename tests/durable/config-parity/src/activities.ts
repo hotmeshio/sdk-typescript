@@ -25,3 +25,10 @@ export async function slowActivity(): Promise<string> {
   await new Promise((resolve) => setTimeout(resolve, 30_000));
   return 'slow';
 }
+
+export async function processBatch(cursor: number): Promise<{ nextCursor: number | null; processed: number }> {
+  // Simulate batch processing: 3 batches of 10 items each
+  const processed = 10;
+  const nextCursor = cursor < 3 ? cursor + 1 : null;
+  return { nextCursor, processed };
+}

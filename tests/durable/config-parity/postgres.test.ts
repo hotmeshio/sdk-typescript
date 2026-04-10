@@ -64,6 +64,55 @@ describe('DURABLE | Config Parity | Postgres', () => {
     }, 60_000);
   });
 
+  describe('continueAsNew', () => {
+    it('should create worker', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'continue-as-new',
+        workflow: workflows.continueAsNewWorkflow,
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should restart workflow with new args and accumulate results across generations (positive)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: [1, 0],
+        taskQueue: 'continue-as-new',
+        workflowName: 'continueAsNewWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      // 3 batches of 10 items each = 30 total
+      expect(result).toBe(30);
+    }, 30_000);
+
+    it('should create terminal worker', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'continue-terminal',
+        workflow: workflows.continueAsNewTerminalWorkflow,
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should prove continueAsNew is terminal — code after it never runs (negative)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: [0],
+        taskQueue: 'continue-terminal',
+        workflowName: 'continueAsNewTerminalWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      // If continueAsNew weren't terminal, we'd get 'unreachable'
+      // Instead, workflow restarts with iteration=1 and returns 'completed-at-1'
+      expect(result).toBe('completed-at-1');
+    }, 30_000);
+  });
+
   describe('startToCloseTimeout', () => {
     it('should create worker', async () => {
       const worker = await Worker.create({

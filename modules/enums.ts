@@ -84,6 +84,10 @@ export const HMSH_CODE_DURABLE_CHILD = 590;
  */
 export const HMSH_CODE_DURABLE_PROXY = 591;
 /**
+ * This is thrown when a Durable has been interrupted by a continueAsNew call.
+ */
+export const HMSH_CODE_DURABLE_CONTINUE = 592;
+/**
  * This is thrown when a Durable has been interrupted by a waitForSignal call.
  */
 export const HMSH_CODE_DURABLE_WAIT = 595;

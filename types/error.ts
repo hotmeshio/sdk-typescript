@@ -61,3 +61,10 @@ export type DurableSleepErrorType = {
   workflowDimension: string;
   workflowId: string;
 };
+
+export type DurableContinueAsNewErrorType = {
+  arguments: any[];
+  index: number;
+  workflowDimension: string;
+  workflowId: string;
+};

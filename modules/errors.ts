@@ -2,6 +2,7 @@ import { ActivityDuplex } from '../types/activity';
 import { CollationFaultType, CollationStage } from '../types/collator';
 import {
   DurableChildErrorType,
+  DurableContinueAsNewErrorType,
   DurableProxyErrorType,
   DurableSleepErrorType,
   DurableWaitForAllErrorType,
@@ -17,6 +18,7 @@ import {
   HMSH_CODE_DURABLE_WAIT,
   HMSH_CODE_DURABLE_PROXY,
   HMSH_CODE_DURABLE_CHILD,
+  HMSH_CODE_DURABLE_CONTINUE,
   HMSH_CODE_DURABLE_ALL,
   HMSH_CODE_DURABLE_SLEEP,
 } from './enums';
@@ -177,6 +179,23 @@ class DurableSleepError extends Error {
   }
 }
 
+class DurableContinueAsNewError extends Error {
+  workflowId: string;
+  code: number;
+  arguments: any[];
+  index: number;
+  workflowDimension: string;
+  type = 'DurableContinueAsNewError';
+  constructor(params: DurableContinueAsNewErrorType) {
+    super(`ContinueAsNew Interruption`);
+    this.arguments = params.arguments;
+    this.workflowId = params.workflowId;
+    this.index = params.index;
+    this.workflowDimension = params.workflowDimension;
+    this.code = HMSH_CODE_DURABLE_CONTINUE;
+  }
+}
+
 class DurableTimeoutError extends Error {
   code: number;
   type = 'DurableTimeoutError';
@@ -306,6 +325,7 @@ class CollationError extends Error {
 export {
   CollationError,
   DurableChildError,
+  DurableContinueAsNewError,
   DurableFatalError,
   DurableMaxedError,
   DurableProxyError,

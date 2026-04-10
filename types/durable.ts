@@ -467,6 +467,7 @@ type WorkflowDataType = {
   originJobId?: string; //is present if there is an originating ancestor job
   canRetry?: boolean;
   expire?: number;
+  continueGeneration?: number; //incremented on each continueAsNew cycle
 };
 
 type Connection = ProviderConfig | ProvidersConfig;

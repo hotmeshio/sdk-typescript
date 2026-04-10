@@ -1,5 +1,6 @@
 import {
   DurableChildError,
+  DurableContinueAsNewError,
   DurableFatalError,
   DurableMaxedError,
   DurableProxyError,
@@ -24,9 +25,10 @@ import {
  *
  * ## Recognized Error Types
  *
- * `DurableChildError`, `DurableFatalError`, `DurableMaxedError`,
- * `DurableProxyError`, `DurableRetryError`, `DurableSleepError`,
- * `DurableTimeoutError`, `DurableWaitForError`, `DurableWaitForAllError`
+ * `DurableChildError`, `DurableContinueAsNewError`, `DurableFatalError`,
+ * `DurableMaxedError`, `DurableProxyError`, `DurableRetryError`,
+ * `DurableSleepError`, `DurableTimeoutError`, `DurableWaitForError`,
+ * `DurableWaitForAllError`
  *
  * ## Examples
  *
@@ -73,6 +75,7 @@ import {
 export function didInterrupt(error: Error): boolean {
   return (
     error instanceof DurableChildError ||
+    error instanceof DurableContinueAsNewError ||
     error instanceof DurableFatalError ||
     error instanceof DurableMaxedError ||
     error instanceof DurableProxyError ||

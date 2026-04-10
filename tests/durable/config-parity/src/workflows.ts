@@ -27,6 +27,41 @@ export async function startToCloseWorkflow(): Promise<string> {
   return await fastActivity();
 }
 
+// Positive test: continueAsNew restarts with new args until cursor exhausted
+export async function continueAsNewWorkflow(cursor = 1, totalProcessed = 0): Promise<number> {
+  const { processBatch } = Durable.workflow.proxyActivities<typeof activities>({
+    activities,
+    retryPolicy: { maximumAttempts: 3 },
+  });
+
+  const result = await processBatch(cursor);
+  const newTotal = totalProcessed + result.processed;
+
+  if (result.nextCursor !== null) {
+    // Restart with fresh history, carrying forward state via args
+    await Durable.workflow.continueAsNew(result.nextCursor, newTotal);
+  }
+  // Final iteration — return accumulated total
+  return newTotal;
+}
+
+// Negative test: continueAsNew is terminal — code after it is unreachable
+export async function continueAsNewTerminalWorkflow(iteration = 0): Promise<string> {
+  const { processBatch } = Durable.workflow.proxyActivities<typeof activities>({
+    activities,
+    retryPolicy: { maximumAttempts: 3 },
+  });
+
+  await processBatch(iteration);
+
+  if (iteration < 1) {
+    await Durable.workflow.continueAsNew(iteration + 1);
+    // This code should NEVER execute
+    return 'unreachable';
+  }
+  return `completed-at-${iteration}`;
+}
+
 // Test startToCloseTimeout with a slow activity (negative: exceeds timeout)
 export async function startToCloseTimeoutWorkflow(): Promise<string> {
   const { slowActivity } = Durable.workflow.proxyActivities<typeof activities>({

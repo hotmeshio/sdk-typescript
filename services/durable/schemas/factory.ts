@@ -17,7 +17,7 @@
  * * Master Data Management systems
  */
 
-const APP_VERSION = '10';
+const APP_VERSION = '11';
 const APP_ID = 'durable';
 
 /**
@@ -183,10 +183,14 @@ const getWorkflowYAML = (app: string, version: string): string => {
             maps:
               originJobId: '{trigger.output.data.originJobId}'
               workflowId: '{trigger.output.data.workflowId}'
-              arguments: '{trigger.output.data.arguments}'
+              arguments:
+                '@pipe':
+                  - ['{cycle_hook.output.data.continueArgs}', '{trigger.output.data.arguments}']
+                  - ['{@conditional.nullish}']
               workflowTopic: '{trigger.output.data.workflowTopic}'
               workflowName: '{trigger.output.data.workflowName}'
               expire: '{trigger.output.data.expire}'
+              continueGeneration: '{cycle_hook.output.data.continueGeneration}'
               canRetry:
                 '@pipe':
                   - '@pipe':
@@ -304,6 +308,19 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   index:
                     type: number
                     description: the replay index (COUNTER++)
+            592:
+              schema:
+                type: object
+                properties:
+                  arguments:
+                    type: array
+                    description: the arguments to pass to the restarted workflow
+                    items:
+                      type: any
+                  index:
+                    type: number
+                  workflowDimension:
+                    type: string
             595:
               schema:
                 type: object
@@ -344,6 +361,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
             maps:
               retryCount: 0
               throttleSeconds: 0
+              continueGeneration: '{cycle_hook.output.data.continueGeneration}'
+              continueArgs: '{cycle_hook.output.data.continueArgs}'
 
         childer:
           title: Awaits a child flow to be executed/started
@@ -542,6 +561,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   - '@pipe':
                     - [0]
                   - ['{@conditional.ternary}']
+              continueGeneration: '{cycle_hook.output.data.continueGeneration}'
+              continueArgs: '{cycle_hook.output.data.continueArgs}'
 
         proxyer:
           title: Invokes the activity flow and awaits the response
@@ -703,6 +724,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   - '@pipe':
                     - [0]
                   - ['{@conditional.ternary}']
+              continueGeneration: '{cycle_hook.output.data.continueGeneration}'
+              continueArgs: '{cycle_hook.output.data.continueArgs}'
 
         collator:
           title: Awaits the collator flow to simultaneously resolve the idempotent items and return as a sequential set
@@ -806,6 +829,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
             maps:
               retryCount: 0
               throttleSeconds: 0
+              continueGeneration: '{cycle_hook.output.data.continueGeneration}'
+              continueArgs: '{cycle_hook.output.data.continueArgs}'
 
         retryer:
           title: Cycles back to the cycle_hook pivot, increasing the retryCount (the exponential)
@@ -832,6 +857,24 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     - ['{trigger.output.data.maximumInterval}', 120]
                     - ['{@logical.or}']
                   - ['{@math.min}']
+              continueGeneration: '{cycle_hook.output.data.continueGeneration}'
+              continueArgs: '{cycle_hook.output.data.continueArgs}'
+
+        continuer:
+          title: Cycles back to cycle_hook after continueAsNew, resetting execution with new arguments
+          type: cycle
+          ancestor: cycle_hook
+          input:
+            maps:
+              retryCount: 0
+              throttleSeconds: 0
+              continueArgs: '{worker.output.data.arguments}'
+              continueGeneration:
+                '@pipe':
+                  - ['{cycle_hook.output.data.continueGeneration}', 0]
+                  - ['{@logical.or}', 1]
+                  - ['{@math.add}']
+
         ender:
           title: Sets job data; ignores the \`Signal In\` Hook Channel which was suppressed; sends the final response
           type: hook
@@ -1670,6 +1713,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
           - to: proxyer
             conditions:
               code: 591
+          - to: continuer
+            conditions:
+              code: 592
           - to: retryer
             conditions:
               code: 599

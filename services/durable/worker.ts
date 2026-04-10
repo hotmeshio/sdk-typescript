@@ -11,6 +11,7 @@ import {
 } from '../../modules/enums';
 import {
   DurableChildError,
+  DurableContinueAsNewError,
   DurableFatalError,
   DurableMaxedError,
   DurableProxyError,
@@ -895,6 +896,12 @@ export class WorkerService {
           //hook function re-runs, its scope will always remain constant
           context.set('workflowDimension', workflowInput.workflowDimension);
           replayQuery = `-*${workflowInput.workflowDimension}-*`;
+        } else if (workflowInput.continueGeneration) {
+          //continueAsNew: use generation prefix for replay isolation;
+          //old generation keys remain but are invisible to the new execution
+          const genPrefix = `$${workflowInput.continueGeneration}`;
+          context.set('workflowDimension', genPrefix);
+          replayQuery = `-*${genPrefix}-*`;
         } else {
           //last letter of words like 'hook', 'sleep', 'wait', 'signal', 'search', 'start', 'proxy', 'child', 'collator', 'trace', 'enrich', 'publish'
           replayQuery = '-*[ehklptydr]-*';
@@ -979,6 +986,8 @@ export class WorkerService {
               throw new DurableChildError(payload);
             case 'DurableSleepError':
               throw new DurableSleepError(payload);
+            case 'DurableContinueAsNewError':
+              throw new DurableContinueAsNewError(payload);
             case 'DurableTimeoutError':
               throw new DurableTimeoutError(payload.message, payload.stack);
             case 'DurableMaxedError':
@@ -1124,6 +1133,20 @@ export class WorkerService {
               workflowTopic: err.workflowTopic,
               taskQueue: err.taskQueue,
               workflowName: err.workflowName,
+            },
+          } as StreamDataResponse;
+        } else if (err instanceof DurableContinueAsNewError) {
+          //return the continueAsNew interruption
+          isProcessing = true;
+          return {
+            status: StreamStatus.SUCCESS,
+            code: err.code,
+            metadata: { ...data.metadata },
+            data: {
+              code: err.code,
+              arguments: err.arguments,
+              index: err.index,
+              workflowDimension: err.workflowDimension,
             },
           } as StreamDataResponse;
         }
