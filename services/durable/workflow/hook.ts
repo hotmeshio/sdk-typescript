@@ -3,6 +3,7 @@ import {
   WorkerService,
   s,
   HMSH_DURABLE_EXP_BACKOFF,
+  HMSH_DURABLE_INITIAL_INTERVAL,
   HMSH_DURABLE_MAX_ATTEMPTS,
   HMSH_DURABLE_MAX_INTERVAL,
   StreamStatus,
@@ -136,6 +137,9 @@ export async function hook(options: HookOptions): Promise<string> {
       workflowName: hookWorkflowName,
       backoffCoefficient:
         options.config?.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
+      initialInterval: s(
+        options?.config?.initialInterval ?? `${HMSH_DURABLE_INITIAL_INTERVAL}s`,
+      ),
       maximumAttempts:
         options.config?.maximumAttempts || HMSH_DURABLE_MAX_ATTEMPTS,
       maximumInterval: s(

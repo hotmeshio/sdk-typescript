@@ -712,7 +712,7 @@ export class WorkerService {
               )
             : null;
 
-        const pojoResponse = await activityAsyncLocalStorage.run(
+        const activityPromise = activityAsyncLocalStorage.run(
           activityContext,
           () => {
             const executeFn = () => activityFunction.apply(this, activityInput.arguments);
@@ -726,6 +726,24 @@ export class WorkerService {
             return executeFn();
           },
         );
+
+        let pojoResponse: any;
+        if (activityInput.startToCloseTimeout && activityInput.startToCloseTimeout > 0) {
+          const timeoutMs = activityInput.startToCloseTimeout * 1000;
+          pojoResponse = await Promise.race([
+            activityPromise,
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new DurableTimeoutError(
+                  `Activity '${activityName}' exceeded startToCloseTimeout of ${activityInput.startToCloseTimeout}s`,
+                )),
+                timeoutMs,
+              ),
+            ),
+          ]);
+        } else {
+          pojoResponse = await activityPromise;
+        }
 
         activitySpan?.end();
 
@@ -1065,8 +1083,10 @@ export class WorkerService {
               workflowTopic: err.workflowTopic,
               activityName: err.activityName,
               backoffCoefficient: err.backoffCoefficient,
+              initialInterval: err.initialInterval,
               maximumAttempts: err.maximumAttempts,
               maximumInterval: err.maximumInterval,
+              startToCloseTimeout: err.startToCloseTimeout,
             },
           } as StreamDataResponse;
         } else if (err instanceof DurableChildError) {
@@ -1088,6 +1108,7 @@ export class WorkerService {
                 err.backoffCoefficient || HMSH_DURABLE_EXP_BACKOFF,
               code: err.code,
               index: err.index,
+              initialInterval: err.initialInterval,
               message: JSON.stringify(msg),
               maximumAttempts: err.maximumAttempts || HMSH_DURABLE_MAX_ATTEMPTS,
               maximumInterval:

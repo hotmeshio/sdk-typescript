@@ -11,13 +11,20 @@ import { StreamData, StreamError } from './stream';
 type WorkflowConfig = {
   /**
    * Backoff coefficient for retry mechanism.
-   * @default 10 (HMSH_DURABLE_EXP_BACKOFF)
+   * @default 5 (HMSH_DURABLE_EXP_BACKOFF)
    */
   backoffCoefficient?: number;
 
   /**
+   * Initial interval before the first retry attempt.
+   * Formula: initialInterval * backoffCoefficient^retryCount, clamped by maximumInterval.
+   * @default '1s' (HMSH_DURABLE_INITIAL_INTERVAL)
+   */
+  initialInterval?: string;
+
+  /**
    * Maximum number of attempts for retries.
-   * @default 5 (HMSH_DURABLE_MAX_ATTEMPTS)
+   * @default 50 (HMSH_DURABLE_MAX_ATTEMPTS)
    */
   maximumAttempts?: number;
 
@@ -447,6 +454,7 @@ type ActivityWorkflowDataType = {
   activityName: string;
   arguments: any[];
   headers?: Record<string, any>;
+  startToCloseTimeout?: number;
   workflowId: string;
   workflowTopic: string;
 };
@@ -570,11 +578,14 @@ type WorkerOptions = {
   /** Log level: debug, info, warn, error */
   logLevel?: LogLevel;
 
-  /** Maximum number of attempts, default 5 (HMSH_DURABLE_MAX_ATTEMPTS) */
+  /** Maximum number of attempts, default 50 (HMSH_DURABLE_MAX_ATTEMPTS) */
   maximumAttempts?: number;
 
   /** Backoff coefficient for retry logic, default 10 (HMSH_DURABLE_EXP_BACKOFF) */
   backoffCoefficient?: number;
+
+  /** Initial interval before the first retry, default '1s' (HMSH_DURABLE_INITIAL_INTERVAL) */
+  initialInterval?: string;
 
   /** Maximum interval between retries, default 120s (HMSH_DURABLE_MAX_INTERVAL) */
   maximumInterval?: string;
@@ -599,7 +610,7 @@ type ActivityConfig = {
   /** place holder setting; unused at this time (re: activity workflow expire configuration) */
   expire?: number;
 
-  /** Start to close timeout for the activity; not yet implemented */
+  /** Maximum time an activity can run after starting execution. If exceeded, the activity fails with a timeout error. Accepts duration strings (e.g., '30s', '5m', '1h'). */
   startToCloseTimeout?: string;
 
   /** Configuration for specific activities, type not yet specified */
@@ -645,11 +656,13 @@ type ActivityConfig = {
 
   /** Retry policy configuration for activities */
   retryPolicy?: {
-    /** Maximum number of retry attempts, default is 5 (HMSH_DURABLE_MAX_ATTEMPTS) */
+    /** Maximum number of retry attempts, default is 50 (HMSH_DURABLE_MAX_ATTEMPTS) */
     maximumAttempts?: number;
-    /** Factor by which the retry timeout increases, default is 10 (HMSH_DURABLE_MAX_INTERVAL) */
+    /** Factor by which the retry timeout increases, default is 10 (HMSH_DURABLE_EXP_BACKOFF) */
     backoffCoefficient?: number;
-    /** Maximum interval between retries, default is '120s' (HMSH_DURABLE_EXP_BACKOFF) */
+    /** Initial interval before the first retry. Formula: initialInterval * backoffCoefficient^retryCount, clamped by maximumInterval. Default is '1s' */
+    initialInterval?: string;
+    /** Maximum interval between retries, default is '120s' (HMSH_DURABLE_MAX_INTERVAL) */
     maximumInterval?: string;
     /** Whether to throw an error on failure, default is true */
     throwOnError?: boolean;

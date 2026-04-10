@@ -153,9 +153,9 @@ export const HMSH_GRADUATED_INTERVAL_MS =
 // DURABLE
 /**
  * The maximum number of attempts to retry a Durable job before it is considered failed.
- * @default 3
+ * @default 50
  */
-export const HMSH_DURABLE_MAX_ATTEMPTS = 3;
+export const HMSH_DURABLE_MAX_ATTEMPTS = 50;
 /**
  * The maximum interval to wait before retrying a Durable job.
  * @default 120s
@@ -163,9 +163,16 @@ export const HMSH_DURABLE_MAX_ATTEMPTS = 3;
 export const HMSH_DURABLE_MAX_INTERVAL = '120s';
 /**
  * The exponential backoff factor to apply to the interval between retries.
- * @default 10
+ * @default 5
  */
-export const HMSH_DURABLE_EXP_BACKOFF = 10;
+export const HMSH_DURABLE_EXP_BACKOFF = 5;
+/**
+ * The initial interval (in seconds) before the first retry attempt.
+ * The retry formula is: initialInterval * backoffCoefficient^retryCount,
+ * clamped by maximumInterval.
+ * @default 1
+ */
+export const HMSH_DURABLE_INITIAL_INTERVAL = 1;
 
 const BASE_BLOCK_DURATION = 10000;
 const TEST_BLOCK_DURATION = 1000;

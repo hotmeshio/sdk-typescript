@@ -15,6 +15,7 @@ import {
   guid,
   s,
   HMSH_DURABLE_EXP_BACKOFF,
+  HMSH_DURABLE_INITIAL_INTERVAL,
   HMSH_DURABLE_MAX_ATTEMPTS,
   HMSH_DURABLE_MAX_INTERVAL,
 } from './common';
@@ -53,6 +54,9 @@ function getChildInterruptPayload(
     backoffCoefficient:
       options?.config?.backoffCoefficient ?? HMSH_DURABLE_EXP_BACKOFF,
     index: execIndex,
+    initialInterval: s(
+      options?.config?.initialInterval ?? `${HMSH_DURABLE_INITIAL_INTERVAL}s`,
+    ),
     maximumAttempts:
       options?.config?.maximumAttempts ?? HMSH_DURABLE_MAX_ATTEMPTS,
     maximumInterval: s(

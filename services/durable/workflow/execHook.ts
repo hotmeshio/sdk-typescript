@@ -95,8 +95,8 @@ export async function execHook<T>(options: ExecHookOptions): Promise<T> {
     // Execute the hook with the signal information
     await hook(hookOptions);
 
-    // Wait for the signal response and return it
-    return await condition<T>(options.signalId);
+    // Wait for the signal response and return it (no timeout, so never returns false)
+    return await condition<T>(options.signalId) as T;
   } catch (error) {
     if (didInterrupt(error)) {
       throw error;

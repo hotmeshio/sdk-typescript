@@ -43,6 +43,14 @@ function getProxyInterruptPayload(
   if (options?.retryPolicy?.maximumInterval) {
     maximumInterval = s(options.retryPolicy.maximumInterval);
   }
+  let initialInterval: number;
+  if (options?.retryPolicy?.initialInterval) {
+    initialInterval = s(options.retryPolicy.initialInterval);
+  }
+  let startToCloseTimeout: number;
+  if (options?.startToCloseTimeout) {
+    startToCloseTimeout = s(options.startToCloseTimeout);
+  }
   return {
     arguments: args,
     headers: options?.headers ?? undefined,
@@ -55,8 +63,10 @@ function getProxyInterruptPayload(
     activityName,
     expire: options?.expire ?? expire,
     backoffCoefficient: options?.retryPolicy?.backoffCoefficient ?? undefined,
+    initialInterval: initialInterval ?? undefined,
     maximumAttempts: options?.retryPolicy?.maximumAttempts ?? undefined,
     maximumInterval: maximumInterval ?? undefined,
+    startToCloseTimeout: startToCloseTimeout ?? undefined,
   };
 }
 

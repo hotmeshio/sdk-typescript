@@ -2,6 +2,7 @@ export type DurableChildErrorType = {
   arguments: string[];
   await?: boolean;
   backoffCoefficient?: number;
+  initialInterval?: number;
   index: number;
   expire?: number;
   persistent?: boolean;
@@ -34,8 +35,10 @@ export type DurableProxyErrorType = {
   headers?: Record<string, any>;
   activityName: string;
   backoffCoefficient?: number;
+  initialInterval?: number;
   index: number;
   expire?: number;
+  startToCloseTimeout?: number;
   maximumAttempts?: number;
   maximumInterval?: number;
   originJobId: string | null;
