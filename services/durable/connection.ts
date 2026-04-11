@@ -2,13 +2,12 @@ import { Connection } from '../../types/durable';
 import { ProviderConfig, ProvidersConfig } from '../../types/provider';
 
 /**
- * The Connection service is used to declare the class
- * and connection options but does not connect quite yet. Connection
- * happens at a later lifecycle stage when a workflow
- * is started by the Durable Client module (`(new Durable.Client())).start()`).
+ * Declares connection configuration (driver class + options) without
+ * opening a connection. The actual Postgres connection is established
+ * lazily when a Worker or Client is started.
  *
- * The config options optionall support a multi-connection setup
- * where the `store` connection explicitly defined along with `stream`, `sub`, etc.
+ * Supports both single-connection and split-connection layouts (separate
+ * `store`, `stream`, and `sub` connections for advanced deployments).
  */
 export class ConnectionService {
   /**
@@ -17,7 +16,10 @@ export class ConnectionService {
   constructor() {}
 
   /**
-   * Create a connection configuration.
+   * Create a connection configuration object.
+   *
+   * @param config - Single `{ class, options }` or split `{ store, stream, sub }`.
+   * @returns The normalized connection configuration.
    */
   static async connect(
     config: ProviderConfig | ProvidersConfig,

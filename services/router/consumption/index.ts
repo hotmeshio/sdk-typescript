@@ -37,9 +37,15 @@ export class ConsumptionManager<
   private reclaimCount: number;
   private appId: string;
   private role: any;
-  private errorCount = 0;
-  private counts: { [key: string]: number } = {};
-  private hasReachedMaxBackoff: boolean | undefined;
+  /**
+   * Consumption stats are written directly to the parent Router so
+   * they are visible in quorum rollcall profiles.
+   */
+  private get errorCount(): number { return this.router.errorCount; }
+  private set errorCount(v: number) { this.router.errorCount = v; }
+  private get counts(): { [key: string]: number } { return this.router.counts; }
+  private get hasReachedMaxBackoff(): boolean | undefined { return this.router.hasReachedMaxBackoff; }
+  private set hasReachedMaxBackoff(v: boolean | undefined) { this.router.hasReachedMaxBackoff = v; }
   private router: any;
   private retryPolicy: import('../../../types/stream').RetryPolicy | undefined;
 

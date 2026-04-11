@@ -188,15 +188,14 @@ class HotMesh {
   }
 
   /**
-   * Initialize a HotMesh instance with an engine and optional workers.
+   * Create a HotMesh instance with an engine and optional workers.
    *
-   * Workers are callback functions that consume messages from Postgres
-   * streams. They can run on the same process as the engine or on
-   * entirely separate servers/containers — the only coupling is the
-   * shared Postgres database.
+   * The engine manages workflow state in Postgres. Workers are callback
+   * functions that consume messages from Postgres streams — they can
+   * run on the same process or on entirely separate servers.
    *
-   * @see Full JSDoc in prior versions for worker connection modes,
-   *      secured workers, and retry policy configuration.
+   * @param config - Engine connection, worker definitions, app ID, and options.
+   * @returns A running HotMesh instance joined to the quorum.
    */
   static async init(config: HotMeshConfig) {
     const instance = new HotMesh();
@@ -225,6 +224,14 @@ class HotMesh {
 
   // ************* PUB/SUB METHODS *************
 
+  /**
+   * Publishes a message to a workflow topic, starting a new job.
+   * Returns the job ID immediately (fire-and-forget).
+   *
+   * @param topic - The workflow topic (must match a deployed graph's `subscribes`).
+   * @param data - Input data for the workflow.
+   * @returns The new job ID.
+   */
   async pub(
     topic: string,
     data: JobData = {},
@@ -234,22 +241,51 @@ class HotMesh {
     return PubSub.pub(this, topic, data, context, extended);
   }
 
+  /**
+   * Subscribes to all output and interim emissions from a workflow topic.
+   *
+   * @param topic - The topic to subscribe to.
+   * @param callback - Invoked with each job output or interim emission.
+   */
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
     return PubSub.sub(this, topic, callback);
   }
 
+  /**
+   * Unsubscribes from a workflow topic previously registered with {@link sub}.
+   */
   async unsub(topic: string): Promise<void> {
     return PubSub.unsub(this, topic);
   }
 
+  /**
+   * Subscribes to workflow emissions matching a wildcard pattern.
+   *
+   * @param wild - The wildcard pattern (e.g., `'order.*'`).
+   * @param callback - Invoked with each matching emission.
+   */
   async psub(wild: string, callback: JobMessageCallback): Promise<void> {
     return PubSub.psub(this, wild, callback);
   }
 
+  /**
+   * Unsubscribes from a wildcard pattern previously registered with {@link psub}.
+   */
   async punsub(wild: string): Promise<void> {
     return PubSub.punsub(this, wild);
   }
 
+  /**
+   * Publishes a message and blocks until the workflow completes,
+   * returning the final job output. Combines {@link pub} + {@link sub}
+   * into a single request/response call.
+   *
+   * @param topic - The workflow topic.
+   * @param data - Input data for the workflow.
+   * @param context - Optional job state context.
+   * @param timeout - Optional timeout in milliseconds.
+   * @returns The completed job output.
+   */
   async pubsub(
     topic: string,
     data: JobData = {},
@@ -259,81 +295,155 @@ class HotMesh {
     return PubSub.pubsub(this, topic, data, context, timeout);
   }
 
+  /**
+   * Adds a transition message to the workstream, resuming Leg 2 of a
+   * paused reentrant activity.
+   * @private
+   */
   async add(streamData: StreamData | StreamDataResponse): Promise<string> {
     return PubSub.add(this, streamData);
   }
 
   // ************* QUORUM METHODS *************
 
+  /**
+   * Broadcasts a PING to all connected engines and workers via
+   * LISTEN/NOTIFY and collects their profiles. Returns one
+   * {@link QuorumProfile} per responding instance, including
+   * cumulative message `counts`, `error_count`, `stream_depth`,
+   * `throttle` state, and host-level `system` health (memory/CPU).
+   *
+   * Use this for health checks, topology discovery, and throughput
+   * monitoring across the mesh.
+   *
+   * @param delay - Time in ms to wait for PONG responses (default: quorum config).
+   * @returns One profile per responding engine/worker instance.
+   */
   async rollCall(delay?: number): Promise<QuorumProfile[]> {
     return Quorum.rollCall(this, delay);
   }
 
+  /**
+   * Broadcasts a throttle command to all instances. Use to slow down or
+   * pause message consumption across the mesh.
+   *
+   * @param options - Throttle rate in ms (0 = no throttle, -1 = pause indefinitely).
+   *   Optionally scope by `guid` (single instance) or `topic` (single worker).
+   */
   async throttle(options: ThrottleOptions): Promise<boolean> {
     return Quorum.throttle(this, options);
   }
 
+  /**
+   * Publishes a custom message to every instance via the quorum channel.
+   * Register a listener with {@link subQuorum} to receive these messages.
+   */
   async pubQuorum(quorumMessage: QuorumMessage) {
     return Quorum.pubQuorum(this, quorumMessage);
   }
 
+  /**
+   * Subscribes to the quorum channel to receive system messages (version
+   * activations, throttle commands, roll calls) and custom user messages.
+   */
   async subQuorum(callback: QuorumMessageCallback): Promise<void> {
     return Quorum.subQuorum(this, callback);
   }
 
+  /**
+   * Unsubscribes a callback previously registered with {@link subQuorum}.
+   */
   async unsubQuorum(callback: QuorumMessageCallback): Promise<void> {
     return Quorum.unsubQuorum(this, callback);
   }
 
   // ************* LIFECYCLE METHODS *************
 
-  /**
-   * @private
-   */
+  /** @private */
   async plan(path: string): Promise<HotMeshManifest> {
     return Deployment.plan(this, path);
   }
 
+  /**
+   * Deploys a YAML workflow graph to Postgres. The graph is stored but
+   * remains **inactive** until {@link activate} is called.
+   *
+   * @param pathOrYAML - A file path or raw YAML string defining the workflow graph.
+   * @returns The parsed manifest with version and graph metadata.
+   */
   async deploy(pathOrYAML: string): Promise<HotMeshManifest> {
     return Deployment.deploy(this, pathOrYAML);
   }
 
+  /**
+   * Activates a previously deployed version across all connected instances.
+   * The quorum coordinates a synchronized version switch so every engine
+   * and worker transitions together.
+   *
+   * @param version - The version string to activate (must match a deployed graph).
+   * @param delay - Optional delay in ms before activation takes effect.
+   */
   async activate(version: string, delay?: number): Promise<boolean> {
     return Deployment.activate(this, version, delay);
   }
 
   // ************* JOB METHODS *************
 
+  /**
+   * Exports the full job state (data, metadata, activity results) as
+   * a structured JSON object.
+   *
+   * @param jobId - The job/workflow ID.
+   * @param options - Export options (e.g., include activity details).
+   */
   async export(jobId: string, options: ExportOptions = {}): Promise<JobExport> {
     return Jobs.exportJob(this, jobId, options);
   }
 
+  /**
+   * Returns all raw key-value pairs from a job's HASH record in Postgres.
+   * Useful for debugging or low-level inspection.
+   */
   async getRaw(jobId: string): Promise<StringStringType> {
     return Jobs.getRaw(this, jobId);
   }
 
-  /**
-   * @private
-   */
+  /** @private */
   async getStats(topic: string, query: JobStatsInput): Promise<StatsResponse> {
     return Jobs.getStats(this, topic, query);
   }
 
+  /**
+   * Returns the numeric status code for a job: `0` = completed,
+   * positive = still running, negative = interrupted/errored.
+   */
   async getStatus(jobId: string): Promise<JobStatus> {
     return Jobs.getStatus(this, jobId);
   }
 
+  /**
+   * Returns the structured job state (data + metadata). For a completed
+   * job this is the final output; for a running job it reflects the
+   * latest persisted state.
+   *
+   * @param topic - The workflow topic.
+   * @param jobId - The job/workflow ID.
+   */
   async getState(topic: string, jobId: string): Promise<JobOutput> {
     return Jobs.getState(this, topic, jobId);
   }
 
+  /**
+   * Returns specific searchable fields from a job's HASH record.
+   *
+   * @param jobId - The job/workflow ID.
+   * @param fields - The field names to retrieve.
+   */
   async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
     return Jobs.getQueryState(this, jobId, fields);
   }
 
-  /**
-   * @private
-   */
+  /** @private */
   async getIds(
     topic: string,
     query: JobStatsInput,
@@ -342,9 +452,7 @@ class HotMesh {
     return Jobs.getIds(this, topic, query, queryFacets);
   }
 
-  /**
-   * @private
-   */
+  /** @private */
   async resolveQuery(
     topic: string,
     query: JobStatsInput,
@@ -352,6 +460,15 @@ class HotMesh {
     return Jobs.resolveQuery(this, topic, query);
   }
 
+  /**
+   * Immediately terminates a running job. The job is marked as
+   * interrupted and its HASH is expired. Unlike {@link cancel}, this
+   * does not give the workflow a chance to run cleanup code.
+   *
+   * @param topic - The workflow topic.
+   * @param jobId - The job/workflow ID.
+   * @param options - Optional interrupt configuration.
+   */
   async interrupt(
     topic: string,
     jobId: string,
@@ -360,14 +477,31 @@ class HotMesh {
     return Jobs.interrupt(this, topic, jobId, options);
   }
 
+  /**
+   * Requests cooperative cancellation of a running job. Sets a durable
+   * cancel flag; the workflow detects it at its next durable operation
+   * and throws `CancelledFailure`, which can be caught for cleanup.
+   *
+   * @param jobId - The job/workflow ID.
+   */
   async cancel(jobId: string): Promise<void> {
     return Jobs.cancel(this, jobId);
   }
 
+  /**
+   * Immediately deletes a completed job's HASH record from Postgres.
+   */
   async scrub(jobId: string) {
     return Jobs.scrub(this, jobId);
   }
 
+  /**
+   * Sends a signal to a paused workflow, delivering data and resuming
+   * execution. Pairs with `condition()` in the Durable workflow API.
+   *
+   * @param topic - The signal topic.
+   * @param data - Signal payload.
+   */
   async signal(
     topic: string,
     data: JobData,
@@ -377,9 +511,7 @@ class HotMesh {
     return Jobs.signal(this, topic, data, status, code);
   }
 
-  /**
-   * @private
-   */
+  /** @private */
   async signalAll(
     hookTopic: string,
     data: JobData,
@@ -403,7 +535,8 @@ class HotMesh {
   }
 
   /**
-   * Stops this specific HotMesh instance.
+   * Stops this specific HotMesh instance — leaves the quorum and
+   * stops all workers. Does not affect other instances in the process.
    */
   stop() {
     this.engine?.taskService.cancelCleanup();
@@ -451,9 +584,20 @@ class HotMesh {
 
   // ************* WORKER CREDENTIALS *************
 
+  /**
+   * Provision a scoped Postgres role for a worker. The role can only
+   * dequeue, ack, and respond on its assigned stream names via stored
+   * procedures — zero direct table access.
+   */
   static provisionWorkerRole = WorkerCredentials.provisionWorkerRole;
+
+  /** Rotate a secured worker role's password. */
   static rotateWorkerPassword = WorkerCredentials.rotateWorkerPassword;
+
+  /** Revoke a secured worker role (disables login). */
   static revokeWorkerRole = WorkerCredentials.revokeWorkerRole;
+
+  /** List all provisioned secured worker roles. */
   static listWorkerRoles = WorkerCredentials.listWorkerRoles;
 }
 

@@ -14,266 +14,83 @@ import { didInterrupt } from './workflow/interruption';
 import { InterceptorService } from './interceptor';
 
 /**
- * The Durable service provides a workflow framework backed by Postgres.
- * It offers entity-based memory management and composable, fault-tolerant
- * workflows authored in a familiar procedural style.
+ * Durable workflow engine backed by Postgres. Write workflows as plain
+ * async functions; the engine handles persistence, replay, retry, and
+ * crash recovery automatically.
  *
- * ## Core Features
+ * ## Architecture
  *
- * ### 1. Entity-Based Memory Model
- * Each workflow has a durable JSONB entity that serves as its memory:
- * ```typescript
- * export async function researchAgent(query: string) {
- *   const agent = await Durable.workflow.entity();
+ * | Component | Role |
+ * |-----------|------|
+ * | {@link Worker} | Hosts workflow and activity functions |
+ * | {@link Client} | Starts workflows, sends signals, reads results |
+ * | {@link workflow} | In-workflow API (`proxyActivities`, `sleep`, `condition`, ...) |
  *
- *   // Initialize entity state
- *   await agent.set({
- *     query,
- *     findings: [],
- *     status: 'researching'
- *   });
+ * ## Workflow Primitives
  *
- *   // Update state atomically
- *   await agent.merge({ status: 'analyzing' });
- *   await agent.append('findings', newFinding);
- * }
- * ```
+ * All methods below are available as `Durable.workflow.<method>` inside
+ * a workflow function. Each call is durable — results are persisted and
+ * replayed deterministically on recovery.
  *
- * ### 2. Hook Functions & Workflow Coordination
- * Spawn and coordinate multiple perspectives/phases:
- * ```typescript
- * // Launch parallel research perspectives
- * await Durable.workflow.execHook({
- *   taskQueue: 'research',
- *   workflowName: 'optimisticView',
- *   args: [query],
- *   signalId: 'optimistic-complete'
- * });
+ * | Primitive | Purpose |
+ * |-----------|---------|
+ * | `proxyActivities` | Execute side-effectful code with automatic retry |
+ * | `sleep` | Durable timer (survives restarts) |
+ * | `condition` | Pause until a named signal arrives (with optional timeout) |
+ * | `signal` | Deliver data to a waiting `condition` |
+ * | `executeChild` | Spawn a child workflow and await its result |
+ * | `startChild` | Fire-and-forget child workflow |
+ * | `continueAsNew` | Restart the workflow with new args (resets history) |
+ * | `patched` / `deprecatePatch` | Safe versioning for in-flight workflow code changes |
+ * | `CancellationScope.nonCancellable` | Shield cleanup code from cancellation |
+ * | `isCancellation` | Detect cooperative cancellation errors |
  *
- * await Durable.workflow.execHook({
- *   taskQueue: 'research',
- *   workflowName: 'skepticalView',
- *   args: [query],
- *   signalId: 'skeptical-complete'
- * });
- *
- * // Wait for both perspectives
- * await Promise.all([
- *   Durable.workflow.condition('optimistic-complete'),
- *   Durable.workflow.condition('skeptical-complete')
- * ]);
- * ```
- *
- * ### 3. Durable Activities & Proxies
- * Define and execute durable activities with automatic retry:
- * ```typescript
- * // Default: activities use workflow's task queue
- * const activities = Durable.workflow.proxyActivities<{
- *   analyzeDocument: typeof analyzeDocument;
- *   validateFindings: typeof validateFindings;
- * }>({
- *   activities: { analyzeDocument, validateFindings },
- *   retryPolicy: {
- *     maximumAttempts: 3,
- *     backoffCoefficient: 2
- *   }
- * });
- *
- * // Activities are durable and automatically retried
- * const analysis = await activities.analyzeDocument(data);
- * const validation = await activities.validateFindings(analysis);
- * ```
- *
- * ### 4. Explicit Activity Registration
- * Register activity workers explicitly before workflows start:
- * ```typescript
- * // Register shared activity pool for interceptors
- * await Durable.registerActivityWorker({
- *   connection: {
- *     class: Postgres,
- *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
- *   },
- *   taskQueue: 'shared-activities'
- * }, sharedActivities, 'shared-activities');
- *
- * // Register custom activity pool for specific use cases
- * await Durable.registerActivityWorker({
- *   connection: {
- *     class: Postgres,
- *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
- *   },
- *   taskQueue: 'priority-activities'
- * }, priorityActivities, 'priority-activities');
- * ```
- *
- * ### 5. Workflow Composition
- * Build complex workflows through composition:
- * ```typescript
- * // Start a child workflow
- * const childResult = await Durable.workflow.executeChild({
- *   taskQueue: 'analysis',
- *   workflowName: 'detailedAnalysis',
- *   args: [data],
- *   // Child workflow config
- *   config: {
- *     maximumAttempts: 5,
- *     backoffCoefficient: 2
- *   }
- * });
- *
- * // Fire-and-forget child workflow
- * await Durable.workflow.startChild({
- *   taskQueue: 'notifications',
- *   workflowName: 'sendUpdates',
- *   args: [updates]
- * });
- * ```
- *
- * ### 6. Workflow Interceptors
- * Add cross-cutting concerns through interceptors that run as durable functions:
- * ```typescript
- * // First register shared activity worker for interceptors
- * await Durable.registerActivityWorker({
- *   connection: {
- *     class: Postgres,
- *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
- *   },
- *   taskQueue: 'interceptor-activities'
- * }, { auditLog }, 'interceptor-activities');
- *
- * // Add audit interceptor that uses activities with explicit taskQueue
- * Durable.registerInboundInterceptor({
- *   async execute(ctx, next) {
- *     try {
- *       // Interceptors use explicit taskQueue to prevent per-workflow queues
- *       const { auditLog } = Durable.workflow.proxyActivities<typeof activities>({
- *         activities: { auditLog },
- *         taskQueue: 'interceptor-activities', // Explicit shared queue
- *         retryPolicy: { maximumAttempts: 3 }
- *       });
- *
- *       await auditLog(ctx.get('workflowId'), 'started');
- *
- *       const result = await next();
- *
- *       await auditLog(ctx.get('workflowId'), 'completed');
- *
- *       return result;
- *     } catch (err) {
- *       // CRITICAL: Always check for HotMesh interruptions
- *       if (Durable.didInterrupt(err)) {
- *         throw err; // Rethrow for replay system
- *       }
- *       throw err;
- *     }
- *   }
- * });
- * ```
- *
- * ### 7. Activity Interceptors
- * Wrap individual proxied activity calls with cross-cutting logic.
- * Unlike workflow interceptors (which wrap the entire workflow), activity
- * interceptors execute around each `proxyActivities` call. They run inside
- * the workflow's execution context and have access to all Durable workflow
- * methods (`proxyActivities`, `sleep`, `condition`, `executeChild`, etc.).
- * Multiple activity interceptors execute in onion order (first registered
- * is outermost).
- * ```typescript
- * // Simple logging interceptor
- * Durable.registerOutboundInterceptor({
- *   async execute(activityCtx, workflowCtx, next) {
- *     console.log(`Activity ${activityCtx.activityName} starting`);
- *     try {
- *       const result = await next();
- *       console.log(`Activity ${activityCtx.activityName} completed`);
- *       return result;
- *     } catch (err) {
- *       if (Durable.didInterrupt(err)) throw err;
- *       console.error(`Activity ${activityCtx.activityName} failed`);
- *       throw err;
- *     }
- *   }
- * });
- *
- * // Interceptor that calls its own proxy activities
- * await Durable.registerActivityWorker({
- *   connection: {
- *     class: Postgres,
- *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
- *   },
- *   taskQueue: 'audit-activities'
- * }, { auditLog }, 'audit-activities');
- *
- * Durable.registerOutboundInterceptor({
- *   async execute(activityCtx, workflowCtx, next) {
- *     try {
- *       const { auditLog } = Durable.workflow.proxyActivities<{
- *         auditLog: (id: string, action: string) => Promise<void>;
- *       }>({
- *         taskQueue: 'audit-activities',
- *         retryPolicy: { maximumAttempts: 3 }
- *       });
- *
- *       await auditLog(workflowCtx.get('workflowId'), `before:${activityCtx.activityName}`);
- *       const result = await next();
- *       await auditLog(workflowCtx.get('workflowId'), `after:${activityCtx.activityName}`);
- *       return result;
- *     } catch (err) {
- *       if (Durable.didInterrupt(err)) throw err;
- *       throw err;
- *     }
- *   }
- * });
- * ```
- *
- * ## Basic Usage Example
+ * ## Quick Start
  *
  * ```typescript
- * import { Client, Worker, Durable } from '@hotmeshio/hotmesh';
+ * import { Durable } from '@hotmeshio/hotmesh';
  * import { Client as Postgres } from 'pg';
  * import * as activities from './activities';
  *
- * // (Optional) Register shared activity workers for interceptors
- * await Durable.registerActivityWorker({
- *   connection: {
- *     class: Postgres,
- *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
- *   },
- *   taskQueue: 'shared-activities'
- * }, sharedActivities, 'shared-activities');
+ * // 1. Define a workflow
+ * async function orderWorkflow(orderId: string): Promise<string> {
+ *   const { charge, notify } = Durable.workflow.proxyActivities<typeof activities>({
+ *     activities,
+ *     retryPolicy: { maximumAttempts: 3 },
+ *   });
  *
- * // Initialize worker
- * await Worker.create({
- *   connection: {
- *     class: Postgres,
- *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
- *   },
- *   taskQueue: 'default',
- *   workflow: workflows.example
- * });
+ *   const receipt = await charge(orderId);
+ *   await Durable.workflow.sleep('1 hour');
+ *   await notify(orderId, receipt);
+ *   return receipt;
+ * }
  *
- * // Initialize client
- * const client = new Client({
- *   connection: {
- *     class: Postgres,
- *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
- *   }
- * });
+ * // 2. Start a worker
+ * const connection = { class: Postgres, options: { connectionString: 'postgresql://...' } };
+ * await Durable.Worker.create({ connection, taskQueue: 'orders', workflow: orderWorkflow });
  *
- * // Start workflow
+ * // 3. Start a workflow from the client
+ * const client = new Durable.Client({ connection });
  * const handle = await client.workflow.start({
- *   args: ['input data'],
- *   taskQueue: 'default',
- *   workflowName: 'example',
- *   workflowId: Durable.guid()
+ *   args: ['order-123'],
+ *   taskQueue: 'orders',
+ *   workflowName: 'orderWorkflow',
+ *   workflowId: Durable.guid(),
  * });
- *
- * // Get result
  * const result = await handle.result();
- *
- * // Cleanup
- * await Durable.shutdown();
  * ```
+ *
+ * ## Interceptors
+ *
+ * Cross-cutting concerns (logging, auth, metrics) attach via interceptors.
+ * See {@link registerInboundInterceptor} (wraps workflows) and
+ * {@link registerOutboundInterceptor} (wraps individual activity calls).
+ *
+ * ## Secured Workers
+ *
+ * For production isolation, workers can connect with scoped Postgres
+ * credentials that restrict access to specific task queues via stored
+ * procedures. See {@link Worker.create} and {@link provisionWorkerRole}.
  */
 class DurableClass {
   /**
@@ -281,38 +98,35 @@ class DurableClass {
    */
   constructor() {}
   /**
-   * The Durable `Client` service is functionally
-   * provides methods for starting, signaling, and querying workflows.
+   * Starts workflows, sends signals, and reads results. Instantiate
+   * with a connection, then use `client.workflow.start()` to launch
+   * a workflow and obtain a {@link Handle}.
    */
   static Client: typeof ClientService = ClientService;
 
   /**
-   * The Durable `Connection` service
-   * manages database connections for the durable workflow engine.
+   * Declares connection options (class + config) for Postgres.
+   * The actual connection is established lazily when a workflow
+   * or worker is started.
    */
   static Connection: typeof ConnectionService = ConnectionService;
 
-  /**
-   * @private
-   */
+  /** @private */
   static Search: typeof Search = Search;
 
-  /**
-   * @private
-   */
+  /** @private */
   static Entity: typeof Entity = Entity;
 
   /**
-   * The Handle provides methods to interact with a running
-   * workflow. This includes exporting the workflow, sending signals, and
-   * querying the state of the workflow. An instance of the Handle service
-   * is typically accessed via the Durable.Client class (workflow.getHandle).
+   * A handle to a running or completed workflow. Provides methods to
+   * read results, send signals, query state, cancel, or interrupt.
+   * Obtained via `client.workflow.start()` or `client.workflow.getHandle()`.
    */
   static Handle: typeof WorkflowHandleService = WorkflowHandleService;
 
   /**
-   * The Durable `Worker` service
-   * registers workflow and activity workers and connects them to the mesh.
+   * Hosts workflow and activity functions. Call `Worker.create()` with
+   * a connection, task queue, and workflow function to start processing.
    */
   static Worker: typeof WorkerService = WorkerService;
 
@@ -361,25 +175,26 @@ class DurableClass {
   static registerActivityWorker = WorkerService.registerActivityWorker;
 
   /**
-   * The Durable `activity` service provides context to
-   * executing activity functions. Call `Durable.activity.getContext()`
-   * inside an activity to access metadata, workflow ID, and other
-   * context passed from the parent workflow.
+   * Activity-side context. Call `Durable.activity.getContext()` inside
+   * an activity function to access the activity name, arguments,
+   * parent workflow ID, and other execution metadata.
    */
   static activity: typeof ActivityService = ActivityService;
 
   /**
-   * The Durable `workflow` service
-   * provides the workflow-internal API surface with methods for
-   * managing workflows, including: `executeChild`, `condition`, `sleep`, etc
+   * The workflow-internal API. Every method on this object
+   * (`proxyActivities`, `sleep`, `condition`, `signal`, `executeChild`,
+   * `continueAsNew`, `patched`, `CancellationScope`, etc.) is designed
+   * to be called **inside** a workflow function and participates in
+   * deterministic replay.
    */
   static workflow: typeof WorkflowService = WorkflowService;
 
   /**
-   * Checks if an error is a HotMesh reserved error type that indicates
-   * a workflow interruption rather than a true error condition.
-   *
-   * @see {@link didInterrupt} for detailed documentation
+   * Returns `true` if the error is an engine control-flow signal (replay
+   * suspension) rather than an application error. **Always check this in
+   * `catch` blocks inside workflows and interceptors** — swallowing an
+   * interruption breaks the replay system.
    */
   static didInterrupt = didInterrupt;
 
@@ -504,31 +319,9 @@ class DurableClass {
   static guid = guid;
 
   /**
-   * Provision a scoped Postgres role for a worker router. The role
-   * can only dequeue/ack/respond on the specified stream names via
-   * SECURITY DEFINER stored procedures — it has zero direct table access.
-   *
-   * @example
-   * ```typescript
-   * const cred = await Durable.provisionWorkerRole({
-   *   connection: adminConnection,
-   *   namespace: 'durable',
-   *   streamNames: ['payment-activity'],
-   * });
-   *
-   * // Use the scoped credentials when creating a worker
-   * await Durable.registerActivityWorker({
-   *   connection: { class: Postgres, options: pgOptions },
-   *   taskQueue: 'payment',
-   *   workerCredentials: cred,
-   * }, activities);
-   * ```
-   */
-  /**
-   * Provision a scoped Postgres role for a worker router.
-   * Delegates to {@link HotMesh.provisionWorkerRole} — the canonical
-   * implementation lives at the HotMesh layer since worker isolation
-   * is a core mesh capability, not a Durable-specific feature.
+   * Provision a scoped Postgres role for a worker. The role can only
+   * dequeue, ack, and respond on its assigned stream names via stored
+   * procedures — zero direct table access.
    *
    * @example
    * ```typescript
@@ -537,30 +330,35 @@ class DurableClass {
    *   streamNames: ['payment-activity'],
    * });
    *
-   * await Durable.registerActivityWorker({
-   *   connection: { class: Postgres, options: { host: 'pg.prod', database: 'hotmesh' } },
+   * await Worker.create({
+   *   connection: { class: Postgres, options: pgOptions },
    *   taskQueue: 'payment',
+   *   workflow: paymentWorkflow,
    *   workerCredentials: cred,
-   * }, activities);
+   * });
    * ```
    */
   static provisionWorkerRole = HotMesh.provisionWorkerRole;
 
-  /** Rotate a worker role's password. Delegates to {@link HotMesh.rotateWorkerPassword}. */
+  /** Rotate a secured worker role's password. */
   static rotateWorkerPassword = HotMesh.rotateWorkerPassword;
 
-  /** Revoke a worker role (disables login). Delegates to {@link HotMesh.revokeWorkerRole}. */
+  /** Revoke a secured worker role (disables login). */
   static revokeWorkerRole = HotMesh.revokeWorkerRole;
 
-  /** List all provisioned worker roles. Delegates to {@link HotMesh.listWorkerRoles}. */
+  /** List all provisioned secured worker roles. */
   static listWorkerRoles = HotMesh.listWorkerRoles;
 
-  /** Register a global payload codec. Delegates to {@link HotMesh.registerCodec}. */
+  /**
+   * Register a global payload codec for encrypting/decrypting workflow
+   * data at rest. The codec's `encode`/`decode` methods are called
+   * automatically on all persisted workflow payloads.
+   */
   static registerCodec = HotMesh.registerCodec;
 
   /**
-   * Shutdown everything. All connections, workers, and clients will be closed.
-   * Include in your signal handlers to ensure a clean shutdown.
+   * Gracefully shut down all workers, clients, and connections.
+   * Call from your process signal handlers (`SIGTERM`, `SIGINT`).
    */
   static async shutdown(): Promise<void> {
     await DurableClass.Client.shutdown();

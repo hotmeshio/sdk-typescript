@@ -47,8 +47,8 @@ import { SpanStatusCode } from '../../types/telemetry';
 import { Durable } from './index';
 
 /**
- * The *Worker* service registers workflow and activity functions and
- * connects them to the mesh using the target backend (Postgres, etc).
+ * Hosts workflow and activity functions, connecting them to Postgres
+ * for durable execution, replay, and automatic retry.
  *
  * ## Connection Modes
  *
@@ -104,8 +104,7 @@ import { Durable } from './index';
  * - Dequeue messages from other workers' streams
  * - LISTEN on other workers' notification channels
  *
- * See `HotMesh.provisionWorkerRole()` (or the convenience alias
- * `Durable.provisionWorkerRole()`) for credential lifecycle management.
+ * See {@link Durable.provisionWorkerRole} for credential lifecycle management.
  *
  * ## Telemetry
  *
@@ -549,7 +548,7 @@ export class WorkerService {
   }
 
   /**
-   * Connects a worker to the mesh.
+   * Creates and starts a workflow worker.
    *
    * @example
    * ```typescript

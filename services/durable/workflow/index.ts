@@ -27,47 +27,25 @@ import { asyncLocalStorage, WorkerService, HotMesh } from './common';
 import { entity } from './entityMethods';
 
 /**
- * The workflow-internal API surface, exposed as `Durable.workflow`. Every
- * method on this class is designed to be called **inside** a workflow
- * function — they participate in deterministic replay and durable state
- * management.
+ * In-workflow API surface, exposed as `Durable.workflow`. Every method
+ * is called **inside** a workflow function and participates in
+ * deterministic replay — results are persisted and returned instantly
+ * on recovery without re-executing side effects.
  *
- * ## Core Primitives
+ * ## Primitives
  *
  * | Method | Purpose |
  * |--------|---------|
- * | {@link proxyActivities} | Create durable activity proxies with retry |
- * | {@link sleep} | Durable, crash-safe sleep |
- * | {@link condition} | Pause until a signal is received |
- * | {@link signal} | Send data to a waiting workflow |
- * | {@link executeChild} | Spawn and await a child workflow |
- * | {@link startChild} | Spawn a child workflow (fire-and-forget) |
- * | {@link execHook} | Spawn a hook and await its signal response |
- * | {@link execHookBatch} | Spawn multiple hooks in parallel |
- * | {@link hook} | Low-level hook spawning |
- * | {@link interrupt} | Terminate a running workflow |
- * | {@link continueAsNew} | Complete and restart with new args |
- * | {@link patched} | Branch on a versioned code change |
- * | {@link deprecatePatch} | Mark old code path as removable |
- * | {@link CancellationScope} | Shield cleanup from cancellation |
- * | {@link isCancellation} | Type guard for `CancelledFailure` |
- *
- * ## Data & Observability
- *
- * | Method | Purpose | Secured Workers |
- * |--------|---------|-----------------|
- * | {@link search} | Read/write flat HASH key-value data | Not available |
- * | {@link enrich} | One-shot HASH enrichment | Not available |
- * | {@link entity} | Structured JSONB document storage | Not available |
- * | {@link emit} | Publish events to the event bus | Available |
- * | {@link trace} | Emit OpenTelemetry trace spans | Available |
- *
- * **Secured Workers:** `search()`, `enrich()`, and `entity()` write
- * directly to the `jobs`/`jobs_attributes` tables and are **not available**
- * to workers connecting with `workerCredentials`. Those workers are
- * restricted to SECURITY DEFINER stored procedures and have zero direct
- * table access. Use these methods only in workflows running with full
- * database credentials.
+ * | {@link proxyActivities} | Execute activities with automatic retry |
+ * | {@link sleep} | Durable timer (survives restarts) |
+ * | {@link condition} | Pause until a named signal arrives (optional timeout) |
+ * | {@link signal} | Deliver data to a waiting `condition` |
+ * | {@link executeChild} | Spawn a child workflow and await its result |
+ * | {@link startChild} | Fire-and-forget child workflow |
+ * | {@link continueAsNew} | Restart with new args (resets history) |
+ * | {@link patched} / {@link deprecatePatch} | Safe versioning for in-flight code changes |
+ * | {@link CancellationScope} | Shield cleanup code from cancellation |
+ * | {@link isCancellation} | Detect `CancelledFailure` errors |
  *
  * ## Utilities
  *
@@ -76,7 +54,7 @@ import { entity } from './entityMethods';
  * | {@link getContext} | Access workflow ID, namespace, replay state |
  * | {@link random} | Deterministic pseudo-random numbers |
  * | {@link all} | Workflow-safe `Promise.all` |
- * | {@link didInterrupt} | Type guard for engine control-flow errors |
+ * | {@link didInterrupt} | Detect engine control-flow errors |
  *
  * ## Example
  *
@@ -85,7 +63,6 @@ import { entity } from './entityMethods';
  * import * as activities from './activities';
  *
  * export async function orderWorkflow(orderId: string): Promise<string> {
- *   // Proxy activities for durable execution
  *   const { validateOrder, processPayment, sendReceipt } =
  *     Durable.workflow.proxyActivities<typeof activities>({
  *       activities,
@@ -93,18 +70,13 @@ import { entity } from './entityMethods';
  *     });
  *
  *   await validateOrder(orderId);
- *
- *   // Durable sleep (survives restarts)
  *   await Durable.workflow.sleep('5 seconds');
- *
  *   const receipt = await processPayment(orderId);
  *
- *   // Store searchable metadata
- *   await Durable.workflow.enrich({ orderId, status: 'paid' });
- *
- *   // Wait for external approval signal
- *   const approval = await Durable.workflow.condition<{ ok: boolean }>('approve');
- *   if (!approval.ok) return 'cancelled';
+ *   // Wait for external approval signal (with 1-hour timeout)
+ *   const approval = await Durable.workflow.condition<{ ok: boolean }>('approve', '1 hour');
+ *   if (!approval) return 'timed-out';
+ *   if (!approval.ok) return 'rejected';
  *
  *   await sendReceipt(orderId, receipt);
  *   return receipt;

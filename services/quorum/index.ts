@@ -208,6 +208,7 @@ class QuorumService {
         app_id: this.appId,
         stream,
         counts: this.engine.router.counts,
+        error_count: this.engine.router.errorCount,
         timestamp: formatISODate(new Date()),
         inited: this.engine.inited,
         throttle: this.engine.router.throttle,

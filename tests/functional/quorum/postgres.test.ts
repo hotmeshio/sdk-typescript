@@ -256,8 +256,42 @@ describe('FUNCTIONAL | Quorum | Postgres', () => {
 
     it('requests a quorum rollCall', async () => {
       (hotMesh.quorum as QuorumService).quorum = 0;
-      await hotMesh.rollCall(1_000);
-      expect(hotMesh.quorum?.profiles.length).toBe(2);
+      const profiles = await hotMesh.rollCall(1_000);
+      expect(profiles.length).toBe(2);
+
+      // Every profile must include the core identity fields
+      for (const profile of profiles) {
+        expect(profile.namespace).toBeDefined();
+        expect(profile.app_id).toBe('calc');
+        expect(profile.engine_id).toBeDefined();
+        expect(profile.stream).toBeDefined();
+        expect(profile.inited).toBeDefined();
+        expect(profile.timestamp).toBeDefined();
+        expect(typeof profile.throttle).toBe('number');
+        expect(typeof profile.error_count).toBe('number');
+        expect(typeof profile.stream_depth).toBe('number');
+        expect(profile.system).toBeDefined();
+        expect(profile.system!.TotalMemoryGB).toBeDefined();
+      }
+
+      // One profile is the engine (no worker_topic), one is the worker
+      const engine = profiles.find((p) => !p.worker_topic);
+      const worker = profiles.find((p) => p.worker_topic === 'calculation.execute');
+      expect(engine).toBeDefined();
+      expect(worker).toBeDefined();
+
+      // After running 5 pubsub calls, the engine should have processed messages.
+      // counts is keyed by status code (e.g., '200', '591')
+      expect(engine.counts).toBeDefined();
+      expect(Object.keys(engine.counts).length).toBeGreaterThan(0);
+
+      // Worker must also have counts (it processed the calculation callbacks)
+      expect(worker.counts).toBeDefined();
+      expect(Object.keys(worker.counts).length).toBeGreaterThan(0);
+
+      // error_count should be 0 (no consumption errors in this test)
+      expect(engine.error_count).toBe(0);
+      expect(worker.error_count).toBe(0);
     });
   });
 });
