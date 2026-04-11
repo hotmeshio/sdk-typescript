@@ -89,13 +89,13 @@ export function buildPublishSQL(
     const topic = data.metadata?.topic || '';
 
     // Determine if this message has explicit retry config
-    const hasExplicitConfig = (retryConfig && 'max_retry_attempts' in retryConfig) || options?.retryPolicy;
+    const hasExplicitConfig = (retryConfig && 'max_retry_attempts' in retryConfig) || options?.retry;
 
     let normalizedPolicy = null;
     if (retryConfig && 'max_retry_attempts' in retryConfig) {
       normalizedPolicy = retryConfig;
-    } else if (options?.retryPolicy) {
-      normalizedPolicy = normalizeRetryPolicy(options.retryPolicy, {
+    } else if (options?.retry) {
+      normalizedPolicy = normalizeRetryPolicy(options.retry, {
         maximumAttempts: 3,
         backoffCoefficient: 10,
         maximumInterval: 120,
@@ -105,7 +105,7 @@ export function buildPublishSQL(
     return {
       message: JSON.stringify(data),
       hasExplicitConfig,
-      retryPolicy: normalizedPolicy,
+      retry: normalizedPolicy,
       visibilityDelayMs: visibilityDelayMs || 0,
       retryAttempt: retryAttempt || 0,
       workflowName,
@@ -159,9 +159,9 @@ export function buildPublishSQL(
           valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, ${visibleAtClause}, $${paramOffset + 4})`);
           params.push(
             pm.message,
-            pm.retryPolicy.max_retry_attempts,
-            pm.retryPolicy.backoff_coefficient,
-            pm.retryPolicy.maximum_interval_seconds,
+            pm.retry.max_retry_attempts,
+            pm.retry.backoff_coefficient,
+            pm.retry.maximum_interval_seconds,
             pm.retryAttempt
           );
         } else {
@@ -211,9 +211,9 @@ export function buildPublishSQL(
             pm.msgType,
             pm.topic,
             pm.message,
-            pm.retryPolicy.max_retry_attempts,
-            pm.retryPolicy.backoff_coefficient,
-            pm.retryPolicy.maximum_interval_seconds,
+            pm.retry.max_retry_attempts,
+            pm.retry.backoff_coefficient,
+            pm.retry.maximum_interval_seconds,
             pm.retryAttempt
           );
         } else {
@@ -322,7 +322,7 @@ export async function fetchMessages(
         return {
           id: row.id.toString(),
           data,
-          retryPolicy: (row.max_retry_attempts !== null && !hasDefaultRetryPolicy) ? {
+          retry: (row.max_retry_attempts !== null && !hasDefaultRetryPolicy) ? {
             maximumAttempts: row.max_retry_attempts,
             backoffCoefficient: parseFloat(row.backoff_coefficient),
             maximumInterval: row.maximum_interval_seconds,

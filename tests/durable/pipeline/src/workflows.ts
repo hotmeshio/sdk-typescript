@@ -22,7 +22,7 @@ const activities = Durable.workflow.proxyActivities<{
     processDocumentApproval,
     sendNotification
   },
-  retryPolicy: {
+  retry: {
     maximumAttempts: 2,
     backoffCoefficient: 2,
     maximumInterval: '5 seconds',

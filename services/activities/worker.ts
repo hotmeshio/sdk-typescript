@@ -91,7 +91,7 @@ import { Activity } from './activity';
  * ## Retry Policy
  *
  * Retry behavior is configured at the **worker level** (not in YAML) via
- * the `retryPolicy` option. Failed callbacks are retried with exponential
+ * the `retry` option. Failed callbacks are retried with exponential
  * backoff until `maximumAttempts` is exhausted. The `maximumInterval` caps
  * the delay between retries.
  *
@@ -102,7 +102,7 @@ import { Activity } from './activity';
  *   workers: [{
  *     topic: 'work.backoff',
  *     connection,
- *     retryPolicy: {
+ *     retry: {
  *       maximumAttempts: 5,          // retry up to 5 times
  *       backoffCoefficient: 2,       // exponential: 2^0, 2^1, 2^2, ... seconds
  *       maximumInterval: '30s',      // cap delay at 30 seconds

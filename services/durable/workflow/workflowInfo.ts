@@ -16,7 +16,7 @@ import { asyncLocalStorage, WorkflowContext } from './common';
  *
  * // Access the workflow ID and namespace
  * export async function contextAwareWorkflow(): Promise<string> {
- *   const ctx = Durable.workflow.getContext();
+ *   const ctx = Durable.workflow.workflowInfo();
  *   console.log(`Running workflow ${ctx.workflowId} in ${ctx.namespace}`);
  *   return ctx.workflowId;
  * }
@@ -25,7 +25,7 @@ import { asyncLocalStorage, WorkflowContext } from './common';
  * ```typescript
  * // Check if the current execution is a replay
  * export async function replayAwareWorkflow(): Promise<void> {
- *   const { counter, workflowDimension } = Durable.workflow.getContext();
+ *   const { counter, workflowDimension } = Durable.workflow.workflowInfo();
  *
  *   // Use context for logging/debugging
  *   console.log(`Execution counter: ${counter}, dimension: ${workflowDimension}`);
@@ -35,7 +35,7 @@ import { asyncLocalStorage, WorkflowContext } from './common';
  * ```typescript
  * // Pass context info to child workflows
  * export async function parentWorkflow(): Promise<void> {
- *   const { workflowId } = Durable.workflow.getContext();
+ *   const { workflowId } = Durable.workflow.workflowInfo();
  *
  *   await Durable.workflow.executeChild({
  *     taskQueue: 'children',
@@ -47,7 +47,7 @@ import { asyncLocalStorage, WorkflowContext } from './common';
  *
  * @returns {WorkflowContext} The current workflow context.
  */
-export function getContext(): WorkflowContext {
+export function workflowInfo(): WorkflowContext {
   const store = asyncLocalStorage.getStore();
   const workflowId = store.get('workflowId');
   const replay = store.get('replay');

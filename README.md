@@ -61,13 +61,11 @@ export async function notifyBackorder(itemId: string): Promise<void> {
 ```typescript
 // workflows.ts
 import { Durable } from '@hotmeshio/hotmesh';
-import * as activities from './activities';
+import type * as activities from './activities';
 
 export async function orderWorkflow(itemId: string, qty: number) {
   const { checkInventory, reserveItem, notifyBackorder } =
-    Durable.workflow.proxyActivities<typeof activities>({
-      taskQueue: 'inventory-tasks'
-    });
+    Durable.workflow.proxyActivities<typeof activities>();
 
   const available = await checkInventory(itemId);
 
@@ -80,20 +78,18 @@ export async function orderWorkflow(itemId: string, qty: number) {
 }
 
 // main.ts
+import * as activities from './activities';
+
 const connection = {
   class: Postgres,
   options: { connectionString: 'postgresql://localhost:5432/mydb' }
 };
 
-await Durable.registerActivityWorker({
-  connection,
-  taskQueue: 'inventory-tasks'
-}, activities, 'inventory-activities');
-
 await Durable.Worker.create({
   connection,
   taskQueue: 'orders',
-  workflow: orderWorkflow
+  workflow: orderWorkflow,
+  activities,
 });
 
 const client = new Durable.Client({ connection });
@@ -206,11 +202,11 @@ All snippets below run inside a workflow function (like `orderWorkflow` above). 
 import { Durable } from '@hotmeshio/hotmesh';
 ```
 
-**Long-running workflows** — `sleepFor` is durable. The process can restart; the timer survives.
+**Long-running workflows** — `sleep` is durable. The process can restart; the timer survives.
 
 ```typescript
 // sendFollowUp is a proxied activity from proxyActivities()
-await Durable.workflow.sleepFor('30 days');
+await Durable.workflow.sleep('30 days');
 await sendFollowUp();
 ```
 
@@ -228,18 +224,18 @@ const [payment, inventory, shipment] = await Promise.all([
 **Child workflows** — compose workflows from other workflows.
 
 ```typescript
-const childHandle = await Durable.workflow.startChild(validateOrder, {
+const result = await Durable.workflow.executeChild({
   args: [orderId],
   taskQueue: 'validation',
-  workflowId: `validate-${orderId}`
+  workflowName: 'validateOrder',
+  workflowId: `validate-${orderId}`,
 });
-const validation = await childHandle.result();
 ```
 
 **Signals** — pause a workflow until an external event arrives.
 
 ```typescript
-const approval = await Durable.workflow.waitFor<{ approved: boolean }>('manager-approval');
+const approval = await Durable.workflow.condition<{ approved: boolean }>('manager-approval');
 if (!approval.approved) return 'rejected';
 ```
 
@@ -248,10 +244,9 @@ if (!approval.approved) return 'rejected';
 Activities retry automatically on failure. Configure the policy per activity or per worker:
 
 ```typescript
-// Durable: per-activity retry policy
+// Durable: per-activity retry policy (activities registered at Worker.create)
 const { reserveItem } = Durable.workflow.proxyActivities<typeof activities>({
-  taskQueue: 'inventory-tasks',
-  retryPolicy: {
+  retry: {
     maximumAttempts: 5,
     backoffCoefficient: 2,
     maximumInterval: '60s'
@@ -267,7 +262,7 @@ const hotMesh = await HotMesh.init({
   workers: [{
     topic: 'inventory.reserve',
     connection,
-    retryPolicy: {
+    retry: {
       maximumAttempts: 5,
       backoffCoefficient: 2,
       maximumInterval: '60s'

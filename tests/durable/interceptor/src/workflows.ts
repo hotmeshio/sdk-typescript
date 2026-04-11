@@ -6,7 +6,7 @@ import { DurableProxyError } from '../../../../modules/errors';
 // Using default (workflow-derived) activity queue
 const { processData, validateData, recordResult } = Durable.workflow.proxyActivities<typeof activities>({
   activities,
-  retryPolicy: {
+  retry: {
     maximumAttempts: 1, // No retries
     backoffCoefficient: 1,
     maximumInterval: '1 second',
@@ -17,7 +17,7 @@ const { processData, validateData, recordResult } = Durable.workflow.proxyActivi
 // Separate isolated proxy for error testing to avoid contamination
 const { alwaysFailValidation } = Durable.workflow.proxyActivities<typeof activities>({
   activities,
-  retryPolicy: {
+  retry: {
     maximumAttempts: 1, // No retries
     backoffCoefficient: 1,
     maximumInterval: '1 second',
@@ -133,7 +133,7 @@ export async function securedWorkflow(userId: string): Promise<any> {
     // No headers here — the interceptor will inject it
     const { securedActivity } = Durable.workflow.proxyActivities<typeof activities>({
       activities,
-      retryPolicy: { maximumAttempts: 1, throwOnError: true },
+      retry: { maximumAttempts: 1, throwOnError: true },
     });
 
     const result1 = await securedActivity('read-secrets');
@@ -173,7 +173,7 @@ export async function metadataExample(name: string): Promise<any> {
     const { metadataAwareActivity } = Durable.workflow.proxyActivities<typeof activities>({
       activities,
       headers: { tenantId: 'acme', traceId: 'trace-123', custom: { nested: true } },
-      retryPolicy: {
+      retry: {
         maximumAttempts: 1,
         throwOnError: true,
       },
@@ -211,14 +211,14 @@ export async function multiMetadataExample(name: string): Promise<any> {
     const groupA = Durable.workflow.proxyActivities<typeof activities>({
       activities,
       headers: { group: 'A', priority: 'high' },
-      retryPolicy: { maximumAttempts: 1, throwOnError: true },
+      retry: { maximumAttempts: 1, throwOnError: true },
     });
 
     // Second proxy group with metadata B
     const groupB = Durable.workflow.proxyActivities<typeof activities>({
       activities,
       headers: { group: 'B', priority: 'low' },
-      retryPolicy: { maximumAttempts: 1, throwOnError: true },
+      retry: { maximumAttempts: 1, throwOnError: true },
     });
 
     const resultA = await groupA.metadataAwareActivity(`${name}-A`);
@@ -252,7 +252,7 @@ export async function noMetadataExample(name: string): Promise<any> {
 
     const { metadataAwareActivity } = Durable.workflow.proxyActivities<typeof activities>({
       activities,
-      retryPolicy: { maximumAttempts: 1, throwOnError: true },
+      retry: { maximumAttempts: 1, throwOnError: true },
     });
 
     const result = await metadataAwareActivity(name);

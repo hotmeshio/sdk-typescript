@@ -554,10 +554,10 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       );
 
       expect(consumed).toHaveLength(1);
-      expect(consumed[0].retryPolicy).toBeDefined();
-      expect(consumed[0].retryPolicy?.maximumAttempts).toBe(5);
-      expect(consumed[0].retryPolicy?.backoffCoefficient).toBe(2.0);
-      expect(consumed[0].retryPolicy?.maximumInterval).toBe(60);
+      expect(consumed[0].retry).toBeDefined();
+      expect(consumed[0].retry?.maximumAttempts).toBe(5);
+      expect(consumed[0].retry?.backoffCoefficient).toBe(2.0);
+      expect(consumed[0].retry?.maximumInterval).toBe(60);
     });
 
     it('should not inject retry policy for default values', async () => {
@@ -574,14 +574,14 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       );
 
       expect(consumed).toHaveLength(1);
-      expect(consumed[0].retryPolicy).toBeUndefined();
+      expect(consumed[0].retry).toBeUndefined();
       expect(consumed[0].data._streamRetryConfig).toBeUndefined();
     });
 
     it('should handle retry policy via publishMessages options', async () => {
       const messages = [JSON.stringify({ id: 1, data: 'test' })];
       await postgresStreamService.publishMessages(TEST_STREAM, messages, {
-        retryPolicy: {
+        retry: {
           maximumAttempts: 7,
           backoffCoefficient: 1.5,
           maximumInterval: 90,
@@ -595,10 +595,10 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
       );
 
       expect(consumed).toHaveLength(1);
-      expect(consumed[0].retryPolicy).toBeDefined();
-      expect(consumed[0].retryPolicy?.maximumAttempts).toBe(7);
-      expect(consumed[0].retryPolicy?.backoffCoefficient).toBe(1.5);
-      expect(consumed[0].retryPolicy?.maximumInterval).toBe(90);
+      expect(consumed[0].retry).toBeDefined();
+      expect(consumed[0].retry?.maximumAttempts).toBe(7);
+      expect(consumed[0].retry?.backoffCoefficient).toBe(1.5);
+      expect(consumed[0].retry?.maximumInterval).toBe(90);
     });
   });
 

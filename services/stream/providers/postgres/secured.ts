@@ -79,7 +79,7 @@ export async function fetchMessagesSecured(
         return {
           id: row.id.toString(),
           data,
-          retryPolicy:
+          retry:
             row.max_retry_attempts !== null && !hasDefaultRetryPolicy
               ? {
                   maximumAttempts: row.max_retry_attempts,

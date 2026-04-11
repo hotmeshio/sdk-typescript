@@ -6,7 +6,7 @@ import { ProviderTransaction } from './provider';
  * 
  * @example
  * ```typescript
- * const retryPolicy: RetryPolicy = {
+ * const retry: RetryPolicy = {
  *   maximumAttempts: 5,
  *   backoffCoefficient: 2,
  *   maximumInterval: '300s',
@@ -206,7 +206,7 @@ export type RouterConfig = {
   /** if true, will not process stream messages; default true */
   readonly?: boolean;
   /** Retry policy for worker messages. Applied when worker callback throws an error */
-  retryPolicy?: RetryPolicy;
+  retry?: RetryPolicy;
 };
 
 export type StreamProviderType =
@@ -236,7 +236,7 @@ export interface StreamConfig {
    * }
    * ```
    */
-  retryPolicy?: RetryPolicy;
+  retry?: RetryPolicy;
 
   /**
    * When true, worker stream operations use SECURITY DEFINER stored
@@ -279,7 +279,7 @@ export interface StreamMessage {
    * Retry policy configuration for this message.
    * Populated from database columns when available.
    */
-  retryPolicy?: RetryPolicy;
+  retry?: RetryPolicy;
 }
 
 export interface StreamMessageMetadata {
@@ -321,7 +321,7 @@ export interface PublishMessageConfig {
    * @example
    * ```typescript
    * await streamService.publishMessages('my-topic', [msg], {
-   *   retryPolicy: {
+   *   retry: {
    *     maximumAttempts: 10,
    *     backoffCoefficient: 2,
    *     maximumInterval: '600s',
@@ -329,7 +329,7 @@ export interface PublishMessageConfig {
    * });
    * ```
    */
-  retryPolicy?: RetryPolicy;
+  retry?: RetryPolicy;
 }
 
 /**

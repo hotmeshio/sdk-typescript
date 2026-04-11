@@ -7,7 +7,7 @@ import * as activities from './activities';
 export async function initialIntervalWorkflow(): Promise<string> {
   const { failThenSucceed } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: {
+    retry: {
       maximumAttempts: 5,
       backoffCoefficient: 2,
       initialInterval: '5s',
@@ -22,7 +22,7 @@ export async function startToCloseWorkflow(): Promise<string> {
   const { fastActivity } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
     startToCloseTimeout: '30s',
-    retryPolicy: { maximumAttempts: 1 },
+    retry: { maximumAttempts: 1 },
   });
   return await fastActivity();
 }
@@ -31,7 +31,7 @@ export async function startToCloseWorkflow(): Promise<string> {
 export async function patchedWorkflow(orderId: string): Promise<string> {
   const { validateOrderV2, validateOrder } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   if (await Durable.workflow.patched('v2-validation')) {
@@ -45,7 +45,7 @@ export async function patchedWorkflow(orderId: string): Promise<string> {
 export async function multiPatchWorkflow(): Promise<string> {
   const { validateOrderV2, validateOrder } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   const patchA = await Durable.workflow.patched('change-a');
@@ -61,7 +61,7 @@ export async function multiPatchWorkflow(): Promise<string> {
 export async function deprecatePatchWorkflow(orderId: string): Promise<string> {
   const { validateOrderV2 } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   Durable.workflow.deprecatePatch('v2-validation');
@@ -74,7 +74,7 @@ export async function patchedHookFunction(
 ): Promise<string> {
   const { hookTaskV2, hookTaskV1 } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   let result: string;
@@ -106,7 +106,7 @@ export async function patchedInHookWorkflow(): Promise<string> {
 export async function cancellableWorkflow(orderId: string): Promise<string> {
   const { chargePayment, refundPayment } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   try {
@@ -132,7 +132,7 @@ export async function cancellableWorkflow(orderId: string): Promise<string> {
 export async function uncaughtCancelWorkflow(): Promise<string> {
   const { fastActivity } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   await fastActivity();
@@ -144,7 +144,7 @@ export async function uncaughtCancelWorkflow(): Promise<string> {
 export async function continueAsNewWorkflow(cursor = 1, totalProcessed = 0): Promise<number> {
   const { processBatch } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   const result = await processBatch(cursor);
@@ -162,7 +162,7 @@ export async function continueAsNewWorkflow(cursor = 1, totalProcessed = 0): Pro
 export async function continueAsNewTerminalWorkflow(iteration = 0): Promise<string> {
   const { processBatch } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   await processBatch(iteration);
@@ -179,7 +179,7 @@ export async function continueAsNewTerminalWorkflow(iteration = 0): Promise<stri
 export async function securedPatchedWorkflow(orderId: string): Promise<string> {
   const { validateOrderV2, validateOrder } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   if (await Durable.workflow.patched('secure-v2')) {
@@ -193,7 +193,7 @@ export async function securedPatchedWorkflow(orderId: string): Promise<string> {
 export async function securedSignalWorkflow(): Promise<string> {
   const { securedSignalActivity } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 3 },
+    retry: { maximumAttempts: 3 },
   });
 
   // Wait for an external signal — this exercises the notification path
@@ -208,7 +208,7 @@ export async function securedChainWorkflow(input: string): Promise<string> {
   const { securedChainStep1, securedChainStep2, securedChainStep3 } =
     Durable.workflow.proxyActivities<typeof activities>({
       activities,
-      retryPolicy: { maximumAttempts: 3 },
+      retry: { maximumAttempts: 3 },
     });
 
   // Each activity completion triggers a notification to wake the consumer
@@ -224,7 +224,7 @@ export async function startToCloseTimeoutWorkflow(): Promise<string> {
   const { slowActivity } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
     startToCloseTimeout: '5s',
-    retryPolicy: { maximumAttempts: 1, throwOnError: false },
+    retry: { maximumAttempts: 1, throwOnError: false },
   });
   const result = await slowActivity();
   // If timeout kicked in, result will be an error object, not a string

@@ -140,7 +140,7 @@ export class WorkflowHandleService {
    * {@link cancel}, this does **not** give the workflow a chance to
    * run cleanup code.
    */
-  async interrupt(options?: JobInterruptOptions): Promise<string> {
+  async terminate(options?: JobInterruptOptions): Promise<string> {
     return await this.hotMesh.interrupt(
       `${this.hotMesh.appId}.execute`,
       this.workflowId,
@@ -150,7 +150,7 @@ export class WorkflowHandleService {
 
   /**
    * Requests cooperative cancellation of the workflow. Unlike
-   * `interrupt()` (which terminates immediately), `cancel()` sets
+   * `terminate()` (which terminates immediately), `cancel()` sets
    * a durable flag that the workflow detects at its next durable
    * operation (`sleep`, `proxyActivities`, `executeChild`, etc.).
    * The workflow receives a `CancelledFailure` error that it can

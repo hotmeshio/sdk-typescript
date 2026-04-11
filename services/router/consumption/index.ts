@@ -47,7 +47,7 @@ export class ConsumptionManager<
   private get hasReachedMaxBackoff(): boolean | undefined { return this.router.hasReachedMaxBackoff; }
   private set hasReachedMaxBackoff(v: boolean | undefined) { this.router.hasReachedMaxBackoff = v; }
   private router: any;
-  private retryPolicy: import('../../../types/stream').RetryPolicy | undefined;
+  private retry: import('../../../types/stream').RetryPolicy | undefined;
 
   constructor(
     stream: S,
@@ -60,7 +60,7 @@ export class ConsumptionManager<
     appId: string,
     role: any,
     router: any,
-    retryPolicy?: import('../../../types/stream').RetryPolicy,
+    retry?: import('../../../types/stream').RetryPolicy,
   ) {
     this.stream = stream;
     this.logger = logger;
@@ -72,7 +72,7 @@ export class ConsumptionManager<
     this.appId = appId;
     this.role = role;
     this.router = router;
-    this.retryPolicy = retryPolicy;
+    this.retry = retry;
   }
 
   async createGroup(stream: string, group: string): Promise<void> {
@@ -552,13 +552,13 @@ export class ConsumptionManager<
     // the normal retry mechanism (ErrorHandler.handleRetry / shouldRetry).
     //
     // Normal retry flow: handleRetry() checks metadata.try against the
-    // configured retryPolicy.maximumAttempts (or _streamRetryConfig) and
+    // configured retry.maximumAttempts (or _streamRetryConfig) and
     // applies exponential backoff + visibility delays. That mechanism is
     // the primary retry budget and is what developers configure via
-    // HotMesh.init({ workers: [{ retryPolicy: { maximumAttempts, ... } }] }).
+    // HotMesh.init({ workers: [{ retry: { maximumAttempts, ... } }] }).
     //
     // This check catches messages that have somehow exceeded the normal
-    // budget — e.g., when no retryPolicy is configured, when the retry
+    // budget — e.g., when no retry is configured, when the retry
     // logic is bypassed by an infrastructure error, or when a message
     // re-enters the stream through a path that doesn't increment
     // metadata.try. The threshold is the HIGHER of the configured retry
@@ -567,7 +567,7 @@ export class ConsumptionManager<
     const retryAttempt = (input as any)._retryAttempt || 0;
     const configuredMax =
       (input as any)._streamRetryConfig?.max_retry_attempts
-      ?? this.retryPolicy?.maximumAttempts
+      ?? this.retry?.maximumAttempts
       ?? 0;
     const poisonThreshold = Math.max(configuredMax, HMSH_POISON_MESSAGE_THRESHOLD);
     if (retryAttempt >= poisonThreshold) {
@@ -705,20 +705,20 @@ export class ConsumptionManager<
       if (output.status === 'error') {
         // Extract retry policy with priority:
         // 1. Use message-level _streamRetryConfig (from database columns or previous retry)
-        // 2. Fall back to router-level retryPolicy (from worker config)
-        const retryPolicy = (input as any)._streamRetryConfig 
+        // 2. Fall back to router-level retry (from worker config)
+        const retry = (input as any)._streamRetryConfig 
           ? {
               maximumAttempts: (input as any)._streamRetryConfig.max_retry_attempts,
               backoffCoefficient: (input as any)._streamRetryConfig.backoff_coefficient,
               maximumInterval: (input as any)._streamRetryConfig.maximum_interval_seconds,
             }
-          : this.retryPolicy;
+          : this.retry;
         
         return await this.errorHandler.handleRetry(
           input,
           output,
           this.publishMessage.bind(this),
-          retryPolicy,
+          retry,
         );
       } else if (typeof output.metadata !== 'object') {
         output.metadata = { ...input.metadata, guid: guid() };

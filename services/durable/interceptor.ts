@@ -228,7 +228,7 @@ import {
  *           publishToSNS: (topic: string, payload: any) => Promise<void>;
  *         }>({
  *           taskQueue: 'shared-notifications',
- *           retryPolicy: { maximumAttempts: 3, throwOnError: true },
+ *           retry: { maximumAttempts: 3, throwOnError: true },
  *         });
  *
  *         await publishToSNS('activity-results', {

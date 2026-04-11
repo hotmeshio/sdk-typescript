@@ -68,10 +68,12 @@ import { didRun } from './didRun';
  * ]);
  * ```
  *
- * @param {string} duration - A human-readable duration string.
+ * @param {string | number} duration - A human-readable duration string (e.g., `'30s'`, `'5 minutes'`) or milliseconds as a number.
  * @returns {Promise<number>} The resolved duration in seconds.
  */
-export async function sleep(duration: string): Promise<number> {
+export async function sleep(duration: string | number): Promise<number> {
+  // Normalize: number input is treated as milliseconds (Temporal compat)
+  const durationStr = typeof duration === 'number' ? `${duration} milliseconds` : duration;
   const [didRunAlready, execIndex, result] = await didRun('sleep');
   checkCancellation();
   if (didRunAlready) {
@@ -84,12 +86,12 @@ export async function sleep(duration: string): Promise<number> {
         DurableTelemetryService.emitDurationSpan(
           workflowTrace,
           workflowSpan,
-          `RETURN/sleep/${duration}/${execIndex}`,
+          `RETURN/sleep/${durationStr}/${execIndex}`,
           DurableTelemetryService.parseTimestamp(result.ac),
           DurableTelemetryService.parseTimestamp(result.au),
           {
             'durable.operation.type': 'sleep',
-            'durable.sleep.duration': duration,
+            'durable.sleep.duration': durationStr,
             'durable.exec.index': execIndex,
           },
         );
@@ -108,10 +110,10 @@ export async function sleep(duration: string): Promise<number> {
       DurableTelemetryService.emitPointSpan(
         workflowTrace,
         workflowSpan,
-        `DISPATCH/sleep/${duration}/${execIndex}`,
+        `DISPATCH/sleep/${durationStr}/${execIndex}`,
         {
           'durable.operation.type': 'sleep',
-          'durable.sleep.duration': duration,
+          'durable.sleep.duration': durationStr,
           'durable.exec.index': execIndex,
         },
       );
@@ -123,7 +125,7 @@ export async function sleep(duration: string): Promise<number> {
   const workflowDimension = store.get('workflowDimension') ?? '';
   const interruptionMessage = {
     workflowId,
-    duration: s(duration),
+    duration: s(durationStr),
     index: execIndex,
     workflowDimension,
   };

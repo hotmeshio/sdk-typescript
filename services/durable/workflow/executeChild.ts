@@ -20,7 +20,7 @@ import {
   HMSH_DURABLE_MAX_INTERVAL,
 } from './common';
 import { checkCancellation } from './cancellationScope';
-import { getContext } from './context';
+import { workflowInfo } from './workflowInfo';
 import { didRun } from './didRun';
 
 /**
@@ -28,7 +28,7 @@ import { didRun } from './didRun';
  * @private
  */
 function getChildInterruptPayload(
-  context: ReturnType<typeof getContext>,
+  context: ReturnType<typeof workflowInfo>,
   options: WorkflowOptions,
   execIndex: number,
 ): DurableChildErrorType {
@@ -149,7 +149,7 @@ export async function executeChild<T>(options: WorkflowOptions): Promise<T> {
   const prefix = isStartChild ? 'start' : 'child';
   const [didRunAlready, execIndex, result] = await didRun(prefix);
   checkCancellation();
-  const context = getContext();
+  const context = workflowInfo();
   const { canRetry, interruptionRegistry } = context;
 
   if (didRunAlready) {

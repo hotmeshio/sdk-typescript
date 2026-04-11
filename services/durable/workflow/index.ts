@@ -1,7 +1,7 @@
 import {
   // Individual methods
-  getContext,
-} from './context';
+  workflowInfo,
+} from './workflowInfo';
 import { didRun } from './didRun';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 import { trace } from './trace';
@@ -13,9 +13,10 @@ import { execHookBatch } from './execHookBatch';
 import { proxyActivities } from './proxyActivities';
 import { search } from './searchMethods';
 import { random } from './random';
+import { uuid4 } from './uuid4';
 import { signal } from './signal';
 import { hook } from './hook';
-import { interrupt } from './interrupt';
+import { terminate } from './terminate';
 import { didInterrupt } from './interruption';
 import { all } from './all';
 import { sleep } from './sleep';
@@ -51,8 +52,9 @@ import { entity } from './entityMethods';
  *
  * | Method | Purpose |
  * |--------|---------|
- * | {@link getContext} | Access workflow ID, namespace, replay state |
+ * | {@link workflowInfo} | Access workflow ID, namespace, replay state |
  * | {@link random} | Deterministic pseudo-random numbers |
+ * | {@link uuid4} | Deterministic UUID v4 generation |
  * | {@link all} | Workflow-safe `Promise.all` |
  * | {@link didInterrupt} | Detect engine control-flow errors |
  *
@@ -66,7 +68,7 @@ import { entity } from './entityMethods';
  *   const { validateOrder, processPayment, sendReceipt } =
  *     Durable.workflow.proxyActivities<typeof activities>({
  *       activities,
- *       retryPolicy: { maximumAttempts: 3 },
+ *       retry: { maximumAttempts: 3 },
  *     });
  *
  *   await validateOrder(orderId);
@@ -91,7 +93,7 @@ export class WorkflowService {
    */
   private constructor() {}
 
-  static getContext = getContext;
+  static workflowInfo = workflowInfo;
   static didRun = didRun;
   static isSideEffectAllowed = isSideEffectAllowed;
   static trace = trace;
@@ -105,10 +107,11 @@ export class WorkflowService {
   static search = search;
   static entity = entity;
   static random = random;
+  static uuid4 = uuid4;
   static signal = signal;
   static hook = hook;
   static didInterrupt = didInterrupt;
-  static interrupt = interrupt;
+  static terminate = terminate;
   static all = all;
   static sleep = sleep;
   static condition = condition;

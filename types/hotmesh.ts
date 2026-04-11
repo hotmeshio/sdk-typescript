@@ -142,7 +142,7 @@ type HotMeshEngine = {
    * @example
    * ```typescript
    * {
-   *   retryPolicy: {
+   *   retry: {
    *     maximumAttempts: 5,
    *     backoffCoefficient: 2,
    *     maximumInterval: '300s'
@@ -150,7 +150,7 @@ type HotMeshEngine = {
    * }
    * ```
    */
-  retryPolicy?: import('./stream').RetryPolicy;
+  retry?: import('./stream').RetryPolicy;
 };
 
 /**
@@ -267,7 +267,7 @@ type HotMeshWorker = {
    * @example
    * ```typescript
    * {
-   *   retryPolicy: {
+   *   retry: {
    *     maximumAttempts: 5,
    *     backoffCoefficient: 2,
    *     maximumInterval: '300s'
@@ -275,7 +275,7 @@ type HotMeshWorker = {
    * }
    * ```
    */
-  retryPolicy?: import('./stream').RetryPolicy;
+  retry?: import('./stream').RetryPolicy;
 
   /**
    * Scoped Postgres credentials for database-level worker isolation.

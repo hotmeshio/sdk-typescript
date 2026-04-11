@@ -17,7 +17,7 @@ import {
   asyncLocalStorage,
 } from './common';
 import { checkCancellation } from './cancellationScope';
-import { getContext } from './context';
+import { workflowInfo } from './workflowInfo';
 import { didRun } from './didRun';
 
 /**
@@ -25,7 +25,7 @@ import { didRun } from './didRun';
  * @private
  */
 function getProxyInterruptPayload(
-  context: ReturnType<typeof getContext>,
+  context: ReturnType<typeof workflowInfo>,
   activityName: string,
   execIndex: number,
   args: any[],
@@ -41,12 +41,12 @@ function getProxyInterruptPayload(
     
   const activityJobId = `-${workflowId}-$${activityName}${workflowDimension}-${execIndex}`;
   let maximumInterval: number;
-  if (options?.retryPolicy?.maximumInterval) {
-    maximumInterval = s(options.retryPolicy.maximumInterval);
+  if (options?.retry?.maximumInterval) {
+    maximumInterval = s(options.retry.maximumInterval);
   }
   let initialInterval: number;
-  if (options?.retryPolicy?.initialInterval) {
-    initialInterval = s(options.retryPolicy.initialInterval);
+  if (options?.retry?.initialInterval) {
+    initialInterval = s(options.retry.initialInterval);
   }
   let startToCloseTimeout: number;
   if (options?.startToCloseTimeout) {
@@ -63,9 +63,9 @@ function getProxyInterruptPayload(
     workflowTopic: activityTopic,
     activityName,
     expire: options?.expire ?? expire,
-    backoffCoefficient: options?.retryPolicy?.backoffCoefficient ?? undefined,
+    backoffCoefficient: options?.retry?.backoffCoefficient ?? undefined,
     initialInterval: initialInterval ?? undefined,
-    maximumAttempts: options?.retryPolicy?.maximumAttempts ?? undefined,
+    maximumAttempts: options?.retry?.maximumAttempts ?? undefined,
     maximumInterval: maximumInterval ?? undefined,
     startToCloseTimeout: startToCloseTimeout ?? undefined,
   };
@@ -82,7 +82,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
     // Check cancellation AFTER counter increment to preserve replay positions
     checkCancellation();
 
-    const context = getContext();
+    const context = workflowInfo();
     const { interruptionRegistry } = context;
 
     // Build activityCtx so interceptors can inspect/modify args
@@ -113,7 +113,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
         }
 
         if (result?.$error) {
-          if (activityCtx.options?.retryPolicy?.throwOnError !== false) {
+          if (activityCtx.options?.retry?.throwOnError !== false) {
             const code = result.$error.code;
             const message = result.$error.message;
             const stack = result.$error.stack;
@@ -218,7 +218,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
  *   const { validateOrder, chargePayment, sendConfirmation } =
  *     Durable.workflow.proxyActivities<typeof activities>({
  *       activities,
- *       retryPolicy: {
+ *       retry: {
  *         maximumAttempts: 3,
  *         backoffCoefficient: 2,
  *         maximumInterval: '30s',
@@ -243,7 +243,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
  *   const { refundPayment } =
  *     Durable.workflow.proxyActivities<PaymentActivities>({
  *       taskQueue: 'payments',
- *       retryPolicy: { maximumAttempts: 5 },
+ *       retry: { maximumAttempts: 5 },
  *     });
  *
  *   await refundPayment(txId);
@@ -258,7 +258,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
  *       auditLog: (id: string, action: string) => Promise<void>;
  *     }>({
  *       taskQueue: 'shared-audit',
- *       retryPolicy: { maximumAttempts: 3 },
+ *       retry: { maximumAttempts: 3 },
  *     });
  *
  *     await auditLog(ctx.get('workflowId'), 'started');
@@ -273,7 +273,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
  * // Graceful error handling (no throw)
  * const { riskyOperation } = Durable.workflow.proxyActivities<typeof activities>({
  *   activities,
- *   retryPolicy: { maximumAttempts: 1, throwOnError: false },
+ *   retry: { maximumAttempts: 1, throwOnError: false },
  * });
  *
  * const result = await riskyOperation();

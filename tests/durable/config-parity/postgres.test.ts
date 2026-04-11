@@ -452,7 +452,7 @@ describe('DURABLE | Config Parity | Postgres', () => {
       const client = new Client({ connection });
       const startTime = Date.now();
       const count = 3;
-      const results: Promise<string>[] = [];
+      const results: Promise<unknown>[] = [];
 
       for (let i = 0; i < count; i++) {
         const handle = await client.workflow.start({

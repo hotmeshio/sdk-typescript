@@ -8,7 +8,7 @@ import {
   HMSH_DURABLE_MAX_INTERVAL,
   StreamStatus,
 } from './common';
-import { getContext } from './context';
+import { workflowInfo } from './workflowInfo';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 
 /**
@@ -84,7 +84,7 @@ import { isSideEffectAllowed } from './isSideEffectAllowed';
  * @returns {Promise<string>} The resulting hook/stream ID.
  */
 export async function hook(options: HookOptions): Promise<string> {
-  const { workflowId, connection, namespace, workflowTopic } = getContext();
+  const { workflowId, connection, namespace, workflowTopic } = workflowInfo();
   const hotMeshClient = await WorkerService.getHotMesh(workflowTopic, {
     connection,
     namespace,

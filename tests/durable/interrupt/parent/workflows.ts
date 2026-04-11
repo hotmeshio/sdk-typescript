@@ -19,7 +19,7 @@ export async function parentExample(
     expire: 600, //don't expire immediately once complete
   });
   //interrupted flows are stopped immediately, while an async cascade is triggered
-  (await Durable.workflow.interrupt(workflowId2, {
+  (await Durable.workflow.terminate(workflowId2, {
     throw: false,
     expire: 600,
   })) as string;

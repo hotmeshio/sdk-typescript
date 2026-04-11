@@ -100,7 +100,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
     });
 
     it('should store retry policy in database columns when publishing', async () => {
-      const retryPolicy: RetryPolicy = {
+      const retry: RetryPolicy = {
         maximumAttempts: 5,
         backoffCoefficient: 2,
         maximumInterval: '300s',
@@ -109,13 +109,13 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       const messageData = {
         metadata: { guid: guid(), aid: 'test-activity' },
         data: { test: 'data' },
-        _streamRetryConfig: normalizeRetryPolicy(retryPolicy),
+        _streamRetryConfig: normalizeRetryPolicy(retry),
       };
 
       await streamService.publishMessages(
         TEST_STREAM,
         [JSON.stringify(messageData)],
-        { retryPolicy },
+        { retry },
       );
 
       // Query database directly to verify columns
@@ -157,7 +157,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
     });
 
     it('should inject retry policy when consuming messages', async () => {
-      const retryPolicy: RetryPolicy = {
+      const retry: RetryPolicy = {
         maximumAttempts: 7,
         backoffCoefficient: 3,
         maximumInterval: '600s',
@@ -171,7 +171,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       await streamService.publishMessages(
         TEST_STREAM,
         [JSON.stringify(messageData)],
-        { retryPolicy },
+        { retry },
       );
 
       const messages = await streamService.consumeMessages(
@@ -182,10 +182,10 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       );
 
       expect(messages).toHaveLength(1);
-      expect(messages[0].retryPolicy).toBeDefined();
-      expect(messages[0].retryPolicy?.maximumAttempts).toBe(7);
-      expect(messages[0].retryPolicy?.backoffCoefficient).toBe(3);
-      expect(messages[0].retryPolicy?.maximumInterval).toBe(600);
+      expect(messages[0].retry).toBeDefined();
+      expect(messages[0].retry?.maximumAttempts).toBe(7);
+      expect(messages[0].retry?.backoffCoefficient).toBe(3);
+      expect(messages[0].retry?.maximumInterval).toBe(600);
 
       // Verify _streamRetryConfig is injected into StreamData
       expect((messages[0].data as any)._streamRetryConfig).toBeDefined();
@@ -248,7 +248,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
         `${TEST_STREAM}-aggressive`,
         [JSON.stringify({ metadata: { guid: guid(), aid: 'test' }, data: {} })],
         {
-          retryPolicy: {
+          retry: {
             maximumAttempts: 10,
             backoffCoefficient: 2,
             maximumInterval: '600s',
@@ -260,7 +260,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
         `${TEST_STREAM}-standard`,
         [JSON.stringify({ metadata: { guid: guid(), aid: 'test' }, data: {} })],
         {
-          retryPolicy: {
+          retry: {
             maximumAttempts: 3,
             backoffCoefficient: 10,
             maximumInterval: '120s',
@@ -399,7 +399,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
     });
 
     it('should propagate retry config through retry cycle', async () => {
-      const retryPolicy: RetryPolicy = {
+      const retry: RetryPolicy = {
         maximumAttempts: 5,
         backoffCoefficient: 2,
         maximumInterval: '300s',
@@ -413,7 +413,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       await streamService.publishMessages(
         TEST_STREAM,
         [JSON.stringify(messageData)],
-        { retryPolicy },
+        { retry },
       );
 
       // Consume original message
@@ -438,7 +438,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       await streamService.publishMessages(
         TEST_STREAM,
         [JSON.stringify(retryMessageData)],
-        { retryPolicy }, // Pass the same policy
+        { retry }, // Pass the same policy
       );
 
       // Delete original message (ack)
@@ -481,7 +481,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
         await streamService.publishMessages(
           name,
           [JSON.stringify({ metadata: { guid: guid(), aid: 'test' }, data: {} })],
-          { retryPolicy: policy as RetryPolicy },
+          { retry: policy as RetryPolicy },
         );
       }
 
@@ -514,7 +514,7 @@ describe('FUNCTIONAL | Retry Policy | Postgres', () => {
       await streamService.publishMessages(
         'perf-indexed-1',
         [JSON.stringify({ metadata: { guid: guid(), aid: 'test' }, data: {} })],
-        { retryPolicy: { maximumAttempts: 10, backoffCoefficient: 2, maximumInterval: '600s' } },
+        { retry: { maximumAttempts: 10, backoffCoefficient: 2, maximumInterval: '600s' } },
       );
 
       // Use EXPLAIN to verify index usage (optional, for performance testing)
@@ -663,7 +663,7 @@ app:
       //process.env.HOTMESH_POSTGRES_DISABLE_NOTIFICATIONS = 'true';
       //process.env.HOTMESH_POSTGRES_FALLBACK_INTERVAL = '100';
 
-      // Initialize HotMesh with modern retryPolicy configuration
+      // Initialize HotMesh with modern retry configuration
       const backoffConfig: HotMeshConfig = {
         appId: BACKOFF_APP_ID,
         logLevel: HMSH_LOGLEVEL,
@@ -681,7 +681,7 @@ app:
               options: postgres_options,
             },
             // Modern retry policy with exponential backoff at worker level
-            retryPolicy: {
+            retry: {
               maximumAttempts: 5,        // Retry up to 5 times
               backoffCoefficient: 2,     // Exponential: 2^0, 2^1, 2^2, 2^3, 2^4 seconds
               maximumInterval: '30s',    // Cap delay at 30 seconds
@@ -825,7 +825,7 @@ app:
               options: postgres_options,
             },
             // Worker-level retry policy
-            retryPolicy: {
+            retry: {
               maximumAttempts: 3,        // Only retry 3 times
               backoffCoefficient: 2,
               maximumInterval: '10s',
@@ -876,7 +876,7 @@ app:
         );
         
         // Should not reach here
-        fail('Expected workflow to fail after maximum attempts');
+        expect.unreachable('Expected workflow to fail after maximum attempts');
       } catch (error) {
         // Verify that we attempted exactly maximumAttempts times
         expect(attemptCount).toBe(3);
@@ -923,7 +923,7 @@ app:
               class: Postgres,
               options: postgres_options,
             },
-            retryPolicy: {
+            retry: {
               maximumAttempts: 4,
               backoffCoefficient: 1.5,
               maximumInterval: '30s',
@@ -1026,7 +1026,7 @@ app:
               class: Postgres,
               options: postgres_options,
             },
-            retryPolicy: {
+            retry: {
               maximumAttempts: 4,
               backoffCoefficient: 3,
               maximumInterval: '60s',
@@ -1129,7 +1129,7 @@ app:
               class: Postgres,
               options: postgres_options,
             },
-            retryPolicy: {
+            retry: {
               maximumAttempts: 5,
               backoffCoefficient: 10,
               maximumInterval: '5s', // Cap at 5 seconds
@@ -1238,7 +1238,7 @@ app:
               class: Postgres,
               options: postgres_options,
             },
-            retryPolicy: {
+            retry: {
               maximumAttempts: 1, // No retries
               backoffCoefficient: 2,
               maximumInterval: '10s',
@@ -1282,7 +1282,7 @@ app:
           null,
           10_000,
         );
-        fail('Expected workflow to fail without retries');
+        expect.unreachable('Expected workflow to fail without retries');
       } catch (error) {
         // Should fail after just 1 attempt
         expect(attemptCount).toBe(1);
@@ -1311,7 +1311,7 @@ app:
               class: Postgres,
               options: postgres_options,
             },
-            retryPolicy: {
+            retry: {
               maximumAttempts: 2, // 1 retry
               backoffCoefficient: 2,
               maximumInterval: '10s',
@@ -1407,7 +1407,7 @@ app:
               class: Postgres,
               options: postgres_options,
             },
-            retryPolicy: {
+            retry: {
               maximumAttempts: 6,
               backoffCoefficient: 1.5,
               maximumInterval: '10s',
@@ -1512,7 +1512,7 @@ app:
               class: Postgres,
               options: postgres_options,
             },
-            retryPolicy: {
+            retry: {
               maximumAttempts: 3,
               backoffCoefficient: 10,
               maximumInterval: 3, // 3 seconds as number
@@ -1587,7 +1587,7 @@ app:
       await hotMesh.stop();
     }, 15_000);
 
-    it('should validate defaults when retryPolicy fields are omitted', async () => {
+    it('should validate defaults when retry fields are omitted', async () => {
       let attemptCount = 0;
 
       const config: HotMeshConfig = {
@@ -1606,7 +1606,7 @@ app:
               class: Postgres,
               options: postgres_options,
             },
-            retryPolicy: {
+            retry: {
               // Only set backoffCoefficient, test defaults for others
               backoffCoefficient: 2,
             },

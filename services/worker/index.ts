@@ -42,7 +42,7 @@ class WorkerService {
   reporting = false;
   inited: string;
   rollCallInterval: NodeJS.Timeout;
-  retryPolicy: import('../../types/stream').RetryPolicy | undefined;
+  retry: import('../../types/stream').RetryPolicy | undefined;
 
   /**
    * @private
@@ -78,7 +78,7 @@ class WorkerService {
         service.topic = worker.topic;
         service.config = config;
         service.logger = logger;
-        service.retryPolicy = worker.retryPolicy;
+        service.retry = worker.retry;
 
         await service.initStoreChannel(service, worker.store);
         await service.initSubChannel(
@@ -125,7 +125,7 @@ class WorkerService {
             {
               reclaimDelay: worker.reclaimDelay,
               reclaimCount: worker.reclaimCount,
-              retryPolicy: worker.retryPolicy,
+              retry: worker.retry,
             },
           );
           // Still need a router for publishing responses back to engine
@@ -235,7 +235,7 @@ class WorkerService {
         reclaimDelay: worker.reclaimDelay,
         reclaimCount: worker.reclaimCount,
         throttle,
-        retryPolicy: worker.retryPolicy,
+        retry: worker.retry,
       },
       this.stream,
       logger,

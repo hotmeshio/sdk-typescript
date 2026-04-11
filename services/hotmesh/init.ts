@@ -34,8 +34,8 @@ export async function initEngine(
     }
 
     // Apply retry policy to stream connection if provided
-    if (config.engine.retryPolicy) {
-      applyRetryPolicy(config.engine.connection, config.engine.retryPolicy);
+    if (config.engine.retry) {
+      applyRetryPolicy(config.engine.connection, config.engine.retry);
     }
 
     // Initialize task queue for engine
@@ -88,8 +88,8 @@ export async function doWork(
   if (config.workers) {
     for (const worker of config.workers) {
       // Apply retry policy to stream connection if provided
-      if (worker.retryPolicy) {
-        applyRetryPolicy(worker.connection, worker.retryPolicy);
+      if (worker.retry) {
+        applyRetryPolicy(worker.connection, worker.retry);
       }
 
       worker.taskQueue = initTaskQueue(
@@ -140,14 +140,14 @@ export function initTaskQueue(
  */
 export function applyRetryPolicy(
   connection: ProviderConfig | ProvidersConfig,
-  retryPolicy: RetryPolicy,
+  retry: RetryPolicy,
 ): void {
   // Check if this is ProvidersConfig (has 'stream' property)
   if ('stream' in connection && connection.stream) {
     // Long-form: apply to the stream sub-config
-    connection.stream.retryPolicy = retryPolicy;
+    connection.stream.retry = retry;
   } else {
     // Short-form: apply directly to the connection
-    (connection as ProviderConfig).retryPolicy = retryPolicy;
+    (connection as ProviderConfig).retry = retry;
   }
 }
