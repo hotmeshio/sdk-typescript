@@ -19,6 +19,7 @@ import {
   HMSH_DURABLE_MAX_ATTEMPTS,
   HMSH_DURABLE_MAX_INTERVAL,
 } from './common';
+import { checkCancellation } from './cancellationScope';
 import { getContext } from './context';
 import { didRun } from './didRun';
 
@@ -147,6 +148,7 @@ export async function executeChild<T>(options: WorkflowOptions): Promise<T> {
   const isStartChild = options.await === false;
   const prefix = isStartChild ? 'start' : 'child';
   const [didRunAlready, execIndex, result] = await didRun(prefix);
+  checkCancellation();
   const context = getContext();
   const { canRetry, interruptionRegistry } = context;
 

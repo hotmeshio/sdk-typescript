@@ -16,6 +16,7 @@ import {
   s,
   asyncLocalStorage,
 } from './common';
+import { checkCancellation } from './cancellationScope';
 import { getContext } from './context';
 import { didRun } from './didRun';
 
@@ -78,6 +79,8 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
   return async function (...args: any[]) {
     // Increment counter first for deterministic replay ordering
     const [didRunAlready, execIndex, result] = await didRun('proxy');
+    // Check cancellation AFTER counter increment to preserve replay positions
+    checkCancellation();
 
     const context = getContext();
     const { interruptionRegistry } = context;

@@ -22,6 +22,7 @@ import { sleep } from './sleep';
 import { condition } from './condition';
 import { continueAsNew } from './continueAsNew';
 import { patched, deprecatePatch } from './patched';
+import { CancellationScope, CancelledFailure, isCancellation } from './cancellationScope';
 import { asyncLocalStorage, WorkerService, HotMesh } from './common';
 import { entity } from './entityMethods';
 
@@ -48,6 +49,8 @@ import { entity } from './entityMethods';
  * | {@link continueAsNew} | Complete and restart with new args |
  * | {@link patched} | Branch on a versioned code change |
  * | {@link deprecatePatch} | Mark old code path as removable |
+ * | {@link CancellationScope} | Shield cleanup from cancellation |
+ * | {@link isCancellation} | Type guard for `CancelledFailure` |
  *
  * ## Data & Observability
  *
@@ -140,6 +143,9 @@ export class WorkflowService {
   static continueAsNew = continueAsNew;
   static patched = patched;
   static deprecatePatch = deprecatePatch;
+  static CancellationScope = CancellationScope;
+  static CancelledFailure = CancelledFailure;
+  static isCancellation = isCancellation;
 
   /**
    * Return a handle to the HotMesh client hosting the workflow execution.

@@ -1,18 +1,16 @@
-import {
-  asyncLocalStorage,
-  KeyService,
-  KeyType,
-  WorkerService,
-  SerializerService,
-} from './common';
+import { asyncLocalStorage, SerializerService } from './common';
 
 /**
  * Enables safe code changes to running workflows by branching on a named
- * change marker. On first execution of a new workflow, `patched` writes a
- * durable marker and returns `true` — the workflow takes the new code path.
+ * change marker. On first execution of a new workflow, `patched` records
+ * the marker and returns `true` — the workflow takes the new code path.
  * On replay of a workflow that was started **before** the patch existed,
  * no marker is found and `patched` returns `false` — the old code path
  * is followed.
+ *
+ * Markers are accumulated in the workflow context and written to the job
+ * hash by the engine (via the YAML schema's `job.maps`) when the worker
+ * responds — no direct hash writes from the worker.
  *
  * `patched` does **not** increment the execution counter, so it can be
  * inserted into existing workflow code without shifting the replay
@@ -52,18 +50,6 @@ import {
  * }
  * ```
  *
- * ```typescript
- * // After all pre-patch workflows have drained:
- * export async function orderWorkflow(orderId: string): Promise<string> {
- *   const acts = Durable.workflow.proxyActivities<typeof activities>({ ... });
- *
- *   Durable.workflow.deprecatePatch('v2-validation');
- *   await acts.validateOrderV2(orderId);
- *
- *   return await acts.processOrder(orderId);
- * }
- * ```
- *
  * @param {string} changeId - A unique, stable identifier for this code change.
  *   Must not be reused across different changes.
  * @returns {Promise<boolean>} `true` for new workflows (take new path),
@@ -95,35 +81,15 @@ export async function patched(changeId: string): Promise<boolean> {
     return false;
   }
 
-  // First execution of a new workflow: write the marker to the job hash
-  // so it persists across re-entries and replays
-  const workflowId = store.get('workflowId');
-  const workflowTopic = store.get('workflowTopic');
-  const connection = store.get('connection');
-  const namespace = store.get('namespace');
-  const hotMesh = await WorkerService.getHotMesh(workflowTopic, {
-    connection,
-    namespace,
-  });
-  const keyParams = {
-    appId: hotMesh.appId,
-    jobId: workflowId,
-  };
-  const workflowGuid = KeyService.mintKey(
-    hotMesh.namespace,
-    KeyType.JOB_STATE,
-    keyParams,
-  );
-  // Atomic write — incrementFieldByFloat returns 1 for first writer
-  await hotMesh.engine.search.incrementFieldByFloat(
-    workflowGuid,
-    patchKey,
-    1,
-  );
+  // First execution of a new workflow: accumulate the marker in context.
+  // The engine writes it to the job hash via the YAML schema's job.maps
+  // when the worker responds (for any response code).
+  const patchMarkers: Record<string, string> = store.get('patchMarkers');
+  patchMarkers[patchKey] = SerializerService.toString(true);
 
   // Update in-memory replay so subsequent patched() calls in this
-  // execution see the marker without a database round-trip
-  replay[patchKey] = SerializerService.toString(true);
+  // execution see the marker without waiting for the engine round-trip
+  replay[patchKey] = patchMarkers[patchKey];
 
   return true;
 }

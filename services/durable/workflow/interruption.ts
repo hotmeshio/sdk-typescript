@@ -10,6 +10,7 @@ import {
   DurableWaitForError,
   DurableWaitForAllError,
 } from '../../../modules/errors';
+import { CancelledFailure } from './cancellationScope';
 
 /**
  * Type guard that returns `true` if an error is a Durable engine
@@ -28,7 +29,7 @@ import {
  * `DurableChildError`, `DurableContinueAsNewError`, `DurableFatalError`,
  * `DurableMaxedError`, `DurableProxyError`, `DurableRetryError`,
  * `DurableSleepError`, `DurableTimeoutError`, `DurableWaitForError`,
- * `DurableWaitForAllError`
+ * `DurableWaitForAllError`, `CancelledFailure`
  *
  * ## Examples
  *
@@ -83,6 +84,7 @@ export function didInterrupt(error: Error): boolean {
     error instanceof DurableSleepError ||
     error instanceof DurableTimeoutError ||
     error instanceof DurableWaitForError ||
-    error instanceof DurableWaitForAllError
+    error instanceof DurableWaitForAllError ||
+    error instanceof CancelledFailure
   );
 }

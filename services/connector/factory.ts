@@ -59,10 +59,15 @@ export class ConnectorService {
       };
     }
 
-    // Apply scoped worker credentials if provided
+    // Apply scoped worker credentials to stream/sub only.
+    // The `store` connection retains full credentials because it is
+    // used by the engine for schema deployment, job-state reads, and
+    // other operations that require direct table access. Only the
+    // `stream` (dequeue/ack/respond) and `sub` (LISTEN/UNLISTEN)
+    // connections are scoped to the least-privilege worker role.
     const workerCreds = (target as HotMeshWorker).workerCredentials;
     if (workerCreds) {
-      for (const key of ['store', 'stream', 'sub'] as const) {
+      for (const key of ['stream', 'sub'] as const) {
         if (connection[key]?.options) {
           connection[key].options = {
             ...connection[key].options,

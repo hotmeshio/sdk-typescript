@@ -6,6 +6,7 @@ import {
   s,
   asyncLocalStorage,
 } from './common';
+import { checkCancellation } from './cancellationScope';
 import { didRun } from './didRun';
 
 /**
@@ -72,6 +73,7 @@ import { didRun } from './didRun';
  */
 export async function sleep(duration: string): Promise<number> {
   const [didRunAlready, execIndex, result] = await didRun('sleep');
+  checkCancellation();
   if (didRunAlready) {
     // Emit RETURN span in debug mode
     if (DurableTelemetryService.isVerbose() && result) {

@@ -102,6 +102,44 @@ export async function patchedInHookWorkflow(): Promise<string> {
   return result as string;
 }
 
+// Positive test: workflow catches CancelledFailure and runs cleanup in nonCancellable scope
+export async function cancellableWorkflow(orderId: string): Promise<string> {
+  const { chargePayment, refundPayment } = Durable.workflow.proxyActivities<typeof activities>({
+    activities,
+    retryPolicy: { maximumAttempts: 3 },
+  });
+
+  try {
+    await chargePayment(orderId);
+    // This sleep gives the test time to call handle.cancel()
+    await Durable.workflow.sleep('5 seconds');
+    // If not cancelled, this would run
+    return 'completed';
+  } catch (err) {
+    if (Durable.workflow.isCancellation(err)) {
+      // Cleanup inside nonCancellable scope
+      const result = await Durable.workflow.CancellationScope.nonCancellable(async () => {
+        return await refundPayment(orderId);
+      });
+      return `cancelled:${result}`;
+    }
+    if (Durable.workflow.didInterrupt(err)) throw err;
+    throw err;
+  }
+}
+
+// Negative test: CancelledFailure propagates as error when not caught
+export async function uncaughtCancelWorkflow(): Promise<string> {
+  const { fastActivity } = Durable.workflow.proxyActivities<typeof activities>({
+    activities,
+    retryPolicy: { maximumAttempts: 3 },
+  });
+
+  await fastActivity();
+  await Durable.workflow.sleep('5 seconds');
+  return 'completed';
+}
+
 // Positive test: continueAsNew restarts with new args until cursor exhausted
 export async function continueAsNewWorkflow(cursor = 1, totalProcessed = 0): Promise<number> {
   const { processBatch } = Durable.workflow.proxyActivities<typeof activities>({
@@ -135,6 +173,20 @@ export async function continueAsNewTerminalWorkflow(iteration = 0): Promise<stri
     return 'unreachable';
   }
   return `completed-at-${iteration}`;
+}
+
+// Secured worker test: patched + activity inside a secured worker context
+export async function securedPatchedWorkflow(orderId: string): Promise<string> {
+  const { validateOrderV2, validateOrder } = Durable.workflow.proxyActivities<typeof activities>({
+    activities,
+    retryPolicy: { maximumAttempts: 3 },
+  });
+
+  if (await Durable.workflow.patched('secure-v2')) {
+    return await validateOrderV2(orderId);
+  } else {
+    return await validateOrder(orderId);
+  }
 }
 
 // Test startToCloseTimeout with a slow activity (negative: exceeds timeout)

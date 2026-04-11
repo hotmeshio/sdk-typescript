@@ -336,6 +336,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
           job:
             maps:
               response: '{$self.output.data.response}'
+              patch-marker[-]: '{$self.output.data.patchMarkers}'
 
         sleeper:
           title: Pauses the main thread for a set amount of time; all other subprocess threads remain active, and new ones may be started

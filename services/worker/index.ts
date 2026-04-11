@@ -212,10 +212,8 @@ class WorkerService {
       service.namespace,
       service.appId,
       service.logger,
+      { securedWorker },
     );
-    if (securedWorker && 'securedMode' in service.stream) {
-      (service.stream as any).securedMode = true;
-    }
   }
 
   /**

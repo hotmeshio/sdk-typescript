@@ -1361,6 +1361,14 @@ class PostgresStoreService extends StoreService<
     return [nextCursor, matchingFields];
   }
 
+  async setCancel(jobId: string, appId: string): Promise<void> {
+    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
+    // Write the cancel marker as a jmark-type field via hset.
+    // The hash module's splitField/deriveType classifies '-cancelled-'
+    // as type='jmark', which findJobFields returns on re-entry.
+    await this.kvsql().hset(jobKey, { '-cancelled-': '1' });
+  }
+
   async setThrottleRate(options: ThrottleOptions): Promise<void> {
     const key = this.mintKey(KeyType.THROTTLE_RATE, { appId: this.appId });
     //engine guids are session specific. no need to persist

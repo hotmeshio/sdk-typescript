@@ -148,6 +148,24 @@ export class WorkflowHandleService {
   }
 
   /**
+   * Requests cooperative cancellation of the workflow. Unlike
+   * `interrupt()` (which terminates immediately), `cancel()` sets
+   * a durable flag that the workflow detects at its next durable
+   * operation (`sleep`, `proxyActivities`, `executeChild`, etc.).
+   * The workflow receives a `CancelledFailure` error that it can
+   * catch to perform cleanup before exiting.
+   *
+   * ```typescript
+   * const handle = await client.workflow.start({ ... });
+   * await handle.cancel();
+   * // Workflow will throw CancelledFailure at its next durable operation
+   * ```
+   */
+  async cancel(): Promise<void> {
+    await this.hotMesh.cancel(this.workflowId);
+  }
+
+  /**
    * Waits for the workflow to complete and returns the result. If
    * the workflow response includes an error, this method will rethrow
    * the error, including the stack trace if available.

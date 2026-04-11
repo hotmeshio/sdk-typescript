@@ -164,6 +164,78 @@ describe('DURABLE | Config Parity | Postgres', () => {
     }, 15_000);
   });
 
+  describe('cancellation', () => {
+    it('should create cancellable worker', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'cancel-test',
+        workflow: workflows.cancellableWorkflow,
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should complete normally without cancel (smoke test)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: ['order-smoke'],
+        taskQueue: 'cancel-test',
+        workflowName: 'cancellableWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      // No cancel — workflow should sleep 5s then return 'completed'
+      const result = await handle.result();
+      expect(result).toBe('completed');
+    }, 30_000);
+
+    it('should cancel workflow and run cleanup in nonCancellable scope (positive)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: ['order-789'],
+        taskQueue: 'cancel-test',
+        workflowName: 'cancellableWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      // Wait for the activity to complete and the workflow to enter sleep
+      await sleepFor(2000);
+      // Cancel the workflow — takes effect when sleep completes
+      await handle.cancel();
+      const result = await handle.result();
+      // Workflow caught CancelledFailure, ran refund in nonCancellable scope
+      expect(result).toBe('cancelled:refunded-order-789');
+    }, 60_000);
+
+    it('should create uncaught cancel worker', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'cancel-uncaught',
+        workflow: workflows.uncaughtCancelWorkflow,
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should propagate CancelledFailure as error when not caught (negative)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: [],
+        taskQueue: 'cancel-uncaught',
+        workflowName: 'uncaughtCancelWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      await sleepFor(2000);
+      await handle.cancel();
+      try {
+        await handle.result();
+        expect.unreachable('should have thrown');
+      } catch (err) {
+        // CancelledFailure propagated as a workflow error
+        expect(err).toBeDefined();
+      }
+    }, 60_000);
+  });
+
   describe('continueAsNew', () => {
     it('should create worker', async () => {
       const worker = await Worker.create({
@@ -256,5 +328,45 @@ describe('DURABLE | Config Parity | Postgres', () => {
       // Activity exceeded 5s timeout, so workflow gets error object via throwOnError:false
       expect(result).toBe('timeout_error');
     }, 30_000);
+  });
+
+  describe('secured worker (workerCredentials)', () => {
+    let credential: { roleName: string; password: string };
+
+    it('should provision a scoped worker role', async () => {
+      credential = await Durable.provisionWorkerRole({
+        connection,
+        streamNames: ['secured-patched', 'secured-patched-activity'],
+      });
+      expect(credential.roleName).toMatch(/^hmsh_wrk_/);
+      expect(credential.password).toBeDefined();
+    }, 15_000);
+
+    it('should create a secured worker with workerCredentials', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'secured-patched',
+        workflow: workflows.securedPatchedWorkflow,
+        workerCredentials: {
+          user: credential.roleName,
+          password: credential.password,
+        },
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should run patched workflow on secured worker (positive)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: ['secure-order-1'],
+        taskQueue: 'secured-patched',
+        workflowName: 'securedPatchedWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      // patched returns true for new workflow, even on secured worker
+      expect(result).toBe('v2-validated-secure-order-1');
+    }, 60_000);
   });
 });

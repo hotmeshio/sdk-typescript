@@ -121,6 +121,19 @@ export async function interrupt(
 }
 
 /**
+ * Requests cooperative cancellation of an active workflow job.
+ * Writes a durable cancel marker to the job hash via the store.
+ * The workflow detects this at its next durable operation and
+ * throws CancelledFailure which can be caught for cleanup.
+ */
+export async function cancel(
+  instance: JobsContext,
+  jobId: string,
+): Promise<void> {
+  await instance.engine?.store.setCancel(jobId, instance.engine.appId);
+}
+
+/**
  * Immediately deletes a completed job from the system.
  */
 export async function scrub(

@@ -4,6 +4,7 @@ import {
   asyncLocalStorage,
   HMSH_CODE_DURABLE_CONTINUE,
 } from './common';
+import { checkCancellation } from './cancellationScope';
 
 /**
  * Completes the current workflow execution and immediately starts a new
@@ -71,6 +72,7 @@ import {
  */
 export async function continueAsNew(...args: any[]): Promise<never> {
   const store = asyncLocalStorage.getStore();
+  checkCancellation();
   const interruptionRegistry = store.get('interruptionRegistry');
   const workflowId = store.get('workflowId');
   const workflowDimension = store.get('workflowDimension') ?? '';

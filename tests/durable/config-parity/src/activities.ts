@@ -42,6 +42,14 @@ export async function hookTaskV1(): Promise<string> {
   return 'hook-v1-result';
 }
 
+export async function chargePayment(orderId: string): Promise<string> {
+  return `charged-${orderId}`;
+}
+
+export async function refundPayment(orderId: string): Promise<string> {
+  return `refunded-${orderId}`;
+}
+
 export async function processBatch(cursor: number): Promise<{ nextCursor: number | null; processed: number }> {
   // Simulate batch processing: 3 batches of 10 items each
   const processed = 10;

@@ -605,9 +605,12 @@ class Activity {
               delete output[key];
             } else if (amount === '-' || amount === '_') {
               const obj = output[key];
-              Object.keys(obj).forEach((newKey) => {
-                output[newKey] = obj[newKey];
-              });
+              if (obj && typeof obj === 'object') {
+                Object.keys(obj).forEach((newKey) => {
+                  output[newKey] = obj[newKey];
+                });
+              }
+              delete output[key];
             }
           }
         }

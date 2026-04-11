@@ -115,6 +115,10 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
     // -- worker_respond --
     // Inserts into engine_streams. The engine stream_name is the appId
     // (hardcoded from the schema name, not caller-controlled).
+    // NOTE: Does NOT use STREAM_ACCESS_CHECK because p_stream_name is
+    // not the target — the engine stream is always hardcoded. Instead,
+    // we verify the caller has at least one allowed stream (i.e., is a
+    // legitimate provisioned worker).
     `CREATE OR REPLACE FUNCTION ${schemaName}.worker_respond(
       p_stream_name TEXT,
       p_message TEXT,
@@ -131,7 +135,13 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
     DECLARE
       new_id BIGINT;
       engine_stream_name TEXT;
-    ${STREAM_ACCESS_CHECK}
+      allowed_streams TEXT[];
+    BEGIN
+      allowed_streams := string_to_array(current_setting('app.allowed_streams', true), ',');
+      IF allowed_streams IS NULL OR array_length(allowed_streams, 1) IS NULL THEN
+        RAISE EXCEPTION 'access denied: caller has no allowed streams'
+          USING ERRCODE = '42501';
+      END IF;
       -- Engine stream_name is the schema/appId name
       engine_stream_name := '${schemaName}';
 

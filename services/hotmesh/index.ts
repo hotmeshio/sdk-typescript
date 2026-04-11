@@ -360,6 +360,10 @@ class HotMesh {
     return Jobs.interrupt(this, topic, jobId, options);
   }
 
+  async cancel(jobId: string): Promise<void> {
+    return Jobs.cancel(this, jobId);
+  }
+
   async scrub(jobId: string) {
     return Jobs.scrub(this, jobId);
   }

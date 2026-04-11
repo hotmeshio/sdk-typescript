@@ -9,6 +9,7 @@ import {
   HMSH_DURABLE_MAX_ATTEMPTS,
   HMSH_LOGLEVEL,
 } from '../../modules/enums';
+import { CancelledFailure } from './workflow/cancellationScope';
 import {
   DurableChildError,
   DurableContinueAsNewError,
@@ -869,7 +870,22 @@ export class WorkerService {
     return async (data: StreamData): Promise<StreamDataResponse> => {
       const counter = { counter: 0 };
       const interruptionRegistry: any[] = [];
+      const patchMarkers: Record<string, string> = {};
       let isProcessing = false;
+
+      // Injects accumulated patch markers into any worker response so the
+      // engine can persist them via the YAML schema's job.maps mechanism.
+      // Include patchMarkers only when non-empty. The schema's
+      // job.maps patch-marker[-] is a no-op when the reference is absent.
+      const withPatchMarkers = (
+        response: StreamDataResponse,
+      ): StreamDataResponse => {
+        if (Object.keys(patchMarkers).length > 0) {
+          response.data = response.data || {};
+          (response.data as any).patchMarkers = patchMarkers;
+        }
+        return response;
+      };
       try {
         //incoming data payload has arguments and workflowId
         const workflowInput = data.data as unknown as WorkflowDataType;
@@ -878,6 +894,7 @@ export class WorkerService {
         context.set('expire', workflowInput.expire);
         context.set('counter', counter);
         context.set('interruptionRegistry', interruptionRegistry);
+        context.set('patchMarkers', patchMarkers);
         context.set('connection', config.connection);
         context.set('namespace', config.namespace ?? APP_ID);
         context.set('raw', data);
@@ -1003,12 +1020,12 @@ export class WorkerService {
           }
         }
 
-        return {
+        return withPatchMarkers({
           code: 200,
           status: StreamStatus.SUCCESS,
           metadata: { ...data.metadata },
           data: { response: workflowResponse, done: true },
-        };
+        });
       } catch (err) {
         if (isProcessing) {
           return;
@@ -1030,7 +1047,7 @@ export class WorkerService {
             expire,
           } = workflowInput;
           const collatorFlowId = `${guid()}$C`;
-          return {
+          return withPatchMarkers({
             status: StreamStatus.SUCCESS,
             code: HMSH_CODE_DURABLE_ALL,
             metadata: { ...data.metadata },
@@ -1046,11 +1063,11 @@ export class WorkerService {
               workflowTopic: workflowTopic,
               expire,
             },
-          } as StreamDataResponse;
+          } as StreamDataResponse);
         } else if (err instanceof DurableSleepError) {
           //return the sleep interruption
           isProcessing = true;
-          return {
+          return withPatchMarkers({
             status: StreamStatus.SUCCESS,
             code: err.code,
             metadata: { ...data.metadata },
@@ -1065,11 +1082,11 @@ export class WorkerService {
               index: err.index,
               workflowDimension: err.workflowDimension,
             },
-          } as StreamDataResponse;
+          } as StreamDataResponse);
         } else if (err instanceof DurableProxyError) {
           //return the proxyActivity interruption
           isProcessing = true;
-          return {
+          return withPatchMarkers({
             status: StreamStatus.SUCCESS,
             code: err.code,
             metadata: { ...data.metadata },
@@ -1097,7 +1114,7 @@ export class WorkerService {
               maximumInterval: err.maximumInterval,
               startToCloseTimeout: err.startToCloseTimeout,
             },
-          } as StreamDataResponse;
+          } as StreamDataResponse);
         } else if (err instanceof DurableChildError) {
           //return the child interruption
           isProcessing = true;
@@ -1106,7 +1123,7 @@ export class WorkerService {
             workflowId: err.workflowId,
             dimension: err.workflowDimension,
           };
-          return {
+          return withPatchMarkers({
             status: StreamStatus.SUCCESS,
             code: err.code,
             metadata: { ...data.metadata },
@@ -1134,11 +1151,11 @@ export class WorkerService {
               taskQueue: err.taskQueue,
               workflowName: err.workflowName,
             },
-          } as StreamDataResponse;
+          } as StreamDataResponse);
         } else if (err instanceof DurableContinueAsNewError) {
           //return the continueAsNew interruption
           isProcessing = true;
-          return {
+          return withPatchMarkers({
             status: StreamStatus.SUCCESS,
             code: err.code,
             metadata: { ...data.metadata },
@@ -1148,7 +1165,27 @@ export class WorkerService {
               index: err.index,
               workflowDimension: err.workflowDimension,
             },
-          } as StreamDataResponse;
+          } as StreamDataResponse);
+        }
+
+        if (err instanceof CancelledFailure) {
+          // CancelledFailure that wasn't caught by the workflow:
+          // treat as fatal (no retry) so the workflow terminates.
+          isProcessing = true;
+          return withPatchMarkers({
+            status: StreamStatus.SUCCESS,
+            code: HMSH_CODE_DURABLE_FATAL,
+            metadata: { ...data.metadata },
+            data: {
+              $error: {
+                message: err.message,
+                type: 'CancelledFailure',
+                name: 'CancelledFailure',
+                stack: err.stack,
+                code: HMSH_CODE_DURABLE_FATAL,
+              },
+            },
+          } as StreamDataResponse);
         }
 
         // ALL other errors are actual fatal errors (598, 597, 596)
@@ -1170,7 +1207,7 @@ export class WorkerService {
           );
         }
         isProcessing = true;
-        return {
+        return withPatchMarkers({
           status: StreamStatus.SUCCESS,
           code: err.code || new DurableRetryError(err.message).code,
           metadata: { ...data.metadata },
@@ -1183,7 +1220,7 @@ export class WorkerService {
               code: err.code || new DurableRetryError(err.message).code,
             },
           },
-        } as StreamDataResponse;
+        } as StreamDataResponse);
       }
     };
   }
