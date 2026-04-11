@@ -100,9 +100,8 @@ class PostgresStreamService extends StreamService<
       this.logger,
     );
 
-    // Set up notification handler if supported (skip in secured mode —
-    // notifications rely on direct table access that scoped credentials lack)
-    if (!this.securedMode && this.streamClient.on && this.isNotificationsEnabled()) {
+    // Set up notification handler if supported
+    if (this.streamClient.on && this.isNotificationsEnabled()) {
       this.notificationManager.setupClientNotificationHandler(this);
       this.notificationManager.startClientFallbackPoller(
         this.checkForMissedMessages.bind(this),
@@ -616,11 +615,7 @@ class PostgresStreamService extends StreamService<
   }
 
   getProviderSpecificFeatures() {
-    const features = Stats.getProviderSpecificFeatures(this.config);
-    if (this.securedMode) {
-      features.supportsNotifications = false;
-    }
-    return features;
+    return Stats.getProviderSpecificFeatures(this.config);
   }
 
   async cleanup(): Promise<void> {

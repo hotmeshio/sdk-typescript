@@ -56,3 +56,19 @@ export async function processBatch(cursor: number): Promise<{ nextCursor: number
   const nextCursor = cursor < 3 ? cursor + 1 : null;
   return { nextCursor, processed };
 }
+
+export async function securedSignalActivity(value: string): Promise<string> {
+  return `processed-${value}`;
+}
+
+export async function securedChainStep1(input: string): Promise<string> {
+  return `step1-${input}`;
+}
+
+export async function securedChainStep2(input: string): Promise<string> {
+  return `step2-${input}`;
+}
+
+export async function securedChainStep3(input: string): Promise<string> {
+  return `step3-${input}`;
+}

@@ -191,7 +191,7 @@ export class ConsumptionManager<
 
       // Process messages - use parallel processing for PostgreSQL
       const features = this.stream.getProviderSpecificFeatures();
-      const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications currently
+      const isPostgres = features.supportsParallelProcessing;
 
       if (isPostgres && messages.length > 1) {
         // Parallel processing for PostgreSQL batches
@@ -350,7 +350,7 @@ export class ConsumptionManager<
         if (!this.hasReachedMaxBackoff) {
           // Normal mode: try with backoff and finite retries
           const features = this.stream.getProviderSpecificFeatures();
-          const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications
+          const isPostgres = features.supportsParallelProcessing;
           const batchSize = isPostgres ? 10 : 1; // Use batch size of 10 for PostgreSQL, 1 for others
 
           messages = await this.stream.consumeMessages(
@@ -369,7 +369,7 @@ export class ConsumptionManager<
         } else {
           // Fallback mode: just try once, no backoff
           const features = this.stream.getProviderSpecificFeatures();
-          const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications
+          const isPostgres = features.supportsParallelProcessing;
           const batchSize = isPostgres ? 10 : 1; // Use batch size of 10 for PostgreSQL, 1 for others
 
           messages = await this.stream.consumeMessages(
@@ -398,7 +398,7 @@ export class ConsumptionManager<
 
           // Process messages - use parallel processing for PostgreSQL
           const features = this.stream.getProviderSpecificFeatures();
-          const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications currently
+          const isPostgres = features.supportsParallelProcessing;
 
           if (isPostgres && messages.length > 1) {
             // Parallel processing for PostgreSQL batches
@@ -684,7 +684,7 @@ export class ConsumptionManager<
     if (ids.length === 0) return;
 
     const features = this.stream.getProviderSpecificFeatures();
-    const isPostgres = features.supportsNotifications; // Only PostgreSQL supports notifications
+    const isPostgres = features.supportsParallelProcessing;
 
     if (isPostgres && ids.length > 1) {
       // Batch acknowledgment for PostgreSQL

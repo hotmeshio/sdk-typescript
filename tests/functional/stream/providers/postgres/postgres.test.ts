@@ -419,6 +419,7 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
         supportsBatching: true,
         supportsDeadLetterQueue: false,
         supportsNotifications: true,
+        supportsParallelProcessing: true,
         supportsOrdering: true,
         supportsTrimming: true,
         supportsRetry: false,

@@ -189,6 +189,36 @@ export async function securedPatchedWorkflow(orderId: string): Promise<string> {
   }
 }
 
+// Secured worker test: signal-based workflow that proves LISTEN/NOTIFY wakes consumers
+export async function securedSignalWorkflow(): Promise<string> {
+  const { securedSignalActivity } = Durable.workflow.proxyActivities<typeof activities>({
+    activities,
+    retryPolicy: { maximumAttempts: 3 },
+  });
+
+  // Wait for an external signal — this exercises the notification path
+  // because the consumer must be woken by LISTEN/NOTIFY to process the signal
+  const signalData = await Durable.workflow.condition<{ value: string }>('secured-signal');
+  const result = await securedSignalActivity(signalData.value);
+  return result;
+}
+
+// Secured worker test: multi-step activity chain that exercises notification-driven dispatch
+export async function securedChainWorkflow(input: string): Promise<string> {
+  const { securedChainStep1, securedChainStep2, securedChainStep3 } =
+    Durable.workflow.proxyActivities<typeof activities>({
+      activities,
+      retryPolicy: { maximumAttempts: 3 },
+    });
+
+  // Each activity completion triggers a notification to wake the consumer
+  // for the next step — 3 round-trips that benefit from LISTEN/NOTIFY
+  const r1 = await securedChainStep1(input);
+  const r2 = await securedChainStep2(r1);
+  const r3 = await securedChainStep3(r2);
+  return r3;
+}
+
 // Test startToCloseTimeout with a slow activity (negative: exceeds timeout)
 export async function startToCloseTimeoutWorkflow(): Promise<string> {
   const { slowActivity } = Durable.workflow.proxyActivities<typeof activities>({

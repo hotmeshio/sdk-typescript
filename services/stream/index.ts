@@ -140,6 +140,7 @@ export abstract class StreamService<
     supportsTrimming: boolean;
     supportsRetry: boolean;
     supportsNotifications?: boolean; // New optional feature flag
+    supportsParallelProcessing?: boolean;
     maxMessageSize: number;
     maxBatchSize: number;
   };

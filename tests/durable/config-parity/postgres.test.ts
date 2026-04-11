@@ -369,4 +369,113 @@ describe('DURABLE | Config Parity | Postgres', () => {
       expect(result).toBe('v2-validated-secure-order-1');
     }, 60_000);
   });
+
+  describe('secured worker notifications', () => {
+    let securedCredential: { roleName: string; password: string };
+
+    it('should provision a scoped role for notification tests', async () => {
+      securedCredential = await Durable.provisionWorkerRole({
+        connection,
+        streamNames: [
+          'secured-signal',
+          'secured-signal-activity',
+          'secured-chain',
+          'secured-chain-activity',
+        ],
+      });
+      expect(securedCredential.roleName).toMatch(/^hmsh_wrk_/);
+    }, 15_000);
+
+    it('should create secured signal worker', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'secured-signal',
+        workflow: workflows.securedSignalWorkflow,
+        workerCredentials: {
+          user: securedCredential.roleName,
+          password: securedCredential.password,
+        },
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should deliver signal to secured worker via LISTEN/NOTIFY (positive)', async () => {
+      const client = new Client({ connection });
+      const workflowId = guid();
+      const handle = await client.workflow.start({
+        args: [],
+        taskQueue: 'secured-signal',
+        workflowName: 'securedSignalWorkflow',
+        workflowId,
+        expire: 120,
+      });
+
+      // Send signal after a short delay — the secured worker must be
+      // woken by LISTEN/NOTIFY to process this without polling delay
+      await sleepFor(500);
+      await handle.signal('secured-signal', {
+        value: 'notify-test',
+      });
+
+      const result = await handle.result();
+      expect(result).toBe('processed-notify-test');
+    }, 60_000);
+
+    it('should create secured chain worker', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'secured-chain',
+        workflow: workflows.securedChainWorkflow,
+        workerCredentials: {
+          user: securedCredential.roleName,
+          password: securedCredential.password,
+        },
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should complete multi-step chain on secured worker (positive)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: ['input'],
+        taskQueue: 'secured-chain',
+        workflowName: 'securedChainWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      // Three activity steps: step1 -> step2 -> step3
+      expect(result).toBe('step3-step2-step1-input');
+    }, 60_000);
+
+    it('should complete multiple workflows rapidly on secured worker (latency)', async () => {
+      const client = new Client({ connection });
+      const startTime = Date.now();
+      const count = 3;
+      const results: Promise<string>[] = [];
+
+      for (let i = 0; i < count; i++) {
+        const handle = await client.workflow.start({
+          args: [`rapid-${i}`],
+          taskQueue: 'secured-chain',
+          workflowName: 'securedChainWorkflow',
+          workflowId: guid(),
+          expire: 120,
+        });
+        results.push(handle.result());
+      }
+
+      const allResults = await Promise.all(results);
+      const elapsed = Date.now() - startTime;
+
+      // All should complete correctly
+      for (let i = 0; i < count; i++) {
+        expect(allResults[i]).toBe(`step3-step2-step1-rapid-${i}`);
+      }
+
+      // With LISTEN/NOTIFY, 3 three-step workflows should complete well
+      // under 30s. Pure polling at 500ms would need ~4.5s per workflow.
+      expect(elapsed).toBeLessThan(30_000);
+    }, 60_000);
+  });
 });

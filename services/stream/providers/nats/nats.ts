@@ -325,6 +325,7 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
       supportsTrimming: true,
       supportsRetry: false,
       supportsNotifications: false,
+      supportsParallelProcessing: false,
       maxMessageSize: 1024 * 1024,
       maxBatchSize: 256,
     };
