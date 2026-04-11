@@ -282,16 +282,16 @@ describe('FUNCTIONAL | Quorum | Postgres', () => {
 
       // After running 5 pubsub calls, the engine should have processed messages.
       // counts is keyed by status code (e.g., '200', '591')
-      expect(engine.counts).toBeDefined();
-      expect(Object.keys(engine.counts).length).toBeGreaterThan(0);
+      expect(engine!.counts).toBeDefined();
+      expect(Object.keys(engine!.counts!).length).toBeGreaterThan(0);
 
       // Worker must also have counts (it processed the calculation callbacks)
-      expect(worker.counts).toBeDefined();
-      expect(Object.keys(worker.counts).length).toBeGreaterThan(0);
+      expect(worker!.counts).toBeDefined();
+      expect(Object.keys(worker!.counts!).length).toBeGreaterThan(0);
 
       // error_count should be 0 (no consumption errors in this test)
-      expect(engine.error_count).toBe(0);
-      expect(worker.error_count).toBe(0);
+      expect(engine!.error_count).toBe(0);
+      expect(worker!.error_count).toBe(0);
     });
   });
 });

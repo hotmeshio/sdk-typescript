@@ -90,7 +90,7 @@ import { InterceptorService } from './interceptor';
  *
  * For production isolation, workers can connect with scoped Postgres
  * credentials that restrict access to specific task queues via stored
- * procedures. See {@link Worker.create} and {@link provisionWorkerRole}.
+ * procedures. See {@link WorkerService.create} and {@link provisionWorkerRole}.
  */
 class DurableClass {
   /**
