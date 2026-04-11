@@ -64,6 +64,106 @@ describe('DURABLE | Config Parity | Postgres', () => {
     }, 60_000);
   });
 
+  describe('patched', () => {
+    it('should create worker', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'patched-test',
+        workflow: workflows.patchedWorkflow,
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should take new code path for new workflows (positive)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: ['order-123'],
+        taskQueue: 'patched-test',
+        workflowName: 'patchedWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      // New workflow takes the patched path (v2 validation)
+      expect(result).toBe('v2-validated-order-123');
+    }, 15_000);
+
+    it('should create multi-patch worker', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'multi-patch',
+        workflow: workflows.multiPatchWorkflow,
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should handle multiple patches in same workflow (positive)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: [],
+        taskQueue: 'multi-patch',
+        workflowName: 'multiPatchWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      expect(result).toBe('both-patched');
+    }, 15_000);
+
+    it('should create deprecatePatch worker', async () => {
+      const worker = await Worker.create({
+        connection,
+        taskQueue: 'deprecate-patch',
+        workflow: workflows.deprecatePatchWorkflow,
+      });
+      await worker.run();
+    }, 15_000);
+
+    it('should create patched-in-hook workers', async () => {
+      // Register the hook function worker
+      const hookWorker = await Worker.create({
+        connection,
+        taskQueue: 'patched-hook',
+        workflow: workflows.patchedHookFunction,
+      });
+      await hookWorker.run();
+      // Register the parent workflow worker
+      const parentWorker = await Worker.create({
+        connection,
+        taskQueue: 'patched-hook',
+        workflow: workflows.patchedInHookWorkflow,
+      });
+      await parentWorker.run();
+    }, 15_000);
+
+    it('should use patched inside a hook with dimensional isolation (positive)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: [],
+        taskQueue: 'patched-hook',
+        workflowName: 'patchedInHookWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      // Hook runs in its own dimension; patched returns true for new workflow
+      expect((result as any).data).toBe('hook-v2-result');
+    }, 30_000);
+
+    it('should allow deprecatePatch as no-op without breaking execution (negative)', async () => {
+      const client = new Client({ connection });
+      const handle = await client.workflow.start({
+        args: ['order-456'],
+        taskQueue: 'deprecate-patch',
+        workflowName: 'deprecatePatchWorkflow',
+        workflowId: guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      expect(result).toBe('v2-validated-order-456');
+    }, 15_000);
+  });
+
   describe('continueAsNew', () => {
     it('should create worker', async () => {
       const worker = await Worker.create({

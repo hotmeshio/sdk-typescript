@@ -26,6 +26,22 @@ export async function slowActivity(): Promise<string> {
   return 'slow';
 }
 
+export async function validateOrderV2(orderId: string): Promise<string> {
+  return `v2-validated-${orderId}`;
+}
+
+export async function validateOrder(orderId: string): Promise<string> {
+  return `v1-validated-${orderId}`;
+}
+
+export async function hookTaskV2(): Promise<string> {
+  return 'hook-v2-result';
+}
+
+export async function hookTaskV1(): Promise<string> {
+  return 'hook-v1-result';
+}
+
 export async function processBatch(cursor: number): Promise<{ nextCursor: number | null; processed: number }> {
   // Simulate batch processing: 3 batches of 10 items each
   const processed = 10;

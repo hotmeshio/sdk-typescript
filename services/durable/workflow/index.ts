@@ -21,6 +21,7 @@ import { all } from './all';
 import { sleep } from './sleep';
 import { condition } from './condition';
 import { continueAsNew } from './continueAsNew';
+import { patched, deprecatePatch } from './patched';
 import { asyncLocalStorage, WorkerService, HotMesh } from './common';
 import { entity } from './entityMethods';
 
@@ -45,6 +46,8 @@ import { entity } from './entityMethods';
  * | {@link hook} | Low-level hook spawning |
  * | {@link interrupt} | Terminate a running workflow |
  * | {@link continueAsNew} | Complete and restart with new args |
+ * | {@link patched} | Branch on a versioned code change |
+ * | {@link deprecatePatch} | Mark old code path as removable |
  *
  * ## Data & Observability
  *
@@ -135,6 +138,8 @@ export class WorkflowService {
   static sleep = sleep;
   static condition = condition;
   static continueAsNew = continueAsNew;
+  static patched = patched;
+  static deprecatePatch = deprecatePatch;
 
   /**
    * Return a handle to the HotMesh client hosting the workflow execution.
