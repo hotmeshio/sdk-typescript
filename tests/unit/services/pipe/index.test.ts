@@ -390,6 +390,134 @@ describe('Pipe', () => {
       const pipeMax = new Pipe(rulesMax, jobData);
       expect(pipeMax.process()).toBe(Math.max(5, 7, 3));
     });
+
+    it('multiply', () => {
+      const jobData = {
+        a: { output: { data: { x: 5, y: 3 } } },
+      };
+
+      // Basic multiply
+      const rules1 = [
+        ['{a.output.data.x}', '{a.output.data.y}'],
+        ['{@math.multiply}'],
+      ];
+      expect(new Pipe(rules1, jobData).process()).toBe(15);
+
+      // Multiply by 1 (identity)
+      const rules2 = [
+        ['{a.output.data.x}', 1],
+        ['{@math.multiply}'],
+      ];
+      expect(new Pipe(rules2, jobData).process()).toBe(5);
+    });
+
+    it('pow then multiply using sub-pipes', () => {
+      const jobData = { a: { output: { data: { base: 2, exp: 2, factor: 3 } } } };
+      // Sub-pipe pattern: pow(2,2) then multiply by 3 = 12
+      const rules = [
+        { '@pipe': [
+          ['{a.output.data.base}', '{a.output.data.exp}'],
+          ['{@math.pow}'],
+        ]},
+        { '@pipe': [['{a.output.data.factor}']] },
+        ['{@math.multiply}'],
+      ];
+      const result = new Pipe(rules, jobData).process();
+      expect(result).toBe(12);
+    });
+
+    it('pow then multiply (retry formula: initialInterval * backoff^retryCount)', () => {
+      const jobData = {
+        trigger: {
+          output: {
+            data: {
+              backoffCoefficient: 2,
+              initialInterval: 3,
+              maximumInterval: 120,
+            },
+          },
+        },
+        cycle_hook: {
+          output: { data: { retryCount: 2 } },
+        },
+      };
+
+      // Pattern: initialInterval * backoffCoefficient^retryCount, clamped by maximumInterval
+      // Expected: 3 * 2^2 = 12, min(12, 120) = 12
+      // Both pow and initialInterval must be sibling sub-pipes for multiply
+      // Rule: every function's inputs must be sub-pipes (fan-out/fan-in).
+      // pow result must be wrapped in its own sub-pipe for multiply.
+      const rules = [
+        { '@pipe': [
+          { '@pipe': [
+            { '@pipe': [
+              ['{trigger.output.data.backoffCoefficient}', 5],
+              ['{@conditional.nullish}'],
+            ]},
+            { '@pipe': [
+              ['{cycle_hook.output.data.retryCount}', 0],
+              ['{@conditional.nullish}'],
+            ]},
+            ['{@math.pow}'],
+          ]},
+          { '@pipe': [
+            ['{trigger.output.data.initialInterval}', 1],
+            ['{@conditional.nullish}'],
+          ]},
+          ['{@math.multiply}'],
+        ]},
+        { '@pipe': [
+          ['{trigger.output.data.maximumInterval}', 120],
+          ['{@logical.or}'],
+        ]},
+        ['{@math.min}'],
+      ];
+      expect(new Pipe(rules, jobData).process()).toBe(12);
+    });
+
+    it('pow then multiply with default initialInterval=1', () => {
+      const jobData = {
+        trigger: {
+          output: {
+            data: {
+              backoffCoefficient: 2,
+              maximumInterval: 120,
+            },
+          },
+        },
+        cycle_hook: {
+          output: { data: { retryCount: 1 } },
+        },
+      };
+
+      // No initialInterval → defaults to 1. Expected: 1 * 2^1 = 2, min(2, 120) = 2
+      const rules = [
+        { '@pipe': [
+          { '@pipe': [
+            { '@pipe': [
+              ['{trigger.output.data.backoffCoefficient}', 5],
+              ['{@conditional.nullish}'],
+            ]},
+            { '@pipe': [
+              ['{cycle_hook.output.data.retryCount}', 0],
+              ['{@conditional.nullish}'],
+            ]},
+            ['{@math.pow}'],
+          ]},
+          { '@pipe': [
+            ['{trigger.output.data.initialInterval}', 1],
+            ['{@conditional.nullish}'],
+          ]},
+          ['{@math.multiply}'],
+        ]},
+        { '@pipe': [
+          ['{trigger.output.data.maximumInterval}', 120],
+          ['{@logical.or}'],
+        ]},
+        ['{@math.min}'],
+      ];
+      expect(new Pipe(rules, jobData).process()).toBe(2);
+    });
   });
 
   //eventually add: number, math, object, array, util, string, date, regex, json, url, html, xml, csv, markdown, text, image, audio, video, file

@@ -319,7 +319,7 @@ describe('DURABLE | pipeline | `Document Processing Pipeline with OpenAI Vision`
         expect(firstNotificationResult.memberId).toBe('MBR-2024-001');
         expect(firstNotificationResult.notifiedAt).toBeDefined();
         
-      }, 15_000);
+      }, 25_000);
     });
   });
 }); 

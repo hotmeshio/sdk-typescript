@@ -17,6 +17,7 @@ class StreamServiceFactory {
     namespace: string,
     appId: string,
     logger: ILogger,
+    options?: { securedWorker?: boolean },
   ): Promise<
     StreamService<ProviderClient, ProviderTransaction> & StreamInitializable
   > {
@@ -32,6 +33,7 @@ class StreamServiceFactory {
       service = new PostgresStreamService(
         provider as PostgresClientType & ProviderClient,
         storeProvider,
+        { securedWorker: options?.securedWorker },
       );
     } //etc register other providers here
     await service.init(namespace, appId, logger);

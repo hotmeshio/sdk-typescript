@@ -35,7 +35,7 @@ export async function entityWithChild(name: string): Promise<any> {
   const entity = await Durable.workflow.entity();
   await entity.set({ status: 'started' });
 
-  const childResult = await Durable.workflow.execChild<string>({
+  const childResult = await Durable.workflow.executeChild<string>({
     workflowName: 'simpleChild',
     args: [name],
     taskQueue: 'entity-q',
@@ -61,7 +61,7 @@ export async function entityExecChildWithEntity(name: string): Promise<any> {
   const entity = await Durable.workflow.entity();
   await entity.set({ user: name });
 
-  const childResult = await Durable.workflow.execChild<any>({
+  const childResult = await Durable.workflow.executeChild<any>({
     entity: 'product',
     args: [name],
     taskQueue: 'entity-q',

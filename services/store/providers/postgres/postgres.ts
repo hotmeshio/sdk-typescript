@@ -40,6 +40,7 @@ import {
 } from '../../../../types/stats';
 import { Transitions } from '../../../../types/transition';
 import { formatISODate, getSymKey, sleepFor } from '../../../../modules/utils';
+import { splitField } from './kvtypes/hash/utils';
 import { JobInterruptOptions } from '../../../../types/job';
 import {
   HMSH_SCOUT_INTERVAL_SECONDS,
@@ -1324,7 +1325,7 @@ class PostgresStoreService extends StoreService<
 
     // Add dimension condition if applicable
     if (dimension) {
-      conditions.push(`a.field LIKE $${paramIndex}`);
+      conditions.push(`a.dimension LIKE $${paramIndex}`);
       params.push(`%${dimension}%`);
       paramIndex++;
     }
@@ -1340,7 +1341,7 @@ class PostgresStoreService extends StoreService<
       WITH valid_job AS (
         ${validJobSql}
       )
-      SELECT a.field, a.value
+      SELECT a.symbol || a.dimension AS field, a.value
       FROM ${tableName}_attributes a
       JOIN valid_job j ON a.job_id = j.id
       WHERE ${conditions.join(' AND ')}
@@ -1358,6 +1359,14 @@ class PostgresStoreService extends StoreService<
       res.rows.length < limit ? '0' : String(offset + res.rows.length);
 
     return [nextCursor, matchingFields];
+  }
+
+  async setCancel(jobId: string, appId: string): Promise<void> {
+    const jobKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
+    // Write the cancel marker as a jmark-type field via hset.
+    // The hash module's splitField/deriveType classifies '-cancelled-'
+    // as type='jmark', which findJobFields returns on re-entry.
+    await this.kvsql().hset(jobKey, { '-cancelled-': '1' });
   }
 
   async setThrottleRate(options: ThrottleOptions): Promise<void> {
@@ -1689,7 +1698,8 @@ class PostgresStoreService extends StoreService<
     const sql = GET_ACTIVITY_INPUTS.replace(/{schema}/g, schemaName);
 
     const jobKeyPattern = `hmsh:${this.appId}:j:-${workflowId}-%`;
-    const result = await this.pgClient.query(sql, [jobKeyPattern, symbolField]);
+    const { symbol, dimension } = splitField(symbolField);
+    const result = await this.pgClient.query(sql, [jobKeyPattern, symbol, dimension]);
 
     const byJobId = new Map<string, any>();
     const byNameIndex = new Map<string, any>();
@@ -1734,7 +1744,8 @@ class PostgresStoreService extends StoreService<
     const schemaName = this.kvsql().safeName(this.appId);
     const sql = buildChildWorkflowInputsQuery(childJobKeys.length, schemaName);
 
-    const result = await this.pgClient.query(sql, [...childJobKeys, symbolField]);
+    const { symbol, dimension } = splitField(symbolField);
+    const result = await this.pgClient.query(sql, [...childJobKeys, symbol, dimension]);
 
     const childInputMap = new Map<string, any>();
     for (const row of result.rows) {

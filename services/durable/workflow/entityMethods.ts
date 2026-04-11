@@ -57,6 +57,13 @@ import { asyncLocalStorage, WorkerService, Entity } from './common';
  * }
  * ```
  *
+ * **Not available with `workerCredentials`.** This method writes directly
+ * to the `jobs` table (JSONB `context` column), bypassing the SECURITY
+ * DEFINER stored procedures that scoped worker roles are restricted to.
+ * Workers connecting with `workerCredentials` will receive a permission
+ * error. Use `entity()` only in workflows running with full database
+ * credentials.
+ *
  * @returns {Promise<Entity>} An entity session scoped to the current workflow job.
  */
 export async function entity(): Promise<Entity> {

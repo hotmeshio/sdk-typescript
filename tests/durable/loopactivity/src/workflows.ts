@@ -31,6 +31,6 @@ export async function example(): Promise<[string, string, string, number]> {
     greet('1'),
     greet('2'),
     greet('3'),
-    Durable.workflow.sleepFor('5 seconds'),
+    Durable.workflow.sleep('5 seconds'),
   ]);
 }

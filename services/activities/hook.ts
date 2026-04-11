@@ -259,11 +259,14 @@ class Hook extends Activity {
    * does this activity use a time-hook or web-hook
    */
   doesHook(): boolean {
+    if (this.config.hook?.topic) {
+      return true;
+    }
     if (this.config.sleep) {
       const duration = Pipe.resolve(this.config.sleep, this.context);
       return !isNaN(duration) && Number(duration) > 0;
     }
-    return !!this.config.hook?.topic;
+    return false;
   }
 
   async doHook(telemetry: TelemetryService) {
@@ -298,27 +301,32 @@ class Hook extends Activity {
   async registerHook(
     transaction?: ProviderTransaction,
   ): Promise<string | void> {
+    let result: string | void;
     if (this.config.hook?.topic) {
-      return await this.engine.taskService.registerWebHook(
+      result = await this.engine.taskService.registerWebHook(
         this.config.hook.topic,
         this.context,
         this.resolveDad(),
         this.context.metadata.expire,
         transaction,
       );
-    } else if (this.config.sleep) {
-      const duration = Pipe.resolve(this.config.sleep, this.context);
-      await this.engine.taskService.registerTimeHook(
-        this.context.metadata.jid,
-        this.context.metadata.gid,
-        `${this.metadata.aid}${this.metadata.dad || ''}`,
-        'sleep',
-        duration,
-        this.metadata.dad || '',
-        transaction,
-      );
-      return this.context.metadata.jid;
     }
+    if (this.config.sleep) {
+      const duration = Pipe.resolve(this.config.sleep, this.context);
+      if (!isNaN(duration) && Number(duration) > 0) {
+        await this.engine.taskService.registerTimeHook(
+          this.context.metadata.jid,
+          this.context.metadata.gid,
+          `${this.metadata.aid}${this.metadata.dad || ''}`,
+          'sleep',
+          duration,
+          this.metadata.dad || '',
+          transaction,
+        );
+        if (!result) result = this.context.metadata.jid;
+      }
+    }
+    return result;
   }
 
   //********  SIGNAL RE-ENTRY POINT  ********//
@@ -356,6 +364,23 @@ class Hook extends Activity {
       gid: this.context.metadata.gid,
       aid: this.metadata.aid,
     });
+    // If this was a combined hook+sleep (signal-with-timeout),
+    // clean up the webhook signal since the timeout won the race
+    if (this.config.hook?.topic) {
+      try {
+        const taskService = new TaskService(this.store, this.logger);
+        await taskService.deleteWebHookSignal(
+          this.config.hook.topic,
+          this.data,
+        );
+      } catch (e) {
+        // Signal may already be cleaned up or processed; safe to ignore
+        this.logger.debug('hook-timeout-signal-cleanup', {
+          topic: this.config.hook.topic,
+          error: e.message,
+        });
+      }
+    }
     await this.processEvent(StreamStatus.SUCCESS, 200, 'hook');
   }
 }

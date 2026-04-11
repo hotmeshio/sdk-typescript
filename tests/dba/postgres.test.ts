@@ -160,15 +160,15 @@ describe('DBA | Postgres', () => {
       const jobId = jobResult.rows[0].id;
 
       await pgClient.query(`
-        INSERT INTO ${schema}.jobs_attributes (job_id, field, value, type)
+        INSERT INTO ${schema}.jobs_attributes (job_id, symbol, dimension, value, type)
         VALUES
-          ($1, 'return_data',   '{"result": 1}', 'jdata'),
-          ($1, 'search_field',  'searchable',     'udata'),
-          ($1, 'activity_data', 'temp',           'adata'),
-          ($1, 'hash_mark',    'temp',           'hmark'),
-          ($1, 'job_mark',     'temp',           'jmark'),
-          ($1, 'status_data',  'temp',           'status'),
-          ($1, 'other_data',   'temp',           'other')
+          ($1, 'return_data',   '', '{"result": 1}', 'jdata'),
+          ($1, 'search_field',  '', 'searchable',     'udata'),
+          ($1, 'activity_data', '', 'temp',           'adata'),
+          ($1, 'hash_mark',    '', 'temp',           'hmark'),
+          ($1, 'job_mark',     '', 'temp',           'jmark'),
+          ($1, 'status_data',  '', 'temp',           'status'),
+          ($1, 'other_data',   '', 'temp',           'other')
       `, [jobId]);
 
       const result = await DBA.prune({
@@ -208,10 +208,10 @@ describe('DBA | Postgres', () => {
       const jobId = jobResult.rows[0].id;
 
       await pgClient.query(`
-        INSERT INTO ${schema}.jobs_attributes (job_id, field, value, type)
+        INSERT INTO ${schema}.jobs_attributes (job_id, symbol, dimension, value, type)
         VALUES
-          ($1, 'return_data', '{"result": 1}', 'jdata'),
-          ($1, 'some_mark',   'temp',          'hmark')
+          ($1, 'return_data', '', '{"result": 1}', 'jdata'),
+          ($1, 'some_mark',   '', 'temp',          'hmark')
       `, [jobId]);
 
       const result = await DBA.prune({
@@ -247,15 +247,15 @@ describe('DBA | Postgres', () => {
       const jobId = jobResult.rows[0].id;
 
       await pgClient.query(`
-        INSERT INTO ${schema}.jobs_attributes (job_id, field, value, type)
+        INSERT INTO ${schema}.jobs_attributes (job_id, symbol, dimension, value, type)
         VALUES
-          ($1, 'return_data', '{"ok":true}', 'jdata'),
-          ($1, 'user_search', 'findme', 'udata'),
-          ($1, '-proxy-1-', '/s{"data":{"msg":"hello"},"ac":"20240101","au":"20240102","job_id":"-wf-$greet-1"}', 'jmark'),
-          ($1, '-child-0-', '/s{"job_id":"child-1","ac":"20240101","au":"20240102"}', 'jmark'),
-          ($1, 'activity_data', 'temp', 'adata'),
-          ($1, '-proxy,0,0-1-', 'state', 'hmark'),
-          ($1, 'status_data', 'temp', 'status')
+          ($1, 'return_data', '', '{"ok":true}', 'jdata'),
+          ($1, 'user_search', '', 'findme', 'udata'),
+          ($1, '-proxy-1-', '', '/s{"data":{"msg":"hello"},"ac":"20240101","au":"20240102","job_id":"-wf-$greet-1"}', 'jmark'),
+          ($1, '-child-0-', '', '/s{"job_id":"child-1","ac":"20240101","au":"20240102"}', 'jmark'),
+          ($1, 'activity_data', '', 'temp', 'adata'),
+          ($1, '-proxy', ',0,0-1-', 'state', 'hmark'),
+          ($1, 'status_data', '', 'temp', 'status')
       `, [jobId]);
 
       const result = await DBA.prune({
@@ -267,8 +267,8 @@ describe('DBA | Postgres', () => {
       expect(result.attributes).toBe(3);
 
       const remaining = await pgClient.query(
-        `SELECT type::text, field FROM ${schema}.jobs_attributes
-         WHERE job_id = $1 ORDER BY type, field`, [jobId],
+        `SELECT type::text, symbol || dimension AS field FROM ${schema}.jobs_attributes
+         WHERE job_id = $1 ORDER BY type, symbol, dimension`, [jobId],
       );
       const types = remaining.rows.map((r: any) => r.type);
       expect(types).toContain('jdata');
@@ -292,12 +292,12 @@ describe('DBA | Postgres', () => {
       const jobId = jobResult.rows[0].id;
 
       await pgClient.query(`
-        INSERT INTO ${schema}.jobs_attributes (job_id, field, value, type)
+        INSERT INTO ${schema}.jobs_attributes (job_id, symbol, dimension, value, type)
         VALUES
-          ($1, 'return_data', '{"ok":true}', 'jdata'),
-          ($1, '-proxy,0,0-1-', 'state', 'hmark'),
-          ($1, '-proxy-1-', '/s{"data":{}}', 'jmark'),
-          ($1, 'activity_data', 'temp', 'adata')
+          ($1, 'return_data', '', '{"ok":true}', 'jdata'),
+          ($1, '-proxy', ',0,0-1-', 'state', 'hmark'),
+          ($1, '-proxy-1-', '', '/s{"data":{}}', 'jmark'),
+          ($1, 'activity_data', '', 'temp', 'adata')
       `, [jobId]);
 
       const result = await DBA.prune({
@@ -331,10 +331,10 @@ describe('DBA | Postgres', () => {
       const jobId = jobResult.rows[0].id;
 
       await pgClient.query(`
-        INSERT INTO ${schema}.jobs_attributes (job_id, field, value, type)
+        INSERT INTO ${schema}.jobs_attributes (job_id, symbol, dimension, value, type)
         VALUES
-          ($1, 'return_data', '{"ok":true}', 'jdata'),
-          ($1, 'activity_data', 'temp', 'adata')
+          ($1, 'return_data', '', '{"ok":true}', 'jdata'),
+          ($1, 'activity_data', '', 'temp', 'adata')
       `, [jobId]);
 
       // First prune: strips adata, marks pruned
@@ -378,10 +378,10 @@ describe('DBA | Postgres', () => {
       `);
 
       await pgClient.query(`
-        INSERT INTO ${schema}.jobs_attributes (job_id, field, value, type)
+        INSERT INTO ${schema}.jobs_attributes (job_id, symbol, dimension, value, type)
         VALUES
-          ($1, 'adata1', 'temp', 'adata'),
-          ($2, 'adata2', 'temp', 'adata')
+          ($1, 'adata1', '', 'temp', 'adata'),
+          ($2, 'adata2', '', 'temp', 'adata')
       `, [j1.rows[0].id, j2.rows[0].id]);
 
       const result = await DBA.prune({
@@ -571,12 +571,12 @@ describe('DBA | Postgres', () => {
       const jobId = jobResult.rows[0].id;
 
       await pgClient.query(`
-        INSERT INTO ${schema}.jobs_attributes (job_id, field, value, type)
+        INSERT INTO ${schema}.jobs_attributes (job_id, symbol, dimension, value, type)
         VALUES
-          ($1, 'return_data',   '{"ok": true}', 'jdata'),
-          ($1, 'search_field',  'findme',        'udata'),
-          ($1, 'activity_data', 'temp',          'adata'),
-          ($1, 'hash_mark',    'temp',           'hmark')
+          ($1, 'return_data',   '', '{"ok": true}', 'jdata'),
+          ($1, 'search_field',  '', 'findme',        'udata'),
+          ($1, 'activity_data', '', 'temp',          'adata'),
+          ($1, 'hash_mark',    '', 'temp',           'hmark')
       `, [jobId]);
 
       // Insert an expired job and stream that should NOT be touched

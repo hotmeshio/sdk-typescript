@@ -1,8 +1,9 @@
 import {
-  WorkflowInterceptor,
+  WorkflowInboundCallsInterceptor,
   InterceptorRegistry,
-  ActivityInterceptor,
-  ActivityInterceptorContext,
+  WorkflowOutboundCallsInterceptor,
+  WorkflowOutboundCallsInterceptorContext,
+  ActivityInboundCallsInterceptor,
 } from '../../types/durable';
 
 /**
@@ -50,7 +51,7 @@ import {
  * });
  *
  * // Execute workflow through interceptor chain
- * const result = await service.executeChain(context, async () => {
+ * const result = await service.executeInboundChain(context, async () => {
  *   return await workflowFn();
  * });
  * ```
@@ -58,7 +59,7 @@ import {
  * ## Durable Interceptors with Durable Functions
  *
  * Interceptors run within the workflow's async local storage context, which means
- * they can use Durable functions like `sleepFor`, `entity`, `proxyActivities`, etc.
+ * they can use Durable functions like `sleep`, `entity`, `proxyActivities`, etc.
  * These interceptors participate in the HotMesh interruption/replay pattern.
  *
  * @example
@@ -66,16 +67,16 @@ import {
  * import { Durable } from '@hotmeshio/hotmesh';
  *
  * // Rate limiting interceptor that sleeps before execution
- * const rateLimitInterceptor: WorkflowInterceptor = {
+ * const rateLimitInterceptor: WorkflowInboundCallsInterceptor = {
  *   async execute(ctx, next) {
  *     try {
  *       // This sleep will cause an interruption on first execution
- *       await Durable.workflow.sleepFor('1 second');
+ *       await Durable.workflow.sleep('1 second');
  *
  *       const result = await next();
  *
  *       // Another sleep after workflow completes
- *       await Durable.workflow.sleepFor('500 milliseconds');
+ *       await Durable.workflow.sleep('500 milliseconds');
  *
  *       return result;
  *     } catch (err) {
@@ -91,7 +92,7 @@ import {
  * };
  *
  * // Entity-based audit interceptor
- * const auditInterceptor: WorkflowInterceptor = {
+ * const auditInterceptor: WorkflowInboundCallsInterceptor = {
  *   async execute(ctx, next) {
  *     try {
  *       const entity = await Durable.workflow.entity();
@@ -132,8 +133,8 @@ import {
  * };
  *
  * // Register interceptors
- * Durable.registerInterceptor(rateLimitInterceptor);
- * Durable.registerInterceptor(auditInterceptor);
+ * Durable.registerInboundInterceptor(rateLimitInterceptor);
+ * Durable.registerInboundInterceptor(auditInterceptor);
  * ```
  *
  * ## Execution Pattern with Interruptions
@@ -141,7 +142,7 @@ import {
  * When interceptors use Durable functions, the workflow will execute multiple times
  * due to the interruption/replay pattern:
  *
- * 1. **First execution**: Interceptor calls `sleepFor` → throws `DurableSleepError` → workflow pauses
+ * 1. **First execution**: Interceptor calls `sleep` → throws `DurableSleepError` → workflow pauses
  * 2. **Second execution**: Interceptor sleep replays (skipped), workflow runs → proxy activity throws `DurableProxyError` → workflow pauses
  * 3. **Third execution**: All previous operations replay, interceptor sleep after workflow → throws `DurableSleepError` → workflow pauses
  * 4. **Fourth execution**: Everything replays successfully, workflow completes
@@ -151,7 +152,7 @@ import {
  * @example
  * ```typescript
  * // Interceptor with complex Durable operations
- * const complexInterceptor: WorkflowInterceptor = {
+ * const complexInterceptor: WorkflowInboundCallsInterceptor = {
  *   async execute(ctx, next) {
  *     try {
  *       // Get persistent state
@@ -160,7 +161,7 @@ import {
  *
  *       // Conditional durable operations
  *       if (!state.preProcessed) {
- *         await Durable.workflow.sleepFor('100 milliseconds');
+ *         await Durable.workflow.sleep('100 milliseconds');
  *         await entity.merge({ preProcessed: true });
  *       }
  *
@@ -169,7 +170,7 @@ import {
  *
  *       // Post-processing with child workflow
  *       if (!state.postProcessed) {
- *         await Durable.workflow.execChild({
+ *         await Durable.workflow.executeChild({
  *           taskQueue: 'cleanup',
  *           workflowName: 'cleanupWorkflow',
  *           args: [result]
@@ -205,11 +206,11 @@ import {
  * @example
  * ```typescript
  * import { Durable } from '@hotmeshio/hotmesh';
- * import type { ActivityInterceptor } from '@hotmeshio/hotmesh/types/durable';
+ * import type { WorkflowOutboundCallsInterceptor } from '@hotmeshio/hotmesh/types/durable';
  * import * as activities from './activities';
  *
  * // Activity interceptor that publishes results via a proxy activity
- * const publishResultInterceptor: ActivityInterceptor = {
+ * const publishResultInterceptor: WorkflowOutboundCallsInterceptor = {
  *   async execute(activityCtx, workflowCtx, next) {
  *     try {
  *       // BEFORE: inspect or modify the activity input
@@ -246,7 +247,7 @@ import {
  *   },
  * };
  *
- * Durable.registerActivityInterceptor(publishResultInterceptor);
+ * Durable.registerOutboundInterceptor(publishResultInterceptor);
  * ```
  *
  * ## Activity Interceptor Replay Pattern
@@ -262,8 +263,9 @@ import {
  *    its stored result → interceptor returns → workflow continues
  */
 export class InterceptorService implements InterceptorRegistry {
-  interceptors: WorkflowInterceptor[] = [];
-  activityInterceptors: ActivityInterceptor[] = [];
+  inbound: WorkflowInboundCallsInterceptor[] = [];
+  outbound: WorkflowOutboundCallsInterceptor[] = [];
+  activityInbound: ActivityInboundCallsInterceptor[] = [];
 
   /**
    * Register a new workflow interceptor that will wrap workflow execution.
@@ -286,8 +288,8 @@ export class InterceptorService implements InterceptorRegistry {
    * });
    * ```
    */
-  register(interceptor: WorkflowInterceptor): void {
-    this.interceptors.push(interceptor);
+  registerInbound(interceptor: WorkflowInboundCallsInterceptor): void {
+    this.inbound.push(interceptor);
   }
 
   /**
@@ -302,7 +304,7 @@ export class InterceptorService implements InterceptorRegistry {
    * @example
    * ```typescript
    * // Execute workflow with timing
-   * const result = await service.executeChain(context, async () => {
+   * const result = await service.executeInboundChain(context, async () => {
    *   const start = Date.now();
    *   try {
    *     return await workflowFn();
@@ -312,12 +314,12 @@ export class InterceptorService implements InterceptorRegistry {
    * });
    * ```
    */
-  async executeChain(
+  async executeInboundChain(
     ctx: Map<string, any>,
     fn: () => Promise<any>,
   ): Promise<any> {
     // Create the onion-like chain of interceptors
-    const chain = this.interceptors.reduceRight((next, interceptor) => {
+    const chain = this.inbound.reduceRight((next, interceptor) => {
       return () => interceptor.execute(ctx, next);
     }, fn);
 
@@ -331,25 +333,25 @@ export class InterceptorService implements InterceptorRegistry {
    *
    * @param interceptor The activity interceptor to register
    */
-  registerActivity(interceptor: ActivityInterceptor): void {
-    this.activityInterceptors.push(interceptor);
+  registerOutbound(interceptor: WorkflowOutboundCallsInterceptor): void {
+    this.outbound.push(interceptor);
   }
 
   /**
    * Execute the activity interceptor chain around an activity invocation.
-   * Uses the same onion/reduceRight pattern as executeChain.
+   * Uses the same onion/reduceRight pattern as executeInboundChain.
    *
    * @param activityCtx - Metadata about the activity (name, args, options)
    * @param workflowCtx - The workflow context Map
    * @param fn - The core activity function (registers with interruptionRegistry, sleeps, throws)
    * @returns The result of the activity (from replay or after future execution)
    */
-  async executeActivityChain(
-    activityCtx: ActivityInterceptorContext,
+  async executeOutboundChain(
+    activityCtx: WorkflowOutboundCallsInterceptorContext,
     workflowCtx: Map<string, any>,
     fn: () => Promise<any>,
   ): Promise<any> {
-    const chain = this.activityInterceptors.reduceRight(
+    const chain = this.outbound.reduceRight(
       (next, interceptor) => {
         return () => interceptor.execute(activityCtx, workflowCtx, next);
       },
@@ -359,22 +361,51 @@ export class InterceptorService implements InterceptorRegistry {
   }
 
   /**
-   * Clear all registered activity interceptors.
+   * Register an activity inbound interceptor that wraps the actual
+   * activity function execution on the activity worker side.
    */
-  clearActivity(): void {
-    this.activityInterceptors = [];
+  registerActivityInbound(interceptor: ActivityInboundCallsInterceptor): void {
+    this.activityInbound.push(interceptor);
   }
 
   /**
-   * Clear all registered interceptors (both workflow and activity).
-   *
-   * @example
-   * ```typescript
-   * service.clear();
-   * ```
+   * Execute the activity inbound interceptor chain around the actual
+   * activity function invocation on the worker.
+   */
+  async executeActivityInboundChain(
+    activityName: string,
+    args: any[],
+    fn: () => Promise<any>,
+  ): Promise<any> {
+    const chain = this.activityInbound.reduceRight(
+      (next, interceptor) => {
+        return () => interceptor.execute(activityName, args, next);
+      },
+      fn,
+    );
+    return chain();
+  }
+
+  /**
+   * Clear all registered outbound interceptors.
+   */
+  clearOutbound(): void {
+    this.outbound = [];
+  }
+
+  /**
+   * Clear all registered activity inbound interceptors.
+   */
+  clearActivityInbound(): void {
+    this.activityInbound = [];
+  }
+
+  /**
+   * Clear all registered interceptors.
    */
   clear(): void {
-    this.interceptors = [];
-    this.activityInterceptors = [];
+    this.inbound = [];
+    this.outbound = [];
+    this.activityInbound = [];
   }
 }

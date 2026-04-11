@@ -153,6 +153,23 @@ type HotMeshEngine = {
   retryPolicy?: import('./stream').RetryPolicy;
 };
 
+/**
+ * Configuration for a HotMesh worker that consumes messages from a
+ * Postgres stream topic. Workers can run on the same process as the
+ * engine or on entirely separate servers — the only coupling is the
+ * shared Postgres database.
+ *
+ * ## Connection Modes
+ *
+ * **Standard**: Worker uses the same Postgres credentials as the engine.
+ * Set `connection` with admin credentials. Suitable for trusted, co-located workers.
+ *
+ * **Secured**: Worker connects as a restricted Postgres role with
+ * `workerCredentials`. The role can only dequeue/ack/respond on its
+ * allowed stream topics via SECURITY DEFINER stored procedures — zero
+ * direct table access. Use for untrusted workloads: K8s containers,
+ * LLM agents, third-party integrations.
+ */
 type HotMeshWorker = {
   /**
    * the topic/task queue that the worker subscribes to (stream_name)
@@ -259,6 +276,50 @@ type HotMeshWorker = {
    * ```
    */
   retryPolicy?: import('./stream').RetryPolicy;
+
+  /**
+   * Scoped Postgres credentials for database-level worker isolation.
+   *
+   * When provided, the `user` and `password` in the worker's connection
+   * options are overridden with these values, and all stream operations
+   * route through SECURITY DEFINER stored procedures that validate
+   * `app.allowed_streams` before executing. The worker role has **zero
+   * direct table access**.
+   *
+   * Use this for workers running in untrusted environments: pluggable
+   * K8s containers, LLM-driven agents (e.g., MCP tool servers),
+   * third-party integrations, or any workload that should be isolated
+   * from the engine's database surface.
+   *
+   * Provision credentials via `HotMesh.provisionWorkerRole()` or by
+   * creating a Postgres role with `EXECUTE` on the schema's worker
+   * stored procedures and `ALTER ROLE ... SET app.allowed_streams`.
+   *
+   * **Limitations:** Workflows running under scoped credentials cannot
+   * use `Durable.workflow.entity()`, `Durable.workflow.search()`, or
+   * `Durable.workflow.enrich()` — these write directly to the `jobs`
+   * and `jobs_attributes` tables, which the scoped role has no access
+   * to. All other workflow primitives (`proxyActivities`, `sleep`,
+   * `condition`, `signal`, `emit`, `executeChild`, etc.) work normally.
+   *
+   * @example
+   * ```typescript
+   * // Admin provisions scoped credentials (one-time)
+   * const cred = await HotMesh.provisionWorkerRole({
+   *   connection: { class: Postgres, options: adminOptions },
+   *   streamNames: ['order.process'],
+   * });
+   *
+   * // Worker connects with restricted role
+   * workers: [{
+   *   topic: 'order.process',
+   *   connection: { class: Postgres, options: { host: 'pg.prod', database: 'db' } },
+   *   workerCredentials: { user: cred.roleName, password: cred.password },
+   *   callback: myCallback,
+   * }]
+   * ```
+   */
+  workerCredentials?: { user: string; password: string };
 };
 
 type HotMeshConfig = {

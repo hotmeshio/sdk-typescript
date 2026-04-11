@@ -18,6 +18,7 @@ import {
 import { deploySchema } from './kvtables';
 import * as Stats from './stats';
 import * as Messages from './messages';
+import * as Secured from './secured';
 import { ScoutManager } from './scout';
 import { NotificationManager, getFallbackInterval } from './notifications';
 import * as Lifecycle from './lifecycle';
@@ -46,6 +47,13 @@ class PostgresStreamService extends StreamService<
   appId: string;
   logger: ILogger;
 
+  /**
+   * When true, all worker stream operations use SECURITY DEFINER
+   * stored procedures instead of raw SQL. Enabled when the worker
+   * connects with scoped `workerCredentials`.
+   */
+  securedMode = false;
+
   // Scout manager
   private scoutManager: ScoutManager;
 
@@ -58,16 +66,25 @@ class PostgresStreamService extends StreamService<
     config: StreamConfig = {},
   ) {
     super(streamClient, storeClient, config);
+    if (config?.securedWorker) {
+      this.securedMode = true;
+    }
   }
 
   async init(namespace: string, appId: string, logger: ILogger): Promise<void> {
     this.namespace = namespace;
     this.appId = appId;
     this.logger = logger;
-    await deploySchema(this.streamClient, this.appId, this.logger);
 
-    // Initialize scout manager
-    this.scoutManager = new ScoutManager(
+    // Secured workers skip schema deployment and scout initialization —
+    // they use SECURITY DEFINER stored procedures for all stream ops
+    // and never need direct table access.
+    if (!this.securedMode) {
+      await deploySchema(this.streamClient, this.appId, this.logger);
+    }
+
+    // Initialize scout manager (skipped in secured mode — roles table inaccessible)
+    this.scoutManager = this.securedMode ? null : new ScoutManager(
       this.streamClient,
       this.appId,
       this.getEngineTableName.bind(this),
@@ -89,7 +106,7 @@ class PostgresStreamService extends StreamService<
       this.notificationManager.startClientFallbackPoller(
         this.checkForMissedMessages.bind(this),
       );
-      this.scoutManager.startRouterScoutPoller();
+      this.scoutManager?.startRouterScoutPoller();
     }
   }
 
@@ -243,6 +260,16 @@ class PostgresStreamService extends StreamService<
     messages: string[],
     options?: PublishMessageConfig,
   ): Promise<string[] | ProviderTransaction> {
+    if (this.securedMode) {
+      const target = this.resolveStreamTarget(streamName);
+      return Secured.publishMessagesSecured(
+        this.streamClient,
+        this.safeName(this.appId),
+        target.streamName,
+        messages,
+        this.logger,
+      );
+    }
     const target = this.resolveStreamTarget(streamName);
     return Messages.publishMessages(
       this.streamClient,
@@ -393,6 +420,17 @@ class PostgresStreamService extends StreamService<
       maxRetries?: number;
     },
   ): Promise<StreamMessage[]> {
+    if (this.securedMode) {
+      const target = this.resolveStreamTarget(streamName);
+      return Secured.fetchMessagesSecured(
+        this.streamClient,
+        this.safeName(this.appId),
+        target.streamName,
+        consumerName,
+        options || {},
+        this.logger,
+      );
+    }
     const target = this.resolveStreamTarget(streamName);
     return Messages.fetchMessages(
       this.streamClient,
@@ -410,6 +448,16 @@ class PostgresStreamService extends StreamService<
     groupName: string,
     messageIds: string[],
   ): Promise<number> {
+    if (this.securedMode) {
+      const target = this.resolveStreamTarget(streamName);
+      return Secured.ackAndDeleteSecured(
+        this.streamClient,
+        this.safeName(this.appId),
+        target.streamName,
+        messageIds,
+        this.logger,
+      );
+    }
     const target = this.resolveStreamTarget(streamName);
     return Messages.ackAndDelete(
       this.streamClient,
@@ -425,6 +473,16 @@ class PostgresStreamService extends StreamService<
     groupName: string,
     messageIds: string[],
   ): Promise<number> {
+    if (this.securedMode) {
+      const target = this.resolveStreamTarget(streamName);
+      return Secured.deadLetterMessagesSecured(
+        this.streamClient,
+        this.safeName(this.appId),
+        target.streamName,
+        messageIds,
+        this.logger,
+      );
+    }
     const target = this.resolveStreamTarget(streamName);
     return Messages.deadLetterMessages(
       this.streamClient,

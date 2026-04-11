@@ -238,6 +238,13 @@ export interface StreamConfig {
    */
   retryPolicy?: RetryPolicy;
 
+  /**
+   * When true, worker stream operations use SECURITY DEFINER stored
+   * procedures instead of raw SQL. Enabled automatically when the
+   * worker connects with scoped `workerCredentials`.
+   */
+  securedWorker?: boolean;
+
   // Provider-specific configurations
   postgres?: {
     pollInterval?: number;

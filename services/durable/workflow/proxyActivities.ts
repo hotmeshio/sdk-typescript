@@ -12,9 +12,11 @@ import {
   HMSH_CODE_DURABLE_TIMEOUT,
   HMSH_CODE_DURABLE_PROXY,
   DurableProxyErrorType,
+  DurableTelemetryService,
   s,
   asyncLocalStorage,
 } from './common';
+import { checkCancellation } from './cancellationScope';
 import { getContext } from './context';
 import { didRun } from './didRun';
 
@@ -42,9 +44,17 @@ function getProxyInterruptPayload(
   if (options?.retryPolicy?.maximumInterval) {
     maximumInterval = s(options.retryPolicy.maximumInterval);
   }
+  let initialInterval: number;
+  if (options?.retryPolicy?.initialInterval) {
+    initialInterval = s(options.retryPolicy.initialInterval);
+  }
+  let startToCloseTimeout: number;
+  if (options?.startToCloseTimeout) {
+    startToCloseTimeout = s(options.startToCloseTimeout);
+  }
   return {
     arguments: args,
-    argumentMetadata: options?.argumentMetadata ?? undefined,
+    headers: options?.headers ?? undefined,
     workflowDimension,
     index: execIndex,
     originJobId: originJobId || workflowId,
@@ -54,8 +64,10 @@ function getProxyInterruptPayload(
     activityName,
     expire: options?.expire ?? expire,
     backoffCoefficient: options?.retryPolicy?.backoffCoefficient ?? undefined,
+    initialInterval: initialInterval ?? undefined,
     maximumAttempts: options?.retryPolicy?.maximumAttempts ?? undefined,
     maximumInterval: maximumInterval ?? undefined,
+    startToCloseTimeout: startToCloseTimeout ?? undefined,
   };
 }
 
@@ -67,6 +79,8 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
   return async function (...args: any[]) {
     // Increment counter first for deterministic replay ordering
     const [didRunAlready, execIndex, result] = await didRun('proxy');
+    // Check cancellation AFTER counter increment to preserve replay positions
+    checkCancellation();
 
     const context = getContext();
     const { interruptionRegistry } = context;
@@ -79,6 +93,25 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
     // from activityCtx so "before" interceptors can modify them.
     const coreFunction = async () => {
       if (didRunAlready) {
+        // Emit RETURN span in debug mode
+        if (DurableTelemetryService.isVerbose() && result) {
+          const { workflowTrace, workflowSpan } = context;
+          if (workflowTrace && workflowSpan && result.ac && result.au) {
+            DurableTelemetryService.emitDurationSpan(
+              workflowTrace,
+              workflowSpan,
+              `RETURN/proxy/${activityName}/${execIndex}`,
+              DurableTelemetryService.parseTimestamp(result.ac),
+              DurableTelemetryService.parseTimestamp(result.au),
+              {
+                'durable.operation.type': 'proxy',
+                'durable.activity.name': activityName,
+                'durable.exec.index': execIndex,
+              },
+            );
+          }
+        }
+
         if (result?.$error) {
           if (activityCtx.options?.retryPolicy?.throwOnError !== false) {
             const code = result.$error.code;
@@ -97,6 +130,23 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
           return result.$error as T;
         }
         return result.data as T;
+      }
+
+      // Emit DISPATCH span in debug mode
+      if (DurableTelemetryService.isVerbose()) {
+        const { workflowTrace, workflowSpan } = context;
+        if (workflowTrace && workflowSpan) {
+          DurableTelemetryService.emitPointSpan(
+            workflowTrace,
+            workflowSpan,
+            `DISPATCH/proxy/${activityName}/${execIndex}`,
+            {
+              'durable.operation.type': 'proxy',
+              'durable.activity.name': activityName,
+              'durable.exec.index': execIndex,
+            },
+          );
+        }
       }
 
       const interruptionMessage = getProxyInterruptPayload(
@@ -119,8 +169,8 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
     const store = asyncLocalStorage.getStore();
     const interceptorService = store?.get('activityInterceptorService');
 
-    if (interceptorService?.activityInterceptors?.length > 0) {
-      return await interceptorService.executeActivityChain(
+    if (interceptorService?.outbound?.length > 0) {
+      return await interceptorService.executeOutboundChain(
         activityCtx,
         store,
         coreFunction,
@@ -202,7 +252,7 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
  *
  * ```typescript
  * // Interceptor with shared activity pool
- * const auditInterceptor: WorkflowInterceptor = {
+ * const auditInterceptor: WorkflowInboundCallsInterceptor = {
  *   async execute(ctx, next) {
  *     const { auditLog } = Durable.workflow.proxyActivities<{
  *       auditLog: (id: string, action: string) => Promise<void>;

@@ -1,5 +1,6 @@
 import {
   DurableChildError,
+  DurableContinueAsNewError,
   DurableFatalError,
   DurableMaxedError,
   DurableProxyError,
@@ -36,6 +37,7 @@ import {
 } from '../../../types/serializer';
 import {
   HMSH_CODE_DURABLE_CHILD,
+  HMSH_CODE_DURABLE_CONTINUE,
   HMSH_CODE_DURABLE_FATAL,
   HMSH_CODE_DURABLE_MAXED,
   HMSH_CODE_DURABLE_PROXY,
@@ -43,14 +45,17 @@ import {
   HMSH_CODE_DURABLE_TIMEOUT,
   HMSH_CODE_DURABLE_WAIT,
   HMSH_DURABLE_EXP_BACKOFF,
+  HMSH_DURABLE_INITIAL_INTERVAL,
   HMSH_DURABLE_MAX_ATTEMPTS,
   HMSH_DURABLE_MAX_INTERVAL,
 } from '../../../modules/enums';
 import {
   DurableChildErrorType,
+  DurableContinueAsNewErrorType,
   DurableProxyErrorType,
 } from '../../../types/error';
 import { TelemetryService } from '../../telemetry';
+import { DurableTelemetryService } from '../telemetry';
 import { QuorumMessage } from '../../../types';
 import { UserMessage } from '../../../types/quorum';
 import { Search } from '../search';
@@ -62,6 +67,7 @@ import { ExecHookOptions } from './execHook';
 // Common utilities and exports for all submodules
 export {
   DurableChildError,
+  DurableContinueAsNewError,
   DurableFatalError,
   DurableMaxedError,
   DurableProxyError,
@@ -93,6 +99,7 @@ export {
   StringScalarType,
   StringStringType,
   HMSH_CODE_DURABLE_CHILD,
+  HMSH_CODE_DURABLE_CONTINUE,
   HMSH_CODE_DURABLE_FATAL,
   HMSH_CODE_DURABLE_MAXED,
   HMSH_CODE_DURABLE_PROXY,
@@ -100,11 +107,14 @@ export {
   HMSH_CODE_DURABLE_TIMEOUT,
   HMSH_CODE_DURABLE_WAIT,
   HMSH_DURABLE_EXP_BACKOFF,
+  HMSH_DURABLE_INITIAL_INTERVAL,
   HMSH_DURABLE_MAX_ATTEMPTS,
   HMSH_DURABLE_MAX_INTERVAL,
   DurableChildErrorType,
+  DurableContinueAsNewErrorType,
   DurableProxyErrorType,
   TelemetryService,
+  DurableTelemetryService,
   QuorumMessage,
   UserMessage,
   Search,

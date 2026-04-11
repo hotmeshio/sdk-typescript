@@ -5,7 +5,7 @@
  * multiple durable operations concurrently within a workflow function.
  *
  * In most cases, standard `Promise.all` works correctly for Durable
- * operations (e.g., parallel `waitFor` calls). Use `Durable.workflow.all`
+ * operations (e.g., parallel `condition` calls). Use `Durable.workflow.all`
  * when you observe counter-sequencing issues with complex parallel
  * patterns.
  *

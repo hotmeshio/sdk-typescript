@@ -44,10 +44,10 @@ export async function example(name: string): Promise<responseType> {
   const proxyGreeting2 = await greet(`${name}2`); //execIndex: 3
   const random2 = Durable.workflow.random(); //execIndex: 4
   const durationInSeconds = await Durable.workflow //execIndex: 6
-    .sleepFor('2 seconds');
+    .sleep('2 seconds');
 
   const response2 = await Durable.workflow //execIndex: 7
-    .execChild({
+    .executeChild({
       workflowName: 'childExample',
       args: [name],
       taskQueue: 'basic-world',
@@ -60,7 +60,7 @@ export async function example(name: string): Promise<responseType> {
     });
 
   //pause...the test runner will send this signalId after sleeping for 10s
-  const payload = await Durable.workflow.waitFor<payloadType>('abcdefg'); //execIndex: 9
+  const payload = await Durable.workflow.condition<payloadType>('abcdefg'); //execIndex: 9
 
   const [proxyGreeting3, proxyGreeting4] = await Promise.all([
     //execIndex: 10 (this execIndex is reassigned after collation is complete)
@@ -75,7 +75,7 @@ export async function example(name: string): Promise<responseType> {
       taskQueue: 'basic-world',
       workflowId: 'MyWorkflowId123',
     }),
-    Durable.workflow.execChild<void>({
+    Durable.workflow.executeChild<void>({
       workflowName: 'childExample',
       args: [`start-${name}y`],
       taskQueue: 'basic-world',
@@ -113,15 +113,15 @@ export async function testProxyActivity(name: string): Promise<{ complex: string
   return await greet(name);
 }
 
-/** Feature 3: sleepFor only */
+/** Feature 3: sleep only */
 export async function testSleep(name: string): Promise<string> {
-  await Durable.workflow.sleepFor('1 second');
+  await Durable.workflow.sleep('1 second');
   return 'slept';
 }
 
 /** Feature 4: execChild only */
 export async function testExecChild(name: string): Promise<string> {
-  await Durable.workflow.execChild<void>({
+  await Durable.workflow.executeChild<void>({
     workflowName: 'childExample',
     args: [name],
     taskQueue: 'basic-world',
@@ -141,7 +141,7 @@ export async function testStartChild(name: string): Promise<string> {
 
 /** Feature 6: waitFor (signal) only */
 export async function testWaitFor(name: string): Promise<any> {
-  const payload = await Durable.workflow.waitFor('test-signal');
+  const payload = await Durable.workflow.condition('test-signal');
   return payload;
 }
 
@@ -157,7 +157,7 @@ export async function testParallelActivities(name: string): Promise<{ complex: s
 /** Feature 8: activity THEN waitFor */
 export async function testActivityThenSignal(name: string): Promise<{ greeting: any; payload: any }> {
   const greeting = await greet(name);
-  const payload = await Durable.workflow.waitFor('test-signal');
+  const payload = await Durable.workflow.condition('test-signal');
   return { greeting, payload };
 }
 
@@ -168,14 +168,14 @@ export async function testActivityThenSignal(name: string): Promise<{ greeting: 
 
 /** Feature 9: waitFor THEN single activity */
 export async function testSignalThenActivity(name: string): Promise<{ payload: any; greeting: any }> {
-  const payload = await Durable.workflow.waitFor('test-signal');
+  const payload = await Durable.workflow.condition('test-signal');
   const greeting = await greet(name);
   return { payload, greeting };
 }
 
 /** Feature 10: waitFor THEN parallel activities */
 export async function testSignalThenParallel(name: string): Promise<{ payload: any; results: any[] }> {
-  const payload = await Durable.workflow.waitFor('test-signal');
+  const payload = await Durable.workflow.condition('test-signal');
   const [r1, r2] = await Promise.all([
     greet(`${name}1`),
     greet(`${name}2`),
@@ -185,8 +185,8 @@ export async function testSignalThenParallel(name: string): Promise<{ payload: a
 
 /** Feature 11: waitFor THEN execChild */
 export async function testSignalThenExecChild(name: string): Promise<{ payload: any; childResult: string }> {
-  const payload = await Durable.workflow.waitFor('test-signal');
-  await Durable.workflow.execChild<void>({
+  const payload = await Durable.workflow.condition('test-signal');
+  await Durable.workflow.executeChild<void>({
     workflowName: 'childExample',
     args: [name],
     taskQueue: 'basic-world',
@@ -196,7 +196,7 @@ export async function testSignalThenExecChild(name: string): Promise<{ payload: 
 
 /** Feature 12: waitFor THEN startChild */
 export async function testSignalThenStartChild(name: string): Promise<{ payload: any; jobId: string }> {
-  const payload = await Durable.workflow.waitFor('test-signal');
+  const payload = await Durable.workflow.condition('test-signal');
   const jobId = await Durable.workflow.startChild({
     workflowName: 'childExample',
     args: [name],
@@ -213,7 +213,7 @@ export async function testParallelChildren(name: string): Promise<{ jobId: strin
       args: [`${name}-start`],
       taskQueue: 'basic-world',
     }),
-    Durable.workflow.execChild<void>({
+    Durable.workflow.executeChild<void>({
       workflowName: 'childExample',
       args: [`${name}-exec`],
       taskQueue: 'basic-world',
@@ -224,18 +224,50 @@ export async function testParallelChildren(name: string): Promise<{ jobId: strin
 
 /** Feature 14: waitFor THEN Promise.all([startChild, execChild]) — mirrors exact failure */
 export async function testSignalThenParallelChildren(name: string): Promise<{ payload: any; jobId: string }> {
-  const payload = await Durable.workflow.waitFor('test-signal');
+  const payload = await Durable.workflow.condition('test-signal');
   const [jobId, _body] = await Promise.all([
     Durable.workflow.startChild({
       workflowName: 'childExample',
       args: [`${name}-start`],
       taskQueue: 'basic-world',
     }),
-    Durable.workflow.execChild<void>({
+    Durable.workflow.executeChild<void>({
       workflowName: 'childExample',
       args: [`${name}-exec`],
       taskQueue: 'basic-world',
     }),
   ]);
   return { payload, jobId };
+}
+
+/** Feature 15: Worker-registered activities.
+ *  proxyActivities uses type-only reference — no activities object passed. */
+export async function testWorkerRegisteredActivity(name: string): Promise<{ complex: string }> {
+  const { greet } = Durable.workflow.proxyActivities<ActivitiesType>({
+    retryPolicy: { maximumAttempts: 1, throwOnError: true },
+  });
+  return await greet(name);
+}
+
+/** Feature 16: VNF-style remote activity — type-only proxy with explicit taskQueue.
+ *  The activity runs on a separate worker registered with a different task queue. */
+export async function testVnfActivity(name: string): Promise<string> {
+  const { remoteProcess } = Durable.workflow.proxyActivities<{
+    remoteProcess: (data: string) => Promise<string>;
+  }>({
+    taskQueue: 'vnf-activities',
+    retryPolicy: { maximumAttempts: 1, throwOnError: true },
+  });
+  return await remoteProcess(name);
+}
+
+/** Feature 17: Late worker registration — proves the router's replay mechanism.
+ *  This workflow is started BEFORE its worker is registered. The router re-publishes
+ *  the message with a 500ms visibility delay until the worker registers. */
+export async function testLateRegistration(name: string): Promise<{ complex: string }> {
+  const { greet } = Durable.workflow.proxyActivities<ActivitiesType>({
+    activities,
+    retryPolicy: { maximumAttempts: 1, throwOnError: true },
+  });
+  return await greet(name);
 }

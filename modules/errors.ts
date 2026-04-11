@@ -2,6 +2,7 @@ import { ActivityDuplex } from '../types/activity';
 import { CollationFaultType, CollationStage } from '../types/collator';
 import {
   DurableChildErrorType,
+  DurableContinueAsNewErrorType,
   DurableProxyErrorType,
   DurableSleepErrorType,
   DurableWaitForAllErrorType,
@@ -17,6 +18,7 @@ import {
   HMSH_CODE_DURABLE_WAIT,
   HMSH_CODE_DURABLE_PROXY,
   HMSH_CODE_DURABLE_CHILD,
+  HMSH_CODE_DURABLE_CONTINUE,
   HMSH_CODE_DURABLE_ALL,
   HMSH_CODE_DURABLE_SLEEP,
 } from './enums';
@@ -54,15 +56,17 @@ class DurableWaitForError extends Error {
 class DurableProxyError extends Error {
   activityName: string;
   arguments: string[];
-  argumentMetadata?: Record<string, any>;
+  headers?: Record<string, any>;
   backoffCoefficient: number;
   code: number;
   index: number;
+  initialInterval: number;
   maximumAttempts: number;
   maximumInterval: number;
   originJobId: string | null;
   parentWorkflowId: string;
   expire: number;
+  startToCloseTimeout: number;
   workflowDimension: string;
   workflowId: string;
   workflowTopic: string;
@@ -70,7 +74,7 @@ class DurableProxyError extends Error {
   constructor(params: DurableProxyErrorType) {
     super(`ProxyActivity Interruption`);
     this.arguments = params.arguments;
-    this.argumentMetadata = params.argumentMetadata;
+    this.headers = params.headers;
     this.workflowId = params.workflowId;
     this.workflowTopic = params.workflowTopic;
     this.parentWorkflowId = params.parentWorkflowId;
@@ -80,8 +84,10 @@ class DurableProxyError extends Error {
     this.activityName = params.activityName;
     this.workflowDimension = params.workflowDimension;
     this.backoffCoefficient = params.backoffCoefficient;
+    this.initialInterval = params.initialInterval;
     this.maximumAttempts = params.maximumAttempts;
     this.maximumInterval = params.maximumInterval;
+    this.startToCloseTimeout = params.startToCloseTimeout;
     this.code = HMSH_CODE_DURABLE_PROXY;
   }
 }
@@ -93,6 +99,7 @@ class DurableChildError extends Error {
   backoffCoefficient: number;
   code: number;
   expire: number;
+  initialInterval: number;
   persistent: boolean;
   signalIn: boolean;
   workflowDimension: string;
@@ -124,6 +131,7 @@ class DurableChildError extends Error {
     this.code = HMSH_CODE_DURABLE_CHILD;
     this.await = params.await;
     this.backoffCoefficient = params.backoffCoefficient;
+    this.initialInterval = params.initialInterval;
     this.maximumAttempts = params.maximumAttempts;
     this.maximumInterval = params.maximumInterval;
   }
@@ -168,6 +176,23 @@ class DurableSleepError extends Error {
     this.index = params.index;
     this.workflowDimension = params.workflowDimension;
     this.code = HMSH_CODE_DURABLE_SLEEP;
+  }
+}
+
+class DurableContinueAsNewError extends Error {
+  workflowId: string;
+  code: number;
+  arguments: any[];
+  index: number;
+  workflowDimension: string;
+  type = 'DurableContinueAsNewError';
+  constructor(params: DurableContinueAsNewErrorType) {
+    super(`ContinueAsNew Interruption`);
+    this.arguments = params.arguments;
+    this.workflowId = params.workflowId;
+    this.index = params.index;
+    this.workflowDimension = params.workflowDimension;
+    this.code = HMSH_CODE_DURABLE_CONTINUE;
   }
 }
 
@@ -300,6 +325,7 @@ class CollationError extends Error {
 export {
   CollationError,
   DurableChildError,
+  DurableContinueAsNewError,
   DurableFatalError,
   DurableMaxedError,
   DurableProxyError,

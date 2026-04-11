@@ -1,5 +1,6 @@
 import {
   DurableChildError,
+  DurableContinueAsNewError,
   DurableFatalError,
   DurableMaxedError,
   DurableProxyError,
@@ -9,14 +10,15 @@ import {
   DurableWaitForError,
   DurableWaitForAllError,
 } from '../../../modules/errors';
+import { CancelledFailure } from './cancellationScope';
 
 /**
  * Type guard that returns `true` if an error is a Durable engine
  * control-flow signal rather than a genuine application error.
  *
  * Durable uses thrown errors internally to suspend workflow execution
- * for durable operations like `sleepFor`, `waitFor`, `proxyActivities`,
- * and `execChild`. These errors must be re-thrown (not swallowed) so
+ * for durable operations like `sleep`, `condition`, `proxyActivities`,
+ * and `executeChild`. These errors must be re-thrown (not swallowed) so
  * the engine can persist state and schedule the next step.
  *
  * **Always use `didInterrupt` in `catch` blocks inside workflow
@@ -24,9 +26,10 @@ import {
  *
  * ## Recognized Error Types
  *
- * `DurableChildError`, `DurableFatalError`, `DurableMaxedError`,
- * `DurableProxyError`, `DurableRetryError`, `DurableSleepError`,
- * `DurableTimeoutError`, `DurableWaitForError`, `DurableWaitForAllError`
+ * `DurableChildError`, `DurableContinueAsNewError`, `DurableFatalError`,
+ * `DurableMaxedError`, `DurableProxyError`, `DurableRetryError`,
+ * `DurableSleepError`, `DurableTimeoutError`, `DurableWaitForError`,
+ * `DurableWaitForAllError`, `CancelledFailure`
  *
  * ## Examples
  *
@@ -51,7 +54,7 @@ import {
  *
  * ```typescript
  * // Common pattern in interceptors
- * const interceptor: WorkflowInterceptor = {
+ * const interceptor: WorkflowInboundCallsInterceptor = {
  *   async execute(ctx, next) {
  *     try {
  *       return await next();
@@ -73,6 +76,7 @@ import {
 export function didInterrupt(error: Error): boolean {
   return (
     error instanceof DurableChildError ||
+    error instanceof DurableContinueAsNewError ||
     error instanceof DurableFatalError ||
     error instanceof DurableMaxedError ||
     error instanceof DurableProxyError ||
@@ -80,6 +84,7 @@ export function didInterrupt(error: Error): boolean {
     error instanceof DurableSleepError ||
     error instanceof DurableTimeoutError ||
     error instanceof DurableWaitForError ||
-    error instanceof DurableWaitForAllError
+    error instanceof DurableWaitForAllError ||
+    error instanceof CancelledFailure
   );
 }

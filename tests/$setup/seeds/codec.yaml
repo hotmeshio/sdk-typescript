@@ -1,0 +1,40 @@
+app:
+  id: codec-test
+  version: '1'
+  graphs:
+    - subscribes: codec.test
+      publishes: codec.done
+      expire: 60
+
+      output:
+        schema:
+          type: object
+          properties:
+            echoed:
+              type: boolean
+            input:
+              type: object
+            nested:
+              type: object
+
+      activities:
+        t1:
+          type: trigger
+
+        echo:
+          type: worker
+          topic: codec.echo
+          output:
+            schema:
+              type: object
+              properties:
+                echoed:
+                  type: boolean
+                input:
+                  type: object
+                nested:
+                  type: object
+
+      transitions:
+        t1:
+          - to: echo

@@ -15,7 +15,7 @@ const { greet } = Durable.workflow.proxyActivities<ActivitiesType>({
 
 export async function example(name: string): Promise<string> {
   const greet1 = await greet(name);
-  const response = await Durable.workflow.execChild<string>({
+  const response = await Durable.workflow.executeChild<string>({
     args: ['Howdy!'],
     taskQueue: 'collision-world',
     workflowName: 'childExample',
@@ -38,7 +38,7 @@ export async function fixableExample(badCount: number): Promise<string> {
   //add unique suffix to workflowId after `badCount` failures
   const uniqueSuffix = STATE.count++ > badCount ? '-fixed' : '';
 
-  const childOutput = await Durable.workflow.execChild<string>({
+  const childOutput = await Durable.workflow.executeChild<string>({
     args: ['FIXED'],
     taskQueue: 'collision-world',
     workflowName: 'childExample',

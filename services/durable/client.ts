@@ -25,39 +25,34 @@ import { WorkflowHandleService } from './handle';
 import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 
 /**
- * The Durable `Client` service provides methods for
- * starting, signaling, and querying workflows.
- * Start a new workflow execution by calling
- * `workflow.start`. Note the direct connection to
- * Postgres.
- * 
- * NATS can be used as the message broker if advanced
- * messaging is required (i.e, patterned subscriptions).
+ * Workflow client. Starts workflows, sends signals, and reads results.
+ *
  * @example
-
  * ```typescript
- * //client.ts
- * import { Client, HotMesh } from '@hotmeshio/hotmesh';
+ * import { Durable } from '@hotmeshio/hotmesh';
  * import { Client as Postgres } from 'pg';
-
- * async function run(): Promise<string> {
- *   const client = new Client({
- *     connection: {
- *       class: Postgres,
- *       options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' }
- *     }
- *   });
-
- *   const handle = await client.workflow.start({
- *     args: ['HotMesh'],
- *     taskQueue: 'default',
- *     workflowName: 'example',
- *     workflowId: HotMesh.guid()
- *   });
-
- *   return await handle.result();
- *   //returns ['Hello HotMesh', '¡Hola, HotMesh!']
- * }
+ *
+ * const client = new Durable.Client({
+ *   connection: {
+ *     class: Postgres,
+ *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' },
+ *   },
+ * });
+ *
+ * // Start a workflow and await its result
+ * const handle = await client.workflow.start({
+ *   args: ['order-123'],
+ *   taskQueue: 'orders',
+ *   workflowName: 'orderWorkflow',
+ *   workflowId: Durable.guid(),
+ * });
+ * const result = await handle.result();
+ *
+ * // Send a signal to a running workflow
+ * await handle.signal('approval', { approved: true });
+ *
+ * // Cancel a running workflow
+ * await handle.cancel();
  * ```
  */
 export class ClientService {

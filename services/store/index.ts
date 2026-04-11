@@ -234,6 +234,7 @@ abstract class StoreService<
     batchSize?: number,
     cursor?: string,
   ): Promise<[string, StringStringType]>;
+  abstract setCancel(jobId: string, appId: string): Promise<void>;
   abstract setThrottleRate(options: ThrottleOptions): Promise<void>;
   abstract getThrottleRates(): Promise<StringStringType>;
   abstract getThrottleRate(topic: string): Promise<number>;

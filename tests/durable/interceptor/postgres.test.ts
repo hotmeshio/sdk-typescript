@@ -7,7 +7,7 @@ import { guid } from '../../../modules/utils';
 import { ProviderNativeClient } from '../../../types';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 import { ProvidersConfig } from '../../../types/provider';
-import { WorkflowInterceptor, ActivityInterceptor } from '../../../types/durable';
+import { WorkflowInboundCallsInterceptor, WorkflowOutboundCallsInterceptor, ActivityInboundCallsInterceptor } from '../../../types/durable';
 import {
   dropTables,
   postgres_options,
@@ -38,7 +38,7 @@ describe('DURABLE | interceptor | Postgres', () => {
   let workflowGuids: string[] = []; // Track workflow IDs for cleanup
 
   // Create test interceptors
-  const loggingInterceptor: WorkflowInterceptor = {
+  const loggingInterceptor: WorkflowInboundCallsInterceptor = {
     async execute(ctx, next) {
       const workflowName = ctx.get('workflowName');
       const workflowId = ctx.get('workflowId');
@@ -55,7 +55,7 @@ describe('DURABLE | interceptor | Postgres', () => {
     }
   };
 
-  const metricsInterceptor: WorkflowInterceptor = {
+  const metricsInterceptor: WorkflowInboundCallsInterceptor = {
     async execute(ctx, next) {
       const workflowName = ctx.get('workflowName');
       const workflowId = ctx.get('workflowId');
@@ -97,8 +97,8 @@ describe('DURABLE | interceptor | Postgres', () => {
     workflowGuids = [];
     // Clear interceptors and re-register for each test
     Durable.clearInterceptors();
-    Durable.registerInterceptor(loggingInterceptor);
-    Durable.registerInterceptor(metricsInterceptor);
+    Durable.registerInboundInterceptor(loggingInterceptor);
+    Durable.registerInboundInterceptor(metricsInterceptor);
   });
 
   afterEach(async () => {
@@ -232,7 +232,7 @@ describe('DURABLE | interceptor | Postgres', () => {
         let contextValues: any = {};
         
         // Register context-checking interceptor with unique behavior per test
-        const contextInterceptor: WorkflowInterceptor = {
+        const contextInterceptor: WorkflowInboundCallsInterceptor = {
           async execute(ctx, next) {
             // Capture context values
             contextValues = {
@@ -249,7 +249,7 @@ describe('DURABLE | interceptor | Postgres', () => {
         };
         
         Durable.clearInterceptors();
-        Durable.registerInterceptor(contextInterceptor);
+        Durable.registerInboundInterceptor(contextInterceptor);
 
         // Create worker
         const worker = await Worker.create({
@@ -293,19 +293,19 @@ describe('DURABLE | interceptor | Postgres', () => {
       it('should handle interceptors that use Durable functions with proper interruption handling', async () => {
         let interceptorExecutions = 0;
         
-        // Create an interceptor that uses Durable functions (sleepFor)
-        const durableInterceptor: WorkflowInterceptor = {
+        // Create an interceptor that uses Durable functions (sleep)
+        const durableInterceptor: WorkflowInboundCallsInterceptor = {
           async execute(ctx, next) {
             interceptorExecutions++;
-            
+
             try {
               // Sleep before workflow execution - this will cause an interruption
-              await Durable.workflow.sleepFor('50 milliseconds');
-              
+              await Durable.workflow.sleep('50 milliseconds');
+
               const result = await next();
-              
-              // Sleep after workflow execution - this will cause another interruption  
-              await Durable.workflow.sleepFor('50 milliseconds');
+
+              // Sleep after workflow execution - this will cause another interruption
+              await Durable.workflow.sleep('50 milliseconds');
               
               return result;
             } catch (err) {
@@ -321,7 +321,7 @@ describe('DURABLE | interceptor | Postgres', () => {
 
         // Clear existing interceptors and register our durable interceptor
         Durable.clearInterceptors();
-        Durable.registerInterceptor(durableInterceptor);
+        Durable.registerInboundInterceptor(durableInterceptor);
 
         const worker = await Worker.create({
           connection: {
@@ -380,7 +380,7 @@ describe('DURABLE | interceptor | Postgres', () => {
         }, activities, 'shared-interceptor-activities');
 
         // Create an interceptor that uses proxy activities with explicit taskQueue
-        const activityInterceptor: WorkflowInterceptor = {
+        const activityInterceptor: WorkflowInboundCallsInterceptor = {
           async execute(ctx, next) {
             try {
               const workflowId = ctx.get('workflowId');
@@ -420,7 +420,7 @@ describe('DURABLE | interceptor | Postgres', () => {
 
         // Clear and register the activity interceptor
         Durable.clearInterceptors();
-        Durable.registerInterceptor(activityInterceptor);
+        Durable.registerInboundInterceptor(activityInterceptor);
 
         // Create worker for the workflow
         const worker = await Worker.create({
@@ -761,7 +761,7 @@ describe('DURABLE | interceptor | Postgres', () => {
         // Clear workflow interceptors and register an activity interceptor
         Durable.clearInterceptors();
 
-        const loggingActivityInterceptor: ActivityInterceptor = {
+        const loggingActivityInterceptor: WorkflowOutboundCallsInterceptor = {
           async execute(activityCtx, workflowCtx, next) {
             activityInterceptorCalls.push({
               phase: 'before',
@@ -787,7 +787,7 @@ describe('DURABLE | interceptor | Postgres', () => {
           },
         };
 
-        Durable.registerActivityInterceptor(loggingActivityInterceptor);
+        Durable.registerOutboundInterceptor(loggingActivityInterceptor);
 
         // Create worker using a workflow that calls activities
         const worker = await Worker.create({
@@ -843,13 +843,13 @@ describe('DURABLE | interceptor | Postgres', () => {
 
         let interceptorExecutions = 0;
 
-        // Create an activity interceptor that uses sleepFor
-        const durableActivityInterceptor: ActivityInterceptor = {
+        // Create an activity interceptor that uses sleep
+        const durableActivityInterceptor: WorkflowOutboundCallsInterceptor = {
           async execute(activityCtx, workflowCtx, next) {
             interceptorExecutions++;
             try {
               // This sleep participates in the interruption/replay pattern
-              await Durable.workflow.sleepFor('50 milliseconds');
+              await Durable.workflow.sleep('50 milliseconds');
               return await next();
             } catch (err) {
               if (Durable.didInterrupt(err)) throw err;
@@ -858,7 +858,7 @@ describe('DURABLE | interceptor | Postgres', () => {
           },
         };
 
-        Durable.registerActivityInterceptor(durableActivityInterceptor);
+        Durable.registerOutboundInterceptor(durableActivityInterceptor);
 
         const worker = await Worker.create({
           connection: { class: Postgres, options: postgres_options },
@@ -905,7 +905,7 @@ describe('DURABLE | interceptor | Postgres', () => {
         }, activities, 'act-intercept-audit');
 
         // Create an activity interceptor that calls its own proxy activities
-        const auditActivityInterceptor: ActivityInterceptor = {
+        const auditActivityInterceptor: WorkflowOutboundCallsInterceptor = {
           async execute(activityCtx, workflowCtx, next) {
             try {
               const { auditLog } = Durable.workflow.proxyActivities<typeof activities>({
@@ -933,7 +933,7 @@ describe('DURABLE | interceptor | Postgres', () => {
           },
         };
 
-        Durable.registerActivityInterceptor(auditActivityInterceptor);
+        Durable.registerOutboundInterceptor(auditActivityInterceptor);
 
         const worker = await Worker.create({
           connection: { class: Postgres, options: postgres_options },
@@ -985,7 +985,7 @@ describe('DURABLE | interceptor | Postgres', () => {
           taskQueue: 'act-intercept-after-output'
         }, activities, 'act-intercept-after-output');
 
-        const afterOutputInterceptor: ActivityInterceptor = {
+        const afterOutputInterceptor: WorkflowOutboundCallsInterceptor = {
           async execute(activityCtx, workflowCtx, next) {
             try {
               const result = await next();
@@ -1022,7 +1022,7 @@ describe('DURABLE | interceptor | Postgres', () => {
           },
         };
 
-        Durable.registerActivityInterceptor(afterOutputInterceptor);
+        Durable.registerOutboundInterceptor(afterOutputInterceptor);
 
         // Use the `example` workflow which calls processData (returns a string)
         const worker = await Worker.create({
@@ -1082,7 +1082,7 @@ describe('DURABLE | interceptor | Postgres', () => {
 
         const order: string[] = [];
 
-        Durable.registerActivityInterceptor({
+        Durable.registerOutboundInterceptor({
           async execute(activityCtx, workflowCtx, next) {
             order.push(`outer:before:${activityCtx.activityName}`);
             try {
@@ -1096,7 +1096,7 @@ describe('DURABLE | interceptor | Postgres', () => {
           },
         });
 
-        Durable.registerActivityInterceptor({
+        Durable.registerOutboundInterceptor({
           async execute(activityCtx, workflowCtx, next) {
             order.push(`inner:before:${activityCtx.activityName}`);
             try {
@@ -1146,7 +1146,7 @@ describe('DURABLE | interceptor | Postgres', () => {
 
         const order: string[] = [];
 
-        Durable.registerActivityInterceptor({
+        Durable.registerOutboundInterceptor({
           async execute(activityCtx, workflowCtx, next) {
             order.push(`outer:before:${activityCtx.activityName}`);
             try {
@@ -1160,7 +1160,7 @@ describe('DURABLE | interceptor | Postgres', () => {
           },
         });
 
-        Durable.registerActivityInterceptor({
+        Durable.registerOutboundInterceptor({
           async execute(activityCtx, workflowCtx, next) {
             order.push(`inner:before:${activityCtx.activityName}`);
             try {
@@ -1217,10 +1217,10 @@ describe('DURABLE | interceptor | Postgres', () => {
       }, 60_000);
     });
 
-    describe('argumentMetadata', () => {
-      it('should propagate argumentMetadata to activity via Durable.activity.getContext()', async () => {
+    describe('headers', () => {
+      it('should propagate headers to activity via Durable.activity.getContext()', async () => {
         Durable.clearInterceptors();
-        Durable.clearActivityInterceptors();
+        Durable.clearOutboundInterceptors();
 
         const worker = await Worker.create({
           connection: { class: Postgres, options: postgres_options },
@@ -1247,16 +1247,16 @@ describe('DURABLE | interceptor | Postgres', () => {
         expect(result.activityResult).toBeDefined();
         expect(result.activityResult.data).toBe('MetadataTest');
         expect(result.activityResult.activityName).toBe('metadataAwareActivity');
-        expect(result.activityResult.argumentMetadata).toEqual({
+        expect(result.activityResult.headers).toEqual({
           tenantId: 'acme',
           traceId: 'trace-123',
           custom: { nested: true },
         });
       }, 60_000);
 
-      it('should return empty metadata when argumentMetadata is not provided', async () => {
+      it('should return empty metadata when headers is not provided', async () => {
         Durable.clearInterceptors();
-        Durable.clearActivityInterceptors();
+        Durable.clearOutboundInterceptors();
 
         const worker = await Worker.create({
           connection: { class: Postgres, options: postgres_options },
@@ -1281,12 +1281,12 @@ describe('DURABLE | interceptor | Postgres', () => {
 
         expect(result.status).toBe('completed');
         expect(result.activityResult.data).toBe('NoMetadataTest');
-        expect(result.activityResult.argumentMetadata).toEqual({});
+        expect(result.activityResult.headers).toEqual({});
       }, 60_000);
 
       it('should support different metadata per proxyActivities group', async () => {
         Durable.clearInterceptors();
-        Durable.clearActivityInterceptors();
+        Durable.clearOutboundInterceptors();
 
         const worker = await Worker.create({
           connection: { class: Postgres, options: postgres_options },
@@ -1313,14 +1313,14 @@ describe('DURABLE | interceptor | Postgres', () => {
         expect(result.operations).toEqual(['group-a-called', 'group-b-called']);
 
         // Group A received its metadata
-        expect(result.resultA.argumentMetadata).toEqual({
+        expect(result.resultA.headers).toEqual({
           group: 'A',
           priority: 'high',
         });
         expect(result.resultA.data).toBe('MultiMetadataTest-A');
 
         // Group B received its metadata
-        expect(result.resultB.argumentMetadata).toEqual({
+        expect(result.resultB.headers).toEqual({
           group: 'B',
           priority: 'low',
         });
@@ -1329,13 +1329,13 @@ describe('DURABLE | interceptor | Postgres', () => {
 
       it('should make metadata available alongside activity errors', async () => {
         Durable.clearInterceptors();
-        Durable.clearActivityInterceptors();
+        Durable.clearOutboundInterceptors();
 
         // Workflow that calls a failing activity with metadata
         const failingMetadataWorkflow = async (): Promise<any> => {
           const { alwaysFailValidation } = Durable.workflow.proxyActivities<typeof activities>({
             activities,
-            argumentMetadata: { requestId: 'req-456' },
+            headers: { requestId: 'req-456' },
             retryPolicy: { maximumAttempts: 1, throwOnError: true },
           });
 
@@ -1371,14 +1371,14 @@ describe('DURABLE | interceptor | Postgres', () => {
         }
       }, 60_000);
 
-      it('should allow activity interceptor to inject argumentMetadata via lookupUserProfile proxy activity', async () => {
+      it('should allow activity interceptor to inject headers via lookupUserProfile proxy activity', async () => {
         // This test proves the full security principal injection pattern:
         // 1. Activity interceptor calls lookupUserProfile (a real proxy activity)
-        // 2. Interceptor injects the profile as argumentMetadata on activityCtx.options
+        // 2. Interceptor injects the profile as headers on activityCtx.options
         // 3. securedActivity reads the principal via Durable.activity.getContext()
-        // 4. The workflow itself never touches argumentMetadata — it's invisible
+        // 4. The workflow itself never touches headers — it's invisible
         Durable.clearInterceptors();
-        Durable.clearActivityInterceptors();
+        Durable.clearOutboundInterceptors();
 
         // Register a shared activity worker for the interceptor's lookupUserProfile calls
         await Durable.registerActivityWorker({
@@ -1391,8 +1391,8 @@ describe('DURABLE | interceptor | Postgres', () => {
         }, activities, 'security-lookup');
 
         // The security interceptor: looks up a user profile, then injects it
-        // as argumentMetadata so downstream activities receive it as context
-        const securityInterceptor: ActivityInterceptor = {
+        // as headers so downstream activities receive it as context
+        const securityInterceptor: WorkflowOutboundCallsInterceptor = {
           async execute(activityCtx, workflowCtx, next) {
             try {
               // Skip injection for the interceptor's own lookupUserProfile calls
@@ -1413,12 +1413,12 @@ describe('DURABLE | interceptor | Postgres', () => {
               const userId = workflowCtx.get('workflowId').slice(0, 8);
               const profile = await lookupUserProfile(userId);
 
-              // Inject the profile as argumentMetadata on the activity options
+              // Inject the profile as headers on the activity options
               // This is the key: the interceptor enriches the call with a principal
               activityCtx.options = {
                 ...activityCtx.options,
-                argumentMetadata: {
-                  ...(activityCtx.options?.argumentMetadata ?? {}),
+                headers: {
+                  ...(activityCtx.options?.headers ?? {}),
                   principal: profile,
                 },
               };
@@ -1431,10 +1431,10 @@ describe('DURABLE | interceptor | Postgres', () => {
           },
         };
 
-        Durable.registerActivityInterceptor(securityInterceptor);
+        Durable.registerOutboundInterceptor(securityInterceptor);
 
         // Create the workflow worker — securedWorkflow calls securedActivity
-        // WITHOUT setting argumentMetadata in its proxyActivities config
+        // WITHOUT setting headers in its proxyActivities config
         const worker = await Worker.create({
           connection: { class: Postgres, options: postgres_options },
           namespace,
@@ -1477,5 +1477,56 @@ describe('DURABLE | interceptor | Postgres', () => {
         expect(result.result2.principal.userId).toBe(workflowGuid.slice(0, 8));
       }, 120_000);
     });
+  });
+
+  describe('Activity Inbound Interceptors (worker-side)', () => {
+    it('should wrap activity execution on the worker side', async () => {
+      Durable.clearInterceptors();
+      Durable.clearOutboundInterceptors();
+      Durable.clearActivityInboundInterceptors();
+
+      // Track interceptor calls
+      const interceptorLog: string[] = [];
+
+      const activityInboundInterceptor: ActivityInboundCallsInterceptor = {
+        async execute(activityName, args, next) {
+          interceptorLog.push(`before:${activityName}`);
+          const result = await next();
+          interceptorLog.push(`after:${activityName}:${JSON.stringify(result)}`);
+          return result;
+        },
+      };
+
+      Durable.registerActivityInboundInterceptor(activityInboundInterceptor);
+
+      // Use a simple workflow that calls greet activity
+      const worker = await Worker.create({
+        connection: { class: Postgres, options: postgres_options },
+        namespace,
+        taskQueue: 'activity-inbound-test',
+        workflow: workflows.simpleExample,
+      });
+      await worker.run();
+
+      const client = new Client({
+        connection: { class: Postgres, options: postgres_options },
+      });
+      const handle = await client.workflow.start({
+        args: ['ActivityInbound'],
+        taskQueue: 'activity-inbound-test',
+        workflowName: 'simpleExample',
+        workflowId: guid(),
+        namespace,
+        expire: 120,
+      });
+      const result = await handle.result();
+      expect(result).toBeDefined();
+
+      // Verify the activity inbound interceptor ran on the worker side
+      expect(interceptorLog.some(l => l.startsWith('before:'))).toBe(true);
+      expect(interceptorLog.some(l => l.startsWith('after:'))).toBe(true);
+
+      Durable.clearActivityInboundInterceptors();
+    }, 60_000);
   });
 });

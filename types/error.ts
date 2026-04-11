@@ -2,6 +2,7 @@ export type DurableChildErrorType = {
   arguments: string[];
   await?: boolean;
   backoffCoefficient?: number;
+  initialInterval?: number;
   index: number;
   expire?: number;
   persistent?: boolean;
@@ -31,11 +32,13 @@ export type DurableWaitForAllErrorType = {
 
 export type DurableProxyErrorType = {
   arguments: string[];
-  argumentMetadata?: Record<string, any>;
+  headers?: Record<string, any>;
   activityName: string;
   backoffCoefficient?: number;
+  initialInterval?: number;
   index: number;
   expire?: number;
+  startToCloseTimeout?: number;
   maximumAttempts?: number;
   maximumInterval?: number;
   originJobId: string | null;
@@ -54,6 +57,13 @@ export type DurableWaitForErrorType = {
 
 export type DurableSleepErrorType = {
   duration: number;
+  index: number;
+  workflowDimension: string;
+  workflowId: string;
+};
+
+export type DurableContinueAsNewErrorType = {
+  arguments: any[];
   index: number;
   workflowDimension: string;
   workflowId: string;

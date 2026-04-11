@@ -18,7 +18,7 @@ export async function childString(name: string): Promise<string> {
  * Parent that calls a void child.
  */
 export async function parentVoidChild(name: string): Promise<string> {
-  await Durable.workflow.execChild<void>({
+  await Durable.workflow.executeChild<void>({
     workflowName: 'childVoid',
     args: [name],
     taskQueue: 'ec-queue',
@@ -30,7 +30,7 @@ export async function parentVoidChild(name: string): Promise<string> {
  * Parent that calls a string-returning child and uses the value.
  */
 export async function parentStringChild(name: string): Promise<string> {
-  const result = await Durable.workflow.execChild<string>({
+  const result = await Durable.workflow.executeChild<string>({
     workflowName: 'childString',
     args: [name],
     taskQueue: 'ec-queue',

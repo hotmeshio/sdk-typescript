@@ -28,7 +28,7 @@ export async function example(name: string): Promise<string> {
   await search.mult('multer', 10);
 
   //start a child workflow and wait for the result
-  await Durable.workflow.execChild<string>({
+  await Durable.workflow.executeChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
@@ -45,10 +45,10 @@ export async function example(name: string): Promise<string> {
   const [hello, goodbye] = await Promise.all([greet(name), bye(name)]);
 
   //wait for the `abcdefg` signal ('exampleHook' will send it)
-  await Durable.workflow.waitFor('abcdefg');
+  await Durable.workflow.condition('abcdefg');
 
   //sleep for 5
-  await Durable.workflow.sleepFor('5 seconds');
+  await Durable.workflow.sleep('5 seconds');
 
   //return the result (the job state)
   return `${hello} - ${goodbye}`;
@@ -68,15 +68,15 @@ export async function exampleHook(name: string): Promise<void> {
   await search.incr('counter', 100);
   await search.set('jimbo', 'jackson');
 
-  //Promise.all: call in parallel; use a sleepFor
+  //Promise.all: call in parallel; use a sleep
   // and compare to an activity that uses a standard
   const [greeting, _timeInSeconds] = await Promise.all([
     bye(name, 1_000),
-    Durable.workflow.sleepFor('1 second'),
+    Durable.workflow.sleep('1 second'),
   ]);
 
   //start a child workflow and wait for the result
-  await Durable.workflow.execChild<string>({
+  await Durable.workflow.executeChild<string>({
     args: [`${name} to CHILD`],
     taskQueue: 'child-world',
     workflowName: 'childExample',
@@ -90,7 +90,7 @@ export async function exampleHook(name: string): Promise<void> {
   });
 
   //test out sleeping
-  await Durable.workflow.sleepFor('2 seconds');
+  await Durable.workflow.sleep('2 seconds');
 
   //test trace, enrich, emit (in a hook)
 

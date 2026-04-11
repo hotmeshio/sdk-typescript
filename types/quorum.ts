@@ -19,7 +19,7 @@ export interface NetworkStat {
   ms: number;
 }
 
-/** reveals: memory, cpu, network */
+/** Host-level resource snapshot collected at pong time. */
 export interface SystemHealth {
   TotalMemoryGB: string;
   FreeMemoryGB: string;
@@ -41,22 +41,56 @@ export type ThrottleOptions = {
   namespace?: string;
 };
 
+/**
+ * Snapshot of a single engine or worker instance, returned by
+ * `HotMesh.rollCall()`. Each connected instance responds to the
+ * quorum PING with its current profile.
+ *
+ * **Engines** populate `stream` (the engine stream key).
+ * **Workers** populate `worker_topic` (the task queue topic) and `stream`.
+ *
+ * Use `counts` and `error_count` for throughput and health monitoring.
+ */
 export interface QuorumProfile {
+  /** Namespace the instance belongs to. */
   namespace: string;
+  /** Application ID (matches `HotMeshConfig.appId`). */
   app_id: string;
+  /** Unique instance GUID (engine or worker). */
   engine_id: string;
+  /** Entity name (if applicable). */
   entity?: string;
+  /** Worker task queue topic. Present only for worker instances. */
   worker_topic?: string;
+  /** Stream key this instance consumes from. */
   stream?: string;
+  /** Number of pending (unprocessed) messages in the stream. */
   stream_depth?: number;
+  /**
+   * Cumulative messages processed, keyed by status code.
+   * Common codes: `'200'` (success), `'590'` (child workflow),
+   * `'591'` (activity dispatch), `'500'` (error).
+   */
   counts?: Record<string, number>;
+  /**
+   * Consecutive stream consumption errors. `0` = healthy.
+   * Non-zero means the consumer is in exponential backoff recovery.
+   */
+  error_count?: number;
+  /** ISO timestamp of when this instance was initialized. */
   inited?: string;
+  /** ISO timestamp of when this profile was generated. */
   timestamp?: string;
+  /** Current throttle delay in ms (`0` = no throttle). */
   throttle?: number;
+  /** Interval (ms) before reclaiming unacknowledged messages. */
   reclaimDelay?: number;
+  /** Max messages to reclaim per cycle. */
   reclaimCount?: number;
+  /** Host-level memory, CPU, and network stats. */
   system?: SystemHealth;
-  signature?: string; //stringified function
+  /** Stringified worker callback function (only if `signature: true` in rollcall). */
+  signature?: string;
 }
 
 interface QuorumMessageBase {

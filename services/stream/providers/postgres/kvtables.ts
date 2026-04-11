@@ -4,6 +4,10 @@ import {
 } from '../../../../modules/enums';
 import { sleepFor } from '../../../../modules/utils';
 import { ILogger } from '../../../logger';
+import {
+  getCreateProceduresSQL,
+  getCreateWorkerCredentialsTableSQL,
+} from './procedures';
 
 export async function deploySchema(
   streamClient: any,
@@ -348,6 +352,26 @@ async function createTables(
     ON ${workerTable} (jid, msg_type, created_at)
     WHERE jid != '';
   `);
+
+  // ---- ROLES table (used by scout for distributed leader election) ----
+  const rolesTable = `${schemaName}.roles`;
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${rolesTable} (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      expiry TIMESTAMP WITH TIME ZONE
+    );
+  `);
+
+  // ---- WORKER ACCESS CONTROL ----
+  // SECURITY DEFINER stored procedures for scoped worker access
+  const procedureStatements = getCreateProceduresSQL(schemaName);
+  for (const sql of procedureStatements) {
+    await client.query(sql);
+  }
+
+  // Worker credentials registry
+  await client.query(getCreateWorkerCredentialsTableSQL(schemaName));
 }
 
 async function createNotificationTriggers(

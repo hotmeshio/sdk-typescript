@@ -17,10 +17,10 @@ export const GET_JOB_BY_KEY = `
  * Fetch all attributes for a job.
  */
 export const GET_JOB_ATTRIBUTES = `
-  SELECT field, value
+  SELECT symbol || dimension AS field, value
   FROM {schema}.jobs_attributes
   WHERE job_id = $1
-  ORDER BY field
+  ORDER BY symbol, dimension
 `;
 
 /**
@@ -32,7 +32,7 @@ export const GET_ACTIVITY_INPUTS = `
   FROM {schema}.jobs j
   JOIN {schema}.jobs_attributes ja ON ja.job_id = j.id
   WHERE j.key LIKE $1
-    AND ja.field = $2
+    AND ja.symbol = $2 AND ja.dimension = $3
 `;
 
 /**
@@ -90,6 +90,6 @@ export function buildChildWorkflowInputsQuery(childCount: number, schema: string
     FROM ${schema}.jobs j
     JOIN ${schema}.jobs_attributes ja ON ja.job_id = j.id
     WHERE j.key IN (${placeholders})
-      AND ja.field = $${childCount + 1}
+      AND ja.symbol = $${childCount + 1} AND ja.dimension = $${childCount + 2}
   `;
 }

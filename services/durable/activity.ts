@@ -15,7 +15,7 @@ import { DurableActivityContext } from '../../types/durable';
  * export async function processData(data: string): Promise<string> {
  *   const ctx = Durable.activity.getContext();
  *   console.log(`Activity ${ctx.activityName} for workflow ${ctx.workflowId}`);
- *   console.log(`Metadata:`, ctx.argumentMetadata);
+ *   console.log(`Metadata:`, ctx.headers);
  *   return `Processed: ${data}`;
  * }
  * ```
@@ -38,7 +38,7 @@ export class ActivityService {
     return {
       activityName: store.get('activityName'),
       arguments: store.get('arguments'),
-      argumentMetadata: store.get('argumentMetadata') ?? {},
+      headers: store.get('headers') ?? {},
       workflowId: store.get('workflowId'),
       workflowTopic: store.get('workflowTopic'),
     };

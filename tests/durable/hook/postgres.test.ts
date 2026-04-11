@@ -179,8 +179,9 @@ describe('DURABLE | hook & search | Postgres', () => {
           workflows.example.name,
           namespace,
           'sql',
-          'SELECT job_id FROM staging.jobs_attributes WHERE field = $1 and value = $2',
+          'SELECT job_id FROM staging.jobs_attributes WHERE symbol = $1 AND dimension = $2 AND value = $3',
           '_custom1',
+          '',
           'durable',
         )) as unknown as { job_id: string }[];
         expect(results.length).toEqual(1);

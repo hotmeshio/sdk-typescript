@@ -3,12 +3,12 @@ import { isSideEffectAllowed } from './isSideEffectAllowed';
 
 /**
  * Sends a signal payload to a paused workflow thread that is awaiting this
- * `signalId` via `waitFor()`. Signals are the primary mechanism for
+ * `signalId` via `condition()`. Signals are the primary mechanism for
  * inter-workflow communication and for delivering results from hook
  * functions back to the orchestrating workflow.
  *
  * `signal` is the **send** side of the coordination pair. The **receive**
- * side is `waitFor()`. A signal can be sent from:
+ * side is `condition()`. A signal can be sent from:
  * - Another workflow function
  * - A hook function (most common pattern with `execHook`)
  * - An external client via `Durable.Client.workflow.signal()`
@@ -43,7 +43,7 @@ import { isSideEffectAllowed } from './isSideEffectAllowed';
  *   const { prepareData } = Durable.workflow.proxyActivities<typeof activities>();
  *   const data = await prepareData();
  *
- *   // Signal another workflow that is paused on waitFor('data-ready')
+ *   // Signal another workflow that is paused on condition('data-ready')
  *   await Durable.workflow.signal('data-ready', { payload: data });
  * }
  * ```
@@ -54,7 +54,7 @@ import { isSideEffectAllowed } from './isSideEffectAllowed';
  * await client.workflow.signal('approval-signal', { approved: true });
  * ```
  *
- * @param {string} signalId - Unique signal identifier that matches a `waitFor()` call.
+ * @param {string} signalId - Unique signal identifier that matches a `condition()` call.
  * @param {Record<any, any>} data - The payload to deliver to the waiting workflow.
  * @returns {Promise<string>} The resulting hook/stream ID.
  */

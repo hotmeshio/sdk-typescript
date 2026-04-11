@@ -7,7 +7,7 @@ import { isSideEffectAllowed } from './isSideEffectAllowed';
 import { trace } from './trace';
 import { enrich } from './enrich';
 import { emit } from './emit';
-import { execChild, executeChild, startChild } from './execChild';
+import { executeChild, startChild } from './executeChild';
 import { execHook } from './execHook';
 import { execHookBatch } from './execHookBatch';
 import { proxyActivities } from './proxyActivities';
@@ -18,41 +18,34 @@ import { hook } from './hook';
 import { interrupt } from './interrupt';
 import { didInterrupt } from './interruption';
 import { all } from './all';
-import { sleepFor } from './sleepFor';
-import { waitFor } from './waitFor';
+import { sleep } from './sleep';
+import { condition } from './condition';
+import { continueAsNew } from './continueAsNew';
+import { patched, deprecatePatch } from './patched';
+import { CancellationScope, CancelledFailure, isCancellation } from './cancellationScope';
 import { asyncLocalStorage, WorkerService, HotMesh } from './common';
 import { entity } from './entityMethods';
 
 /**
- * The workflow-internal API surface, exposed as `Durable.workflow`. Every
- * method on this class is designed to be called **inside** a workflow
- * function — they participate in deterministic replay and durable state
- * management.
+ * In-workflow API surface, exposed as `Durable.workflow`. Every method
+ * is called **inside** a workflow function and participates in
+ * deterministic replay — results are persisted and returned instantly
+ * on recovery without re-executing side effects.
  *
- * ## Core Primitives
- *
- * | Method | Purpose |
- * |--------|---------|
- * | {@link proxyActivities} | Create durable activity proxies with retry |
- * | {@link sleepFor} | Durable, crash-safe sleep |
- * | {@link waitFor} | Pause until a signal is received |
- * | {@link signal} | Send data to a waiting workflow |
- * | {@link execChild} | Spawn and await a child workflow |
- * | {@link startChild} | Spawn a child workflow (fire-and-forget) |
- * | {@link execHook} | Spawn a hook and await its signal response |
- * | {@link execHookBatch} | Spawn multiple hooks in parallel |
- * | {@link hook} | Low-level hook spawning |
- * | {@link interrupt} | Terminate a running workflow |
- *
- * ## Data & Observability
+ * ## Primitives
  *
  * | Method | Purpose |
  * |--------|---------|
- * | {@link search} | Read/write flat HASH key-value data |
- * | {@link enrich} | One-shot HASH enrichment |
- * | {@link entity} | Structured JSONB document storage |
- * | {@link emit} | Publish events to the event bus |
- * | {@link trace} | Emit OpenTelemetry trace spans |
+ * | {@link proxyActivities} | Execute activities with automatic retry |
+ * | {@link sleep} | Durable timer (survives restarts) |
+ * | {@link condition} | Pause until a named signal arrives (optional timeout) |
+ * | {@link signal} | Deliver data to a waiting `condition` |
+ * | {@link executeChild} | Spawn a child workflow and await its result |
+ * | {@link startChild} | Fire-and-forget child workflow |
+ * | {@link continueAsNew} | Restart with new args (resets history) |
+ * | {@link patched} / {@link deprecatePatch} | Safe versioning for in-flight code changes |
+ * | {@link CancellationScope} | Shield cleanup code from cancellation |
+ * | {@link isCancellation} | Detect `CancelledFailure` errors |
  *
  * ## Utilities
  *
@@ -61,7 +54,7 @@ import { entity } from './entityMethods';
  * | {@link getContext} | Access workflow ID, namespace, replay state |
  * | {@link random} | Deterministic pseudo-random numbers |
  * | {@link all} | Workflow-safe `Promise.all` |
- * | {@link didInterrupt} | Type guard for engine control-flow errors |
+ * | {@link didInterrupt} | Detect engine control-flow errors |
  *
  * ## Example
  *
@@ -70,7 +63,6 @@ import { entity } from './entityMethods';
  * import * as activities from './activities';
  *
  * export async function orderWorkflow(orderId: string): Promise<string> {
- *   // Proxy activities for durable execution
  *   const { validateOrder, processPayment, sendReceipt } =
  *     Durable.workflow.proxyActivities<typeof activities>({
  *       activities,
@@ -78,18 +70,13 @@ import { entity } from './entityMethods';
  *     });
  *
  *   await validateOrder(orderId);
- *
- *   // Durable sleep (survives restarts)
- *   await Durable.workflow.sleepFor('5 seconds');
- *
+ *   await Durable.workflow.sleep('5 seconds');
  *   const receipt = await processPayment(orderId);
  *
- *   // Store searchable metadata
- *   await Durable.workflow.enrich({ orderId, status: 'paid' });
- *
- *   // Wait for external approval signal
- *   const approval = await Durable.workflow.waitFor<{ ok: boolean }>('approve');
- *   if (!approval.ok) return 'cancelled';
+ *   // Wait for external approval signal (with 1-hour timeout)
+ *   const approval = await Durable.workflow.condition<{ ok: boolean }>('approve', '1 hour');
+ *   if (!approval) return 'timed-out';
+ *   if (!approval.ok) return 'rejected';
  *
  *   await sendReceipt(orderId, receipt);
  *   return receipt;
@@ -110,7 +97,6 @@ export class WorkflowService {
   static trace = trace;
   static enrich = enrich;
   static emit = emit;
-  static execChild = execChild;
   static executeChild = executeChild;
   static startChild = startChild;
   static execHook = execHook;
@@ -124,8 +110,14 @@ export class WorkflowService {
   static didInterrupt = didInterrupt;
   static interrupt = interrupt;
   static all = all;
-  static sleepFor = sleepFor;
-  static waitFor = waitFor;
+  static sleep = sleep;
+  static condition = condition;
+  static continueAsNew = continueAsNew;
+  static patched = patched;
+  static deprecatePatch = deprecatePatch;
+  static CancellationScope = CancellationScope;
+  static CancelledFailure = CancelledFailure;
+  static isCancellation = isCancellation;
 
   /**
    * Return a handle to the HotMesh client hosting the workflow execution.

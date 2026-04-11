@@ -11,28 +11,24 @@ import { StreamError } from '../../types/stream';
 import { ExporterService } from './exporter';
 
 /**
- * The WorkflowHandleService provides methods to interact with a running
- * workflow. This includes exporting the workflow, sending signals, and
- * querying the state of the workflow. It is instanced/accessed via the
- * Durable.Client class.
+ * Handle to a running or completed workflow execution. Returned by
+ * `client.workflow.start()` and `client.workflow.getHandle()`.
  *
  * @example
  * ```typescript
- * import { Client } from '@hotmeshio/hotmesh';
- * import { Client as Postgres } from 'pg';
- *
- * const client = new Client({ connection: {
- *   class: Postgres,
- *   options: { connectionString: 'postgres://user:pass@localhost:5432/db' }
- * }});
- *
  * const handle = await client.workflow.start({
- *  args: ['HotMesh'],
- *  taskQueue: 'hello-world',
+ *   args: ['order-123'],
+ *   taskQueue: 'orders',
+ *   workflowName: 'orderWorkflow',
+ *   workflowId: Durable.guid(),
  * });
  *
- * //perform actions like send a signal
- * await handle.signal('my-signal', { data: 'Hello' });
+ * // Await the final result
+ * const result = await handle.result();
+ *
+ * // Or interact while running
+ * await handle.signal('approval', { approved: true });
+ * await handle.cancel();
  * ```
  */
 export class WorkflowHandleService {
@@ -59,7 +55,8 @@ export class WorkflowHandleService {
   }
 
   /**
-   * Exports the workflow state to a JSON object.
+   * Exports the full workflow state (job hash, metadata, activity
+   * results) as a JSON object.
    */
   async export(options?: ExportOptions): Promise<DurableJobExport> {
     return this.exporter.export(this.workflowId, options);
@@ -86,10 +83,12 @@ export class WorkflowHandleService {
   }
 
   /**
-   * Sends a signal to the workflow. This is a way to send
-   * a message to a workflow that is paused due to having
-   * executed `Durable.workflow.waitFor`. The workflow
-   * will awaken if no other signals are pending.
+   * Delivers a named signal to the workflow. If the workflow is paused
+   * on `Durable.workflow.condition(signalId)`, it resumes with the
+   * provided data.
+   *
+   * @param signalId - Matches the `signalId` passed to `condition()`.
+   * @param data - Payload delivered to the waiting workflow.
    */
   async signal(signalId: string, data: Record<any, any>): Promise<void> {
     await this.hotMesh.signal(`${this.hotMesh.appId}.wfs.signal`, {
@@ -99,10 +98,12 @@ export class WorkflowHandleService {
   }
 
   /**
-   * Returns the job state of the workflow. If the workflow has completed
-   * this is also the job output. If the workflow is still running, this
-   * is the current state of the job, but it may change depending upon
-   * the activities that remain.
+   * Returns the current workflow state. For a completed workflow this
+   * is the final output; for a running workflow it reflects the latest
+   * persisted state (may change as activities complete).
+   *
+   * @param metadata - If `true`, returns the full job envelope including
+   *   internal metadata alongside the data.
    */
   async state(metadata = false): Promise<Record<string, any>> {
     const state = await this.hotMesh.getState(
@@ -116,28 +117,28 @@ export class WorkflowHandleService {
   }
 
   /**
-   * Returns the current search state of the workflow. This is
-   * different than the job state or individual activity state.
-   * Search state represents name/value pairs that were added
-   * to the workflow.
+   * Returns key-value pairs previously written via
+   * `Durable.workflow.search()` or `Durable.workflow.enrich()`.
+   *
+   * @param fields - The field names to retrieve.
    */
   async queryState(fields: string[]): Promise<Record<string, any>> {
     return await this.hotMesh.getQueryState(this.workflowId, fields);
   }
 
   /**
-   * Returns the current status of the workflow. This is a semaphore
-   * value that represents the current state of the workflow, where
-   * 0 is complete and a negative value represents that the flow was
-   * interrupted.
+   * Returns the workflow's numeric status code: `0` = completed,
+   * positive = still running, negative = interrupted/errored.
    */
   async status(): Promise<number> {
     return await this.hotMesh.getStatus(this.workflowId);
   }
 
   /**
-   * Interrupts a running workflow. Standard Job Completion tasks will
-   * run. Subscribers will be notified and the job hash will be expired.
+   * Immediately terminates the workflow. The job is marked as interrupted,
+   * subscribers are notified, and the job hash is expired. Unlike
+   * {@link cancel}, this does **not** give the workflow a chance to
+   * run cleanup code.
    */
   async interrupt(options?: JobInterruptOptions): Promise<string> {
     return await this.hotMesh.interrupt(
@@ -148,10 +149,30 @@ export class WorkflowHandleService {
   }
 
   /**
-   * Waits for the workflow to complete and returns the result. If
-   * the workflow response includes an error, this method will rethrow
-   * the error, including the stack trace if available.
-   * Wrap calls in a try/catch as necessary to avoid unhandled exceptions.
+   * Requests cooperative cancellation of the workflow. Unlike
+   * `interrupt()` (which terminates immediately), `cancel()` sets
+   * a durable flag that the workflow detects at its next durable
+   * operation (`sleep`, `proxyActivities`, `executeChild`, etc.).
+   * The workflow receives a `CancelledFailure` error that it can
+   * catch to perform cleanup before exiting.
+   *
+   * ```typescript
+   * const handle = await client.workflow.start({ ... });
+   * await handle.cancel();
+   * // Workflow will throw CancelledFailure at its next durable operation
+   * ```
+   */
+  async cancel(): Promise<void> {
+    await this.hotMesh.cancel(this.workflowId);
+  }
+
+  /**
+   * Blocks until the workflow completes and returns the result. If the
+   * workflow failed, the error is rethrown (with stack trace) unless
+   * `throwOnError: false` is set, in which case the error object is
+   * returned directly.
+   *
+   * @template T - The workflow's return type.
    */
   async result<T>(config?: {
     state?: boolean;

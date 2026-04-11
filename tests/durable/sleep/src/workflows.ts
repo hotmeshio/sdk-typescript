@@ -14,11 +14,11 @@ export async function example(name: string): Promise<string> {
   //run a proxy activity
   const yo = await greet(name);
 
-  //ALWAYS use Durable.workflow.sleepFor as its deterministic
-  await Durable.workflow.sleepFor('1 seconds');
+  //ALWAYS use Durable.workflow.sleep as its deterministic
+  await Durable.workflow.sleep('1 seconds');
 
   //sleep for 2 more
-  await Durable.workflow.sleepFor('2 seconds');
+  await Durable.workflow.sleep('2 seconds');
 
   return yo;
 }

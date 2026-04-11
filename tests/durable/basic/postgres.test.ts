@@ -13,6 +13,7 @@ import {
 } from '../../../types/exporter';
 
 import * as workflows from './src/workflows';
+import greet, { remoteProcess } from './src/activities';
 
 const { Connection, Client, Worker } = Durable;
 
@@ -62,6 +63,30 @@ describe('DURABLE | baseline | Postgres', () => {
       });
       await worker.run();
     }
+
+    // Feature 15: Worker-registered activities
+    // Activities passed via config.activities, NOT via proxyActivities({ activities })
+    const workerRegisteredWorker = await Worker.create({
+      connection,
+      taskQueue,
+      workflow: workflows.testWorkerRegisteredActivity,
+      activities: { greet },
+    });
+    await workerRegisteredWorker.run();
+
+    // Feature 16: VNF-style remote activity worker
+    // Registered on a separate task queue — workflow references by type only
+    await Durable.registerActivityWorker(
+      { connection, taskQueue: 'vnf-activities' },
+      { remoteProcess },
+      'vnf-activities',
+    );
+    const vnfWorker = await Worker.create({
+      connection,
+      taskQueue,
+      workflow: workflows.testVnfActivity,
+    });
+    await vnfWorker.run();
   }, 60_000);
 
   afterAll(async () => {
@@ -327,7 +352,7 @@ describe('DURABLE | baseline | Postgres', () => {
     }, 45_000);
   });
 
-  // ──── exportExecution: Temporal-like event history ────
+  // ──── exportExecution: event history ────
 
   const EXPORT_DEBUG = !!process.env.EXPORT_DEBUG;
 
@@ -666,5 +691,77 @@ describe('DURABLE | baseline | Postgres', () => {
       expect(verbose.children).toBeInstanceOf(Array);
       expect(verbose.children?.length).toBeGreaterThanOrEqual(1);
     }, 25_000);
+  });
+
+  // ──── Worker-registered activities & VNF patterns ────
+
+  describe('Feature: worker-registered activities', () => {
+    it('should call an activity registered via Worker.create({ activities }) without passing activities to proxyActivities', async () => {
+      const handle = await client.workflow.start({
+        args: ['WorkerRegistered'],
+        taskQueue,
+        workflowName: 'testWorkerRegisteredActivity',
+        workflowId: 'test-worker-activity-' + guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      expect(result).toEqual({ complex: 'Basic, WorkerRegistered!' });
+    }, 15_000);
+  });
+
+  describe('Feature: VNF-style remote activity', () => {
+    it('should call a type-only proxy activity on a remote task queue', async () => {
+      const handle = await client.workflow.start({
+        args: ['RemoteData'],
+        taskQueue,
+        workflowName: 'testVnfActivity',
+        workflowId: 'test-vnf-' + guid(),
+        expire: 120,
+      });
+      const result = await handle.result();
+      expect(result).toBe('vnf-processed:RemoteData');
+    }, 15_000);
+  });
+
+  describe('Feature: late worker registration (router replay)', () => {
+    it('should complete a workflow started before its worker registers', async () => {
+      // Start workflow BEFORE its worker exists — the router will
+      // replay the message with a 500ms visibility delay until the
+      // worker registers and the callback is found.
+      const handle = await client.workflow.start({
+        args: ['LateWorker'],
+        taskQueue,
+        workflowName: 'testLateRegistration',
+        workflowId: 'test-late-reg-' + guid(),
+        expire: 120,
+      });
+
+      // Give the message time to be consumed and replayed at least once
+      await sleepFor(2_000);
+
+      // NOW register the worker — the replayed message will find it
+      const lateWorker = await Worker.create({
+        connection,
+        taskQueue,
+        workflow: workflows.testLateRegistration,
+        activities: { greet },
+      });
+      await lateWorker.run();
+
+      // The workflow should complete successfully despite late registration
+      const result = await handle.result();
+      expect(result).toEqual({ complex: 'Basic, LateWorker!' });
+    }, 30_000);
+  });
+
+  describe('Feature: connection pool sharing', () => {
+    it('should share Postgres connections across workers on the same task queue', () => {
+      const stats = PostgresConnection.getPoolingEffectiveness();
+      // Multiple workers on basic-world should share connection pools
+      expect(stats.totalReuses).toBeGreaterThan(0);
+      expect(stats.taskQueuePools).toBeGreaterThan(0);
+      // Efficiency > 0 means pools are being reused
+      expect(stats.poolingEfficiency).toBeGreaterThan(0);
+    });
   });
 });

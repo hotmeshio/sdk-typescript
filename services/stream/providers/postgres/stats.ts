@@ -149,6 +149,7 @@ export function getProviderSpecificFeatures(config: StreamConfig = {}) {
     supportsTrimming: true,
     supportsRetry: false,
     supportsNotifications: isNotificationsEnabled(config),
+    supportsParallelProcessing: true,
     maxMessageSize: 1024 * 1024,
     maxBatchSize: 256,
   };

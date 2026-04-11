@@ -5,7 +5,51 @@ import { LogLevel } from '../types/logger';
  */
 export const HMSH_LOGLEVEL = (process.env.HMSH_LOGLEVEL as LogLevel) || 'info';
 /**
- * Determines the log level for telemetry. The default is 'info' which emits worker and trigger spans. 'debug' emits all spans.
+ * Controls which OpenTelemetry spans are emitted. Spans are only
+ * captured when an OTel SDK (TracerProvider + exporter) is registered
+ * before workers start. Without an SDK, all span calls are no-ops.
+ *
+ * ## Modes
+ *
+ * | Value | Durable workflows | YAML flows |
+ * |-------|-------------------|------------|
+ * | `'info'` (default) | `WORKFLOW/START`, `WORKFLOW/COMPLETE`, `WORKFLOW/ERROR`, `ACTIVITY/{name}` | trigger + worker spans |
+ * | `'debug'` | All `info` spans + `DISPATCH/{type}/{name}/{idx}`, `RETURN/{type}/{name}/{idx}` + engine internals | All activity types + all stream hops |
+ *
+ * ## Setup
+ *
+ * Register an OpenTelemetry SDK with a trace exporter **before**
+ * calling `Durable.Worker.create()`. Any OTLP-compatible backend
+ * works (Honeycomb, Jaeger, Grafana Tempo, etc.):
+ *
+ * ```typescript
+ * import { NodeSDK } from '@opentelemetry/sdk-node';
+ * import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+ * import { resourceFromAttributes } from '@opentelemetry/resources';
+ * import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
+ *
+ * const sdk = new NodeSDK({
+ *   resource: resourceFromAttributes({
+ *     [ATTR_SERVICE_NAME]: 'my-service',
+ *   }),
+ *   traceExporter: new OTLPTraceExporter({
+ *     url: 'https://api.honeycomb.io/v1/traces',
+ *     headers: { 'x-honeycomb-team': process.env.HONEYCOMB_API_KEY },
+ *   }),
+ * });
+ * sdk.start();
+ *
+ * // Then start workers — spans flow automatically
+ * await Durable.Worker.create({ ... });
+ * ```
+ *
+ * ```bash
+ * # Concise: workflow lifecycle + activity execution only
+ * HMSH_TELEMETRY=info node worker.js
+ *
+ * # Verbose: adds per-operation DISPATCH/RETURN spans + engine internals
+ * HMSH_TELEMETRY=debug node worker.js
+ * ```
  */
 export const HMSH_TELEMETRY =
   (process.env.HMSH_TELEMETRY as 'info' | 'debug') || 'info';
@@ -39,6 +83,10 @@ export const HMSH_CODE_DURABLE_CHILD = 590;
  * This is thrown when a Durable has been interrupted by a proxyActivity call.
  */
 export const HMSH_CODE_DURABLE_PROXY = 591;
+/**
+ * This is thrown when a Durable has been interrupted by a continueAsNew call.
+ */
+export const HMSH_CODE_DURABLE_CONTINUE = 592;
 /**
  * This is thrown when a Durable has been interrupted by a waitForSignal call.
  */
@@ -109,9 +157,9 @@ export const HMSH_GRADUATED_INTERVAL_MS =
 // DURABLE
 /**
  * The maximum number of attempts to retry a Durable job before it is considered failed.
- * @default 3
+ * @default 50
  */
-export const HMSH_DURABLE_MAX_ATTEMPTS = 3;
+export const HMSH_DURABLE_MAX_ATTEMPTS = 50;
 /**
  * The maximum interval to wait before retrying a Durable job.
  * @default 120s
@@ -119,9 +167,16 @@ export const HMSH_DURABLE_MAX_ATTEMPTS = 3;
 export const HMSH_DURABLE_MAX_INTERVAL = '120s';
 /**
  * The exponential backoff factor to apply to the interval between retries.
- * @default 10
+ * @default 5
  */
-export const HMSH_DURABLE_EXP_BACKOFF = 10;
+export const HMSH_DURABLE_EXP_BACKOFF = 5;
+/**
+ * The initial interval (in seconds) before the first retry attempt.
+ * The retry formula is: initialInterval * backoffCoefficient^retryCount,
+ * clamped by maximumInterval.
+ * @default 1
+ */
+export const HMSH_DURABLE_INITIAL_INTERVAL = 1;
 
 const BASE_BLOCK_DURATION = 10000;
 const TEST_BLOCK_DURATION = 1000;

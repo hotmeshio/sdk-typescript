@@ -11,13 +11,20 @@ import { StreamData, StreamError } from './stream';
 type WorkflowConfig = {
   /**
    * Backoff coefficient for retry mechanism.
-   * @default 10 (HMSH_DURABLE_EXP_BACKOFF)
+   * @default 5 (HMSH_DURABLE_EXP_BACKOFF)
    */
   backoffCoefficient?: number;
 
   /**
+   * Initial interval before the first retry attempt.
+   * Formula: initialInterval * backoffCoefficient^retryCount, clamped by maximumInterval.
+   * @default '1s' (HMSH_DURABLE_INITIAL_INTERVAL)
+   */
+  initialInterval?: string;
+
+  /**
    * Maximum number of attempts for retries.
-   * @default 5 (HMSH_DURABLE_MAX_ATTEMPTS)
+   * @default 50 (HMSH_DURABLE_MAX_ATTEMPTS)
    */
   maximumAttempts?: number;
 
@@ -137,8 +144,8 @@ type DurableActivityContext = {
   activityName: string;
   /** The arguments passed to the activity */
   arguments: any[];
-  /** Optional metadata provided via `proxyActivities({ argumentMetadata })` */
-  argumentMetadata: Record<string, any>;
+  /** Optional metadata provided via `proxyActivities({ headers })` */
+  headers: Record<string, any>;
   /** The workflow ID of the parent workflow that dispatched this activity */
   workflowId: string;
   /** The workflow topic of the parent workflow */
@@ -446,7 +453,8 @@ type SignalOptions = {
 type ActivityWorkflowDataType = {
   activityName: string;
   arguments: any[];
-  argumentMetadata?: Record<string, any>;
+  headers?: Record<string, any>;
+  startToCloseTimeout?: number;
   workflowId: string;
   workflowTopic: string;
 };
@@ -459,6 +467,7 @@ type WorkflowDataType = {
   originJobId?: string; //is present if there is an originating ancestor job
   canRetry?: boolean;
   expire?: number;
+  continueGeneration?: number; //incremented on each continueAsNew cycle
 };
 
 type Connection = ProviderConfig | ProvidersConfig;
@@ -486,6 +495,15 @@ type WorkerConfig = {
   /** Target function or a record type with a name (string) and reference function */
   workflow: Function | Record<string | symbol, Function>;
 
+  /**
+   * Optional activity functions to register with this worker's task queue.
+   * When provided, these activities are registered and served on `{taskQueue}-activity`.
+   * Workflows can then call them via `proxyActivities()` without passing activities inline.
+   *
+   * Workflows can then call them via `proxyActivities()` without passing activities inline.
+   */
+  activities?: Record<string, Function>;
+
   /** Additional options for configuring the worker */
   options?: WorkerOptions;
 
@@ -498,6 +516,17 @@ type WorkerConfig = {
    * when identifying the point of presence within the mesh.
    */
   guid?: string;
+
+  /**
+   * Scoped Postgres credentials for database-level worker isolation.
+   * When provided, the worker connects as a restricted Postgres role
+   * that can only dequeue/ack/respond on its allowed stream names
+   * via SECURITY DEFINER stored procedures.
+   *
+   * Provision credentials via `HotMesh.provisionWorkerRole()` (or
+   * the convenience alias `Durable.provisionWorkerRole()`).
+   */
+  workerCredentials?: { user: string; password: string };
 };
 
 type FindWhereQuery = {
@@ -550,11 +579,14 @@ type WorkerOptions = {
   /** Log level: debug, info, warn, error */
   logLevel?: LogLevel;
 
-  /** Maximum number of attempts, default 5 (HMSH_DURABLE_MAX_ATTEMPTS) */
+  /** Maximum number of attempts, default 50 (HMSH_DURABLE_MAX_ATTEMPTS) */
   maximumAttempts?: number;
 
   /** Backoff coefficient for retry logic, default 10 (HMSH_DURABLE_EXP_BACKOFF) */
   backoffCoefficient?: number;
+
+  /** Initial interval before the first retry, default '1s' (HMSH_DURABLE_INITIAL_INTERVAL) */
+  initialInterval?: string;
 
   /** Maximum interval between retries, default 120s (HMSH_DURABLE_MAX_INTERVAL) */
   maximumInterval?: string;
@@ -579,7 +611,7 @@ type ActivityConfig = {
   /** place holder setting; unused at this time (re: activity workflow expire configuration) */
   expire?: number;
 
-  /** Start to close timeout for the activity; not yet implemented */
+  /** Maximum time an activity can run after starting execution. If exceeded, the activity fails with a timeout error. Accepts duration strings (e.g., '30s', '5m', '1h'). */
   startToCloseTimeout?: string;
 
   /** Configuration for specific activities, type not yet specified */
@@ -621,15 +653,17 @@ type ActivityConfig = {
   /** Optional metadata to pass alongside activity arguments. This metadata
    *  is transported as a dedicated schema field (not inside args) and made
    *  available to the activity function via `Durable.activity.getContext()`. */
-  argumentMetadata?: Record<string, any>;
+  headers?: Record<string, any>;
 
   /** Retry policy configuration for activities */
   retryPolicy?: {
-    /** Maximum number of retry attempts, default is 5 (HMSH_DURABLE_MAX_ATTEMPTS) */
+    /** Maximum number of retry attempts, default is 50 (HMSH_DURABLE_MAX_ATTEMPTS) */
     maximumAttempts?: number;
-    /** Factor by which the retry timeout increases, default is 10 (HMSH_DURABLE_MAX_INTERVAL) */
+    /** Factor by which the retry timeout increases, default is 10 (HMSH_DURABLE_EXP_BACKOFF) */
     backoffCoefficient?: number;
-    /** Maximum interval between retries, default is '120s' (HMSH_DURABLE_EXP_BACKOFF) */
+    /** Initial interval before the first retry. Formula: initialInterval * backoffCoefficient^retryCount, clamped by maximumInterval. Default is '1s' */
+    initialInterval?: string;
+    /** Maximum interval between retries, default is '120s' (HMSH_DURABLE_MAX_INTERVAL) */
     maximumInterval?: string;
     /** Whether to throw an error on failure, default is true */
     throwOnError?: boolean;
@@ -695,7 +729,7 @@ interface ClientWorkflow {
  * @example
  * ```typescript
  * // Simple logging interceptor
- * const loggingInterceptor: WorkflowInterceptor = {
+ * const loggingInterceptor: WorkflowInboundCallsInterceptor = {
  *   async execute(ctx, next) {
  *     console.log('Before workflow');
  *     try {
@@ -713,7 +747,7 @@ interface ClientWorkflow {
  * Durable.registerInterceptor(loggingInterceptor);
  * ```
  */
-export interface WorkflowInterceptor {
+export interface WorkflowInboundCallsInterceptor {
   /**
    * Called before workflow execution to wrap the workflow in custom logic
    *
@@ -755,24 +789,30 @@ export interface WorkflowInterceptor {
  */
 export interface InterceptorRegistry {
   /**
-   * Array of registered workflow interceptors that will wrap workflow execution
+   * Array of registered inbound interceptors that will wrap workflow execution
    * in the order they were registered (first registered = outermost wrapper).
    */
-  interceptors: WorkflowInterceptor[];
+  inbound: WorkflowInboundCallsInterceptor[];
 
   /**
-   * Array of registered activity interceptors that will wrap individual
+   * Array of registered outbound interceptors that will wrap individual
    * proxied activity calls in the order they were registered
    * (first registered = outermost wrapper).
    */
-  activityInterceptors: ActivityInterceptor[];
+  outbound: WorkflowOutboundCallsInterceptor[];
+
+  /**
+   * Array of registered activity inbound interceptors that wrap the actual
+   * activity function execution on the activity worker side.
+   */
+  activityInbound: ActivityInboundCallsInterceptor[];
 }
 
 /**
  * Context provided to an activity interceptor, containing metadata
  * about the proxied activity being invoked.
  */
-export interface ActivityInterceptorContext {
+export interface WorkflowOutboundCallsInterceptorContext {
   /** The name of the activity function being called */
   activityName: string;
   /** The arguments passed to the activity call */
@@ -805,7 +845,7 @@ export interface ActivityInterceptorContext {
  *
  * @example
  * ```typescript
- * const auditInterceptor: ActivityInterceptor = {
+ * const auditInterceptor: WorkflowOutboundCallsInterceptor = {
  *   async execute(activityCtx, workflowCtx, next) {
  *     const { auditLog } = Durable.workflow.proxyActivities<{
  *       auditLog: (id: string, action: string) => Promise<void>;
@@ -821,23 +861,66 @@ export interface ActivityInterceptorContext {
  *   },
  * };
  *
- * Durable.registerActivityInterceptor(auditInterceptor);
+ * Durable.registerWorkflowOutboundCallsInterceptor(auditInterceptor);
  * ```
  */
-export interface ActivityInterceptor {
+export interface WorkflowOutboundCallsInterceptor {
   /**
    * Called around each proxied activity invocation. Code before `next()`
    * runs in the before phase; code after `next()` runs in the after phase
    * once the activity result is available on replay.
    *
    * @param activityCtx - Metadata about the activity being called (args may be modified)
-   * @param workflowCtx - The workflow context map (same as WorkflowInterceptor receives)
+   * @param workflowCtx - The workflow context map (same as WorkflowInboundCallsInterceptor receives)
    * @param next - Call to proceed to the next interceptor or the core activity function
    * @returns The activity result (from replay or after interruption/re-execution)
    */
   execute(
-    activityCtx: ActivityInterceptorContext,
+    activityCtx: WorkflowOutboundCallsInterceptorContext,
     workflowCtx: Map<string, any>,
+    next: () => Promise<any>,
+  ): Promise<any>;
+}
+
+/**
+ * Interceptor for activity function execution on the activity worker side.
+ * Runs inside the activity's `activityAsyncLocalStorage` context, wrapping
+ * the actual activity function invocation — not the proxy call in the workflow.
+ *
+ * Unlike workflow-side interceptors, this runs where the activity actually executes.
+ * Use it for cross-cutting concerns like logging, metrics, auth validation,
+ * or error enrichment at the point where the activity actually executes.
+ *
+ * @example
+ * ```typescript
+ * Durable.registerActivityInboundInterceptor({
+ *   async execute(activityName, args, next) {
+ *     console.log(`Activity ${activityName} starting with`, args);
+ *     const start = Date.now();
+ *     try {
+ *       const result = await next();
+ *       console.log(`Activity ${activityName} completed in ${Date.now() - start}ms`);
+ *       return result;
+ *     } catch (err) {
+ *       console.error(`Activity ${activityName} failed`, err);
+ *       throw err;
+ *     }
+ *   }
+ * });
+ * ```
+ */
+export interface ActivityInboundCallsInterceptor {
+  /**
+   * Called around the actual activity function execution on the worker.
+   *
+   * @param activityName - The name of the activity being executed
+   * @param args - The arguments passed to the activity
+   * @param next - Call to execute the next interceptor or the activity itself
+   * @returns The activity function's return value
+   */
+  execute(
+    activityName: string,
+    args: any[],
     next: () => Promise<any>,
   ): Promise<any>;
 }
