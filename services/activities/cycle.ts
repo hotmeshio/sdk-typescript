@@ -1,24 +1,11 @@
-import {
-  CollationError,
-  GenerationalError,
-  GetStateError,
-  InactiveJobError,
-} from '../../modules/errors';
 import { guid } from '../../modules/utils';
 import { CollatorService } from '../collator';
-import { EngineService } from '../engine';
 import { TelemetryService } from '../telemetry';
-import {
-  ActivityData,
-  ActivityMetadata,
-  ActivityType,
-  CycleActivity,
-} from '../../types/activity';
+import { CycleActivity } from '../../types/activity';
 import {
   ProviderTransaction,
   TransactionResultList,
 } from '../../types/provider';
-import { JobState } from '../../types/job';
 import { StreamData } from '../../types/stream';
 
 import { Activity } from './activity';
@@ -108,18 +95,6 @@ import { Activity } from './activity';
 class Cycle extends Activity {
   config: CycleActivity;
 
-  constructor(
-    config: ActivityType,
-    data: ActivityData,
-    metadata: ActivityMetadata,
-    hook: ActivityData | null,
-    engine: EngineService,
-    context?: JobState,
-  ) {
-    super(config, data, metadata, hook, engine, context);
-  }
-
-  //********  LEG 1 ENTRY  ********//
   async process(): Promise<string> {
     this.logger.debug('cycle-process', {
       jid: this.context.metadata.jid,
@@ -139,10 +114,9 @@ class Cycle extends Activity {
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
 
-      //set state/status, cycle ancestor, and mark Leg1 complete — single transaction
       const transaction = this.store.transact();
       await this.setState(transaction);
-      await this.setStatus(0, transaction); //leg 1 never changes job status
+      await this.setStatus(0, transaction);
       const messageId = await this.cycleAncestorActivity(transaction);
       await CollatorService.notarizeLeg1Completion(this, transaction);
       const txResponse = (await transaction.exec()) as TransactionResultList;
@@ -155,30 +129,8 @@ class Cycle extends Activity {
 
       return this.context.metadata.aid;
     } catch (error) {
-      if (error instanceof InactiveJobError) {
-        this.logger.error('cycle-inactive-job-error', { error });
-        return;
-      } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
-        return;
-      } else if (error instanceof GetStateError) {
-        this.logger.error('cycle-get-state-error', { error });
-        return;
-      } else if (error instanceof CollationError) {
-        if (error.fault === 'duplicate') {
-          this.logger.info('cycle-collation-overage', {
-            job_id: this.context.metadata.jid,
-            guid: this.context.metadata.guid,
-          });
-          return;
-        }
-        //unknown collation error
-        this.logger.error('cycle-collation-error', { error });
-      } else {
-        this.logger.error('cycle-process-error', { error });
-      }
-      telemetry?.setActivityError(error.message);
-      throw error;
+      this.handleProcessError(error, telemetry, 'cycle');
+      return;
     } finally {
       telemetry?.endActivitySpan();
       this.logger.debug('cycle-process-end', {
@@ -189,20 +141,9 @@ class Cycle extends Activity {
     }
   }
 
-  /**
-   * Trigger the target ancestor to execute in a cycle,
-   * without violating the constraints of the DAG. Immutable
-   * `individual activity state` will execute in a new dimensional
-   * thread while `shared job state` can change. This
-   * pattern allows for retries without violating the DAG.
-   */
   async cycleAncestorActivity(
     transaction: ProviderTransaction,
   ): Promise<string> {
-    //Cycle activity L1 is a standin for the target ancestor L1.
-    //Input data mapping (mapInputData) allows for the
-    //next dimensonal thread to execute with different
-    //input data than the current dimensional thread
     this.mapInputData();
     const streamData: StreamData = {
       metadata: {

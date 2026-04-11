@@ -5,17 +5,11 @@ import {
   guid,
 } from '../../modules/utils';
 import { CollatorService } from '../collator';
-import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
 import { ReporterService } from '../reporter';
 import { MDATA_SYMBOLS } from '../serializer';
 import { TelemetryService } from '../telemetry';
-import {
-  ActivityData,
-  ActivityMetadata,
-  ActivityType,
-  TriggerActivity,
-} from '../../types/activity';
+import { TriggerActivity } from '../../types/activity';
 import { JobState, ExtensionType } from '../../types/job';
 import {
   ProviderTransaction,
@@ -83,17 +77,6 @@ import { Activity } from './activity';
  */
 class Trigger extends Activity {
   config: TriggerActivity;
-
-  constructor(
-    config: ActivityType,
-    data: ActivityData,
-    metadata: ActivityMetadata,
-    hook: ActivityData | null,
-    engine: EngineService,
-    context?: JobState,
-  ) {
-    super(config, data, metadata, hook, engine, context);
-  }
 
   async process(options?: ExtensionType): Promise<string> {
     this.logger.debug('trigger-process', {

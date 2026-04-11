@@ -1,21 +1,8 @@
-import {
-  CollationError,
-  GenerationalError,
-  GetStateError,
-  InactiveJobError,
-} from '../../modules/errors';
 import { guid } from '../../modules/utils';
 import { CollatorService } from '../collator';
-import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
 import { TelemetryService } from '../telemetry';
-import {
-  ActivityData,
-  ActivityMetadata,
-  ActivityType,
-  WorkerActivity,
-} from '../../types/activity';
-import { JobState } from '../../types/job';
+import { WorkerActivity } from '../../types/activity';
 import {
   ProviderTransaction,
   TransactionResultList,
@@ -134,18 +121,6 @@ import { Activity } from './activity';
 class Worker extends Activity {
   config: WorkerActivity;
 
-  constructor(
-    config: ActivityType,
-    data: ActivityData,
-    metadata: ActivityMetadata,
-    hook: ActivityData | null,
-    engine: EngineService,
-    context?: JobState,
-  ) {
-    super(config, data, metadata, hook, engine, context);
-  }
-
-  //********  INITIAL ENTRY POINT (A)  ********//
   async process(): Promise<string> {
     this.logger.debug('worker-process', {
       jid: this.context.metadata.jid,
@@ -165,16 +140,13 @@ class Worker extends Activity {
       telemetry.startActivitySpan(this.leg);
       this.mapInputData();
 
-      //save state and mark Leg1 complete
       const transaction = this.store.transact();
-      //todo: await this.registerTimeout();
       const messageId = await this.execActivity(transaction);
       await CollatorService.notarizeLeg1Completion(this, transaction);
       await this.setState(transaction);
       await this.setStatus(0, transaction);
       const txResponse = (await transaction.exec()) as TransactionResultList;
 
-      //telemetry
       telemetry.mapActivityAttributes();
       const jobStatus = this.resolveStatus(txResponse);
       telemetry.setActivityAttributes({
@@ -184,30 +156,8 @@ class Worker extends Activity {
 
       return this.context.metadata.aid;
     } catch (error) {
-      if (error instanceof InactiveJobError) {
-        this.logger.error('await-inactive-job-error', { error });
-        return;
-      } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
-        return;
-      } else if (error instanceof GetStateError) {
-        this.logger.error('worker-get-state-error', { error });
-        return;
-      } else if (error instanceof CollationError) {
-        if (error.fault === 'duplicate') {
-          this.logger.info('worker-collation-overage', {
-            job_id: this.context.metadata.jid,
-            guid: this.context.metadata.guid,
-          });
-          return;
-        }
-        //unknown collation error
-        this.logger.error('worker-collation-error', { error });
-      } else {
-        this.logger.error('worker-process-error', { error });
-      }
-      telemetry?.setActivityError(error.message);
-      throw error;
+      this.handleProcessError(error, telemetry, 'worker');
+      return;
     } finally {
       telemetry?.endActivitySpan();
       this.logger.debug('worker-process-end', {
@@ -220,11 +170,9 @@ class Worker extends Activity {
 
   async execActivity(transaction: ProviderTransaction): Promise<string> {
     const topic = Pipe.resolve(this.config.subtype, this.context);
-    // Extract workflow name from job data (set by durable client) or derive from subscribes
     const jobData = this.context.data as Record<string, unknown>;
     let wfn = (jobData?.workflowName as string) || '';
     if (!wfn && this.config.subscribes) {
-      // Fallback: derive from subscribes by removing topic prefix
       wfn = this.config.subscribes.startsWith(`${topic}-`)
         ? this.config.subscribes.substring(topic.length + 1)
         : this.config.subscribes;
