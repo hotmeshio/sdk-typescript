@@ -4,7 +4,7 @@ import {
   WorkerService,
   StringScalarType,
 } from './common';
-import { getContext } from './context';
+import { workflowInfo } from './workflowInfo';
 import { isSideEffectAllowed } from './isSideEffectAllowed';
 
 /**
@@ -62,7 +62,7 @@ export async function trace(
     connection,
     namespace,
   });
-  const { raw, COUNTER } = getContext();
+  const { raw, COUNTER } = workflowInfo();
   const { trc: traceId, spn: spanId, aid: activityId } = raw.metadata;
 
   if (!config.once || await isSideEffectAllowed(hotMeshClient, 'trace')) {

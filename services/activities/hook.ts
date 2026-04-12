@@ -1,22 +1,10 @@
-import {
-  CollationError,
-  GenerationalError,
-  GetStateError,
-  InactiveJobError,
-} from '../../modules/errors';
 import { CollatorService } from '../collator';
-import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
 import { TaskService } from '../task';
 import { TelemetryService } from '../telemetry';
-import {
-  ActivityData,
-  ActivityMetadata,
-  ActivityType,
-  HookActivity,
-} from '../../types/activity';
+import { HookActivity } from '../../types/activity';
 import { HookRule } from '../../types/hook';
-import { JobState, JobStatus } from '../../types/job';
+import { JobStatus } from '../../types/job';
 import { ProviderTransaction } from '../../types/provider';
 import { StreamCode, StreamStatus } from '../../types/stream';
 
@@ -166,18 +154,6 @@ import { Activity } from './activity';
 class Hook extends Activity {
   config: HookActivity;
 
-  constructor(
-    config: ActivityType,
-    data: ActivityData,
-    metadata: ActivityMetadata,
-    hook: ActivityData | null,
-    engine: EngineService,
-    context?: JobState,
-  ) {
-    super(config, data, metadata, hook, engine, context);
-  }
-
-  //********  INITIAL ENTRY POINT (A)  ********//
   async process(): Promise<string> {
     this.logger.debug('hook-process', {
       jid: this.context.metadata.jid,
@@ -205,7 +181,6 @@ class Hook extends Activity {
         if (!isResume) {
           await this.doHook(telemetry);
         }
-        //If resume, Leg1 already ran — Leg2 will handle completion
       } else {
         //Category B: passthrough with crash-safe step protocol + GUID ledger
         await this.doPassThrough(telemetry);
@@ -213,30 +188,8 @@ class Hook extends Activity {
 
       return this.context.metadata.aid;
     } catch (error) {
-      if (error instanceof InactiveJobError) {
-        this.logger.error('hook-inactive-job-error', { error });
-        return;
-      } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
-        return;
-      } else if (error instanceof GetStateError) {
-        this.logger.error('hook-get-state-error', { error });
-        return;
-      } else if (error instanceof CollationError) {
-        if (error.fault === 'duplicate') {
-          this.logger.info('hook-collation-overage', {
-            job_id: this.context.metadata.jid,
-            guid: this.context.metadata.guid,
-          });
-          return;
-        }
-        //unknown collation error
-        this.logger.error('hook-collation-error', { error });
-      } else {
-        this.logger.error('hook-process-error', { error });
-      }
-      telemetry?.setActivityError(error.message);
-      throw error;
+      this.handleProcessError(error, telemetry, 'hook');
+      return;
     } finally {
       telemetry?.endActivitySpan();
       this.logger.debug('hook-process-end', {
@@ -247,17 +200,10 @@ class Hook extends Activity {
     }
   }
 
-  /**
-   * Static config check: does this activity have a hook or sleep config?
-   * Used for routing before context is loaded.
-   */
   isConfiguredAsHook(): boolean {
     return !!this.config.sleep || !!this.config.hook?.topic;
   }
 
-  /**
-   * does this activity use a time-hook or web-hook
-   */
   doesHook(): boolean {
     if (this.config.hook?.topic) {
       return true;
@@ -269,25 +215,22 @@ class Hook extends Activity {
     return false;
   }
 
-  async doHook(telemetry: TelemetryService) {
+  async doHook(telemetry: TelemetryService): Promise<void> {
     const transaction = this.store.transact();
     await this.registerHook(transaction);
     this.mapOutputData();
     this.mapJobData();
     await this.setState(transaction);
     await CollatorService.notarizeLeg1Completion(this, transaction);
-
     await this.setStatus(0, transaction);
     await transaction.exec();
     telemetry.mapActivityAttributes();
   }
 
-  async doPassThrough(telemetry: TelemetryService) {
+  async doPassThrough(telemetry: TelemetryService): Promise<void> {
     this.adjacencyList = await this.filterAdjacent();
     this.mapOutputData();
     this.mapJobData();
-
-    //Category B: use Leg1 step protocol for crash-safe edge capture
     await this.executeLeg1StepProtocol(this.adjacencyList.length - 1);
     telemetry.mapActivityAttributes();
     telemetry.setActivityAttributes({});
@@ -329,7 +272,6 @@ class Hook extends Activity {
     return result;
   }
 
-  //********  SIGNAL RE-ENTRY POINT  ********//
   async processWebHookEvent(
     status: StreamStatus = StreamStatus.SUCCESS,
     code: StreamCode = 200,
@@ -354,8 +296,8 @@ class Hook extends Activity {
       await this.processEvent(status, code, 'hook');
       if (code === 200) {
         await taskService.deleteWebHookSignal(this.config.hook.topic, data);
-      } //else => 202/keep alive
-    } //else => already resolved
+      }
+    }
   }
 
   async processTimeHookEvent(jobId: string): Promise<JobStatus | void> {
@@ -364,8 +306,7 @@ class Hook extends Activity {
       gid: this.context.metadata.gid,
       aid: this.metadata.aid,
     });
-    // If this was a combined hook+sleep (signal-with-timeout),
-    // clean up the webhook signal since the timeout won the race
+    //if combined hook+sleep, clean up the webhook signal (timeout won the race)
     if (this.config.hook?.topic) {
       try {
         const taskService = new TaskService(this.store, this.logger);
@@ -374,7 +315,6 @@ class Hook extends Activity {
           this.data,
         );
       } catch (e) {
-        // Signal may already be cleaned up or processed; safe to ignore
         this.logger.debug('hook-timeout-signal-cleanup', {
           topic: this.config.hook.topic,
           error: e.message,

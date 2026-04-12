@@ -390,7 +390,7 @@ describe('DURABLE | interceptor | Postgres', () => {
               const { auditLog, metricsCollect } = Durable.workflow.proxyActivities<typeof activities>({
                 activities,
                 taskQueue: 'shared-interceptor-activities', // Explicit shared queue
-                retryPolicy: {
+                retry: {
                   maximumAttempts: 3,
                   throwOnError: true
                 }
@@ -486,7 +486,7 @@ describe('DURABLE | interceptor | Postgres', () => {
             const { processData, validateData } = Durable.workflow.proxyActivities<typeof activities>({
               activities,
               taskQueue: 'custom-activity-queue', // Custom queue
-              retryPolicy: {
+              retry: {
                 maximumAttempts: 1,
                 throwOnError: true
               }
@@ -586,14 +586,14 @@ describe('DURABLE | interceptor | Postgres', () => {
             const queueA = Durable.workflow.proxyActivities<typeof activities>({
               activities,
               taskQueue: 'queue-a',
-              retryPolicy: { maximumAttempts: 1, throwOnError: true }
+              retry: { maximumAttempts: 1, throwOnError: true }
             });
 
             // Use activities from queue B
             const queueB = Durable.workflow.proxyActivities<typeof activities>({
               activities,
               taskQueue: 'queue-b',
-              retryPolicy: { maximumAttempts: 1, throwOnError: true }
+              retry: { maximumAttempts: 1, throwOnError: true }
             });
 
             const resultA = await queueA.processData(name);
@@ -688,7 +688,7 @@ describe('DURABLE | interceptor | Postgres', () => {
               validateData: (data: string) => Promise<boolean>;
             }>({
               taskQueue: 'remote-activities',  // Only taskQueue, no activities!
-              retryPolicy: {
+              retry: {
                 maximumAttempts: 1,
                 throwOnError: true
               }
@@ -911,7 +911,7 @@ describe('DURABLE | interceptor | Postgres', () => {
               const { auditLog } = Durable.workflow.proxyActivities<typeof activities>({
                 activities,
                 taskQueue: 'act-intercept-audit',
-                retryPolicy: {
+                retry: {
                   maximumAttempts: 3,
                   throwOnError: true
                 }
@@ -1005,7 +1005,7 @@ describe('DURABLE | interceptor | Postgres', () => {
                 const { auditLog } = Durable.workflow.proxyActivities<typeof activities>({
                   activities,
                   taskQueue: 'act-intercept-after-output',
-                  retryPolicy: { maximumAttempts: 3, throwOnError: true },
+                  retry: { maximumAttempts: 3, throwOnError: true },
                 });
 
                 await auditLog(
@@ -1336,7 +1336,7 @@ describe('DURABLE | interceptor | Postgres', () => {
           const { alwaysFailValidation } = Durable.workflow.proxyActivities<typeof activities>({
             activities,
             headers: { requestId: 'req-456' },
-            retryPolicy: { maximumAttempts: 1, throwOnError: true },
+            retry: { maximumAttempts: 1, throwOnError: true },
           });
 
           return await alwaysFailValidation();
@@ -1405,7 +1405,7 @@ describe('DURABLE | interceptor | Postgres', () => {
               const { lookupUserProfile } = Durable.workflow.proxyActivities<typeof activities>({
                 activities,
                 taskQueue: 'security-lookup',
-                retryPolicy: { maximumAttempts: 3, throwOnError: true },
+                retry: { maximumAttempts: 3, throwOnError: true },
               });
 
               // Simulate: the userId comes from the workflow context

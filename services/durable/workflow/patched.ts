@@ -35,7 +35,7 @@ import { asyncLocalStorage, SerializerService } from './common';
  * export async function orderWorkflow(orderId: string): Promise<string> {
  *   const acts = Durable.workflow.proxyActivities<typeof activities>({
  *     activities,
- *     retryPolicy: { maximumAttempts: 3 },
+ *     retry: { maximumAttempts: 3 },
  *   });
  *
  *   if (await Durable.workflow.patched('v2-validation')) {

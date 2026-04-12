@@ -244,7 +244,7 @@ export async function testSignalThenParallelChildren(name: string): Promise<{ pa
  *  proxyActivities uses type-only reference — no activities object passed. */
 export async function testWorkerRegisteredActivity(name: string): Promise<{ complex: string }> {
   const { greet } = Durable.workflow.proxyActivities<ActivitiesType>({
-    retryPolicy: { maximumAttempts: 1, throwOnError: true },
+    retry: { maximumAttempts: 1, throwOnError: true },
   });
   return await greet(name);
 }
@@ -256,7 +256,7 @@ export async function testVnfActivity(name: string): Promise<string> {
     remoteProcess: (data: string) => Promise<string>;
   }>({
     taskQueue: 'vnf-activities',
-    retryPolicy: { maximumAttempts: 1, throwOnError: true },
+    retry: { maximumAttempts: 1, throwOnError: true },
   });
   return await remoteProcess(name);
 }
@@ -267,7 +267,7 @@ export async function testVnfActivity(name: string): Promise<string> {
 export async function testLateRegistration(name: string): Promise<{ complex: string }> {
   const { greet } = Durable.workflow.proxyActivities<ActivitiesType>({
     activities,
-    retryPolicy: { maximumAttempts: 1, throwOnError: true },
+    retry: { maximumAttempts: 1, throwOnError: true },
   });
   return await greet(name);
 }

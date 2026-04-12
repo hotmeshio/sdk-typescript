@@ -301,7 +301,7 @@ export class WorkerService {
    *     sendEmail: (to: string, subject: string) => Promise<void>;
    *   }>({
    *     taskQueue: 'payment',
-   *     retryPolicy: { maximumAttempts: 3 }
+   *     retry: { maximumAttempts: 3 }
    *   });
    * 
    *   const result = await processPayment(amount);
@@ -336,7 +336,7 @@ export class WorkerService {
    *       auditLog: (id: string, action: string) => Promise<void>;
    *     }>({
    *       taskQueue: 'shared',
-   *       retryPolicy: { maximumAttempts: 3 }
+   *       retry: { maximumAttempts: 3 }
    *     });
    *     await auditLog(ctx.get('workflowId'), 'started');
    *     return next();

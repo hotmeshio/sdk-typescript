@@ -18,17 +18,17 @@ export class ErrorHandler {
   shouldRetry(
     input: StreamData,
     output: StreamDataResponse,
-    retryPolicy?: RetryPolicy,
+    retry?: RetryPolicy,
   ): [boolean, number] {
     const tryCount = input.metadata.try || 0;
     
     // Priority 1: Use structured retry policy (from stream columns or config)
-    if (retryPolicy) {
-      const maxAttempts = retryPolicy.maximumAttempts || 3;
-      const backoffCoeff = retryPolicy.backoffCoefficient || 10;
-      const maxInterval = typeof retryPolicy.maximumInterval === 'string'
-        ? parseInt(retryPolicy.maximumInterval)
-        : (retryPolicy.maximumInterval || 120);
+    if (retry) {
+      const maxAttempts = retry.maximumAttempts || 3;
+      const backoffCoeff = retry.backoffCoefficient || 10;
+      const maxInterval = typeof retry.maximumInterval === 'string'
+        ? parseInt(retry.maximumInterval)
+        : (retry.maximumInterval || 120);
       
       // Check if we can retry (next attempt would be attempt #tryCount+2, must be <= maxAttempts)
       // tryCount=0 is 1st attempt, tryCount=1 is 2nd attempt, etc.
@@ -132,13 +132,13 @@ export class ErrorHandler {
       topic: string,
       streamData: StreamData | StreamDataResponse,
     ) => Promise<string>,
-    retryPolicy?: RetryPolicy,
+    retry?: RetryPolicy,
   ): Promise<string> {
-    const [shouldRetry, timeout] = this.shouldRetry(input, output, retryPolicy);
+    const [shouldRetry, timeout] = this.shouldRetry(input, output, retry);
     if (shouldRetry) {
-      // Only sleep if no retryPolicy (legacy behavior for backward compatibility)
-      // With retryPolicy, use visibility timeout instead of in-memory sleep
-      if (!retryPolicy) {
+      // Only sleep if no retry (legacy behavior for backward compatibility)
+      // With retry, use visibility timeout instead of in-memory sleep
+      if (!retry) {
         await sleepFor(timeout);
       }
       
@@ -154,8 +154,8 @@ export class ErrorHandler {
         newMessage._streamRetryConfig = (input as any)._streamRetryConfig;
       }
       
-      // Add visibility delay for production-ready retry with retryPolicy
-      if (retryPolicy && timeout > 0) {
+      // Add visibility delay for production-ready retry with retry
+      if (retry && timeout > 0) {
         newMessage._visibilityDelayMs = timeout;
       }
       

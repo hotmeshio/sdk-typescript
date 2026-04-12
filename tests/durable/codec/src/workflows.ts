@@ -7,7 +7,7 @@ export async function codecWorkflow(
 ): Promise<Record<string, any>> {
   const { processData } = Durable.workflow.proxyActivities<typeof activities>({
     activities,
-    retryPolicy: { maximumAttempts: 1 },
+    retry: { maximumAttempts: 1 },
   });
 
   const result = await processData(name, value);

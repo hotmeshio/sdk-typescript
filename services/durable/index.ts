@@ -56,7 +56,7 @@ import { InterceptorService } from './interceptor';
  * async function orderWorkflow(orderId: string): Promise<string> {
  *   const { charge, notify } = Durable.workflow.proxyActivities<typeof activities>({
  *     activities,
- *     retryPolicy: { maximumAttempts: 3 },
+ *     retry: { maximumAttempts: 3 },
  *   });
  *
  *   const receipt = await charge(orderId);
@@ -157,7 +157,7 @@ class DurableClass {
    *     sendEmail: (to: string, msg: string) => Promise<void>;
    *   }>({
    *     taskQueue: 'payment',
-   *     retryPolicy: { maximumAttempts: 3 }
+   *     retry: { maximumAttempts: 3 }
    *   });
    *   
    *   const result = await processPayment(amount);

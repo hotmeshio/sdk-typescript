@@ -34,7 +34,7 @@ import { checkCancellation } from './cancellationScope';
  * export async function batchProcessor(cursor: string, totalProcessed = 0): Promise<void> {
  *   const { fetchBatch, processBatch } = Durable.workflow.proxyActivities<typeof activities>({
  *     activities,
- *     retryPolicy: { maximumAttempts: 3 },
+ *     retry: { maximumAttempts: 3 },
  *   });
  *
  *   const batch = await fetchBatch(cursor);
@@ -53,7 +53,7 @@ import { checkCancellation } from './cancellationScope';
  * export async function poller(resourceId: string, attempt = 0): Promise<string> {
  *   const { checkStatus } = Durable.workflow.proxyActivities<typeof activities>({
  *     activities,
- *     retryPolicy: { maximumAttempts: 3 },
+ *     retry: { maximumAttempts: 3 },
  *   });
  *
  *   const status = await checkStatus(resourceId);

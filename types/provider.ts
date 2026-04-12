@@ -83,7 +83,7 @@ export type ProviderConfig = {
    * @example
    * ```typescript
    * {
-   *   retryPolicy: {
+   *   retry: {
    *     maximumAttempts: 5,
    *     backoffCoefficient: 2,
    *     maximumInterval: '300s'
@@ -91,7 +91,7 @@ export type ProviderConfig = {
    * }
    * ```
    */
-  retryPolicy?: import('./stream').RetryPolicy;
+  retry?: import('./stream').RetryPolicy;
 };
 
 export type ProvidersConfig = {

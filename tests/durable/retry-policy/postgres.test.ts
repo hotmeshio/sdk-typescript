@@ -56,7 +56,7 @@ describe('DURABLE | Retry Policy | Postgres', () => {
     const { processPayment } = Durable.workflow.proxyActivities<typeof activities>({
       activities,
       taskQueue: 'payments',
-      retryPolicy: {
+      retry: {
         maximumAttempts: 5,
         backoffCoefficient: 2,
         maximumInterval: '300s',
@@ -301,7 +301,7 @@ describe('DURABLE | Retry Policy | Postgres', () => {
       const { criticalOp } = Durable.workflow.proxyActivities<typeof multiPolicyActivities>({
         activities: multiPolicyActivities,
         taskQueue: 'critical-ops',
-        retryPolicy: {
+        retry: {
           maximumAttempts: 10,
           backoffCoefficient: 2,
           maximumInterval: '600s',
@@ -311,7 +311,7 @@ describe('DURABLE | Retry Policy | Postgres', () => {
       const { standardOp } = Durable.workflow.proxyActivities<typeof multiPolicyActivities>({
         activities: multiPolicyActivities,
         taskQueue: 'standard-ops',
-        retryPolicy: {
+        retry: {
           maximumAttempts: 3,
           backoffCoefficient: 10,
           maximumInterval: '120s',
@@ -321,7 +321,7 @@ describe('DURABLE | Retry Policy | Postgres', () => {
       const { fastOp } = Durable.workflow.proxyActivities<typeof multiPolicyActivities>({
         activities: multiPolicyActivities,
         taskQueue: 'fast-ops',
-        retryPolicy: {
+        retry: {
           maximumAttempts: 5,
           backoffCoefficient: 1.5,
           maximumInterval: '60s',

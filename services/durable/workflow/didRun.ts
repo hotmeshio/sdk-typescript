@@ -1,5 +1,5 @@
 import { SerializerService } from './common';
-import { getContext } from './context';
+import { workflowInfo } from './workflowInfo';
 
 /**
  * The core of the deterministic replay mechanism. Every durable operation
@@ -28,7 +28,7 @@ import { getContext } from './context';
  *   - `[2]` — The deserialized result (or `null` if not replayed).
  */
 export async function didRun(prefix: string): Promise<[boolean, number, any]> {
-  const { COUNTER, replay, workflowDimension } = getContext();
+  const { COUNTER, replay, workflowDimension } = workflowInfo();
   const execIndex = COUNTER.counter = COUNTER.counter + 1;
   const sessionId = `-${prefix}${workflowDimension}-${execIndex}-`;
   if (sessionId in replay) {

@@ -1,21 +1,9 @@
-import {
-  CollationError,
-  GenerationalError,
-  GetStateError,
-  InactiveJobError,
-} from '../../modules/errors';
 import { CollatorService } from '../collator';
-import { EngineService } from '../engine';
 import { Pipe } from '../pipe';
 import { TelemetryService } from '../telemetry';
-import {
-  ActivityData,
-  ActivityMetadata,
-  ActivityType,
-  InterruptActivity,
-} from '../../types/activity';
+import { InterruptActivity } from '../../types/activity';
 import { TransactionResultList } from '../../types/provider';
-import { JobInterruptOptions, JobState } from '../../types/job';
+import { JobInterruptOptions } from '../../types/job';
 
 import { Activity } from './activity';
 
@@ -134,18 +122,6 @@ import { Activity } from './activity';
 class Interrupt extends Activity {
   config: InterruptActivity;
 
-  constructor(
-    config: ActivityType,
-    data: ActivityData,
-    metadata: ActivityMetadata,
-    hook: ActivityData | null,
-    engine: EngineService,
-    context?: JobState,
-  ) {
-    super(config, data, metadata, hook, engine, context);
-  }
-
-  //********  LEG 1 ENTRY  ********//
   async process(): Promise<string> {
     this.logger.debug('interrupt-process', {
       jid: this.context.metadata.jid,
@@ -178,30 +154,8 @@ class Interrupt extends Activity {
         await this.interruptAnother(telemetry);
       }
     } catch (error) {
-      if (error instanceof InactiveJobError) {
-        this.logger.error('interrupt-inactive-job-error', { error });
-        return;
-      } else if (error instanceof GenerationalError) {
-        this.logger.info('process-event-generational-job-error', { error });
-        return;
-      } else if (error instanceof GetStateError) {
-        this.logger.error('interrupt-get-state-error', { error });
-        return;
-      } else if (error instanceof CollationError) {
-        if (error.fault === 'duplicate') {
-          this.logger.info('interrupt-collation-overage', {
-            job_id: this.context.metadata.jid,
-            guid: this.context.metadata.guid,
-          });
-          return;
-        }
-        //unknown collation error
-        this.logger.error('interrupt-collation-error', { error });
-      } else {
-        this.logger.error('interrupt-process-error', { error });
-      }
-      telemetry?.setActivityError(error.message);
-      throw error;
+      this.handleProcessError(error, telemetry, 'interrupt');
+      return;
     } finally {
       telemetry?.endActivitySpan();
       this.logger.debug('interrupt-process-end', {
@@ -217,7 +171,6 @@ class Interrupt extends Activity {
       this.mapJobData();
     }
 
-    // Bundle state + Leg1 completion + semaphore in one transaction
     telemetry.mapActivityAttributes();
     const transaction = this.store.transact();
     if (this.config.job?.maps) {
@@ -228,7 +181,7 @@ class Interrupt extends Activity {
     const txResponse = (await transaction.exec()) as TransactionResultList;
     const jobStatus = this.resolveStatus(txResponse);
 
-    // Interrupt fires AFTER proof commits (best-effort)
+    //interrupt fires AFTER proof commits (best-effort)
     const messageId = await this.interrupt();
     telemetry.setActivityAttributes({
       'app.activity.mid': messageId,
@@ -239,17 +192,15 @@ class Interrupt extends Activity {
   }
 
   async interruptAnother(telemetry: TelemetryService): Promise<string> {
-    // Interrupt ANOTHER job (best-effort, fires before step protocol)
+    //interrupt ANOTHER job (best-effort, fires before step protocol)
     await this.interrupt();
 
-    // Apply updates to THIS job's state
     this.adjacencyList = await this.filterAdjacent();
     if (this.config.job?.maps || this.config.output?.maps) {
       this.mapOutputData();
       this.mapJobData();
     }
 
-    //Category B: use Leg1 step protocol for crash-safe edge capture
     await this.executeLeg1StepProtocol(this.adjacencyList.length - 1);
 
     telemetry.mapActivityAttributes();

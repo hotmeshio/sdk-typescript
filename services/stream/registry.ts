@@ -52,7 +52,7 @@ class StreamConsumerRegistry {
     config?: {
       reclaimDelay?: number;
       reclaimCount?: number;
-      retryPolicy?: any;
+      retry?: any;
     },
   ): Promise<void> {
     const key = `${namespace}:${appId}:worker:${taskQueue}`;
@@ -71,7 +71,7 @@ class StreamConsumerRegistry {
           reclaimDelay: config?.reclaimDelay,
           reclaimCount: config?.reclaimCount,
           throttle,
-          retryPolicy: config?.retryPolicy,
+          retry: config?.retry,
         },
         stream,
         logger,

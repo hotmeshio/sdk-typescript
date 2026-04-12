@@ -636,7 +636,7 @@ type ActivityConfig = {
    * // Default: uses workflow's task queue (backward compatible)
    * const activities = Durable.workflow.proxyActivities<typeof activities>({
    *   activities,
-   *   retryPolicy: { maximumAttempts: 3 }
+   *   retry: { maximumAttempts: 3 }
    * });
    * // If workflow taskQueue is "orders", uses "orders-activity"
    * 
@@ -644,7 +644,7 @@ type ActivityConfig = {
    * const { auditLog } = Durable.workflow.proxyActivities<typeof activities>({
    *   activities: { auditLog },
    *   taskQueue: 'shared-activities', // Uses "shared-activities-activity"
-   *   retryPolicy: { maximumAttempts: 3 }
+   *   retry: { maximumAttempts: 3 }
    * });
    * ```
    */
@@ -656,7 +656,7 @@ type ActivityConfig = {
   headers?: Record<string, any>;
 
   /** Retry policy configuration for activities */
-  retryPolicy?: {
+  retry?: {
     /** Maximum number of retry attempts, default is 50 (HMSH_DURABLE_MAX_ATTEMPTS) */
     maximumAttempts?: number;
     /** Factor by which the retry timeout increases, default is 10 (HMSH_DURABLE_EXP_BACKOFF) */
@@ -817,7 +817,7 @@ export interface WorkflowOutboundCallsInterceptorContext {
   activityName: string;
   /** The arguments passed to the activity call */
   args: any[];
-  /** The activity configuration (retryPolicy, taskQueue, etc.) */
+  /** The activity configuration (retry, taskQueue, etc.) */
   options?: ActivityConfig;
 }
 
@@ -851,7 +851,7 @@ export interface WorkflowOutboundCallsInterceptorContext {
  *       auditLog: (id: string, action: string) => Promise<void>;
  *     }>({
  *       taskQueue: 'shared-audit',
- *       retryPolicy: { maximumAttempts: 3 },
+ *       retry: { maximumAttempts: 3 },
  *     });
  *
  *     await auditLog(workflowCtx.get('workflowId'), `before:${activityCtx.activityName}`);
