@@ -4,7 +4,7 @@
     "modules/errors.ts",
     "modules/key.ts",
     "modules/utils.ts",
-    "services/activities/activity.ts",
+    "services/activities/activity/index.ts",
     "services/activities/await.ts",
     "services/activities/cycle.ts",
     "services/activities/hook.ts",
