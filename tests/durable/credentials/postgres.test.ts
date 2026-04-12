@@ -4,7 +4,8 @@ import { Client as Postgres } from 'pg';
 import config from '../../$setup/config';
 import { guid } from '../../../modules/utils';
 import { Durable } from '../../../services/durable';
-import { HotMesh, HotMeshConfig } from '../../../services/hotmesh';
+import { HotMesh } from '../../../services/hotmesh';
+import { HotMeshConfig } from '../../../types/hotmesh';
 import type { WorkerCredential, WorkerCredentialInfo } from '../../../services/hotmesh';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import {
@@ -136,8 +137,8 @@ describe('DURABLE | credentials | Worker Credential Lifecycle | Postgres', () =>
       expect(roles.length).toBeGreaterThanOrEqual(1);
       const found = roles.find((r) => r.roleName === credential.roleName);
       expect(found).toBeDefined();
-      expect(found.streamNames).toContain('durable.credential.test');
-      expect(found.revokedAt).toBeNull();
+      expect(found!.streamNames).toContain('durable.credential.test');
+      expect(found!.revokedAt).toBeNull();
     });
   });
 
@@ -178,7 +179,7 @@ describe('DURABLE | credentials | Worker Credential Lifecycle | Postgres', () =>
       });
       const found = roles.find((r) => r.roleName === credential.roleName);
       expect(found).toBeDefined();
-      expect(found.revokedAt).toBeInstanceOf(Date);
+      expect(found!.revokedAt).toBeInstanceOf(Date);
     });
   });
 });

@@ -91,7 +91,7 @@ describe('DURABLE | entity-simple | Postgres', () => {
       workflowId: `ent-ece-${guid()}`,
       expire: 30,
     });
-    const result = await handle.result();
+    const result = await handle.result() as { user: string; childResult: { product: string; created: boolean } };
     expect(result.user).toBe('Frank');
     expect(result.childResult).toEqual({ product: 'Frank', created: true });
   }, 15_000);

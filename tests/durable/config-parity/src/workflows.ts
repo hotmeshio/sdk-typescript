@@ -199,7 +199,7 @@ export async function securedSignalWorkflow(): Promise<string> {
   // Wait for an external signal — this exercises the notification path
   // because the consumer must be woken by LISTEN/NOTIFY to process the signal
   const signalData = await Durable.workflow.condition<{ value: string }>('secured-signal');
-  const result = await securedSignalActivity(signalData.value);
+  const result = await securedSignalActivity((signalData as { value: string }).value);
   return result;
 }
 

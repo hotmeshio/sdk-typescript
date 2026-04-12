@@ -8,7 +8,7 @@ export function getCallCount() {
   return callCount;
 }
 
-export default async function failThenSucceed(): Promise<string> {
+export async function failThenSucceed(): Promise<string> {
   callCount++;
   if (callCount < 3) {
     throw new Error(`Attempt ${callCount} failed`);

@@ -1,54 +1,45 @@
-import { KeyType, VALSEP } from '../../modules/key';
-import { StreamConsumerRegistry } from '../stream/registry';
-import {
-  HMSH_OTT_WAIT_TIME,
-  HMSH_CODE_SUCCESS,
-  HMSH_CODE_PENDING,
-  HMSH_CODE_TIMEOUT,
-  HMSH_EXPIRE_JOB_SECONDS,
-  HMSH_QUORUM_DELAY_MS,
-} from '../../modules/enums';
-import {
-  formatISODate,
-  getSubscriptionTopic,
-  guid,
-  identifyProvider,
-  restoreHierarchy,
-  sleepFor,
-} from '../../modules/utils';
-import Activities from '../activities';
-import { Await } from '../activities/await';
-import { Cycle } from '../activities/cycle';
-import { Hook } from '../activities/hook';
-import { Interrupt } from '../activities/interrupt';
-import { Signal } from '../activities/signal';
-import { Worker } from '../activities/worker';
-import { Trigger } from '../activities/trigger';
-import { CompilerService } from '../compiler';
+/**
+ * EngineService — the workflow execution engine.
+ *
+ * Consumes stream messages from the router and dispatches them
+ * to the appropriate activity handler (Trigger, Worker, Hook, …).
+ *
+ * Each section delegates to a purpose-specific module inside `engine/`.
+ * Open the module when you need implementation detail; read this file
+ * when you need the big picture.
+ *
+ * Lifecycle (maps to modules):
+ *   1. INIT       → init.ts       (channel setup, router, config)
+ *   2. VERSION    → version.ts    (app version resolution, caching)
+ *   3. SCHEMA     → schema.ts     (activity lookup, handler factory)
+ *   4. COMPILE    → compiler.ts   (YAML plan & deploy)
+ *   5. REPORT     → reporting.ts  (stats, IDs, query resolution)
+ *   6. DISPATCH   → dispatch.ts   (stream message → activity handler)
+ *   7. COMPLETION → completion.ts (parent notify, cleanup, expiry)
+ *   8. SIGNAL     → signal.ts     (webhook/timehook delivery, fan-out)
+ *   9. PUB/SUB    → pubsub.ts     (topic messaging, subscriptions)
+ *  10. STATE      → state.ts      (job state retrieval, export)
+ */
+
+import { KeyType } from '../../modules/key';
+import { HMSH_OTT_WAIT_TIME } from '../../modules/enums';
+import { restoreHierarchy } from '../../modules/utils';
 import { ExporterService } from '../exporter';
 import { ILogger } from '../logger';
-import { ReporterService } from '../reporter';
 import { Router } from '../router';
-import { SerializerService } from '../serializer';
 import { SearchService } from '../search';
-import { SearchServiceFactory } from '../search/factory';
 import { StoreService } from '../store';
-import { StoreServiceFactory } from '../store/factory';
 import { StreamService } from '../stream';
-import { StreamServiceFactory } from '../stream/factory';
 import { SubService } from '../sub';
-import { SubServiceFactory } from '../sub/factory';
 import { TaskService } from '../task';
 import { AppVID } from '../../types/app';
-import { ActivityMetadata, ActivityType, Consumes } from '../../types/activity';
+import { ActivityType } from '../../types/activity';
 import { CacheMode } from '../../types/cache';
 import { ExportOptions, JobExport } from '../../types/exporter';
 import {
   JobState,
   JobData,
-  JobMetadata,
   JobOutput,
-  PartialJobState,
   JobStatus,
   JobInterruptOptions,
   JobCompletionOptions,
@@ -61,11 +52,7 @@ import {
   HotMeshSettings,
 } from '../../types/hotmesh';
 import { ProviderClient, ProviderTransaction } from '../../types/provider';
-import {
-  JobMessage,
-  JobMessageCallback,
-  SubscriptionCallback,
-} from '../../types/quorum';
+import { JobMessageCallback } from '../../types/quorum';
 import { StringAnyType, StringStringType } from '../../types/serializer';
 import {
   GetStatsOptions,
@@ -77,18 +64,33 @@ import {
   StreamCode,
   StreamData,
   StreamDataResponse,
-  StreamDataType,
-  StreamError,
-  StreamRole,
   StreamStatus,
 } from '../../types/stream';
 import { WorkListTaskType } from '../../types/task';
 
+import * as Init from './init';
+import * as Version from './version';
+import * as Schema from './schema';
+import * as Compiler from './compiler';
+import * as Reporting from './reporting';
+import * as Dispatch from './dispatch';
+import * as Completion from './completion';
+import * as Signal from './signal';
+import * as PubSub from './pubsub';
+import * as State from './state';
+
 class EngineService {
+
+  // ── identity & runtime ────────────────────────────────────────────
+
   namespace: string;
   apps: HotMeshApps | null;
   appId: string;
   guid: string;
+  inited: string;
+
+  // ── services ──────────────────────────────────────────────────────
+
   exporter: ExporterService | null;
   /** @hidden */
   search: SearchService<ProviderClient> | null;
@@ -103,12 +105,17 @@ class EngineService {
   /** @hidden */
   taskService: TaskService | null;
   logger: ILogger;
+
+  // ── execution state ───────────────────────────────────────────────
+
   cacheMode: CacheMode = 'cache';
   untilVersion: string | null = null;
   jobCallbacks: Record<string, JobMessageCallback> = {};
-  reporting = false;
-  jobId = 1;
-  inited: string;
+
+  // ═════════════════════════════════════════════════════════════════
+  //  1. INIT — bootstrap channels, router, and services
+  //     → see init.ts
+  // ═════════════════════════════════════════════════════════════════
 
   /**
    * @private
@@ -127,49 +134,30 @@ class EngineService {
   ): Promise<EngineService> {
     if (config.engine) {
       const instance = new EngineService();
-      instance.verifyEngineFields(config);
+      Init.verifyEngineFields(config);
 
       instance.namespace = namespace;
       instance.appId = appId;
       instance.guid = guid;
       instance.logger = logger;
 
-      await instance.initSearchChannel(config.engine.store);
-      await instance.initStoreChannel(config.engine.store);
-      //NOTE: if `pub` is present, use it; otherwise, use `store`
-      await instance.initSubChannel(
+      await Init.initSearchChannel(instance, config.engine.store);
+      await Init.initStoreChannel(instance, config.engine.store);
+      await Init.initSubChannel(
+        instance,
         config.engine.sub,
         config.engine.pub ?? config.engine.store,
       );
-      await instance.initStreamChannel(
+      await Init.initStreamChannel(
+        instance,
         config.engine.stream,
         config.engine.store,
       );
 
-      instance.router = await instance.initRouter(config);
+      instance.router = await Init.initRouter(instance, config);
+      await Init.registerStreamConsumer(instance, config);
+      Init.initServices(instance);
 
-      // Use singleton consumer via registry for engine stream
-      await StreamConsumerRegistry.registerEngine(
-        namespace,
-        appId,
-        guid,
-        instance.processStreamMessage.bind(instance),
-        instance.stream,
-        instance.store,
-        logger,
-        {
-          reclaimDelay: config.engine.reclaimDelay,
-          reclaimCount: config.engine.reclaimCount,
-        },
-      );
-
-      instance.taskService = new TaskService(instance.store, logger);
-      instance.exporter = new ExporterService(
-        instance.appId,
-        instance.store,
-        logger,
-      );
-      instance.inited = formatISODate(new Date());
       return instance;
     }
   }
@@ -177,190 +165,34 @@ class EngineService {
   /**
    * @private
    */
-  verifyEngineFields(config: HotMeshConfig) {
-    if (
-      !identifyProvider(config.engine.store) ||
-      !identifyProvider(config.engine.stream) ||
-      !identifyProvider(config.engine.sub)
-    ) {
-      throw new Error(
-        'engine must include `store`, `stream`, and `sub` fields.',
-      );
-    }
+  async getSettings(): Promise<HotMeshSettings> {
+    return Init.getSettings(this);
   }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  2. VERSION — app version resolution and cache management
+  //     → see version.ts
+  // ═════════════════════════════════════════════════════════════════
 
   /**
    * @private
    */
-  async initSearchChannel(search: ProviderClient, store?: ProviderClient) {
-    this.search = await SearchServiceFactory.init(
-      search,
-      store,
-      this.namespace,
-      this.appId,
-      this.logger,
-    );
-  }
-
-  /**
-   * @private
-   */
-  async initStoreChannel(store: ProviderClient) {
-    this.store = await StoreServiceFactory.init(
-      store,
-      this.namespace,
-      this.appId,
-      this.logger,
-    );
-  }
-
-  /**
-   * @private
-   */
-  async initSubChannel(sub: ProviderClient, store: ProviderClient) {
-    this.subscribe = await SubServiceFactory.init(
-      sub,
-      store,
-      this.namespace,
-      this.appId,
-      this.guid,
-      this.logger,
-    );
-  }
-
-  /**
-   * @private
-   */
-  async initStreamChannel(stream: ProviderClient, store: ProviderClient) {
-    this.stream = await StreamServiceFactory.init(
-      stream,
-      store,
-      this.namespace,
-      this.appId,
-      this.logger,
-    );
-  }
-
-  /**
-   * @private
-   */
-  async initRouter(
-    config: HotMeshConfig,
-  ): Promise<Router<StreamService<ProviderClient, ProviderTransaction>>> {
-    const throttle = await this.store.getThrottleRate(':');
-
-    return new Router(
-      {
-        namespace: this.namespace,
-        appId: this.appId,
-        guid: this.guid,
-        role: StreamRole.ENGINE,
-        reclaimDelay: config.engine.reclaimDelay,
-        reclaimCount: config.engine.reclaimCount,
-        throttle,
-        readonly: config.engine.readonly,
-      },
-      this.stream,
-      this.logger,
-    );
-  }
-
-  /**
-   * resolves the distributed executable version using a delay
-   * to allow deployment race conditions to resolve
-   * @private
-   */
-  async fetchAndVerifyVID(vid: AppVID, count = 0): Promise<AppVID> {
-    if (isNaN(Number(vid.version))) {
-      const app = await this.store.getApp(vid.id, true);
-      if (!isNaN(Number(app.version))) {
-        if (!this.apps) this.apps = {};
-        this.apps[vid.id] = app;
-        return { id: vid.id, version: app.version };
-      } else if (count < 10) {
-        await sleepFor(HMSH_QUORUM_DELAY_MS * 2);
-        return await this.fetchAndVerifyVID(vid, count + 1);
-      } else {
-        this.logger.error('engine-vid-resolution-error', {
-          id: vid.id,
-          guid: this.guid,
-        });
-      }
-    }
-    return vid;
-  }
-
   async getVID(vid?: AppVID): Promise<AppVID> {
-    if (this.cacheMode === 'nocache') {
-      const app = await this.store.getApp(this.appId, true);
-      if (app.version.toString() === this.untilVersion.toString()) {
-        //new version is deployed; OK to cache again
-        if (!this.apps) this.apps = {};
-        this.apps[this.appId] = app;
-        this.setCacheMode('cache', app.version.toString());
-      }
-      return { id: this.appId, version: app.version };
-    } else if (!this.apps && vid) {
-      this.apps = {};
-      this.apps[this.appId] = vid;
-      return vid;
-    } else {
-      return await this.fetchAndVerifyVID({
-        id: this.appId,
-        version: this.apps?.[this.appId].version,
-      });
-    }
+    return Version.getVID(this, vid);
   }
 
   /**
    * @private
    */
   setCacheMode(cacheMode: CacheMode, untilVersion: string) {
-    this.logger.info(`engine-executable-cache`, {
-      mode: cacheMode,
-      [cacheMode === 'cache' ? 'target' : 'until']: untilVersion,
-    });
-    this.cacheMode = cacheMode;
-    this.untilVersion = untilVersion;
+    Version.setCacheMode(this, cacheMode, untilVersion);
   }
 
-  /**
-   * @private
-   */
-  async routeToSubscribers(topic: string, message: JobOutput) {
-    const jobCallback = this.jobCallbacks[message.metadata.jid];
-    if (jobCallback) {
-      this.delistJobCallback(message.metadata.jid);
-      jobCallback(topic, message);
-    }
-  }
+  // ═════════════════════════════════════════════════════════════════
+  //  3. SCHEMA — activity schema lookup and handler instantiation
+  //     → see schema.ts
+  // ═════════════════════════════════════════════════════════════════
 
-  /**
-   * @private
-   */
-  async processWebHooks() {
-    this.taskService.processWebHooks(this.signal.bind(this));
-  }
-
-  /**
-   * @private
-   */
-  async processTimeHooks() {
-    this.taskService.processTimeHooks(this.hookTime.bind(this));
-  }
-
-  /**
-   * @private
-   */
-  async throttle(delayInMillis: number) {
-    try {
-      this.router?.setThrottle(delayInMillis);
-    } catch (e) {
-      this.logger.error('engine-throttle-error', { error: e });
-    }
-  }
-
-  // ************* METADATA/MODEL METHODS *************
   /**
    * @private
    */
@@ -368,122 +200,68 @@ class EngineService {
     topic: string,
     data: JobData = {},
     context?: JobState,
-  ): Promise<Await | Cycle | Hook | Signal | Trigger | Worker | Interrupt> {
-    const [activityId, schema] = await this.getSchema(topic);
-    if (!schema) {
-      throw new Error(
-        `Activity schema not found for "${activityId}" (topic: ${topic}) in app ${this.appId}`,
-      );
-    }
-    const ActivityHandler = Activities[schema.type];
-    if (ActivityHandler) {
-      const utc = formatISODate(new Date());
-      const metadata: ActivityMetadata = {
-        aid: activityId,
-        atp: schema.type,
-        stp: schema.subtype,
-        ac: utc,
-        au: utc,
-      };
-      const hook = null;
-      return new ActivityHandler(schema, data, metadata, hook, this, context);
-    } else {
-      throw new Error(`activity type ${schema.type} not found`);
-    }
+  ) {
+    return Schema.initActivity(this, topic, data, context);
   }
+
+  /**
+   * @private
+   */
   async getSchema(
     topic: string,
   ): Promise<[activityId: string, schema: ActivityType]> {
-    const app = (await this.store.getApp(this.appId)) as AppVID;
-    if (!app) {
-      throw new Error(`no app found for id ${this.appId}`);
-    }
-    if (this.isPrivate(topic)) {
-      //private subscriptions use the schema id (.activityId)
-      const activityId = topic.substring(1);
-      const schema = await this.store.getSchema(
-        activityId,
-        await this.getVID(app),
-      );
-      return [activityId, schema];
-    } else {
-      //public subscriptions use a topic (a.b.c) that is associated with a schema id
-      const activityId = await this.store.getSubscription(
-        topic,
-        await this.getVID(app),
-      );
-      if (activityId) {
-        const schema = await this.store.getSchema(
-          activityId,
-          await this.getVID(app),
-        );
-        return [activityId, schema];
-      }
-    }
-    throw new Error(
-      `no subscription found for topic ${topic} in app ${this.appId} for app version ${app.version}`,
-    );
-  }
-  /**
-   * @private
-   */
-  async getSettings(): Promise<HotMeshSettings> {
-    return await this.store.getSettings();
-  }
-  /**
-   * @private
-   */
-  isPrivate(topic: string) {
-    return topic.startsWith('.');
+    return Schema.getSchema(this, topic);
   }
 
-  // ************* COMPILER METHODS *************
+  /**
+   * @private
+   */
+  isPrivate(topic: string): boolean {
+    return Schema.isPrivate(topic);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  4. COMPILE — YAML app plan & deploy
+  //     → see compiler.ts
+  // ═════════════════════════════════════════════════════════════════
+
   /**
    * @private
    */
   async plan(pathOrYAML: string): Promise<HotMeshManifest> {
-    const compiler = new CompilerService(this.store, this.stream, this.logger);
-    return await compiler.plan(pathOrYAML);
+    return Compiler.plan(this, pathOrYAML);
   }
+
   /**
    * @private
    */
   async deploy(pathOrYAML: string): Promise<HotMeshManifest> {
-    const compiler = new CompilerService(this.store, this.stream, this.logger);
-    return await compiler.deploy(pathOrYAML);
+    return Compiler.deploy(this, pathOrYAML);
   }
 
-  // ************* REPORTER METHODS *************
+  // ═════════════════════════════════════════════════════════════════
+  //  5. REPORT — stats queries and job-ID lookups
+  //     → see reporting.ts
+  // ═════════════════════════════════════════════════════════════════
+
   /**
    * @private
    */
   async getStats(topic: string, query: JobStatsInput): Promise<StatsResponse> {
-    const { id, version } = await this.getVID();
-    const reporter = new ReporterService(
-      { id, version },
-      this.store,
-      this.logger,
-    );
-    const resolvedQuery = await this.resolveQuery(topic, query);
-    return await reporter.getStats(resolvedQuery);
+    return Reporting.getStats(this, topic, query);
   }
+
   /**
    * @private
    */
   async getIds(
     topic: string,
     query: JobStatsInput,
-    queryFacets = [],
+    queryFacets: string[] = [],
   ): Promise<IdsResponse> {
-    const { id, version } = await this.getVID();
-    const reporter = new ReporterService(
-      { id, version },
-      this.store,
-      this.logger,
-    );
-    const resolvedQuery = await this.resolveQuery(topic, query);
-    return await reporter.getIds(resolvedQuery, queryFacets);
+    return Reporting.getIds(this, topic, query, queryFacets);
   }
+
   /**
    * @private
    */
@@ -491,116 +269,26 @@ class EngineService {
     topic: string,
     query: JobStatsInput,
   ): Promise<GetStatsOptions> {
-    const trigger = (await this.initActivity(topic, query.data)) as Trigger;
-    await trigger.getState();
-    return {
-      end: query.end,
-      start: query.start,
-      range: query.range,
-      granularity: trigger.resolveGranularity(),
-      key: trigger.resolveJobKey(trigger.createInputContext()),
-      sparse: query.sparse,
-    } as GetStatsOptions;
+    return Reporting.resolveQuery(this, topic, query);
   }
 
-  // ****************** STREAM RE-ENTRY POINT *****************
+  // ═════════════════════════════════════════════════════════════════
+  //  6. DISPATCH — stream message routing to activity handlers
+  //     → see dispatch.ts
+  // ═════════════════════════════════════════════════════════════════
+
   /**
    * @private
    */
   async processStreamMessage(streamData: StreamDataResponse): Promise<void> {
-    this.logger.debug('engine-process', {
-      jid: streamData.metadata.jid,
-      gid: streamData.metadata.gid,
-      dad: streamData.metadata.dad,
-      aid: streamData.metadata.aid,
-      status: streamData.status || StreamStatus.SUCCESS,
-      code: streamData.code || 200,
-      type: streamData.type,
-    });
-    const context: PartialJobState = {
-      metadata: {
-        guid: streamData.metadata.guid,
-        jid: streamData.metadata.jid,
-        gid: streamData.metadata.gid,
-        dad: streamData.metadata.dad,
-        aid: streamData.metadata.aid,
-      },
-      data: streamData.data,
-    };
-    if (streamData.type === StreamDataType.TIMEHOOK) {
-      //TIMEHOOK AWAKEN
-      const activityHandler = (await this.initActivity(
-        `.${streamData.metadata.aid}`,
-        context.data,
-        context as JobState,
-      )) as Hook;
-      await activityHandler.processTimeHookEvent(streamData.metadata.jid);
-    } else if (streamData.type === StreamDataType.WEBHOOK) {
-      //WEBHOOK AWAKEN (SIGNAL IN)
-      const activityHandler = (await this.initActivity(
-        `.${streamData.metadata.aid}`,
-        context.data,
-        context as JobState,
-      )) as Hook;
-      await activityHandler.processWebHookEvent(
-        streamData.status,
-        streamData.code,
-      );
-    } else if (streamData.type === StreamDataType.TRANSITION) {
-      //TRANSITION (ADJACENT ACTIVITY)
-      const activityHandler = (await this.initActivity(
-        `.${streamData.metadata.aid}`,
-        context.data,
-        context as JobState,
-      )) as Hook; //todo: `as Activity` (type is more generic)
-      await activityHandler.process();
-    } else if (streamData.type === StreamDataType.AWAIT) {
-      //TRIGGER JOB
-      context.metadata = {
-        ...context.metadata,
-        pj: streamData.metadata.jid,
-        pg: streamData.metadata.gid,
-        pd: streamData.metadata.dad,
-        pa: streamData.metadata.aid,
-        px: streamData.metadata.await === false, //sever the parent connection (px)
-        trc: streamData.metadata.trc,
-        spn: streamData.metadata.spn,
-      };
-      const activityHandler = (await this.initActivity(
-        streamData.metadata.topic,
-        streamData.data,
-        context as JobState,
-      )) as Trigger;
-      await activityHandler.process();
-    } else if (streamData.type === StreamDataType.RESULT) {
-      //AWAIT RESULT
-      const activityHandler = (await this.initActivity(
-        `.${context.metadata.aid}`,
-        streamData.data,
-        context as JobState,
-      )) as Await;
-      await activityHandler.processEvent(streamData.status, streamData.code);
-    } else {
-      //WORKER RESULT
-      const activityHandler = (await this.initActivity(
-        `.${streamData.metadata.aid}`,
-        streamData.data,
-        context as JobState,
-      )) as Worker;
-      await activityHandler.processEvent(
-        streamData.status,
-        streamData.code,
-        'output',
-      );
-    }
-    this.logger.debug('engine-process-end', {
-      jid: streamData.metadata.jid,
-      gid: streamData.metadata.gid,
-      aid: streamData.metadata.aid,
-    });
+    return Dispatch.processStreamMessage(this, streamData);
   }
 
-  // ***************** `AWAIT` ACTIVITY RETURN RESPONSE ****************
+  // ═════════════════════════════════════════════════════════════════
+  //  7. COMPLETION — parent notification, cleanup, and expiry
+  //     → see completion.ts
+  // ═════════════════════════════════════════════════════════════════
+
   /**
    * @private
    */
@@ -610,61 +298,16 @@ class EngineService {
     emit = false,
     transaction?: ProviderTransaction,
   ): Promise<string> {
-    if (this.hasParentJob(context)) {
-      //errors are stringified `StreamError` objects
-      const error = this.resolveError(jobOutput.metadata);
-      const spn =
-        context['$self']?.output?.metadata?.l2s ||
-        context['$self']?.output?.metadata?.l1s;
-      const streamData: StreamData = {
-        metadata: {
-          guid: guid(),
-          jid: context.metadata.pj,
-          gid: context.metadata.pg,
-          dad: context.metadata.pd,
-          aid: context.metadata.pa,
-          trc: context.metadata.trc,
-          spn,
-        },
-        type: StreamDataType.RESULT,
-        data: jobOutput.data,
-      };
-      if (error && error.code) {
-        streamData.status = StreamStatus.ERROR;
-        streamData.data = error;
-        streamData.code = error.code;
-        streamData.stack = error.stack;
-      } else if (emit) {
-        streamData.status = StreamStatus.PENDING;
-        streamData.code = HMSH_CODE_PENDING;
-      } else {
-        streamData.status = StreamStatus.SUCCESS;
-        streamData.code = HMSH_CODE_SUCCESS;
-      }
-      return (await this.router?.publishMessage(null, streamData, transaction)) as string;
-    }
+    return Completion.execAdjacentParent(this, context, jobOutput, emit, transaction);
   }
+
   /**
    * @private
    */
   hasParentJob(context: JobState, checkSevered = false): boolean {
-    if (checkSevered) {
-      return Boolean(
-        context.metadata.pj && context.metadata.pa && !context.metadata.px,
-      );
-    }
-    return Boolean(context.metadata.pj && context.metadata.pa);
-  }
-  /**
-   * @private
-   */
-  resolveError(metadata: JobMetadata): StreamError | undefined {
-    if (metadata && metadata.err) {
-      return JSON.parse(metadata.err) as StreamError;
-    }
+    return Completion.hasParentJob(context, checkSevered);
   }
 
-  // ****************** `INTERRUPT` ACTIVE JOBS *****************
   /**
    * @private
    */
@@ -673,38 +316,33 @@ class EngineService {
     jobId: string,
     options: JobInterruptOptions = {},
   ): Promise<string> {
-    //immediately interrupt the job, going directly to the data source
-    await this.store.interrupt(topic, jobId, options);
-
-    //now that the job is interrupted, we can clean up
-    const context = (await this.getState(topic, jobId)) as JobState;
-    const completionOpts: JobCompletionOptions = {
-      interrupt: options.descend,
-      expire: options.expire,
-    };
-    return (await this.runJobCompletionTasks(
-      context,
-      completionOpts,
-    )) as string;
+    return Completion.interrupt(this, topic, jobId, options);
   }
 
-  // ****************** `SCRUB` CLEAN COMPLETED JOBS *****************
   /**
    * @private
    */
   async scrub(jobId: string) {
-    //todo: do not allow scrubbing of non-existent or actively running job
-    await this.store.scrub(jobId);
+    return Completion.scrub(this, jobId);
   }
 
-  // ****************** `SIGNAL` ACTIVITY RE-ENTRY POINT ****************
   /**
-   * Delivers a signal (data payload) to a paused hook activity,
-   * resuming its Leg 2 execution. The `topic` must match a hook rule
-   * defined in the YAML graph's `hooks` section. The engine locates
-   * the target activity and dimension for reentry based on the hook
-   * rule's match conditions.
-   *
+   * @private
+   */
+  async runJobCompletionTasks(
+    context: JobState,
+    options: JobCompletionOptions = {},
+    transaction?: ProviderTransaction,
+  ): Promise<string | void> {
+    return Completion.runJobCompletionTasks(this, context, options, transaction);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  8. SIGNAL — webhook/timehook delivery and fan-out
+  //     → see signal.ts
+  // ═════════════════════════════════════════════════════════════════
+
+  /**
    * @private
    */
   async signal(
@@ -714,21 +352,9 @@ class EngineService {
     code: StreamCode = 200,
     transaction?: ProviderTransaction,
   ): Promise<string> {
-    const hookRule = await this.taskService.getHookRule(topic);
-    const [aid] = await this.getSchema(`.${hookRule.to}`);
-    const streamData: StreamData = {
-      type: StreamDataType.WEBHOOK,
-      status,
-      code,
-      metadata: {
-        guid: guid(),
-        aid,
-        topic,
-      },
-      data,
-    };
-    return (await this.router?.publishMessage(null, streamData, transaction)) as string;
+    return Signal.signal(this, topic, data, status, code, transaction);
   }
+
   /**
    * @private
    */
@@ -738,32 +364,10 @@ class EngineService {
     topicOrActivity: string,
     type?: WorkListTaskType,
   ): Promise<string | void> {
-    if (type === 'interrupt' || type === 'expire') {
-      return await this.interrupt(topicOrActivity, jobId, {
-        suppress: true,
-        expire: 1,
-      });
-    }
-    const [aid, ...dimensions] = topicOrActivity.split(',');
-    const dad = `,${dimensions.join(',')}`;
-    const streamData: StreamData = {
-      type: StreamDataType.TIMEHOOK,
-      metadata: {
-        guid: guid(),
-        jid: jobId,
-        gid: gId,
-        dad,
-        aid,
-      },
-      data: { timestamp: Date.now() },
-    };
-    await this.router?.publishMessage(null, streamData);
+    return Signal.hookTime(this, jobId, gId, topicOrActivity, type);
   }
+
   /**
-   * Fan-out variant of `signal()` that delivers data to **all**
-   * paused workflows matching a search query. Useful for resuming
-   * a batch of workflows waiting on the same external event.
-   *
    * @private
    */
   async signalAll(
@@ -772,45 +376,42 @@ class EngineService {
     keyResolver: JobStatsInput,
     queryFacets: string[] = [],
   ): Promise<string[]> {
-    const config = await this.getVID();
-    const hookRule = await this.taskService.getHookRule(hookTopic);
-    if (hookRule) {
-      const subscriptionTopic = await getSubscriptionTopic(
-        hookRule.to,
-        this.store,
-        config,
-      );
-      const resolvedQuery = await this.resolveQuery(
-        subscriptionTopic,
-        keyResolver,
-      );
-      const reporter = new ReporterService(config, this.store, this.logger);
-      const workItems = await reporter.getWorkItems(resolvedQuery, queryFacets);
-      if (workItems.length) {
-        const taskService = new TaskService(this.store, this.logger);
-        await taskService.enqueueWorkItems(
-          workItems.map((workItem) =>
-            [
-              hookTopic,
-              workItem,
-              keyResolver.scrub || false,
-              JSON.stringify(data),
-            ].join(VALSEP),
-          ),
-        );
-        this.subscribe.publish(
-          KeyType.QUORUM,
-          { type: 'work', originator: this.guid },
-          this.appId,
-        );
-      }
-      return workItems;
-    } else {
-      throw new Error(`unable to find hook rule for topic ${hookTopic}`);
-    }
+    return Signal.signalAll(this, hookTopic, data, keyResolver, queryFacets);
   }
 
-  // ********************** PUB/SUB ENTRY POINT **********************
+  /**
+   * @private
+   */
+  async routeToSubscribers(topic: string, message: JobOutput) {
+    return Signal.routeToSubscribers(this, topic, message);
+  }
+
+  /**
+   * @private
+   */
+  async processWebHooks() {
+    return Signal.processWebHooks(this, this.signal.bind(this));
+  }
+
+  /**
+   * @private
+   */
+  async processTimeHooks() {
+    return Signal.processTimeHooks(this, this.hookTime.bind(this));
+  }
+
+  /**
+   * @private
+   */
+  async throttle(delayInMillis: number) {
+    return Signal.throttle(this, delayInMillis);
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  //  9. PUB/SUB — topic messaging, subscriptions, callbacks
+  //     → see pubsub.ts
+  // ═════════════════════════════════════════════════════════════════
+
   /**
    * @private
    */
@@ -820,75 +421,37 @@ class EngineService {
     context?: JobState,
     extended?: ExtensionType,
   ): Promise<string> {
-    const activityHandler = await this.initActivity(topic, data, context);
-    if (activityHandler) {
-      return await activityHandler.process(extended);
-    } else {
-      throw new Error(`unable to process activity for topic ${topic}`);
-    }
+    return PubSub.pub(this, topic, data, context, extended);
   }
+
   /**
    * @private
    */
   async sub(topic: string, callback: JobMessageCallback): Promise<void> {
-    const subscriptionCallback: SubscriptionCallback = async (
-      topic: string,
-      message: { topic: string; job: JobOutput; _ref?: boolean },
-    ) => {
-      let jobOutput = message.job;
-      // If _ref is true, payload was too large - fetch full job data via getState
-      if (message._ref && message.job?.metadata) {
-        jobOutput = await this.getState(
-          message.job.metadata.tpc,
-          message.job.metadata.jid,
-        );
-      }
-      callback(message.topic, jobOutput);
-    };
-    return await this.subscribe.subscribe(
-      KeyType.QUORUM,
-      subscriptionCallback,
-      this.appId,
-      topic,
-    );
+    return PubSub.sub(this, topic, callback);
   }
+
   /**
    * @private
    */
   async unsub(topic: string): Promise<void> {
-    return await this.subscribe.unsubscribe(KeyType.QUORUM, this.appId, topic);
+    return PubSub.unsub(this, topic);
   }
+
   /**
    * @private
    */
   async psub(wild: string, callback: JobMessageCallback): Promise<void> {
-    const subscriptionCallback: SubscriptionCallback = async (
-      topic: string,
-      message: { topic: string; job: JobOutput; _ref?: boolean },
-    ) => {
-      let jobOutput = message.job;
-      // If _ref is true, payload was too large - fetch full job data via getState
-      if (message._ref && message.job?.metadata) {
-        jobOutput = await this.getState(
-          message.job.metadata.tpc,
-          message.job.metadata.jid,
-        );
-      }
-      callback(message.topic, jobOutput);
-    };
-    return await this.subscribe.psubscribe(
-      KeyType.QUORUM,
-      subscriptionCallback,
-      this.appId,
-      wild,
-    );
+    return PubSub.psub(this, wild, callback);
   }
+
   /**
    * @private
    */
   async punsub(wild: string): Promise<void> {
-    return await this.subscribe.punsubscribe(KeyType.QUORUM, this.appId, wild);
+    return PubSub.punsub(this, wild);
   }
+
   /**
    * @private
    */
@@ -898,44 +461,20 @@ class EngineService {
     context?: JobState | null,
     timeout = HMSH_OTT_WAIT_TIME,
   ): Promise<JobOutput> {
-    context = {
-      metadata: {
-        ngn: this.guid,
-        trc: context?.metadata?.trc,
-        spn: context?.metadata?.spn,
-      },
-    } as JobState;
-    const jobId = await this.pub(topic, data, context);
-    return new Promise((resolve, reject) => {
-      this.registerJobCallback(jobId, (topic: string, output: JobOutput) => {
-        if (output.metadata.err) {
-          const error = JSON.parse(output.metadata.err) as StreamError;
-          reject({
-            error,
-            job_id: output.metadata.jid,
-          });
-        } else {
-          resolve(output);
-        }
-      });
-      setTimeout(() => {
-        //note: job is still active (the subscriber timed out)
-        this.delistJobCallback(jobId);
-        reject({
-          code: HMSH_CODE_TIMEOUT,
-          message: 'timeout',
-          job_id: jobId,
-        } as StreamError);
-      }, timeout);
-    });
+    return PubSub.pubsub(this, topic, data, context, timeout);
   }
+
   /**
    * @private
    */
-  async pubOneTimeSubs(context: JobState, jobOutput: JobOutput, emit = false, transaction?: ProviderTransaction) {
-    //todo: subscriber should query for the job...only publish minimum context needed
-    if (this.hasOneTimeSubscription(context)) {
-      const message: JobMessage = {
+  async pubOneTimeSubs(
+    context: JobState,
+    jobOutput: JobOutput,
+    emit = false,
+    transaction?: ProviderTransaction,
+  ) {
+    if (PubSub.hasOneTimeSubscription(context)) {
+      const message = {
         type: 'job',
         topic: context.metadata.jid,
         job: restoreHierarchy(jobOutput) as JobOutput,
@@ -949,23 +488,19 @@ class EngineService {
       );
     }
   }
+
   /**
    * @private
    */
-  async getPublishesTopic(context: JobState): Promise<string> {
-    const config = await this.getVID();
-    const activityId =
-      context.metadata.aid || context['$self']?.output?.metadata?.aid;
-    const schema = await this.store.getSchema(activityId, config);
-    return schema.publishes;
-  }
-  /**
-   * @private
-   */
-  async pubPermSubs(context: JobState, jobOutput: JobOutput, emit = false, transaction?: ProviderTransaction) {
-    const topic = await this.getPublishesTopic(context);
+  async pubPermSubs(
+    context: JobState,
+    jobOutput: JobOutput,
+    emit = false,
+    transaction?: ProviderTransaction,
+  ) {
+    const topic = await PubSub.getPublishesTopic(this, context);
     if (topic) {
-      const message: JobMessage = {
+      const message = {
         type: 'job',
         topic,
         job: restoreHierarchy(jobOutput) as JobOutput,
@@ -979,145 +514,80 @@ class EngineService {
       );
     }
   }
+
+  /**
+   * @private
+   */
+  async getPublishesTopic(context: JobState): Promise<string> {
+    return PubSub.getPublishesTopic(this, context);
+  }
+
   /**
    * @private
    */
   async add(streamData: StreamData | StreamDataResponse): Promise<string> {
-    return (await this.router?.publishMessage(null, streamData)) as string;
+    return PubSub.add(this, streamData);
   }
 
   /**
    * @private
    */
   registerJobCallback(jobId: string, jobCallback: JobMessageCallback) {
-    this.jobCallbacks[jobId] = jobCallback;
+    PubSub.registerJobCallback(this, jobId, jobCallback);
   }
+
   /**
    * @private
    */
   delistJobCallback(jobId: string) {
-    delete this.jobCallbacks[jobId];
+    PubSub.removeJobCallback(this, jobId);
   }
+
   /**
    * @private
    */
   hasOneTimeSubscription(context: JobState): boolean {
-    return Boolean(context.metadata.ngn);
+    return PubSub.hasOneTimeSubscription(context);
   }
 
-  // ********** JOB COMPLETION/CLEANUP (AND JOB EMIT) ***********
-  /**
-   * @private
-   */
-  async runJobCompletionTasks(
-    context: JobState,
-    options: JobCompletionOptions = {},
-    transaction?: ProviderTransaction,
-  ): Promise<string | void> {
-    //'emit' indicates the job is still active
-    const isAwait = this.hasParentJob(context, true);
-    const isOneTimeSub = this.hasOneTimeSubscription(context);
-    const topic = await this.getPublishesTopic(context);
-    let msgId: string;
-    let jobOutput: JobOutput;
-    if (isAwait || isOneTimeSub || topic) {
-      jobOutput = await this.getState(
-        context.metadata.tpc,
-        context.metadata.jid,
-      );
-      //only send RESULT to parent for non-severed children (execChild).
-      //startChild (px=true) children already sent RESULT at spawn time
-      //via Trigger.execAdjacentParent; sending again here would cause
-      //a duplicate semaphore decrement in collation workflows.
-      if (isAwait) {
-        msgId = await this.execAdjacentParent(context, jobOutput, options.emit, transaction);
-      }
-      if (transaction) {
-        //transactional: await to queue NOTIFY in the transaction
-        await this.pubOneTimeSubs(context, jobOutput, options.emit, transaction);
-        await this.pubPermSubs(context, jobOutput, options.emit, transaction);
-      } else {
-        //non-transactional: fire-and-forget to avoid race with inline
-        //trigger processing (callback registered after pub() returns)
-        this.pubOneTimeSubs(context, jobOutput, options.emit);
-        this.pubPermSubs(context, jobOutput, options.emit);
-      }
-    }
-    if (!options.emit) {
-      if (transaction) {
-        await this.taskService.registerJobForCleanup(
-          context.metadata.jid,
-          this.resolveExpires(context, options),
-          options,
-          transaction,
-        );
-      } else {
-        this.taskService.registerJobForCleanup(
-          context.metadata.jid,
-          this.resolveExpires(context, options),
-          options,
-        );
-      }
-    }
-    return msgId;
-  }
+  // ═════════════════════════════════════════════════════════════════
+  //  10. STATE — job state retrieval, export, and compression
+  //      → see state.ts
+  // ═════════════════════════════════════════════════════════════════
 
-  /**
-   * Job hash expiration is typically reliant on the metadata field
-   * if the activity concludes normally. However, if the job is `interrupted`,
-   * it will be expired immediately.
-   * @private
-   */
-  resolveExpires(context: JobState, options: JobCompletionOptions): number {
-    return options.expire ?? context.metadata.expire ?? HMSH_EXPIRE_JOB_SECONDS;
-  }
-
-  // ****** GET JOB STATE/COLLATION STATUS BY ID *********
   /**
    * @private
    */
   async export(jobId: string, options: ExportOptions = {}): Promise<JobExport> {
-    return await this.exporter.export(jobId, options);
+    return State.exportJob(this, jobId, options);
   }
+
   /**
    * @private
    */
   async getRaw(jobId: string): Promise<StringStringType> {
-    return await this.store.getRaw(jobId);
+    return State.getRaw(this, jobId);
   }
+
   /**
    * @private
    */
   async getStatus(jobId: string): Promise<JobStatus> {
-    const { id: appId } = await this.getVID();
-    return await this.store.getStatus(jobId, appId);
+    return State.getStatus(this, jobId);
   }
+
   /**
    * @private
    */
   async getState(topic: string, jobId: string): Promise<JobOutput> {
-    const jobSymbols = await this.store.getSymbols(`$${topic}`);
-    const consumes: Consumes = {
-      [`$${topic}`]: Object.keys(jobSymbols),
-    };
-    //job data exists at the 'zero' dimension; pass an empty object
-    const dIds = {} as StringStringType;
-    const output = await this.store.getState(jobId, consumes, dIds);
-    if (!output) {
-      throw new Error(`not found ${jobId}`);
-    }
-    const [state, status] = output;
-    const stateTree = restoreHierarchy(state) as JobOutput;
-    if (status != null && stateTree.metadata) {
-      stateTree.metadata.js = status;
-    }
-    return stateTree;
+    return State.getState(this, topic, jobId);
   }
+
   /**
    * @private
    */
   async getQueryState(jobId: string, fields: string[]): Promise<StringAnyType> {
-    return await this.store.getQueryState(jobId, fields);
+    return State.getQueryState(this, jobId, fields);
   }
 
   /**
@@ -1125,16 +595,7 @@ class EngineService {
    * @deprecated
    */
   async compress(terms: string[]): Promise<boolean> {
-    const existingSymbols = await this.store.getSymbolValues();
-    const startIndex = Object.keys(existingSymbols).length;
-    const maxIndex = Math.pow(52, 2) - 1;
-    const newSymbols = SerializerService.filterSymVals(
-      startIndex,
-      maxIndex,
-      existingSymbols,
-      new Set(terms),
-    );
-    return await this.store.addSymbolValues(newSymbols);
+    return State.compress(this, terms);
   }
 }
 
