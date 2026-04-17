@@ -75,12 +75,16 @@ export class ErrorHandler {
     if (typeof err.name === 'string') {
       error.name = err.name;
     }
-    return {
+    const result = {
       status: 'error',
       code: HMSH_CODE_UNKNOWN,
       metadata: { ...input.metadata, guid: guid() },
       data: error as StreamError,
     } as StreamDataResponse;
+    if ((input as any)._retryAttempt != null) {
+      (result as any)._retryAttempt = (input as any)._retryAttempt;
+    }
+    return result;
   }
 
   structureUnacknowledgedError(input: StreamData): StreamDataResponse {
@@ -166,6 +170,8 @@ export class ErrorHandler {
       return (await publishMessage(input.metadata.topic, newMessage)) as string;
     } else {
       const structuredError = this.structureError(input, output);
+      (structuredError as any)._retryAttempt =
+        ((input as any)._retryAttempt || 0) + 1;
       return (await publishMessage(null, structuredError)) as string;
     }
   }
