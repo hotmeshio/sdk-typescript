@@ -1,5 +1,6 @@
 import { ProviderConfig, ProvidersConfig } from './provider';
 import { LogLevel } from './logger';
+import { RetryPolicy } from './stream';
 
 interface VirtualExecOptions {
   /**
@@ -40,6 +41,16 @@ interface VirtualConnectParams {
    * The linked worker function that will be called; optional if read only
    */
   callback?: (...args: any[]) => any;
+  /**
+   * Retry policy for the worker. Controls retry behavior with
+   * exponential backoff when the callback throws.
+   *
+   * @example
+   * ```typescript
+   * { maximumAttempts: 3, backoffCoefficient: 2, maximumInterval: 30 }
+   * ```
+   */
+  retry?: RetryPolicy;
 }
 
 interface VirtualExecParams {
@@ -162,6 +173,16 @@ interface VirtualCronParams {
    * Options for the cron job
    */
   options: VirtualCronOptions;
+  /**
+   * Retry policy for the cron worker. Controls retry behavior with
+   * exponential backoff when the callback throws.
+   *
+   * @example
+   * ```typescript
+   * { maximumAttempts: 3, backoffCoefficient: 2, maximumInterval: 30 }
+   * ```
+   */
+  retry?: RetryPolicy;
 }
 
 interface VirtualInstanceOptions {

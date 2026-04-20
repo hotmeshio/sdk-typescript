@@ -178,7 +178,7 @@ export const getWorkflowYAML = (appId = HMNS, version = VERSION): string => {
             conditions:
               match:
                 - expected: true
-                  actual: 
+                  actual:
                     '@pipe':
                       - ['{cycle_hook_cron.output.data.iterationCount}', '{trigger_cron.output.data.maxCycles}']
                       - ['{@conditional.less_than}']

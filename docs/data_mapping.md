@@ -2,17 +2,19 @@
 
 This document describes the data mapping functions available in HotMesh. The functions are organized based on their data type categories, such as array, object, number, string, etc.
 
- - [Array Functions](./fns/array.md)
- - [Bitwise Functions](./fns/bitwise.md)
- - [Conditional Functions](./fns/conditional.md)
- - [Date/Time Functions](./fns/date.md)
- - [JSON Functions](./fns/json.md)
- - [Math Functions](./fns/math.md)
- - [Number Functions](./fns/number.md)
- - [Object Functions](./fns/object.md)
- - [String Functions](./fns/string.md)
- - [Symbol Functions](./fns/symbol.md)
- - [Unary Functions](./fns/unary.md)
+ - [Array Functions](./hotmesh/classes/ArrayHandler.html)
+ - [Bitwise Functions](./hotmesh/classes/BitwiseHandler.html)
+ - [Conditional Functions](./hotmesh/classes/ConditionalHandler.html)
+ - [Cron Functions](./hotmesh/classes/CronHandler.html)
+ - [Date/Time Functions](./hotmesh/classes/DateHandler.html)
+ - [JSON Functions](./hotmesh/classes/JsonHandler.html)
+ - [Logical Functions](./hotmesh/classes/LogicalHandler.html)
+ - [Math Functions](./hotmesh/classes/MathHandler.html)
+ - [Number Functions](./hotmesh/classes/NumberHandler.html)
+ - [Object Functions](./hotmesh/classes/ObjectHandler.html)
+ - [String Functions](./hotmesh/classes/StringHandler.html)
+ - [Symbol Functions](./hotmesh/classes/SymbolHandler.html)
+ - [Unary Functions](./hotmesh/classes/UnaryHandler.html)
 
 ## Quick Start
 This section demonstrates how to map data from multiple source objects to a single destination object.

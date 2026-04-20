@@ -222,5 +222,95 @@ describe('VIRTUAL | Postgres', () => {
         expect(counter).toBe(2);
       }, 6_500);
     });
+
+    describe('error handling', () => {
+      it('should stop after 3 retries when retry policy set to 3', async () => {
+        let callCount = 0;
+
+        await Virtual.cron({
+          topic: 'test.cron.retry3',
+          connection,
+          args: [],
+          callback: async () => {
+            callCount++;
+            throw new Error('deliberate failure');
+          },
+          options: { id: 'retry3-test', interval: '1 second' },
+          retry: {
+            maximumAttempts: 3,
+            backoffCoefficient: 2,
+            maximumInterval: 30,
+          },
+        });
+
+        await sleepFor(15_000);
+
+        console.log(`retry3: callCount=${callCount}`);
+        expect(callCount).toBe(3);
+      }, 30_000);
+
+      it('should stop after 5 retries when retry policy set to 5', async () => {
+        let callCount = 0;
+
+        await Virtual.cron({
+          topic: 'test.cron.retry5',
+          connection,
+          args: [],
+          callback: async () => {
+            callCount++;
+            throw new Error('deliberate failure');
+          },
+          options: { id: 'retry5-test', interval: '1 second' },
+          retry: {
+            maximumAttempts: 5,
+            backoffCoefficient: 2,
+            maximumInterval: 10,
+          },
+        });
+
+        await sleepFor(45_000);
+
+        console.log(`retry5: callCount=${callCount}`);
+        expect(callCount).toBe(5);
+      }, 60_000);
+
+      it('should respect backoff between retries on exec', async () => {
+        const timestamps: number[] = [];
+
+        await Virtual.connect({
+          topic: 'test.backoff',
+          connection,
+          callback: async () => {
+            timestamps.push(Date.now());
+            throw new Error('always fails');
+          },
+          retry: {
+            maximumAttempts: 3,
+            backoffCoefficient: 2,
+            maximumInterval: 30,
+          },
+        });
+
+        try {
+          await Virtual.exec({
+            args: [],
+            topic: 'test.backoff',
+            connection,
+          });
+        } catch {
+          // expected to fail after retries exhausted
+        }
+
+        console.log(`backoff attempts: ${timestamps.length}`);
+        if (timestamps.length > 1) {
+          const gaps = timestamps.slice(1).map((t, i) => t - timestamps[i]);
+          console.log(`backoff gaps (ms): ${JSON.stringify(gaps)}`);
+          for (let i = 1; i < gaps.length; i++) {
+            expect(gaps[i]).toBeGreaterThanOrEqual(gaps[i - 1] * 0.5);
+          }
+        }
+        expect(timestamps.length).toBeLessThanOrEqual(3);
+      }, 30_000);
+    });
   });
 });
