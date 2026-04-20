@@ -278,6 +278,11 @@ class Virtual {
         {
           topic: params.topic,
           connection,
+          retry: params.retry ?? {
+            maximumAttempts: 3,
+            backoffCoefficient: 2,
+            maximumInterval: 30,
+          },
           callback: async function (input: StreamData) {
             const response = await params.callback.apply(this, input.data.args);
             return {
@@ -440,6 +445,7 @@ class Virtual {
         connection: polyfill.providerConfig(params),
         callback: params.callback,
         namespace: params.namespace,
+        retry: params.retry,
       });
       readonly = false;
     } else {
