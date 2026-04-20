@@ -38,6 +38,17 @@ describe('Pipe', () => {
       expect(!isNaN(localeString.split('/')[1])).toEqual(true);
       expect(!isNaN(localeString.split('/')[2])).toEqual(false);
     });
+
+    it('yyyymmdd', () => {
+      jobData = {};
+      rules = [['{@date.yyyymmdd}']];
+      pipe = new Pipe(rules, jobData);
+      const result = pipe.process();
+      expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const today = new Date();
+      const expected = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, '0')}-${String(today.getUTCDate()).padStart(2, '0')}`;
+      expect(result).toEqual(expected);
+    });
   });
 
   describe('array', () => {

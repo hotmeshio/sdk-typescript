@@ -6,14 +6,33 @@ import { ILogger } from '../../../types/logger';
 import { LoggerService } from '../../logger';
 
 /**
- * Safely calculates the delay in seconds until the next execution of a cron job.
- * Fails silently and returns -1 if the cron expression is invalid.
- * @param cronExpression The cron expression to parse (e.g. '0 0 * * *').
- * @returns The delay in seconds until the next cron job execution (minimum 5 seconds).
+ * Provides cron-related utility functions based on the
+ * [cron](https://en.wikipedia.org/wiki/Cron) format for use
+ * in HotMesh mapping rules.
+ *
+ * @remarks
+ * Invoked in mapping rules using `{@cron.<method>}` syntax.
  */
 class CronHandler {
   static logger: ILogger = new LoggerService('hotmesh', 'cron');
 
+  /**
+   * Safely calculates the delay in seconds until the next execution
+   * of a cron job. Calculates the next date and time (per the system
+   * clock) that satisfies the cron expression, then returns the value
+   * in seconds from now. Fails silently and returns `-1` if the cron
+   * expression is invalid or the next execution time is in the past.
+   *
+   * @param {string} cronExpression - The cron expression to parse (e.g. `'0 0 * * *'`)
+   * @returns {number} The delay in seconds until the next cron job execution (minimum `HMSH_FIDELITY_SECONDS`), or `-1` on error
+   * @example
+   * ```yaml
+   * cron_next_result:
+   *   "@pipe":
+   *     - ["{a.expressions.cron}"]
+   *     - ["{@cron.nextDelay}"]
+   * ```
+   */
   nextDelay(cronExpression: string): number {
     try {
       if (!isValidCron(cronExpression)) {

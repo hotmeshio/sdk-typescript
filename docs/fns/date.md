@@ -58,6 +58,7 @@ The Date functions can also recognize strings or numbers representing the number
 - [date.toString](#datetostring)
 - [date.UTC](#dateutc)
 - [date.valueOf](#datevalueof)
+- [date.yyyymmdd](#dateyyyymmdd)
 
 ## date.fromISOString
 
@@ -1699,5 +1700,27 @@ After executing the mapping rules, the resulting JSON object will contain the cu
 ```json
 {
   "current_time": "20240423123456.789"
+}
+```
+
+## date.yyyymmdd
+
+The `date.yyyymmdd` function returns today's date formatted as a `yyyy-mm-dd` string using UTC. It does not take any parameters, similar to `date.now`.
+
+### Example
+
+The `date.yyyymmdd` function can be used in the mapping rules as follows:
+
+```yaml
+today:
+  "@pipe":
+    - ["{@date.yyyymmdd}"]
+```
+
+After executing the mapping rules, the resulting JSON object will be:
+
+```json
+{
+  "today": "2026-04-19"
 }
 ```
