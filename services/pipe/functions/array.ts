@@ -5,7 +5,7 @@
  * expects one or more input parameters from the prior row in the `@pipe`
  * structure.
  *
- * @remarks Invoked via {@array.<method>} in YAML mapping rules.
+ * @remarks Invoked via `{@array.<method>}` in YAML mapping rules.
  */
 class ArrayHandler {
   /**

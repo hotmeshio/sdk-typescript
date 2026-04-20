@@ -2,7 +2,7 @@
  * Provides mathematical operations and transformations for use in HotMesh
  * mapping rules. The functions facilitate a wide range of mathematical
  * operations during the mapping process, all of which can be utilised
- * through the @pipe system for a functional approach.
+ * through the `@pipe` system for a functional approach.
  *
  * @remarks Methods are invoked with the syntax `{@math.<method>}`, e.g., `{@math.add}` or `{@math.sqrt}`.
  */

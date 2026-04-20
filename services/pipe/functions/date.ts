@@ -1,12 +1,12 @@
 import { formatISODate } from '../../../modules/utils';
 
-type DateInput = Date | string | number;
+export type DateInput = Date | string | number;
 
 /**
  * Provides date manipulation and formatting functions for use in HotMesh
  * mapping rules. Although inspired by JavaScript's Date API, these methods
  * follow a functional approach where each transformation expects one or more
- * input parameters from the prior row in the @pipe structure.
+ * input parameters from the prior row in the `@pipe` structure.
  *
  * Many methods accept various input formats (`Date`, `string`, and `number`),
  * implicitly casting to dates as necessary. The ISO 8601 Extended Format is
@@ -14,7 +14,7 @@ type DateInput = Date | string | number;
  * `YYYY-MM-DDTHH:mm:ss`, and `YYYY-MM-DDTHH:mm:ss.sssZ`. Strings or numbers
  * representing milliseconds since the Unix epoch are also accepted.
  *
- * @remarks Methods are invoked with the syntax {@link date.\<method\>}, e.g., `{@date.now}` or `{@date.getFullYear}`.
+ * @remarks Methods are invoked as `{@date.<method>}`, e.g., `{@date.now}` or `{@date.getFullYear}`.
  */
 class DateHandler {
   /**

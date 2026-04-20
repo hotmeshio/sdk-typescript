@@ -5,7 +5,7 @@
  * is a function that expects one or more input parameters from the prior
  * row in the `@pipe` structure.
  *
- * @remarks Invoked via {@object.<method>} in YAML mapping rules.
+ * @remarks Invoked via `{@object.<method>}` in YAML mapping rules.
  */
 class ObjectHandler {
   /**

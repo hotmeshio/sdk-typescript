@@ -2,7 +2,7 @@
  * Provides string manipulation functions for use in HotMesh mapping rules.
  * Although inspired by JavaScript's String API, these methods follow a
  * functional approach where each transformation expects one or more input
- * parameters from the prior row in the @pipe structure.
+ * parameters from the prior row in the `@pipe` structure.
  *
  * @remarks Methods are invoked with the syntax `{@string.<method>}`, e.g., `{@string.trim}` or `{@string.toUpperCase}`.
  */

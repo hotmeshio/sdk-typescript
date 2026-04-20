@@ -5,7 +5,7 @@
  * a function that expects one or more input parameters from the prior
  * row in the `@pipe` structure.
  *
- * @remarks Invoked via {@conditional.<method>} in YAML mapping rules.
+ * @remarks Invoked via `{@conditional.<method>}` in YAML mapping rules.
  */
 class ConditionalHandler {
   /**
