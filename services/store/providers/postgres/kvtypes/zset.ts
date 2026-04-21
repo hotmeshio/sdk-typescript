@@ -52,7 +52,7 @@ export const zsetModule = (context: any) => ({
   ): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'sorted_set');
     let sql = '';
-    const params = [key, member, score];
+    const params = [context.storageKey(key), member, score];
 
     if (options?.nx) {
       sql = `
@@ -141,7 +141,7 @@ export const zsetModule = (context: any) => ({
                   AND LEAST(GREATEST(adjusted_stop, 0), max_index)
       ORDER BY rn ASC;
     `;
-    const params = [key, start, stop];
+    const params = [context.storageKey(key), start, stop];
     return { sql, params };
   },
 
@@ -183,7 +183,7 @@ export const zsetModule = (context: any) => ({
         AND (expiry IS NULL OR expiry > NOW())
       LIMIT 1
     `;
-    const params = [key, member];
+    const params = [context.storageKey(key), member];
     return { sql, params };
   },
 
@@ -225,7 +225,7 @@ export const zsetModule = (context: any) => ({
       WHERE key = $1 AND score BETWEEN $2 AND $3 AND (expiry IS NULL OR expiry > NOW())
       ORDER BY score ASC, member ASC
     `;
-    const params = [key, min, max];
+    const params = [context.storageKey(key), min, max];
     return { sql, params };
   },
 
@@ -267,7 +267,7 @@ export const zsetModule = (context: any) => ({
       WHERE key = $1 AND score BETWEEN $2 AND $3 AND (expiry IS NULL OR expiry > NOW())
       ORDER BY score ASC, member ASC
     `;
-    const params = [key, min, max];
+    const params = [context.storageKey(key), min, max];
     return { sql, params };
   },
 
@@ -310,7 +310,7 @@ export const zsetModule = (context: any) => ({
       )
       SELECT COUNT(*) as count FROM deleted
     `;
-    const params = [key, member];
+    const params = [context.storageKey(key), member];
     return { sql, params };
   },
 
@@ -355,7 +355,7 @@ export const zsetModule = (context: any) => ({
       WHERE ms.key = $1 AND (expiry IS NULL OR expiry > NOW())
       AND (ms.score < member_score.score OR (ms.score = member_score.score AND ms.member < $2))
     `;
-    const params = [key, member];
+    const params = [context.storageKey(key), member];
     return { sql, params };
   },
 });

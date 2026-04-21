@@ -77,7 +77,7 @@ export class ErrorHandler {
     }
     const result = {
       status: 'error',
-      code: HMSH_CODE_UNKNOWN,
+      code: (err as any).code || HMSH_CODE_UNKNOWN,
       metadata: { ...input.metadata, guid: guid() },
       data: error as StreamError,
     } as StreamDataResponse;

@@ -113,6 +113,8 @@ class QuorumService {
       this.namespace,
       this.appId,
       this.logger,
+      this.guid,
+      'quorum',
     );
   }
 

@@ -89,6 +89,38 @@ describe('Pipe', () => {
 
       expect(result).toBe(-1); //invalid cron expression
     });
+
+    it('should resolve cron cycle sleep via nextDelay + math.max (mirrors factory schema)', () => {
+      // Reproduces the exact pipe from services/virtual/schemas/factory.ts cycle_cron:
+      //   - ['{trigger_cron.output.data.cron}']
+      //   - ['{@cron.nextDelay}', '{trigger_cron.output.data.interval}']
+      //   - ['{@math.max}']
+      const fidelity = 5; // HMSH_FIDELITY_SECONDS default
+      jobData = {
+        trigger_cron: {
+          output: {
+            data: {
+              cron: '* * * * *', // every minute
+              interval: fidelity,
+            },
+          },
+        },
+      };
+
+      rules = [
+        ['{trigger_cron.output.data.cron}'],
+        ['{@cron.nextDelay}', '{trigger_cron.output.data.interval}'],
+        ['{@math.max}'],
+      ];
+
+      pipe = new Pipe(rules, jobData);
+      const result = pipe.process();
+
+      // nextDelay for '* * * * *' should be 1-60s; math.max ensures >= fidelity
+      expect(result).toBeGreaterThanOrEqual(fidelity);
+      // must NOT collapse to fidelity — cron delay should dominate
+      expect(result).toBeGreaterThan(fidelity);
+    });
   });
 
   describe('number', () => {

@@ -432,7 +432,7 @@ export function _hset(
       ${conflictAction}
       RETURNING 1 as count
     `;
-    params.unshift(key); // Add key as the first parameter
+    params.unshift(context.storageKey(key)); // Add stripped key as the first parameter
   }
 
   return { sql, params };
@@ -485,7 +485,7 @@ export function _hget(
       WHERE key = $1 AND field = $2
     `;
     const sql = context.appendExpiryClause(baseQuery, tableName);
-    return { sql, params: [key, field] };
+    return { sql, params: [context.storageKey(key), field] };
   }
 }
 
@@ -526,7 +526,7 @@ export function _hdel(
       )
       SELECT COUNT(*) as count FROM deleted
     `;
-    return { sql, params: [key, ...fields] };
+    return { sql, params: [context.storageKey(key), ...fields] };
   }
 }
 
@@ -587,7 +587,7 @@ export function _hmget(
         AND field = ANY($2::text[])
     `;
     const sql = context.appendExpiryClause(baseQuery, tableName);
-    return { sql, params: [key, fields] };
+    return { sql, params: [context.storageKey(key), fields] };
   }
 }
 
@@ -636,7 +636,7 @@ export function _hgetall(
       `,
       tableName,
     );
-    return { sql, params: [key] };
+    return { sql, params: [context.storageKey(key)] };
   }
 }
 
@@ -684,7 +684,7 @@ export function _hincrbyfloat(
       SET value = ((COALESCE(${tableName}.value, '0')::double precision + $3::double precision)::text)
       RETURNING value
     `;
-    return { sql, params: [key, field, increment] };
+    return { sql, params: [context.storageKey(key), field, increment] };
   }
 }
 

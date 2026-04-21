@@ -1,4 +1,4 @@
-import { HMNS, KeyService } from '../../../../modules/key';
+import { KeyService } from '../../../../modules/key';
 import { KeyStoreParams } from '../../../../types/hotmesh';
 import { PostgresClientType } from '../../../../types/postgres';
 import { ProviderTransaction } from '../../../../types/provider';
@@ -68,20 +68,15 @@ export class KVSQL {
   }
 
   /**
-   * Resolves the table name when provided a key
+   * Resolves the table name when provided a key.
+   * Public tables (applications, connections) are no longer routed through
+   * the KV layer — they use direct SQL in postgres.ts.
    */
   tableForKey(
     key: string,
     stats_type?: 'hash' | 'sorted_set' | 'list',
   ): string {
-    if (key === HMNS) {
-      return 'public.hotmesh_connections';
-    }
-
     const [_, appName, abbrev, ...rest] = key.split(':');
-    if (appName === 'a') {
-      return 'public.hotmesh_applications';
-    }
 
     const id = rest?.length ? rest.join(':') : '';
     const entity = KeyService.resolveEntityType(abbrev, id);
@@ -108,11 +103,25 @@ export class KVSQL {
 
     if (entity === 'unknown_entity') {
       throw new Error(`Unknown entity type abbreviation: ${abbrev}`);
-    } else if (entity === 'applications') {
-      return 'public.hotmesh_applications';
     } else {
       return `${schemaName}.${entity}`;
     }
+  }
+
+  /**
+   * Strips the `hmsh:<appId>:<entity>:` prefix from a full Redis-style key,
+   * keeping only the meaningful suffix for SQL storage. Applied only to the
+   * `key` column in SQL params — never to member values, field names, or values.
+   *
+   * Excluded tables (jobs, streams, job attributes) retain the full key.
+   */
+  storageKey(fullKey: string): string {
+    const parts = fullKey.split(':');
+    if (parts.length < 3) return fullKey;
+    const entity = parts[2];
+    // Excluded tables: jobs (j), streams (x), job attributes (d)
+    if (entity === 'j' || entity === 'x' || entity === 'd') return fullKey;
+    return parts.slice(3).join(':');
   }
 
   safeName(input: string, prefix = ''): string {
@@ -273,6 +282,7 @@ export class KVSQL {
           AND (expired_at IS NULL OR expired_at > NOW())
         LIMIT 1;
       `;
+      return { sql, params: [key] };
     } else {
       sql = `
         SELECT FROM ${tableName}
@@ -280,8 +290,7 @@ export class KVSQL {
           AND (expiry IS NULL OR expiry > NOW())
         LIMIT 1;
       `;
+      return { sql, params: [this.storageKey(key)] };
     }
-    const params = [key];
-    return { sql, params };
   }
 }

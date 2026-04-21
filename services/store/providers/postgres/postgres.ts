@@ -90,6 +90,8 @@ class PostgresStoreService extends StoreService<
     namespace = HMNS,
     appId: string,
     logger: ILogger,
+    guid?: string,
+    role?: string,
   ): Promise<HotMeshApps> {
     //bind appId and namespace to storeClient once initialized
     // (it uses these values to construct keys for the store)
@@ -104,7 +106,7 @@ class PostgresStoreService extends StoreService<
     await this.deployTimeNotificationTriggers(appId);
 
     //note: getSettings will contact db to confirm r/w access
-    const settings = await this.getSettings(true);
+    const settings = await this.getSettings(true, guid, role);
     this.cache = new Cache(appId, settings);
     this.serializer = new Serializer();
     await this.getApp(appId);
@@ -198,7 +200,11 @@ class PostgresStoreService extends StoreService<
     return this.isSuccessful(success);
   }
 
-  async getSettings(bCreate = false): Promise<HotMeshSettings> {
+  async getSettings(
+    bCreate = false,
+    guid?: string,
+    role?: string,
+  ): Promise<HotMeshSettings> {
     let settings = this.cache?.getSettings();
     if (settings) {
       return settings;
@@ -207,7 +213,9 @@ class PostgresStoreService extends StoreService<
         const packageJson = await import('../../../../package.json');
         const version: string = packageJson['version'] || '0.0.0';
         settings = { namespace: HMNS, version } as HotMeshSettings;
-        await this.setSettings(settings);
+        if (guid && role) {
+          await this.registerConnection(guid, role, version);
+        }
         return settings;
       }
     }
@@ -215,10 +223,21 @@ class PostgresStoreService extends StoreService<
   }
 
   async setSettings(manifest: HotMeshSettings): Promise<any> {
-    //HotMesh heartbeat. If a connection is made, the version will be set
-    const params: KeyStoreParams = {};
-    const key = this.mintKey(KeyType.HOTMESH, params);
-    return await this.kvsql().hset(key, manifest);
+    // No-op for Postgres — settings are derived from package.json
+    // and connections are registered via registerConnection()
+    return;
+  }
+
+  async registerConnection(
+    guid: string,
+    role: string,
+    version: string,
+  ): Promise<void> {
+    const sql = `INSERT INTO public.hmsh_connections (guid, app_id, role, version)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (guid, app_id) DO UPDATE SET
+        version = EXCLUDED.version, connected_at = NOW()`;
+    await this.pgClient.query(sql, [guid, this.appId, role, version]);
   }
 
   async reserveSymbolRange(
@@ -400,73 +419,91 @@ class PostgresStoreService extends StoreService<
   }
 
   async getApp(id: string, refresh = false): Promise<HotMeshApp> {
-    let app: Partial<HotMeshApp> = this.cache.getApp(id);
+    let app: Partial<HotMeshApp> = this.cache?.getApp(id);
     if (refresh || !(app && Object.keys(app).length > 0)) {
-      const params: KeyStoreParams = { appId: id };
-      const key = this.mintKey(KeyType.APP, params);
-      const sApp = await this.kvsql().hgetall(key);
-      if (!sApp) return null;
-      app = {};
-      for (const field in sApp) {
-        try {
-          if (field === 'active') {
-            app[field] = sApp[field] === 'true';
-          } else {
-            app[field] = sApp[field];
-          }
-        } catch (e) {
-          app[field] = sApp[field];
-        }
+      // Fetch from relational tables
+      const appResult = await this.pgClient.query(
+        `SELECT app_id, version, active, settings FROM public.hmsh_applications WHERE app_id = $1`,
+        [id],
+      );
+      if (!appResult.rows.length) return null;
+      const row = appResult.rows[0];
+      app = {
+        id: row.app_id,
+        version: row.version,
+        active: row.active,
+      };
+      // Fetch version history
+      const versionsResult = await this.pgClient.query(
+        `SELECT version, status, deployed_at FROM public.hmsh_application_versions WHERE app_id = $1`,
+        [id],
+      );
+      for (const vRow of versionsResult.rows) {
+        app[`versions/${vRow.version}`] = `${vRow.status}:${formatISODate(new Date(vRow.deployed_at))}`;
       }
-      this.cache.setApp(id, app as HotMeshApp);
+      this.cache?.setApp(id, app as HotMeshApp);
     }
     return app as HotMeshApp;
   }
 
   async setApp(id: string, version: string): Promise<HotMeshApp> {
-    const params: KeyStoreParams = { appId: id };
-    const key = this.mintKey(KeyType.APP, params);
-    const versionId = `versions/${version}`;
+    const now = new Date();
+    // Upsert into applications
+    await this.pgClient.query(
+      `INSERT INTO public.hmsh_applications (app_id, version, active, updated_at)
+       VALUES ($1, $2, TRUE, $3)
+       ON CONFLICT (app_id) DO UPDATE SET version = $2, updated_at = $3`,
+      [id, version, now],
+    );
+    // Insert version record
+    await this.pgClient.query(
+      `INSERT INTO public.hmsh_application_versions (app_id, version, status, deployed_at)
+       VALUES ($1, $2, 'deployed', $3)
+       ON CONFLICT (app_id, version) DO UPDATE SET status = 'deployed', deployed_at = $3`,
+      [id, version, now],
+    );
     const payload: HotMeshApp = {
       id,
       version,
-      [versionId]: `deployed:${formatISODate(new Date())}`,
+      [`versions/${version}`]: `deployed:${formatISODate(now)}`,
     };
-    await this.kvsql().hset(key, payload as any);
-    this.cache.setApp(id, payload);
+    this.cache?.setApp(id, payload);
     return payload;
   }
 
   async activateAppVersion(id: string, version: string): Promise<boolean> {
-    const params: KeyStoreParams = { appId: id };
-    const key = this.mintKey(KeyType.APP, params);
-    const versionId = `versions/${version}`;
     const app = await this.getApp(id, true);
+    const versionId = `versions/${version}`;
     if (app && app[versionId]) {
-      const payload: HotMeshApp = {
-        id,
-        version: version.toString(),
-        [versionId]: `activated:${formatISODate(new Date())}`,
-        active: true,
-      };
-      Object.entries(payload).forEach(([key, value]) => {
-        payload[key] = value.toString();
-      });
-      await this.kvsql().hset(key, payload as any);
+      const now = new Date();
+      await this.pgClient.query(
+        `UPDATE public.hmsh_applications SET active = TRUE, version = $2, updated_at = $3 WHERE app_id = $1`,
+        [id, version, now],
+      );
+      await this.pgClient.query(
+        `UPDATE public.hmsh_application_versions SET status = 'activated', deployed_at = $3 WHERE app_id = $1 AND version = $2`,
+        [id, version, now],
+      );
       return true;
     }
     throw new Error(`Version ${version} does not exist for app ${id}`);
   }
 
   async registerAppVersion(appId: string, version: string): Promise<any> {
-    const params: KeyStoreParams = { appId };
-    const key = this.mintKey(KeyType.APP, params);
-    const payload: HotMeshApp = {
-      id: appId,
-      version: version.toString(),
-      [`versions/${version}`]: formatISODate(new Date()),
-    };
-    return await this.kvsql().hset(key, payload as any);
+    const now = new Date();
+    await this.pgClient.query(
+      `INSERT INTO public.hmsh_applications (app_id, version, active, updated_at)
+       VALUES ($1, $2, TRUE, $3)
+       ON CONFLICT (app_id) DO UPDATE SET version = $2, updated_at = $3`,
+      [appId, version, now],
+    );
+    await this.pgClient.query(
+      `INSERT INTO public.hmsh_application_versions (app_id, version, status, deployed_at)
+       VALUES ($1, $2, 'deployed', $3)
+       ON CONFLICT (app_id, version) DO UPDATE SET status = 'deployed', deployed_at = $3`,
+      [appId, version, now],
+    );
+    return 1;
   }
 
   async setStats(
@@ -1631,7 +1668,7 @@ class PostgresStoreService extends StoreService<
    */
   private async getNextAwakeningTime(): Promise<number | null> {
     const schemaName = this.kvsql().safeName(this.appId);
-    const appKey = `${this.appId}:time_range`;
+    const appKey = '';
 
     try {
       const result = await this.pgClient.query(

@@ -80,6 +80,8 @@ export async function initStoreChannel(
     instance.namespace,
     instance.appId,
     instance.logger,
+    instance.guid,
+    'engine',
   );
 }
 

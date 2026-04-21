@@ -39,6 +39,8 @@ abstract class StoreService<
     namespace: string,
     appId: string,
     logger: ILogger,
+    guid?: string,
+    role?: string,
   ): Promise<HotMeshApps>;
 
   //domain-level methods

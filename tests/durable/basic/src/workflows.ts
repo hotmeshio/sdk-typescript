@@ -15,7 +15,7 @@ type responseType = {
     complex: string;
   };
   random2: number;
-  payload: { id: string; data: { hello: string; id: string } };
+  payload: false | { id: string; data: { hello: string; id: string } };
   proxyGreeting3: {
     complex: string;
   };
