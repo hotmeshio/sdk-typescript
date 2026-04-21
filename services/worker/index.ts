@@ -176,6 +176,8 @@ class WorkerService {
       service.namespace,
       service.appId,
       service.logger,
+      service.guid,
+      'worker',
     );
   }
 

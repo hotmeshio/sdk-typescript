@@ -5,6 +5,7 @@ import {
   HScanResult,
   ProviderTransaction,
 } from './types';
+import { isJobsTable } from './utils';
 
 export function createScanOperations(context: HashContext['context']) {
   return {
@@ -89,7 +90,8 @@ export function _hscan(
   pattern?: string,
 ): SqlResult {
   const tableName = context.tableForKey(key, 'hash');
-  const params = [key];
+  const isJobs = tableName.endsWith('jobs');
+  const params = [isJobs ? key : context.storageKey(key)];
   let sql = `
     SELECT field, value FROM ${tableName}
     WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())

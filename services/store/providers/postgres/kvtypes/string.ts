@@ -32,7 +32,7 @@ export const stringModule = (context: any) => ({
       WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
       LIMIT 1
     `;
-    const params = [key];
+    const params = [context.storageKey(key)];
     return { sql, params };
   },
 
@@ -117,7 +117,7 @@ export const stringModule = (context: any) => ({
   ): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key);
     let sql = '';
-    const params = [key, value];
+    const params = [context.storageKey(key), value];
     let expiryClause = '';
 
     if (options?.ex) {
@@ -178,7 +178,7 @@ export const stringModule = (context: any) => ({
       )
       SELECT COUNT(*) as count FROM deleted
     `;
-    const params = [key];
+    const params = [context.storageKey(key)];
     return { sql, params };
   },
 });

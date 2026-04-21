@@ -62,7 +62,7 @@ export const listModule = (context: any) => ({
       WHERE rn BETWEEN indices.adjusted_start AND indices.adjusted_end
       ORDER BY rn ASC
     `;
-    const params = [key, start, end];
+    const params = [context.storageKey(key), start, end];
     return { sql, params };
   },
 
@@ -116,7 +116,7 @@ export const listModule = (context: any) => ({
       )
       SELECT COUNT(*) as count FROM inserted
     `;
-    const params = [key, ...values];
+    const params = [context.storageKey(key), ...values];
     return { sql, params };
   },
 
@@ -170,7 +170,7 @@ export const listModule = (context: any) => ({
       )
       SELECT COUNT(*) as count FROM inserted
     `;
-    const params = [key, ...values];
+    const params = [context.storageKey(key), ...values];
     return { sql, params };
   },
 
@@ -196,6 +196,7 @@ export const listModule = (context: any) => ({
 
   _lpop(key: string): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'list');
+    const sKey = context.storageKey(key);
     const sql = `
       DELETE FROM ${tableName}
       WHERE key = $1 AND "index" = (
@@ -203,7 +204,7 @@ export const listModule = (context: any) => ({
       )
       RETURNING value
     `;
-    const params = [key];
+    const params = [sKey];
     return { sql, params };
   },
 
@@ -276,7 +277,7 @@ export const listModule = (context: any) => ({
       )
       SELECT value FROM inserted
     `;
-    const params = [source, destination];
+    const params = [context.storageKey(source), context.storageKey(destination)];
     return { sql, params };
   },
 
@@ -315,7 +316,7 @@ export const listModule = (context: any) => ({
     const sql = `
       UPDATE ${tableName} SET key = $2 WHERE key = $1;
     `;
-    const params = [oldKey, newKey];
+    const params = [context.storageKey(oldKey), context.storageKey(newKey)];
     return { sql, params };
   },
 });

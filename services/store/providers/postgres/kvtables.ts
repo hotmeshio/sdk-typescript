@@ -188,6 +188,41 @@ export const KVTables = (context: PostgresStoreService) => ({
         const fullTableName = `${tableDef.schema}.${tableDef.name}`;
 
         switch (tableDef.type) {
+          case 'relational_app':
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${fullTableName} (
+                app_id TEXT PRIMARY KEY,
+                version TEXT NOT NULL DEFAULT '1',
+                active BOOLEAN DEFAULT TRUE,
+                settings JSONB DEFAULT '{}',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+              );
+            `);
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS public.hmsh_application_versions (
+                app_id TEXT NOT NULL REFERENCES public.hmsh_applications(app_id) ON DELETE CASCADE,
+                version TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'deployed',
+                deployed_at TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (app_id, version)
+              );
+            `);
+            break;
+
+          case 'relational_connection':
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${fullTableName} (
+                guid TEXT NOT NULL,
+                app_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                version TEXT NOT NULL,
+                connected_at TIMESTAMPTZ DEFAULT NOW(),
+                PRIMARY KEY (guid, app_id)
+              );
+            `);
+            break;
+
           case 'string':
             await client.query(`
               CREATE TABLE IF NOT EXISTS ${fullTableName} (
@@ -451,8 +486,12 @@ export const KVTables = (context: PostgresStoreService) => ({
   getTableNames(appName: string): string[] {
     const tableNames = [];
 
-    // Applications table (only hotmesh prefix)
-    tableNames.push('hotmesh_applications', 'hotmesh_connections');
+    // Public relational tables
+    tableNames.push(
+      'public.hmsh_applications',
+      'public.hmsh_application_versions',
+      'public.hmsh_connections',
+    );
 
     // Other tables with appName
     const tablesWithAppName = [
@@ -487,13 +526,13 @@ export const KVTables = (context: PostgresStoreService) => ({
     const tableDefinitions = [
       {
         schema: 'public',
-        name: 'hotmesh_applications',
-        type: 'hash',
+        name: 'hmsh_applications',
+        type: 'relational_app',
       },
       {
         schema: 'public',
-        name: 'hotmesh_connections',
-        type: 'hash',
+        name: 'hmsh_connections',
+        type: 'relational_connection',
       },
       {
         schema: schemaName,

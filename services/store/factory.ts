@@ -13,6 +13,8 @@ class StoreServiceFactory {
     namespace: string,
     appId: string,
     logger: ILogger,
+    guid?: string,
+    role?: string,
   ): Promise<
     StoreService<ProviderClient, ProviderTransaction> & StoreInitializable
   > {
@@ -21,7 +23,7 @@ class StoreServiceFactory {
     if (identifyProvider(providerClient) === 'postgres') {
       service = new PostgresStoreService(providerClient);
     } //etc
-    await service.init(namespace, appId, logger);
+    await service.init(namespace, appId, logger, guid, role);
     return service;
   }
 }

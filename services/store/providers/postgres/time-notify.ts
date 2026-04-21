@@ -17,25 +17,26 @@ DECLARE
     next_time TIMESTAMP WITH TIME ZONE;
 BEGIN
     -- Get the earliest (lowest score) entry from the time range ZSET
+    -- After normalization, the key is empty string (prefix stripped)
     SELECT score INTO next_score
     FROM ${schema}.task_schedules
-    WHERE key = app_key
+    WHERE key = ''
     AND (expiry IS NULL OR expiry > NOW())
     ORDER BY score ASC
     LIMIT 1;
-    
+
     IF next_score IS NULL THEN
         RETURN NULL;
     END IF;
-    
+
     -- Convert epoch milliseconds to timestamp
     next_time := to_timestamp(next_score / 1000.0);
-    
+
     -- Only return if it's in the future
     IF next_time > NOW() THEN
         RETURN next_time;
     END IF;
-    
+
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -51,8 +52,8 @@ DECLARE
     current_next_time TIMESTAMP WITH TIME ZONE;
     app_key TEXT;
 BEGIN
-    -- Build the time range key for this app
-    app_key := app_id || ':time_range';
+    -- After normalization, the key is empty string
+    app_key := '';
     channel_name := 'time_hooks_' || app_id;
     
     -- Get the current next awakening time
@@ -98,18 +99,14 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION ${schema}.on_time_hook_change()
 RETURNS TRIGGER AS $$
 DECLARE
-    app_id_extracted TEXT;
     awakening_time TIMESTAMP WITH TIME ZONE;
 BEGIN
-    -- Extract app_id from the key (assumes format: app_id:time_range)
-    app_id_extracted := split_part(NEW.key, ':time_range', 1);
-    
     -- Convert the score (epoch milliseconds) to timestamp
     awakening_time := to_timestamp(NEW.score / 1000.0);
-    
-    -- Schedule notification for this new awakening time
-    PERFORM ${schema}.schedule_time_notification(app_id_extracted, awakening_time);
-    
+
+    -- Schedule notification (app_id is the schema name)
+    PERFORM ${schema}.schedule_time_notification('${schema}', awakening_time);
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -117,15 +114,10 @@ $$ LANGUAGE plpgsql;
 -- Trigger function for when time hooks are removed
 CREATE OR REPLACE FUNCTION ${schema}.on_time_hook_remove()
 RETURNS TRIGGER AS $$
-DECLARE
-    app_id_extracted TEXT;
 BEGIN
-    -- Extract app_id from the key
-    app_id_extracted := split_part(OLD.key, ':time_range', 1);
-    
     -- Recalculate and notify about the schedule update
-    PERFORM ${schema}.schedule_time_notification(app_id_extracted);
-    
+    PERFORM ${schema}.schedule_time_notification('${schema}');
+
     RETURN OLD;
 END;
 $$ LANGUAGE plpgsql;
@@ -138,22 +130,23 @@ DROP TRIGGER IF EXISTS trg_time_hook_update ON ${schema}.task_schedules;
 DROP TRIGGER IF EXISTS trg_time_hook_delete ON ${schema}.task_schedules;
 
 -- Create new triggers
+-- After normalization, the task_schedules key for time range is empty string
 CREATE TRIGGER trg_time_hook_insert
     AFTER INSERT ON ${schema}.task_schedules
     FOR EACH ROW
-    WHEN (NEW.key LIKE '%:time_range')
+    WHEN (NEW.key = '')
     EXECUTE FUNCTION ${schema}.on_time_hook_change();
 
 CREATE TRIGGER trg_time_hook_update
     AFTER UPDATE ON ${schema}.task_schedules
     FOR EACH ROW
-    WHEN (NEW.key LIKE '%:time_range')
+    WHEN (NEW.key = '')
     EXECUTE FUNCTION ${schema}.on_time_hook_change();
 
 CREATE TRIGGER trg_time_hook_delete
     AFTER DELETE ON ${schema}.task_schedules
     FOR EACH ROW
-    WHEN (OLD.key LIKE '%:time_range')
+    WHEN (OLD.key = '')
     EXECUTE FUNCTION ${schema}.on_time_hook_remove();
 `;
 }
