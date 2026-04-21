@@ -223,6 +223,41 @@ describe('VIRTUAL | Postgres', () => {
       }, 6_500);
     });
 
+    describe('cron expression syntax', () => {
+      it('should respect cron expression interval (not fire every fidelity tick)', async () => {
+        let callCount = 0;
+
+        const inited = await Virtual.cron({
+          guid: 'cron-expr',
+          args: [],
+          topic: 'my.cron.expression',
+          connection,
+          options: {
+            id: 'cronexpr123',
+            interval: '* * * * *', // every 1 minute in cron syntax
+          },
+          callback: async (): Promise<number> => {
+            callCount++;
+            return callCount;
+          },
+        });
+        expect(inited).toBe(true);
+
+        // Wait 15 seconds. With a 1-minute cron, we should see at most 1 call.
+        // If the alleged bug existed, callCount would be 3+ (firing every fidelity tick).
+        await sleepFor(15_000);
+
+        await Virtual.interrupt({
+          topic: 'my.cron.expression',
+          connection,
+          options: { id: 'cronexpr123' },
+        });
+
+        // A 1-minute cron should fire at most 1 time in 15 seconds.
+        expect(callCount).toBeLessThanOrEqual(2);
+      }, 25_000);
+    });
+
     describe('error handling', () => {
       it('should stop after 3 retries when retry policy set to 3', async () => {
         let callCount = 0;

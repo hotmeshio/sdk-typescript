@@ -631,8 +631,25 @@ export class ConsumptionManager<
       );
     }
     try {
-      const messageId = await this.publishResponse(input, output);
-      telemetry.setStreamAttributes({ 'app.worker.mid': messageId });
+      // When the ENGINE itself fails to process a message (e.g., schema not
+      // found, missing subscription), do NOT republish the error back to the
+      // engine stream — that creates an infinite poison loop. The engine
+      // When the ENGINE encounters an infrastructure error (schema not found,
+      // subscription missing — code 598), the message is permanently unprocessable.
+      // Do NOT republish it — that creates an infinite poison loop. Only suppress
+      // these specific infrastructure errors; application-level errors (retries,
+      // duplicates, workflow failures) must still flow through normally.
+      if (group === 'ENGINE' && output?.code === 598) {
+        this.logger.error(`stream-engine-dispatch-fatal`, {
+          stream, id, group,
+          aid: (input as any).metadata?.aid,
+          jid: (input as any).metadata?.jid,
+          message: output.data?.message,
+        });
+      } else {
+        const messageId = await this.publishResponse(input, output);
+        telemetry.setStreamAttributes({ 'app.worker.mid': messageId });
+      }
     } catch (publishErr) {
       // If publishResponse fails, still ack the message to prevent
       // infinite reprocessing. Log the error for debugging.

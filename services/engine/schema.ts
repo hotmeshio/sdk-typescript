@@ -33,9 +33,13 @@ export async function initActivity(
 ) {
   const [activityId, schema] = await getSchema(instance, topic);
   if (!schema) {
-    throw new Error(
-      `Activity schema not found for "${activityId}" (topic: ${topic}) in app ${instance.appId}`,
+    const err = new Error(
+      `Activity schema not found for "${activityId}" (topic: ${topic}) in app ${instance.appId}. ` +
+      `This is typically caused by a worker activity whose topic collides with the graph subscribes topic. ` +
+      `Redeploy with a distinct worker topic.`,
     );
+    (err as any).code = 598;
+    throw err;
   }
   const ActivityHandler = Activities[schema.type];
   if (ActivityHandler) {
