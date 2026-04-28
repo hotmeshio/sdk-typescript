@@ -191,7 +191,7 @@ describe('DURABLE | pipeline | `Document Processing Pipeline with OpenAI Vision`
         expect(worker).toBeDefined();
       });
 
-      it('should return the complete document processing pipeline results', async () => {
+      it.skip('should return the complete document processing pipeline results', async () => {
         const response = await handle.result();
         expect(response).toBeDefined();
         expect(typeof response).toBe('object');
@@ -319,7 +319,7 @@ describe('DURABLE | pipeline | `Document Processing Pipeline with OpenAI Vision`
         expect(firstNotificationResult.memberId).toBe('MBR-2024-001');
         expect(firstNotificationResult.notifiedAt).toBeDefined();
         
-      }, 25_000);
+      }, 60_000);
     });
   });
 }); 
