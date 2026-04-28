@@ -656,10 +656,12 @@ export class WorkerService {
       return await WorkerService.instances.get(targetTopic);
     }
     
+    const readonly = providerConfig.readonly ?? false;
     const workerEntry: any = {
       topic: activityTopic,
       connection: providerConfig,
       callback: this.wrapActivityFunctions().bind(this),
+      readonly,
     };
     if (config.workerCredentials) {
       workerEntry.workerCredentials = config.workerCredentials;
@@ -819,10 +821,12 @@ export class WorkerService {
     const targetNamespace = config?.namespace ?? APP_ID;
     const optionsHash = WorkerService.hashOptions(config?.connection);
     const targetTopic = `${optionsHash}.${targetNamespace}.${workflowTopic}`;
+    const readonly = providerConfig.readonly ?? false;
     const workerEntry: any = {
       topic: taskQueue,
       workflowName: workflowFunctionName,
       connection: providerConfig,
+      readonly,
       callback: this.wrapWorkflowFunction(
         workflowFunction,
         workflowTopic,

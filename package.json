@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.14.3",
+  "version": "0.14.4",
   "description": "Durable Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -47,6 +47,7 @@
     "test:durable:retrypolicy": "vitest run tests/durable/retry-policy",
     "test:durable:sleep": "vitest run tests/durable/sleep/postgres.test.ts",
     "test:durable:signal": "vitest run tests/durable/signal/postgres.test.ts",
+    "test:durable:readonly": "docker compose --profile readonly up -d --build && docker compose exec hotmesh-readonly npx vitest run tests/durable/readonly/postgres.test.ts",
     "test:durable:unknown": "vitest run tests/durable/unknown/postgres.test.ts",
     "test:durable:exporter": "HMSH_LOGLEVEL=info vitest run tests/durable/exporter",
     "test:durable:exporter:debug": "EXPORT_DEBUG=1 HMSH_LOGLEVEL=error vitest run tests/durable/basic/postgres.test.ts",

@@ -125,6 +125,7 @@ class WorkerService {
             {
               reclaimDelay: worker.reclaimDelay,
               reclaimCount: worker.reclaimCount,
+              readonly: worker.readonly,
               retry: worker.retry,
             },
           );
@@ -237,6 +238,7 @@ class WorkerService {
         reclaimDelay: worker.reclaimDelay,
         reclaimCount: worker.reclaimCount,
         throttle,
+        readonly: worker.readonly || false,
         retry: worker.retry,
       },
       this.stream,

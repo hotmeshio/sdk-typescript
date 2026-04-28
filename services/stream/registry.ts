@@ -52,6 +52,7 @@ class StreamConsumerRegistry {
     config?: {
       reclaimDelay?: number;
       reclaimCount?: number;
+      readonly?: boolean;
       retry?: any;
     },
   ): Promise<void> {
@@ -70,6 +71,7 @@ class StreamConsumerRegistry {
           topic: taskQueue,
           reclaimDelay: config?.reclaimDelay,
           reclaimCount: config?.reclaimCount,
+          readonly: config?.readonly || false,
           throttle,
           retry: config?.retry,
         },
@@ -85,15 +87,18 @@ class StreamConsumerRegistry {
       };
       StreamConsumerRegistry.workerConsumers.set(key, entry);
 
-      // Create the dispatch callback that routes by workflow_name
-      const dispatchCallback = StreamConsumerRegistry.createWorkerDispatcher(key);
+      // Only start consuming if not readonly
+      if (!config?.readonly) {
+        // Create the dispatch callback that routes by workflow_name
+        const dispatchCallback = StreamConsumerRegistry.createWorkerDispatcher(key);
 
-      // Start consuming from the task queue stream
-      const streamKey = stream.mintKey(KeyType.STREAMS, {
-        appId,
-        topic: taskQueue,
-      });
-      router.consumeMessages(streamKey, 'WORKER', guid, dispatchCallback);
+        // Start consuming from the task queue stream
+        const streamKey = stream.mintKey(KeyType.STREAMS, {
+          appId,
+          topic: taskQueue,
+        });
+        router.consumeMessages(streamKey, 'WORKER', guid, dispatchCallback);
+      }
     }
 
     // Register the callback for this workflow name
