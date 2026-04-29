@@ -13,15 +13,47 @@ type RuleType =
   | Date
   | Record<string, any>;
 
+/**
+ * Evaluates and transforms data-mapping rules against live job state.
+ *
+ * @remarks
+ * MapperService is the bridge between a workflow's declarative mapping
+ * rules (including `@pipe` expressions) and the runtime job data. It
+ * recursively walks a rule tree, delegating leaf-level resolution to
+ * the {@link Pipe} engine. Static helpers such as {@link evaluate}
+ * also power transition-condition checks during workflow execution.
+ *
+ * @example
+ * ```typescript
+ * const mapper = new MapperService(
+ *   { greeting: '{data.name}', score: { '@pipe': [['{data.x}', '{data.y}'], ['{@math.add}']] } },
+ *   jobState,
+ * );
+ * const result = mapper.mapRules();
+ * // => { greeting: 'Alice', score: 7 }
+ * ```
+ */
 class MapperService {
   private rules: Record<string, unknown>;
   private data: JobState;
 
+  /**
+   * @param rules - The mapping rule tree to evaluate. May contain
+   *   literal values, `{data.*}` references, or nested `@pipe` objects.
+   * @param data  - The current {@link JobState} used to resolve references.
+   */
   constructor(rules: Record<string, unknown>, data: JobState) {
     this.rules = rules;
     this.data = data;
   }
 
+  /**
+   * Recursively resolves every rule in the tree against the current job
+   * state and returns a fully-evaluated copy.
+   *
+   * @returns A plain object mirroring the rule structure with all
+   *   expressions replaced by their resolved values.
+   */
   public mapRules(): Record<string, unknown> {
     return this.traverseRules(this.rules);
   }
@@ -64,8 +96,31 @@ class MapperService {
   }
 
   /**
-   * Evaluates a transition rule against the current job state and incoming Stream message
-   * to determine which (if any) transition should be taken.
+   * Evaluates a transition rule against the current job state and an
+   * incoming Stream message code to decide whether the transition fires.
+   *
+   * @remarks
+   * Supports both simple boolean rules (`true` / `false`) and compound
+   * match rules with optional AND / OR gating. When the rule includes
+   * a `match` array, each entry's `actual` expression is resolved via
+   * {@link Pipe.resolve} and compared to the `expected` value.
+   *
+   * @param transitionRule - A boolean shorthand or a {@link TransitionRule}
+   *   containing `code`, optional `gate`, and optional `match` conditions.
+   * @param context - The current {@link JobState} used to resolve
+   *   `actual` expressions inside match entries.
+   * @param code - The {@link StreamCode} returned by the preceding
+   *   activity (e.g. `200`).
+   * @returns `true` if the transition should be taken, `false` otherwise.
+   *
+   * @example
+   * ```typescript
+   * const shouldTransition = MapperService.evaluate(
+   *   { code: 200, match: [{ expected: true, actual: '{data.isReady}' }] },
+   *   jobState,
+   *   200,
+   * );
+   * ```
    */
   static evaluate(
     transitionRule: TransitionRule | boolean,

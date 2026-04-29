@@ -1,71 +1,673 @@
-@import url('https://fonts.googleapis.com/css?family=Lato&display=swap');
+/* ==========================================================================
+   HotMesh — Modern Documentation Theme
+   Pure CSS override for TypeDoc 0.26 default theme
+   ========================================================================== */
 
-body {
-  font-family: 'Lato', sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
-  color: #333;
-  background-color: #ffffff;
-}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
+/* --------------------------------------------------------------------------
+   1. COLOR PALETTE — Light
+   -------------------------------------------------------------------------- */
 :root {
-  /* Light */
+  /* Backgrounds */
   --light-color-background: #ffffff;
+  --light-color-background-secondary: #f8f9fb;
+  --light-color-background-warning: #fff3cd;
+  --light-color-warning-text: #664d03;
+
+  /* Surfaces & borders */
+  --light-color-accent: #e2e6ed;
+  --light-color-active-menu-item: #eef1f6;
+
+  /* Text */
+  --light-color-text: #1a1d23;
+  --light-color-text-aside: #6b7280;
+
+  /* Icons */
+  --light-color-icon-background: var(--light-color-background);
+  --light-color-icon-text: var(--light-color-text);
+
+  /* Comment tags */
+  --light-color-comment-tag-text: #475569;
+  --light-color-comment-tag: #f1f5f9;
+
+  /* Links — warm brand accent */
+  --light-color-link: #2563eb;
+  --light-color-focus-outline: #3b82f6;
+
+  /* Syntax — softer, harmonized palette */
+  --light-color-ts-keyword: #0369a1;
+  --light-color-ts-project: #7c3aed;
+  --light-color-ts-module: var(--light-color-ts-project);
+  --light-color-ts-namespace: var(--light-color-ts-project);
+  --light-color-ts-enum: #b45309;
+  --light-color-ts-enum-member: var(--light-color-ts-enum);
+  --light-color-ts-variable: #4338ca;
+  --light-color-ts-function: #6d28d9;
+  --light-color-ts-class: #2563eb;
+  --light-color-ts-interface: #059669;
+  --light-color-ts-constructor: #2563eb;
+  --light-color-ts-property: #d97706;
+  --light-color-ts-method: #db2777;
+  --light-color-ts-reference: #e11d48;
+  --light-color-ts-call-signature: var(--light-color-ts-method);
+  --light-color-ts-index-signature: var(--light-color-ts-property);
+  --light-color-ts-constructor-signature: var(--light-color-ts-constructor);
+  --light-color-ts-parameter: var(--light-color-ts-variable);
+  --light-color-ts-type-parameter: #c2410c;
+  --light-color-ts-accessor: #dc2626;
+  --light-color-ts-get-signature: var(--light-color-ts-accessor);
+  --light-color-ts-set-signature: var(--light-color-ts-accessor);
+  --light-color-ts-type-alias: #be185d;
+  --light-color-document: #1a1d23;
+  --light-color-scheme: light;
 }
 
-pre {
-  border-radius: 4px;
+/* --------------------------------------------------------------------------
+   2. COLOR PALETTE — Dark
+   -------------------------------------------------------------------------- */
+:root {
+  --dark-color-background: #0f1117;
+  --dark-color-background-secondary: #1a1d27;
+  --dark-color-background-warning: #854d0e;
+  --dark-color-warning-text: #fef3c7;
+
+  --dark-color-accent: #2d3348;
+  --dark-color-active-menu-item: #252a3a;
+
+  --dark-color-text: #e5e7eb;
+  --dark-color-text-aside: #9ca3af;
+
+  --dark-color-icon-background: var(--dark-color-background-secondary);
+  --dark-color-icon-text: var(--dark-color-text);
+
+  --dark-color-comment-tag-text: #cbd5e1;
+  --dark-color-comment-tag: #1e293b;
+
+  --dark-color-link: #60a5fa;
+  --dark-color-focus-outline: #3b82f6;
+
+  --dark-color-ts-keyword: #38bdf8;
+  --dark-color-ts-project: #a78bfa;
+  --dark-color-ts-module: var(--dark-color-ts-project);
+  --dark-color-ts-namespace: var(--dark-color-ts-project);
+  --dark-color-ts-enum: #fbbf24;
+  --dark-color-ts-enum-member: var(--dark-color-ts-enum);
+  --dark-color-ts-variable: #818cf8;
+  --dark-color-ts-function: #a78bfa;
+  --dark-color-ts-class: #60a5fa;
+  --dark-color-ts-interface: #34d399;
+  --dark-color-ts-constructor: #60a5fa;
+  --dark-color-ts-property: #fbbf24;
+  --dark-color-ts-method: #f472b6;
+  --dark-color-ts-reference: #fb7185;
+  --dark-color-ts-call-signature: var(--dark-color-ts-method);
+  --dark-color-ts-index-signature: var(--dark-color-ts-property);
+  --dark-color-ts-constructor-signature: var(--dark-color-ts-constructor);
+  --dark-color-ts-parameter: var(--dark-color-ts-variable);
+  --dark-color-ts-type-parameter: #fb923c;
+  --dark-color-ts-accessor: #f87171;
+  --dark-color-ts-get-signature: var(--dark-color-ts-accessor);
+  --dark-color-ts-set-signature: var(--dark-color-ts-accessor);
+  --dark-color-ts-type-alias: #f472b6;
+  --dark-color-document: #f9fafb;
+  --dark-color-scheme: dark;
 }
 
+/* --------------------------------------------------------------------------
+   3. TYPOGRAPHY
+   -------------------------------------------------------------------------- */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--color-text);
+  background-color: var(--color-background);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+h1 { font-size: 1.75rem; margin: 1rem 0 0.75rem; }
+h2 { font-size: 1.35rem; margin: 1.5rem 0 0.6rem; }
+h3 { font-size: 1.15rem; margin: 1.25rem 0 0.5rem; }
+
+.tsd-typography {
+  line-height: 1.7;
+}
+
+.tsd-typography p,
+.tsd-typography ul,
+.tsd-typography ol {
+  margin: 0.75em 0;
+}
+
+.tsd-typography ul {
+  list-style: disc;
+}
+
+/* --------------------------------------------------------------------------
+   4. TOOLBAR / HEADER
+   -------------------------------------------------------------------------- */
 .tsd-page-toolbar {
-  background-color: #ffffff;
-  height: 4.1em;
+  background: var(--color-background);
+  border-bottom: 1px solid var(--color-accent);
+  height: auto;
+  box-shadow: none;
 }
 
+.tsd-page-toolbar .tsd-toolbar-contents {
+  height: 3.25rem;
+}
+
+/* Logo + title */
 #tsd-search .title {
-  color: #000000;
-  line-height: 2em;
-  font-size: 1.9em;
-  font-weight: bold;
-  left: -3.5px;
+  color: var(--color-text);
+  font-size: 1.1em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 3.25rem;
   position: relative;
+  left: 0;
 }
 
 #tsd-search .title::before {
   content: "";
   display: inline-block;
-  width: 1.25em;
-  height: 1.5em;
+  width: 1.4em;
+  height: 1.4em;
   background-image: url(https://hotmesh.io/img/logo_144_r.png);
-  background-size: 40px 40px;
+  background-size: contain;
   background-repeat: no-repeat;
-  margin-right: 0;
+  background-position: center;
+  margin-right: 0.35em;
   position: relative;
-  top: .25em;
-  left: -0.41em;
+  top: 0.3em;
+}
+
+/* Search field */
+#tsd-search .field input {
+  font-family: inherit;
+  font-size: 0.9em;
+}
+
+#tsd-search.has-focus {
+  background-color: var(--color-background-secondary);
+}
+
+#tsd-search .results {
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  top: 3.25rem;
+}
+
+#tsd-search .results li {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-accent);
+}
+
+#tsd-search .results li:last-child {
+  border-bottom: none;
+}
+
+#tsd-search .results li.current:not(.no-results),
+#tsd-search .results li:hover:not(.no-results) {
+  background-color: var(--color-active-menu-item);
+}
+
+/* --------------------------------------------------------------------------
+   5. LAYOUT & CONTAINERS
+   -------------------------------------------------------------------------- */
+.container {
+  max-width: 1400px;
+  padding: 0 2.5rem;
+}
+
+.container-main {
+  padding-top: 1.5rem;
+}
+
+/* --------------------------------------------------------------------------
+   6. SIDEBAR / NAVIGATION
+   -------------------------------------------------------------------------- */
+.tsd-navigation a,
+.tsd-navigation summary > span,
+.tsd-page-navigation a {
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.9em;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tsd-navigation a.current,
+.tsd-page-navigation a.current {
+  background: var(--color-active-menu-item);
+  font-weight: 500;
+}
+
+.tsd-navigation a:hover,
+.tsd-page-navigation a:hover {
+  background: var(--color-active-menu-item);
+  text-decoration: none;
+}
+
+.tsd-nested-navigation {
+  margin-left: 1.25rem;
+  border-left: 1px solid var(--color-accent);
+  padding-left: 0.75rem;
+}
+
+.tsd-nested-navigation > li > details {
+  margin-left: 0;
+}
+
+.tsd-small-nested-navigation {
+  margin-left: 1rem;
+  border-left: 1px solid var(--color-accent);
+  padding-left: 0.5rem;
+}
+
+.tsd-small-nested-navigation > li > details {
+  margin-left: 0;
+}
+
+.tsd-navigation.settings {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--color-accent);
+}
+
+/* --------------------------------------------------------------------------
+   7. CODE BLOCKS & SIGNATURES
+   -------------------------------------------------------------------------- */
+code, pre {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Monaco,
+    Consolas, monospace;
+  font-size: 0.85em;
+}
+
+pre {
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  padding: 1em 1.25em;
+  line-height: 1.6;
+}
+
+code {
+  background: var(--color-background-secondary);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-size: 0.875em;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+/* Copy button */
+pre > button {
+  border-radius: 6px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-background);
+  color: var(--color-text-aside);
+  padding: 0.25em 0.5em;
+  font-size: 0.75em;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+pre > button:hover {
+  background: var(--color-background-secondary);
+}
+
+/* Type signatures */
+.tsd-signature {
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+
+.tsd-signatures .tsd-signature {
+  border-radius: 0;
+}
+
+.tsd-signatures .tsd-signature:first-child {
+  border-radius: 8px 8px 0 0;
+}
+
+.tsd-signatures .tsd-signature:last-child {
+  border-radius: 0 0 8px 8px;
+}
+
+.tsd-signatures .tsd-signature:only-child {
+  border-radius: 8px;
+}
+
+/* --------------------------------------------------------------------------
+   8. PANELS & CARDS
+   -------------------------------------------------------------------------- */
+.tsd-panel {
+  margin-bottom: 2rem;
+}
+
+.tsd-panel.tsd-member {
+  margin-bottom: 2.5rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--color-accent);
+}
+
+.tsd-panel.tsd-member:last-child {
+  border-bottom: none;
+}
+
+.tsd-panel > h1,
+.tsd-panel > h2,
+.tsd-panel > h3 {
+  margin: 1rem -1.5rem 0.75rem -1.5rem;
+  padding: 0 1.5rem 0.5rem 1.5rem;
+  border-bottom: 1px solid var(--color-accent);
+}
+
+.tsd-panel > h1.tsd-before-signature,
+.tsd-panel > h2.tsd-before-signature,
+.tsd-panel > h3.tsd-before-signature {
+  border-bottom: none;
+}
+
+/* Index panels — card-like feel */
+.tsd-panel-group.tsd-index-group details {
+  margin: 1.5rem 0;
+}
+
+.tsd-index-panel .tsd-index-list {
+  gap: 0.25rem 1.5rem;
+}
+
+a.tsd-index-link {
+  padding: 0.35rem 0.5rem !important;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+a.tsd-index-link:hover {
+  background: var(--color-active-menu-item);
+  text-decoration: none;
+}
+
+/* --------------------------------------------------------------------------
+   9. BREADCRUMBS
+   -------------------------------------------------------------------------- */
+.tsd-breadcrumb {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
+.tsd-breadcrumb a {
+  transition: opacity 0.15s ease;
+}
+
+.tsd-breadcrumb a:hover {
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   10. TAGS & FLAGS
+   -------------------------------------------------------------------------- */
+.tsd-flag {
+  border-radius: 4px;
+  font-size: 0.7em;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.2em 0.5em;
+}
+
+code.tsd-tag {
+  border-radius: 4px;
+  font-weight: 500;
+  border-color: var(--color-accent);
+}
+
+/* --------------------------------------------------------------------------
+   11. COMMENT TAGS
+   -------------------------------------------------------------------------- */
+dl.tsd-comment-tag-group {
+  margin: 0.75em 0;
+}
+
+dl.tsd-comment-tag-group dt {
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-aside);
+}
+
+/* --------------------------------------------------------------------------
+   12. SOURCE LINKS
+   -------------------------------------------------------------------------- */
+.tsd-sources {
+  font-size: 0.8em;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.tsd-sources:hover {
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   13. TABLES
+   -------------------------------------------------------------------------- */
+.tsd-typography table {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-accent);
+}
+
+.tsd-typography td,
+.tsd-typography th {
+  padding: 0.6rem 1rem;
+  border-color: var(--color-accent);
+}
+
+.tsd-typography th {
+  background: var(--color-background-secondary);
+  font-weight: 600;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* --------------------------------------------------------------------------
+   14. BLOCKQUOTES
+   -------------------------------------------------------------------------- */
+blockquote {
+  border-left: 3px solid var(--color-link);
+  background: var(--color-background-secondary);
+  margin: 1em 0;
+  padding: 0.75em 1.25em;
+  border-radius: 0 8px 8px 0;
+  color: var(--color-text-aside);
+}
+
+/* --------------------------------------------------------------------------
+   15. FOOTER
+   -------------------------------------------------------------------------- */
+footer {
+  border-top: 1px solid var(--color-accent);
+  font-size: 0.85em;
+  color: var(--color-text-aside);
+}
+
+/* --------------------------------------------------------------------------
+   16. LINKS
+   -------------------------------------------------------------------------- */
+a {
+  transition: color 0.15s ease;
+}
+
+a:hover {
+  text-decoration: none;
+  opacity: 0.85;
+}
+
+/* --------------------------------------------------------------------------
+   17. KIND ICONS — slightly larger tap targets
+   -------------------------------------------------------------------------- */
+.tsd-kind-icon {
+  opacity: 0.85;
+}
+
+/* --------------------------------------------------------------------------
+   18. ACCORDION SUMMARIES
+   -------------------------------------------------------------------------- */
+.tsd-accordion-summary {
+  padding: 0.15rem 0;
+}
+
+.tsd-accordion .tsd-accordion-summary > svg {
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+
+.tsd-accordion .tsd-accordion-summary:hover > svg {
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   19. PAGE TITLE
+   -------------------------------------------------------------------------- */
+.tsd-page-title h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.tsd-page-title h2 {
+  font-size: 1.25rem;
+  font-weight: 400;
+  color: var(--color-text-aside);
+}
+
+/* --------------------------------------------------------------------------
+   20. ANCHOR ICONS
+   -------------------------------------------------------------------------- */
+.tsd-anchor-icon svg {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tsd-anchor-link:hover > .tsd-anchor-icon svg {
+  opacity: 0.4;
+}
+
+/* --------------------------------------------------------------------------
+   21. SCROLLBAR (Webkit)
+   -------------------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-accent);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-aside);
+}
+
+/* --------------------------------------------------------------------------
+   22. SELECTION
+   -------------------------------------------------------------------------- */
+::selection {
+  background: rgba(37, 99, 235, 0.15);
+  color: inherit;
+}
+
+/* --------------------------------------------------------------------------
+   23. WARNINGS
+   -------------------------------------------------------------------------- */
+.warning {
+  border-radius: 8px;
+  border: 1px solid #f59e0b;
+}
+
+/* --------------------------------------------------------------------------
+   24. RESPONSIVE — Mobile
+   -------------------------------------------------------------------------- */
+@media screen and (max-width: 769px) {
+  .container {
+    padding: 0 1rem;
+  }
+
+  #tsd-search .title {
+    font-size: 0.95em;
+  }
+
+  #tsd-search .title::before {
+    width: 1.2em;
+    height: 1.2em;
+    top: 0.25em;
+  }
+
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.2rem; }
 }
 
 @media screen and (max-width: 499px) {
   #tsd-search .title {
-      color: transparent;
+    color: transparent;
   }
 
   #tsd-search .title::before {
-    content: "";
-    display: inline-block;
     width: 1.25em;
     height: 1.25em;
-    background-image: url(https://hotmesh.io/img/logo_144_r.png);
-    background-size: 30px 30px;
-    background-repeat: no-repeat;
-    margin-right: 0;
-    position: relative;
-    top: .18em;
-    left: -0.57em;
+    background-size: contain;
   }
 
   .tsd-page-toolbar {
-    background-color: #ffffff;
-    height: 3.65em;
+    height: auto;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   25. PRINT
+   -------------------------------------------------------------------------- */
+@media print {
+  .tsd-page-toolbar,
+  .col-sidebar,
+  .tsd-sources,
+  footer {
+    display: none !important;
+  }
+
+  .container {
+    max-width: 100%;
+  }
+
+  pre {
+    border: 1px solid #ddd;
+    page-break-inside: avoid;
   }
 }
