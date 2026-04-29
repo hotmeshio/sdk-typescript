@@ -320,6 +320,15 @@ type HotMeshWorker = {
    * ```
    */
   workerCredentials?: { user: string; password: string };
+
+  /**
+   * If true, the worker's router will not consume messages from the
+   * stream. The worker can still publish responses but will never
+   * dequeue or process messages. This is inherited from the
+   * connection's `readonly` flag by the Durable layer.
+   * @default false
+   */
+  readonly?: boolean;
 };
 
 type HotMeshConfig = {

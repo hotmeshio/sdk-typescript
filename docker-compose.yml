@@ -16,6 +16,45 @@ services:
       nats:
         condition: service_started
 
+  hotmesh-readonly-worker:
+    build:
+      context: .
+      target: development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["npx", "ts-node", "tests/durable/readonly/worker/index.ts"]
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/worker-ready"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    profiles:
+      - readonly
+
+  hotmesh-readonly:
+    build:
+      context: .
+      target: development
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hotmesh-readonly-worker:
+        condition: service_healthy
+    profiles:
+      - readonly
+
   postgres:
     image: postgres:latest
     environment:

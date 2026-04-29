@@ -5,7 +5,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    exclude: ['node_modules', 'build', 'config'],
+    exclude: ['node_modules', 'build', 'config', 'tests/durable/readonly/**'],
     testTimeout: 60_000,
     hookTimeout: 120_000,
     fileParallelism: false,
