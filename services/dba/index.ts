@@ -21,6 +21,7 @@ import {
  * | `{appId}.jobs_attributes` | Execution artifacts (`adata`, `hmark`, `status`, `other`) that are only needed during workflow execution |
  * | `{appId}.engine_streams` | Processed engine stream messages with `expired_at` set |
  * | `{appId}.worker_streams` | Processed worker stream messages with `expired_at` set |
+ * | `{appId}.signal_registry` | Consumed hook signals and stale pending signals with `expiry` set |
  *
  * The `DBA` service addresses this with two methods:
  *
@@ -202,7 +203,8 @@ class DBA {
         prune_engine_streams BOOLEAN DEFAULT NULL,
         prune_worker_streams BOOLEAN DEFAULT NULL,
         engine_streams_retention INTERVAL DEFAULT NULL,
-        worker_streams_retention INTERVAL DEFAULT NULL
+        worker_streams_retention INTERVAL DEFAULT NULL,
+        prune_signals BOOLEAN DEFAULT TRUE
       )
       RETURNS TABLE(
         deleted_jobs BIGINT,
@@ -211,7 +213,8 @@ class DBA {
         deleted_worker_streams BIGINT,
         stripped_attributes BIGINT,
         deleted_transient BIGINT,
-        marked_pruned BIGINT
+        marked_pruned BIGINT,
+        deleted_signals BIGINT
       )
       LANGUAGE plpgsql
       AS $$
@@ -222,6 +225,7 @@ class DBA {
         v_stripped_attributes BIGINT := 0;
         v_deleted_transient BIGINT := 0;
         v_marked_pruned BIGINT := 0;
+        v_deleted_signals BIGINT := 0;
         v_do_engine BOOLEAN;
         v_do_worker BOOLEAN;
         v_engine_retention INTERVAL;
@@ -303,6 +307,15 @@ class DBA {
           GET DIAGNOSTICS v_marked_pruned = ROW_COUNT;
         END IF;
 
+        -- 6. Hard-delete expired signal_registry rows.
+        --    Includes consumed hook signals and stale pending signals.
+        IF prune_signals THEN
+          DELETE FROM ${schema}.signal_registry
+          WHERE expiry IS NOT NULL
+            AND expiry <= NOW();
+          GET DIAGNOSTICS v_deleted_signals = ROW_COUNT;
+        END IF;
+
         deleted_jobs := v_deleted_jobs;
         deleted_streams := v_deleted_engine_streams + v_deleted_worker_streams;
         deleted_engine_streams := v_deleted_engine_streams;
@@ -310,6 +323,7 @@ class DBA {
         stripped_attributes := v_stripped_attributes;
         deleted_transient := v_deleted_transient;
         marked_pruned := v_marked_pruned;
+        deleted_signals := v_deleted_signals;
         RETURN NEXT;
       END;
       $$;
@@ -412,16 +426,18 @@ class DBA {
     const workerStreams = options.workerStreams ?? null;
     const engineStreamsExpire = options.engineStreamsExpire ?? null;
     const workerStreamsExpire = options.workerStreamsExpire ?? null;
+    const signals = options.signals ?? true;
 
     await DBA.deploy(options.connection, options.appId);
 
     const { client, release } = await DBA.getClient(options.connection);
     try {
       const result = await client.query(
-        `SELECT * FROM ${schema}.prune($1::interval, $2::boolean, $3::boolean, $4::boolean, $5::text[], $6::boolean, $7::boolean, $8::boolean, $9::boolean, $10::interval, $11::interval)`,
+        `SELECT * FROM ${schema}.prune($1::interval, $2::boolean, $3::boolean, $4::boolean, $5::text[], $6::boolean, $7::boolean, $8::boolean, $9::boolean, $10::interval, $11::interval, $12::boolean)`,
         [
           expire, jobs, streams, attributes, entities, pruneTransient, keepHmark,
           engineStreams, workerStreams, engineStreamsExpire, workerStreamsExpire,
+          signals,
         ],
       );
       const row = result.rows[0];
@@ -433,6 +449,7 @@ class DBA {
         attributes: Number(row.stripped_attributes),
         transient: Number(row.deleted_transient),
         marked: Number(row.marked_pruned),
+        signals: Number(row.deleted_signals),
       };
     } finally {
       await release();

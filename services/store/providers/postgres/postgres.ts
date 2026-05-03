@@ -47,6 +47,7 @@ import {
   HMSH_CODE_INTERRUPT,
   MAX_DELAY,
   HMSH_SIGNAL_EXPIRE,
+  HMSH_PENDING_SIGNAL_EXPIRE,
   HMSH_FIDELITY_SECONDS,
 } from '../../../../modules/enums';
 import { WorkListTaskType } from '../../../../types/task';
@@ -1037,27 +1038,147 @@ class PostgresStoreService extends StoreService<
     }
   }
 
+  /**
+   * Leg1: set hook signal, atomically detecting a pending signal.
+   *
+   * Standalone (no transaction): single CTE query that reads any existing
+   * pending value, then inserts the hook signal (overwriting pending or
+   * expired entries). Returns `{success, pendingData}` in one round trip.
+   *
+   * In a transaction: queues the setnxex; pending detection deferred.
+   */
   async setHookSignal(
     hook: HookSignal,
     transaction?: ProviderTransaction,
-  ): Promise<any> {
+  ): Promise<{ success: boolean; pendingData?: string }> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
     const { topic, resolved, jobId } = hook;
     const signalKey = `${topic}:${resolved}`;
-    await this.kvsql(transaction).setnxex(
-      `${key}:${signalKey}`,
-      jobId,
-      Math.max(hook.expire, HMSH_SIGNAL_EXPIRE),
-    );
+    const fullKey = `${key}:${signalKey}`;
+    const delay = Math.max(hook.expire, HMSH_SIGNAL_EXPIRE);
+
+    if (transaction) {
+      await this.kvsql(transaction).setnxex(fullKey, jobId, delay);
+      return { success: true };
+    }
+
+    const kv = this.kvsql();
+    const tableName = kv.tableForKey(fullKey);
+    const storedKey = kv.storageKey(fullKey);
+    const sql = `
+      WITH pre AS (
+        SELECT value FROM ${tableName}
+        WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
+      ),
+      ins AS (
+        INSERT INTO ${tableName} (key, value, expiry)
+        VALUES ($1, $2, NOW() + INTERVAL '${delay} seconds')
+        ON CONFLICT (key) DO UPDATE
+          SET value = EXCLUDED.value, expiry = EXCLUDED.expiry
+          WHERE ${tableName}.expiry IS NULL
+            OR ${tableName}.expiry <= NOW()
+            OR ${tableName}.value LIKE '$pending::%'
+        RETURNING true as success
+      )
+      SELECT
+        COALESCE((SELECT success FROM ins), false) as success,
+        (SELECT value FROM pre) as existing_value
+    `;
+    try {
+      const res = await this.pgClient.query(sql, [storedKey, jobId]);
+      const row = res.rows[0] || {};
+      const success = row.success === true;
+      const existing = row.existing_value;
+      if (success && existing?.startsWith('$pending::')) {
+        return {
+          success: true,
+          pendingData: existing.slice('$pending::'.length),
+        };
+      }
+      return { success };
+    } catch (error: any) {
+      if (
+        error?.message?.includes('closed') ||
+        error?.message?.includes('queryable')
+      ) {
+        return { success: false };
+      }
+      throw error;
+    }
   }
 
+  /**
+   * Leg2: get hook signal OR atomically set a pending signal.
+   *
+   * When `pendingData` is provided and no hook signal exists, the
+   * pending value is inserted in the SAME SQL statement — no second
+   * round trip. This is the transactional edge that prevents the
+   * signal from being lost: by the time the query returns, the
+   * pending key is already visible to leg1's setnxex.
+   *
+   * When `pendingData` is omitted, behaves as a plain read.
+   */
   async getHookSignal(
     topic: string,
     resolved: string,
+    pendingData?: string,
+    pendingExpire?: number,
   ): Promise<string | undefined> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-    const response = await this.kvsql().get(`${key}:${topic}:${resolved}`);
-    return response ? response.toString() : undefined;
+    const fullKey = `${key}:${topic}:${resolved}`;
+
+    if (!pendingData) {
+      //plain read (used by deleteWebHookSignal path, tests, etc.)
+      const response = await this.kvsql().get(fullKey);
+      if (!response) return undefined;
+      const value = response.toString();
+      if (value.startsWith('$pending::')) return undefined;
+      return value;
+    }
+
+    //atomic get-or-set-pending: one round trip
+    const kv = this.kvsql();
+    const tableName = kv.tableForKey(fullKey);
+    const storedKey = kv.storageKey(fullKey);
+    const expire = pendingExpire || HMSH_PENDING_SIGNAL_EXPIRE;
+    const pendingValue = `$pending::${pendingData}`;
+
+    const sql = `
+      WITH existing AS (
+        SELECT value FROM ${tableName}
+        WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
+      ),
+      pending AS (
+        INSERT INTO ${tableName} (key, value, expiry)
+        SELECT $1, $2, NOW() + INTERVAL '${expire} seconds'
+        WHERE NOT EXISTS (SELECT 1 FROM existing)
+        ON CONFLICT (key) DO UPDATE
+          SET value = EXCLUDED.value, expiry = EXCLUDED.expiry
+          WHERE ${tableName}.expiry IS NULL OR ${tableName}.expiry <= NOW()
+        RETURNING true as inserted
+      )
+      SELECT
+        (SELECT value FROM existing) as hook_value,
+        (SELECT inserted FROM pending) as pending_inserted
+    `;
+    try {
+      const res = await this.pgClient.query(sql, [storedKey, pendingValue]);
+      const row = res.rows[0] || {};
+      const hookValue = row.hook_value;
+      if (hookValue && !hookValue.startsWith('$pending::')) {
+        return hookValue;
+      }
+      //no hook signal; pending was inserted (or already existed)
+      return undefined;
+    } catch (error: any) {
+      if (
+        error?.message?.includes('closed') ||
+        error?.message?.includes('queryable')
+      ) {
+        return undefined;
+      }
+      throw error;
+    }
   }
 
   async deleteHookSignal(

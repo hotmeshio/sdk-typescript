@@ -93,6 +93,7 @@ describe('DBA | Postgres', () => {
         attributes: 0,
         transient: 0,
         marked: 0,
+        signals: 0,
       });
     });
 

@@ -6,7 +6,13 @@ import { HookActivity } from '../../types/activity';
 import { HookRule } from '../../types/hook';
 import { JobStatus } from '../../types/job';
 import { ProviderTransaction } from '../../types/provider';
-import { StreamCode, StreamStatus } from '../../types/stream';
+import {
+  StreamCode,
+  StreamData,
+  StreamDataType,
+  StreamStatus,
+} from '../../types/stream';
+import { guid } from '../../modules/utils';
 
 import { Activity } from './activity';
 
@@ -217,7 +223,7 @@ class Hook extends Activity {
 
   async doHook(telemetry: TelemetryService): Promise<void> {
     const transaction = this.store.transact();
-    await this.registerHook(transaction);
+    const hookResult = await this.registerHook(transaction);
     this.mapOutputData();
     this.mapJobData();
     await this.setState(transaction);
@@ -225,6 +231,40 @@ class Hook extends Activity {
     await this.setStatus(0, transaction);
     await transaction.exec();
     telemetry.mapActivityAttributes();
+
+    //if a pending signal was detected (signal arrived before hook
+    //registered), re-publish the WEBHOOK so leg2 processes it
+    //now that the hook signal is committed and state is saved
+    if (hookResult && hookResult.pending) {
+      await this.redeliverPendingSignal(hookResult.pending);
+    }
+  }
+
+  /**
+   * Re-publishes a pending signal as a WEBHOOK stream message so the
+   * normal leg2 dispatch path processes it. Called when leg1's
+   * setHookSignal atomically detected and consumed a pending signal.
+   */
+  private async redeliverPendingSignal(pendingJson: string): Promise<void> {
+    const data = JSON.parse(pendingJson);
+    const hookRule = await this.getHookRule(this.config.hook.topic);
+    this.logger.warn('hook-pending-signal-redelivery', {
+      topic: this.config.hook.topic,
+      aid: hookRule?.to || this.metadata.aid,
+      jid: this.context.metadata.jid,
+    });
+    const streamData: StreamData = {
+      type: StreamDataType.WEBHOOK,
+      status: StreamStatus.SUCCESS,
+      code: 200,
+      metadata: {
+        guid: guid(),
+        aid: hookRule?.to || this.metadata.aid,
+        topic: this.config.hook.topic,
+      },
+      data,
+    };
+    await this.engine.router?.publishMessage(null, streamData);
   }
 
   async doPassThrough(telemetry: TelemetryService): Promise<void> {
@@ -243,16 +283,20 @@ class Hook extends Activity {
 
   async registerHook(
     transaction?: ProviderTransaction,
-  ): Promise<string | void> {
-    let result: string | void;
+  ): Promise<{ jobId?: string; pending?: string } | void> {
+    let jobId: string | undefined;
+    let pending: string | undefined;
     if (this.config.hook?.topic) {
-      result = await this.engine.taskService.registerWebHook(
+      //hook signal is set standalone (not in the transaction) so the
+      //single CTE query can atomically detect a pending signal collision
+      const hookResult = await this.engine.taskService.registerWebHook(
         this.config.hook.topic,
         this.context,
         this.resolveDad(),
         this.context.metadata.expire,
-        transaction,
       );
+      jobId = hookResult.jobId;
+      pending = hookResult.pending;
     }
     if (this.config.sleep) {
       const duration = Pipe.resolve(this.config.sleep, this.context);
@@ -266,10 +310,10 @@ class Hook extends Activity {
           this.metadata.dad || '',
           transaction,
         );
-        if (!result) result = this.context.metadata.jid;
+        if (!jobId) jobId = this.context.metadata.jid;
       }
     }
-    return result;
+    if (jobId) return { jobId, pending };
   }
 
   async processWebHookEvent(

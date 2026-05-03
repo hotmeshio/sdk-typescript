@@ -260,17 +260,28 @@ export class ClientService {
     },
 
     /**
-     * Sends a message payload to a running workflow that is paused and awaiting the signal
+     * Sends a message payload to a running workflow that is paused and awaiting the signal.
+     *
+     * If the signal arrives before the workflow has registered its hook
+     * (race condition under load), it is buffered as a pending signal
+     * for up to `expire` (default 10 minutes). Use a longer duration
+     * when signaling "early on purpose" (e.g., depositing a payload
+     * hours before the workflow starts).
      */
     signal: async (
       signalId: string,
       data: StringAnyType,
       namespace?: string,
+      expire?: string,
     ): Promise<string> => {
       const topic = `${namespace ?? APP_ID}.wfs.signal`;
       return await (
         await this.getHotMeshClient(topic, namespace)
-      ).signal(topic, { id: signalId, data });
+      ).signal(topic, {
+        id: signalId,
+        data,
+        ...(expire ? { $expire: expire } : {}),
+      });
     },
 
     /**

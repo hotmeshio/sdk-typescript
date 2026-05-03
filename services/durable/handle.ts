@@ -87,13 +87,25 @@ export class WorkflowHandleService {
    * on `Durable.workflow.condition(signalId)`, it resumes with the
    * provided data.
    *
+   * If the signal arrives before the workflow has registered its hook
+   * (race condition under load), it is buffered as a pending signal
+   * for up to `expire` (default 10 minutes). Use a longer duration
+   * when signaling "early on purpose" (e.g., depositing a payload
+   * hours before the workflow starts).
+   *
    * @param signalId - Matches the `signalId` passed to `condition()`.
    * @param data - Payload delivered to the waiting workflow.
+   * @param expire - Optional pending signal TTL (e.g., '1h', '30d'). Default '10m'.
    */
-  async signal(signalId: string, data: Record<any, any>): Promise<void> {
+  async signal(
+    signalId: string,
+    data: Record<any, any>,
+    expire?: string,
+  ): Promise<void> {
     await this.hotMesh.signal(`${this.hotMesh.appId}.wfs.signal`, {
       id: signalId,
       data,
+      ...(expire ? { $expire: expire } : {}),
     });
   }
 

@@ -852,7 +852,9 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         jobId: 'test-job-id',
         expire: 100,
       };
-      await postgresStoreService.setHookSignal(hook);
+      const result = await postgresStoreService.setHookSignal(hook);
+      expect(result.success).toBe(true);
+      expect(result.pendingData).toBeUndefined();
       const key = postgresStoreService.mintKey(KeyType.SIGNALS, {
         appId: appConfig.id,
       });
@@ -916,6 +918,137 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
         hook.resolved,
       );
       expect(deletedCount).toBeUndefined();
+    });
+  });
+
+  describe('Pending Signal (race condition handling)', () => {
+    const topic = 'race-topic';
+    const resolved = 'race-resolved';
+    const signalPayload = JSON.stringify({ id: 'abc', data: { value: 42 } });
+
+    it('getHookSignal stores a pending signal when no hook exists', async () => {
+      //leg2 arrives early — no hook signal registered yet
+      const result = await postgresStoreService.getHookSignal(
+        topic,
+        resolved,
+        signalPayload,
+        600,
+      );
+      //returns undefined (no hook to awaken)
+      expect(result).toBeUndefined();
+
+      //verify the pending signal was persisted at the same key
+      const key = postgresStoreService.mintKey(KeyType.SIGNALS, {
+        appId: appConfig.id,
+      });
+      const raw = await postgresStoreService.storeClient.get(
+        `${key}:${topic}:${resolved}`,
+      );
+      expect(raw).toEqual(`$pending::${signalPayload}`);
+    });
+
+    it('getHookSignal returns hook signal when one exists (99% path)', async () => {
+      //leg1 registers first (normal case)
+      const hook: HookSignal = {
+        topic,
+        resolved,
+        jobId: 'aid::dad::gid::jid',
+        expire: 60,
+      };
+      await postgresStoreService.setHookSignal(hook);
+
+      //leg2 arrives — should find the hook signal, NOT store pending
+      const result = await postgresStoreService.getHookSignal(
+        topic,
+        resolved,
+        signalPayload,
+        600,
+      );
+      expect(result).toEqual(hook.jobId);
+    });
+
+    it('plain getHookSignal (no pending args) filters out pending values', async () => {
+      //store a pending signal first
+      await postgresStoreService.getHookSignal(
+        topic,
+        resolved,
+        signalPayload,
+        600,
+      );
+
+      //plain read should return undefined (pending is invisible)
+      const result = await postgresStoreService.getHookSignal(topic, resolved);
+      expect(result).toBeUndefined();
+    });
+
+    it('setHookSignal detects and consumes a pending signal in one query', async () => {
+      //leg2 arrives early — stores pending
+      await postgresStoreService.getHookSignal(
+        topic,
+        resolved,
+        signalPayload,
+        600,
+      );
+
+      //leg1 arrives late — setnxex collides with pending, overwrites it
+      const hook: HookSignal = {
+        topic,
+        resolved,
+        jobId: 'aid::dad::gid::jid',
+        expire: 60,
+      };
+      const result = await postgresStoreService.setHookSignal(hook);
+      expect(result.success).toBe(true);
+      expect(result.pendingData).toEqual(signalPayload);
+
+      //verify the hook signal replaced the pending value
+      const stored = await postgresStoreService.getHookSignal(topic, resolved);
+      expect(stored).toEqual(hook.jobId);
+    });
+
+    it('setHookSignal returns success:false when a non-pending key exists', async () => {
+      //set a hook signal first (simulates leg1 retry)
+      const hook: HookSignal = {
+        topic,
+        resolved,
+        jobId: 'aid::dad::gid::jid',
+        expire: 60,
+      };
+      await postgresStoreService.setHookSignal(hook);
+
+      //try again — should fail (non-pending, non-expired key exists)
+      const result = await postgresStoreService.setHookSignal(hook);
+      expect(result.success).toBe(false);
+      expect(result.pendingData).toBeUndefined();
+    });
+
+    it('full race simulation: leg2 then leg1 in sequence', async () => {
+      //1. leg2 arrives early — stores pending signal atomically
+      const leg2Result = await postgresStoreService.getHookSignal(
+        topic,
+        resolved,
+        signalPayload,
+        600,
+      );
+      expect(leg2Result).toBeUndefined();
+
+      //2. leg1 arrives — collision, consumes pending, sets hook signal
+      const hook: HookSignal = {
+        topic,
+        resolved,
+        jobId: 'aid::dad::gid::jid',
+        expire: 60,
+      };
+      const leg1Result = await postgresStoreService.setHookSignal(hook);
+      expect(leg1Result.success).toBe(true);
+      expect(leg1Result.pendingData).toEqual(signalPayload);
+
+      //3. hook signal is now committed; a re-published WEBHOOK would find it
+      const hookValue = await postgresStoreService.getHookSignal(
+        topic,
+        resolved,
+      );
+      expect(hookValue).toEqual(hook.jobId);
     });
   });
 });
