@@ -61,6 +61,7 @@ import { isSideEffectAllowed } from './isSideEffectAllowed';
 export async function signal(
   signalId: string,
   data: Record<any, any>,
+  expire?: string,
 ): Promise<string> {
   const store = asyncLocalStorage.getStore();
   const workflowTopic = store.get('workflowTopic');
@@ -74,6 +75,7 @@ export async function signal(
     return await hotMeshClient.signal(`${namespace}.wfs.signal`, {
       id: signalId,
       data,
+      ...(expire ? { $expire: expire } : {}),
     });
   }
 }

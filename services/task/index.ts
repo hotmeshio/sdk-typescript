@@ -1,9 +1,10 @@
 import {
   HMSH_EXPIRE_DURATION,
   HMSH_FIDELITY_SECONDS,
+  HMSH_PENDING_SIGNAL_EXPIRE,
   HMSH_SCOUT_INTERVAL_SECONDS,
 } from '../../modules/enums';
-import { XSleepFor, sleepFor } from '../../modules/utils';
+import { s, XSleepFor, sleepFor } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { Pipe } from '../pipe';
 import { StoreService } from '../store';
@@ -196,8 +197,7 @@ class TaskService {
     context: JobState,
     dad: string,
     expire: number,
-    transaction?: ProviderTransaction,
-  ): Promise<string> {
+  ): Promise<{ jobId: string; pending?: string }> {
     const hookRule = await this.getHookRule(topic);
     if (hookRule) {
       const mapExpression = hookRule.conditions.match[0].expected;
@@ -214,8 +214,27 @@ class TaskService {
         jobId: compositeJobKey,
         expire,
       };
-      await this.store.setHookSignal(hook, transaction);
-      return jobId;
+      //called standalone (no transaction) so the single CTE query can
+      //atomically detect and return pending signal data on collision
+      const result = await this.store.setHookSignal(hook);
+      if (result.pendingData) {
+        this.logger.warn('task-signal-race-pending-consumed', {
+          topic,
+          resolved,
+          jobId,
+        });
+        return { jobId, pending: result.pendingData };
+      }
+      if (!result.success) {
+        //setnxex failed but no pending signal; likely a retry where
+        //our own hook signal was already set. continue normally.
+        this.logger.debug('task-signal-hook-already-set', {
+          topic,
+          resolved,
+          jobId,
+        });
+      }
+      return { jobId };
     } else {
       throw new Error('signaler.registerWebHook:error: hook rule not found');
     }
@@ -232,10 +251,26 @@ class TaskService {
       const context = { $self: { hook: { data } }, $hook: { data } };
       const mapExpression = hookRule.conditions.match[0].actual;
       const resolved = Pipe.resolve(mapExpression, context);
-      const hookSignalId = await this.store.getHookSignal(topic, resolved);
+
+      //resolve $expire override from the signal data (e.g., '1h', '30d')
+      const pendingExpire = typeof data.$expire === 'string'
+        ? s(data.$expire)
+        : HMSH_PENDING_SIGNAL_EXPIRE;
+
+      //atomic: returns the hook signal, or stores a pending signal
+      //in the same SQL statement if no hook is registered yet
+      const hookSignalId = await this.store.getHookSignal(
+        topic,
+        resolved,
+        JSON.stringify(data),
+        pendingExpire,
+      );
       if (!hookSignalId) {
-        //messages can be double-processed; not an issue; return `undefined`
-        //users can also provide a bogus topic; not an issue; return `undefined`
+        this.logger.warn('task-signal-race-pending-stored', {
+          topic,
+          resolved,
+          expire: pendingExpire,
+        });
         return undefined;
       }
       //`aid` is part of composite key, but the hook `topic` is its public interface;

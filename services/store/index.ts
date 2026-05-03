@@ -165,13 +165,25 @@ abstract class StoreService<
   abstract setHookRules(hookRules: Record<string, HookRule[]>): Promise<any>;
   abstract getHookRules(): Promise<Record<string, HookRule[]>>;
   abstract getAllSymbols(): Promise<Symbols>;
+  /**
+   * Leg1: Attempts to set the hook signal. If a pending signal occupies
+   * the key (race condition), overwrites it and returns the pending data.
+   * When called with a transaction, queues the setnxex (no pending detection).
+   */
   abstract setHookSignal(
     hook: HookSignal,
     transaction?: TransactionProvider,
-  ): Promise<any>;
+  ): Promise<{ success: boolean; pendingData?: string }>;
+  /**
+   * Leg2: Atomically gets the hook signal OR inserts a pending signal
+   * if no hook is registered yet (early signal). Returns the hook
+   * signal value, or undefined if we stored a pending signal instead.
+   */
   abstract getHookSignal(
     topic: string,
     resolved: string,
+    pendingData?: string,
+    pendingExpire?: number,
   ): Promise<string | undefined>;
   abstract deleteHookSignal(
     topic: string,

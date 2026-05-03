@@ -58,6 +58,13 @@ export const HMSH_TELEMETRY =
  */
 export const HMSH_SIGNAL_EXPIRE = 3_600; //seconds
 
+/**
+ * Default TTL for pending signals (signals that arrived before the hook registered).
+ * The signaler can override this via the `$expire` field in the signal data
+ * using a natural-language duration (e.g., '1h', '24h').
+ */
+export const HMSH_PENDING_SIGNAL_EXPIRE = 600; //seconds (10 minutes)
+
 // HOTMESH STATUS CODES
 export const HMSH_CODE_SUCCESS = 200;
 export const HMSH_CODE_PENDING = 202;

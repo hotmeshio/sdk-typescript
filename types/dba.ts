@@ -116,6 +116,16 @@ export interface PruneOptions {
    * @default false
    */
   keepHmark?: boolean;
+
+  /**
+   * If true, hard-deletes expired rows from `signal_registry`.
+   * These include consumed hook signals and stale pending signals
+   * (signals that arrived before hook registration but were never
+   * claimed). All signal_registry entries have a natural `expiry`
+   * column; this operation removes rows whose expiry has passed.
+   * @default true
+   */
+  signals?: boolean;
 }
 
 /**
@@ -137,4 +147,6 @@ export interface PruneResult {
   transient: number;
   /** Number of jobs marked as pruned (pruned_at set) */
   marked: number;
+  /** Number of expired signal_registry rows hard-deleted */
+  signals: number;
 }

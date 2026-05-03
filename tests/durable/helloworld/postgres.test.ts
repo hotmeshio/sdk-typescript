@@ -104,6 +104,17 @@ describe('DURABLE | hello | `Random Hello-World` | Postgres', () => {
         const r2 = deterministicRandom(3);
         expect(result).toEqual(`${r1} Hello, HotMesh! ${r2}`);
       }, 10_000);
+
+      it('should have updated the job updated_at timestamp', async () => {
+        const jobKey = `hmsh:durable:j:${handle.workflowId}`;
+        const { rows } = await postgresClient.query(
+          `SELECT created_at, updated_at FROM durable.jobs WHERE key = $1`,
+          [jobKey],
+        );
+        expect(rows.length).toBe(1);
+        const { created_at, updated_at } = rows[0];
+        expect(updated_at.getTime()).toBeGreaterThan(created_at.getTime());
+      }, 10_000);
     });
   });
 });
