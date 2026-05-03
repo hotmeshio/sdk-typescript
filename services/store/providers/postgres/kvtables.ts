@@ -37,7 +37,8 @@ export const KVTables = (context: PostgresStoreService) => ({
       // First, check if tables already exist (no lock needed)
       const tablesExist = await this.checkIfTablesExist(client, appName);
       if (tablesExist) {
-        // Tables already exist, no need to acquire lock or create tables
+        // Tables exist; apply any pending migrations
+        await this.migrate(client, appName);
         return;
       }
 
@@ -172,6 +173,38 @@ export const KVTables = (context: PostgresStoreService) => ({
 
     const results = await Promise.all(checkTablePromises);
     return results.every((res) => res.rows[0].table !== null);
+  },
+
+  async migrate(
+    client: PostgresClientType | PostgresPoolClientType,
+    appName: string,
+  ): Promise<void> {
+    const schemaName = context.storeClient.safeName(appName);
+    const jobsTable = `${schemaName}.jobs`;
+
+    // v0.14.5: track updated_at on job status changes
+    const { rows } = await client.query(
+      `SELECT 1 FROM pg_trigger WHERE tgname = 'trg_update_jobs_updated_at' LIMIT 1`,
+    );
+    if (rows.length === 0) {
+      await client.query(`
+        CREATE OR REPLACE FUNCTION ${schemaName}.update_jobs_updated_at()
+        RETURNS TRIGGER AS $$
+        BEGIN
+          IF NEW.status <> OLD.status THEN
+            NEW.updated_at = NOW();
+          END IF;
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+      `);
+      await client.query(`
+        DROP TRIGGER IF EXISTS trg_update_jobs_updated_at ON ${jobsTable};
+        CREATE TRIGGER trg_update_jobs_updated_at
+        BEFORE UPDATE ON ${jobsTable}
+        FOR EACH ROW EXECUTE FUNCTION ${schemaName}.update_jobs_updated_at();
+      `);
+    }
   },
 
   async createTables(
@@ -369,6 +402,27 @@ export const KVTables = (context: PostgresStoreService) => ({
               CREATE TRIGGER trg_enforce_live_job_uniqueness
               BEFORE INSERT OR UPDATE ON ${fullTableName}
               FOR EACH ROW EXECUTE PROCEDURE ${schemaName}.enforce_live_job_uniqueness();
+            `);
+
+            // Create function to update updated_at on status changes
+            await client.query(`
+              CREATE OR REPLACE FUNCTION ${schemaName}.update_jobs_updated_at()
+              RETURNS TRIGGER AS $$
+              BEGIN
+                IF NEW.status <> OLD.status THEN
+                  NEW.updated_at = NOW();
+                END IF;
+                RETURN NEW;
+              END;
+              $$ LANGUAGE plpgsql;
+            `);
+
+            // Create trigger for updated_at on job status changes
+            await client.query(`
+              DROP TRIGGER IF EXISTS trg_update_jobs_updated_at ON ${fullTableName};
+              CREATE TRIGGER trg_update_jobs_updated_at
+              BEFORE UPDATE ON ${fullTableName}
+              FOR EACH ROW EXECUTE FUNCTION ${schemaName}.update_jobs_updated_at();
             `);
 
             // Create the attributes table with partitioning
