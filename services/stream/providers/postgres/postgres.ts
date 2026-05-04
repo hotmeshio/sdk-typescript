@@ -121,7 +121,7 @@ class PostgresStreamService extends StreamService<
           consumer.streamName,
           consumer.groupName,
           consumer.consumerName,
-          { batchSize: 10, enableBackoff: false, maxRetries: 1 },
+          { batchSize: 10, reservationTimeout: instance.reservationTimeout, enableBackoff: false, maxRetries: 1 },
         );
       },
     );
@@ -135,7 +135,7 @@ class PostgresStreamService extends StreamService<
         consumer.streamName,
         consumer.groupName,
         consumer.consumerName,
-        { batchSize: 10, enableBackoff: false, maxRetries: 1 },
+        { batchSize: 10, reservationTimeout: this.reservationTimeout, enableBackoff: false, maxRetries: 1 },
       );
 
       if (messages.length > 0) {

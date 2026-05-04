@@ -1,4 +1,7 @@
-import { HMSH_CODE_DURABLE_MAXED } from '../../../modules/enums';
+import {
+  HMSH_CODE_DURABLE_MAXED,
+  HMSH_RESERVATION_TIMEOUT_S,
+} from '../../../modules/enums';
 import {
   CollationError,
   GenerationalError,
@@ -47,6 +50,12 @@ interface ProcessContext {
     shouldFinalize: boolean,
   ): Promise<boolean>;
 }
+
+// Per-instance collation error tracking for reservation timeout detection
+let collationErrorCount = 0;
+let collationWindowStart = Date.now();
+const COLLATION_WARN_THRESHOLD = 10;
+const COLLATION_WINDOW_MS = 60_000;
 
 export async function processEvent(
   instance: ProcessContext,
@@ -123,7 +132,32 @@ export async function processEvent(
     telemetry.setActivityAttributes({});
   } catch (error) {
     if (error instanceof CollationError) {
-      instance.logger.info(`process-event-${error.fault}-error`, { error });
+      // INACTIVE is legitimate duplicate detection — the Postgres atomic
+      // CTE (collateLeg2Entry) serializes via row locks, so the GUID
+      // ledger value is correct. Silent ack is the right behavior:
+      // the work was already done by a prior delivery of this message.
+      const now = Date.now();
+      if (now - collationWindowStart > COLLATION_WINDOW_MS) {
+        collationErrorCount = 0;
+        collationWindowStart = now;
+      }
+      collationErrorCount++;
+      if (collationErrorCount === COLLATION_WARN_THRESHOLD) {
+        instance.logger.warn('process-event-collation-rate-exceeded', {
+          count: collationErrorCount,
+          windowMs: COLLATION_WINDOW_MS,
+          reservationTimeoutS: HMSH_RESERVATION_TIMEOUT_S,
+          message: `${COLLATION_WARN_THRESHOLD} collation errors in ${COLLATION_WINDOW_MS / 1000}s. ` +
+            `This typically means HMSH_RESERVATION_TIMEOUT_S (currently ${HMSH_RESERVATION_TIMEOUT_S}s) ` +
+            `is too short for your workload — messages are being re-reserved before processing completes, ` +
+            `causing duplicate delivery. Increase HMSH_RESERVATION_TIMEOUT_S.`,
+        });
+      }
+      instance.logger.warn(`process-event-${error.fault}-error`, {
+        jid: instance.context.metadata.jid,
+        aid: instance.metadata.aid,
+        error,
+      });
       return;
     } else if (error instanceof InactiveJobError) {
       instance.logger.info('process-event-inactive-job-error', { error });

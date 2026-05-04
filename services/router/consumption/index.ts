@@ -10,6 +10,8 @@ import {
   HMSH_GRADUATED_INTERVAL_MS,
   HMSH_MAX_TIMEOUT_MS,
   HMSH_XPENDING_COUNT,
+  HMSH_BATCH_SIZE,
+  HMSH_RESERVATION_TIMEOUT_S,
   MAX_STREAM_BACKOFF,
   INITIAL_STREAM_BACKOFF,
   MAX_STREAM_RETRIES,
@@ -49,6 +51,16 @@ export class ConsumptionManager<
   private router: any;
   private retry: import('../../../types/stream').RetryPolicy | undefined;
 
+  // Adaptive reservation timeout — scales with stream depth to prevent
+  // duplicate message delivery under load. When the stream backs up,
+  // processing takes longer, so the reservation window must grow.
+  private adaptiveReservationTimeout = HMSH_RESERVATION_TIMEOUT_S;
+  private lastDepthCheckAt = 0;
+  private static readonly DEPTH_CHECK_INTERVAL_MS = 10_000;
+  private static readonly DEPTH_SCALE_UP_THRESHOLD = 100;
+  private static readonly DEPTH_SCALE_DOWN_THRESHOLD = 10;
+  private static readonly RESERVATION_TIMEOUT_MAX_S = 600;
+
   constructor(
     stream: S,
     logger: ILogger,
@@ -73,6 +85,54 @@ export class ConsumptionManager<
     this.role = role;
     this.router = router;
     this.retry = retry;
+  }
+
+  /**
+   * Adjusts reservation timeout based on stream depth. Called periodically
+   * from the consume loop. When depth is high, messages take longer to
+   * process, so the reservation window must grow to prevent re-delivery.
+   * When depth drops, the timeout shrinks back toward the configured default.
+   */
+  private async adjustReservationTimeout(stream: string): Promise<void> {
+    const now = Date.now();
+    if (now - this.lastDepthCheckAt < ConsumptionManager.DEPTH_CHECK_INTERVAL_MS) {
+      return;
+    }
+    this.lastDepthCheckAt = now;
+
+    try {
+      const depth = await this.stream.getStreamDepth(stream);
+      const prev = this.adaptiveReservationTimeout;
+
+      if (depth > ConsumptionManager.DEPTH_SCALE_UP_THRESHOLD) {
+        // Scale up: double the timeout, capped at max
+        this.adaptiveReservationTimeout = Math.min(
+          this.adaptiveReservationTimeout * 2,
+          ConsumptionManager.RESERVATION_TIMEOUT_MAX_S,
+        );
+      } else if (depth < ConsumptionManager.DEPTH_SCALE_DOWN_THRESHOLD) {
+        // Scale down: halve toward the configured default
+        this.adaptiveReservationTimeout = Math.max(
+          Math.floor(this.adaptiveReservationTimeout / 2),
+          HMSH_RESERVATION_TIMEOUT_S,
+        );
+      }
+
+      if (this.adaptiveReservationTimeout !== prev) {
+        // Update the stream provider so notification-path fetches
+        // also use the adaptive timeout
+        this.stream.reservationTimeout = this.adaptiveReservationTimeout;
+        this.logger.info('stream-reservation-timeout-adjusted', {
+          stream,
+          depth,
+          previousTimeoutS: prev,
+          newTimeoutS: this.adaptiveReservationTimeout,
+          configuredDefaultS: HMSH_RESERVATION_TIMEOUT_S,
+        });
+      }
+    } catch {
+      // Stream depth check is best-effort; don't fail the consume loop
+    }
   }
 
   async createGroup(stream: string, group: string): Promise<void> {
@@ -179,6 +239,9 @@ export class ConsumptionManager<
       if (this.lifecycleManager.isStopped(group, consumer, stream)) {
         return;
       }
+
+      // Adapt reservation timeout based on stream depth
+      await this.adjustReservationTimeout(stream);
 
       await this.throttleManager.customSleep(); // respect throttle
 
@@ -291,6 +354,7 @@ export class ConsumptionManager<
         enableNotifications: true,
         notificationCallback,
         blockTimeout: HMSH_BLOCK_TIME_MS,
+        reservationTimeout: HMSH_RESERVATION_TIMEOUT_S,
       });
 
       // Don't block here - let the worker initialization complete
@@ -347,11 +411,14 @@ export class ConsumptionManager<
       try {
         let messages: StreamMessage[] = [];
 
+        // Adapt reservation timeout based on stream depth
+        await this.adjustReservationTimeout(stream);
+
         if (!this.hasReachedMaxBackoff) {
           // Normal mode: try with backoff and finite retries
           const features = this.stream.getProviderSpecificFeatures();
           const isPostgres = features.supportsParallelProcessing;
-          const batchSize = isPostgres ? 10 : 1; // Use batch size of 10 for PostgreSQL, 1 for others
+          const batchSize = isPostgres ? HMSH_BATCH_SIZE : 1;
 
           messages = await this.stream.consumeMessages(
             stream,
@@ -360,6 +427,7 @@ export class ConsumptionManager<
             {
               blockTimeout: streamDuration,
               batchSize,
+              reservationTimeout: this.adaptiveReservationTimeout,
               enableBackoff: true,
               initialBackoff: INITIAL_STREAM_BACKOFF,
               maxBackoff: MAX_STREAM_BACKOFF,
@@ -370,7 +438,7 @@ export class ConsumptionManager<
           // Fallback mode: just try once, no backoff
           const features = this.stream.getProviderSpecificFeatures();
           const isPostgres = features.supportsParallelProcessing;
-          const batchSize = isPostgres ? 10 : 1; // Use batch size of 10 for PostgreSQL, 1 for others
+          const batchSize = isPostgres ? HMSH_BATCH_SIZE : 1;
 
           messages = await this.stream.consumeMessages(
             stream,
@@ -379,6 +447,7 @@ export class ConsumptionManager<
             {
               blockTimeout: streamDuration,
               batchSize,
+              reservationTimeout: this.adaptiveReservationTimeout,
               enableBackoff: false,
               maxRetries: 1,
             },

@@ -1,10 +1,10 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.14.5",
+  "version": "0.14.6",
   "description": "Durable Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
-  "homepage": "https://github.com/hotmeshio/sdk-typescript/",
+  "homepage": "https://docs.hotmesh.io/",
   "publishConfig": {
     "access": "public"
   },
@@ -30,6 +30,7 @@
     "test:durable:postgres": "HMSH_LOGLEVEL=info vitest run tests/durable",
     "test:durable:basic": "HMSH_LOGLEVEL=info vitest run tests/durable/basic/postgres.test.ts",
     "test:durable:collision": "vitest run tests/durable/collision/postgres.test.ts",
+    "test:durable:contention": "vitest run tests/durable/contention/postgres.test.ts",
     "test:durable:fatal": "vitest run tests/durable/fatal",
     "test:durable:goodbye": "HMSH_LOGLEVEL=debug vitest run tests/durable/goodbye/postgres.test.ts",
     "test:durable:interceptor": "HMSH_LOGLEVEL=info vitest run tests/durable/interceptor/postgres.test.ts",
