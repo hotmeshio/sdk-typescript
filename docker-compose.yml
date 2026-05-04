@@ -8,8 +8,17 @@ services:
       - /app/node_modules
     ports:
       - "9229:9229"
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 4G
+        reservations:
+          cpus: '4'
+          memory: 2G
     environment:
       - NODE_ENV=development
+      - NODE_OPTIONS=--max-old-space-size=3072 --max-semi-space-size=64
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,11 +72,31 @@ services:
       POSTGRES_DB: hotmesh
     ports:
       - "5414:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+        reservations:
+          cpus: '2'
+          memory: 1G
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - max_connections=200
+      - -c
+      - synchronous_commit=off
+    shm_size: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
   nats:
     image: nats:latest
     ports:

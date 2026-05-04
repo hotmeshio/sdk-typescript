@@ -1,4 +1,5 @@
 import { ILogger } from '../../../logger';
+import { HMSH_RESERVATION_TIMEOUT_S } from '../../../../modules/enums';
 import { parseStreamMessage, sleepFor, normalizeRetryPolicy } from '../../../../modules/utils';
 import { StringAnyType } from '../../../../types';
 import { PostgresClientType } from '../../../../types/postgres';
@@ -273,7 +274,7 @@ export async function fetchMessages(
     while (retries < maxRetries) {
       retries++;
       const batchSize = options?.batchSize || 1;
-      const reservationTimeout = options?.reservationTimeout || 30;
+      const reservationTimeout = options?.reservationTimeout || HMSH_RESERVATION_TIMEOUT_S;
 
       const res = await client.query(
         `UPDATE ${tableName}

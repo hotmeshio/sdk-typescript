@@ -6,6 +6,7 @@
  * the stored procedures validate `app.allowed_streams` before executing.
  */
 
+import { HMSH_RESERVATION_TIMEOUT_S } from '../../../../modules/enums';
 import { sleepFor } from '../../../../modules/utils';
 import { ILogger } from '../../../logger';
 import { parseStreamMessage } from '../../../../modules/utils';
@@ -36,7 +37,7 @@ export async function fetchMessagesSecured(
   const maxBackoff = options?.maxBackoff ?? 3000;
   const maxRetries = options?.maxRetries ?? 3;
   const batchSize = options?.batchSize || 1;
-  const reservationTimeout = options?.reservationTimeout || 30;
+  const reservationTimeout = options?.reservationTimeout || HMSH_RESERVATION_TIMEOUT_S;
 
   let backoff = initialBackoff;
   let retries = 0;

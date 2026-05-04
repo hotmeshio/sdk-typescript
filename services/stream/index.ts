@@ -67,6 +67,7 @@ export abstract class StreamService<
       batchSize?: number;
       blockTimeout?: number;
       autoAck?: boolean;
+      reservationTimeout?: number; // Seconds before a reserved message becomes re-available
       enableBackoff?: boolean; // enable backoff
       initialBackoff?: number; // Initial backoff in ms
       maxBackoff?: number; // Maximum backoff in ms
@@ -114,6 +115,10 @@ export abstract class StreamService<
       limit?: number;
     },
   ): Promise<StreamMessage[]>;
+
+  // Adaptive reservation timeout — set by the consumption manager
+  // based on stream depth. Providers read this when reserving messages.
+  reservationTimeout: number = 30;
 
   // Monitoring and maintenance
   abstract getStreamStats(streamName: string): Promise<StreamStats>;

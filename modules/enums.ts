@@ -199,6 +199,45 @@ export const HMSH_XCLAIM_COUNT =
   parseInt(process.env.HMSH_XCLAIM_COUNT, 10) || 3;
 export const HMSH_XPENDING_COUNT =
   parseInt(process.env.HMSH_XPENDING_COUNT, 10) || 10;
+export const HMSH_BATCH_SIZE =
+  parseInt(process.env.HMSH_BATCH_SIZE, 10) || 10;
+
+/**
+ * Postgres stream reservation timeout in seconds (default: 30).
+ *
+ * This is the **starting** reservation timeout for the Postgres stream
+ * consumer. When a consumer reserves a message from the stream, it must
+ * acknowledge it within this window. If processing takes longer, the
+ * message becomes available to other consumers — causing duplicate
+ * delivery, collation errors, and wasted CPU.
+ *
+ * **Adaptive behavior:** The router automatically adjusts this timeout
+ * at runtime based on stream depth. When the queue backs up (depth > 100),
+ * the timeout doubles (up to 600s). When the queue drains (depth < 10),
+ * it halves back toward this configured default. This prevents duplicate
+ * delivery under burst load without manual intervention.
+ *
+ * **When to increase this value:** If you see `process-event-*-error`
+ * warnings at `warn` level or `stream-reservation-timeout-adjusted` logs
+ * scaling up frequently, your baseline is too low for your workload.
+ * Setting a higher default reduces how aggressively the system must
+ * adapt during load spikes.
+ *
+ * **Symptoms of a value that is too low:**
+ *   - `collation-error` from `verifySyntheticInteger` (warn level)
+ *   - `process-event-collation-rate-exceeded` warning with guidance
+ *   - `stream-reservation-timeout-adjusted` logs showing rapid scaling
+ *   - Workflow stalls or timeouts under sustained concurrent load
+ *
+ * @example
+ * // Production with sustained high concurrency
+ * HMSH_RESERVATION_TIMEOUT_S=120
+ *
+ * // Low-latency environments with fast processing
+ * HMSH_RESERVATION_TIMEOUT_S=30  (default)
+ */
+export const HMSH_RESERVATION_TIMEOUT_S =
+  parseInt(process.env.HMSH_RESERVATION_TIMEOUT_S, 10) || 30;
 
 // TASK WORKER
 export const HMSH_EXPIRE_DURATION =
