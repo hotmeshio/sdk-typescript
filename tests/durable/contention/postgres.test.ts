@@ -28,8 +28,11 @@ import { Client as Postgres } from 'pg';
 
 import { Durable } from '../../../services/durable';
 import { WorkflowHandleService } from '../../../services/durable/handle';
+import { WorkerService } from '../../../services/durable/worker';
+import { HotMesh } from '../../../services/hotmesh';
 import { guid, sleepFor } from '../../../modules/utils';
 import { ProviderNativeClient } from '../../../types/provider';
+import { QuorumProfile } from '../../../types/quorum';
 import { dropTables, postgres_options } from '../../$setup/postgres';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
 
@@ -109,9 +112,42 @@ describe('DURABLE | Contention | Postgres', () => {
 
     expect(completed.length).toBe(TARGET_SMOKE);
     for (const r of completed) {
-      expect(r.results).toHaveLength(STATIONS.length);
+      expect((r as any).results).toHaveLength(STATIONS.length);
     }
   }, 60_000);
+
+  /**
+   * Query the quorum for work distribution across the mesh.
+   * Returns profiles and logs a summary table.
+   */
+  async function logMeshDistribution(label: string): Promise<QuorumProfile[]> {
+    // Get any HotMesh instance from the worker registry
+    const firstEntry = WorkerService.instances.values().next().value;
+    const hotmesh: HotMesh = firstEntry instanceof Promise
+      ? await firstEntry
+      : firstEntry;
+    const profiles = await hotmesh.rollCall(1_000);
+
+    console.log(`\n=== MESH WORK DISTRIBUTION (${label}) ===`);
+    let totalMessages = 0;
+    for (const p of profiles) {
+      const role = p.worker_topic ? `Worker: ${p.worker_topic}` : 'Engine';
+      const countSum = p.counts
+        ? Object.values(p.counts).reduce((a, b) => a + b, 0)
+        : 0;
+      totalMessages += countSum;
+      console.log(
+        `  ${role.padEnd(40)} messages=${countSum.toString().padStart(6)}  ` +
+        `depth=${(p.stream_depth ?? 0).toString().padStart(4)}  ` +
+        `errors=${p.error_count ?? 0}  ` +
+        `counts=${JSON.stringify(p.counts || {})}`,
+      );
+    }
+    console.log(`  ${'TOTAL'.padEnd(40)} messages=${totalMessages.toString().padStart(6)}`);
+    console.log('');
+
+    return profiles;
+  }
 
   it(`scale-10: ${TARGET_SMALL} concurrent assembly-line workflows`, async () => {
     const client = new Client({ connection });
@@ -130,6 +166,13 @@ describe('DURABLE | Contention | Postgres', () => {
       (r) => r && typeof r === 'object' && 'results' in r,
     );
     expect(completed.length).toBe(TARGET_SMALL);
+
+    // Query the mesh for work distribution
+    const profiles = await logMeshDistribution('scale-10');
+    // All instances should be healthy
+    for (const p of profiles) {
+      expect(p.error_count).toBe(0);
+    }
   }, 60_000);
 
   it.skip('scale-50: 50 concurrent assembly-line workflows', async () => {
@@ -151,7 +194,7 @@ describe('DURABLE | Contention | Postgres', () => {
     expect(completed.length).toBe(50);
   }, 60_000);
 
-  it.skip('scale-100: 100 concurrent assembly-line workflows', async () => {
+  it('scale-100-analysis: 100 concurrent with distribution analysis', async () => {
     const client = new Client({ connection });
     const startPromises = Array.from({ length: 100 }, (_, i) => {
       return client.workflow.start({
@@ -168,6 +211,17 @@ describe('DURABLE | Contention | Postgres', () => {
       (r) => r && typeof r === 'object' && 'results' in r,
     );
     expect(completed.length).toBe(100);
+
+    const profiles = await logMeshDistribution('scale-100');
+    for (const p of profiles) {
+      expect(p.error_count).toBe(0);
+    }
+    // Verify engines all participated
+    const engines = profiles.filter((p) => !p.worker_topic);
+    const activEngines = engines.filter(
+      (p) => p.counts && Object.values(p.counts).reduce((a, b) => a + b, 0) > 0,
+    );
+    console.log(`  Active engines: ${activEngines.length}/${engines.length}`);
   }, 120_000);
 
   it.skip('scale-200: 200 concurrent assembly-line workflows', async () => {
@@ -189,7 +243,6 @@ describe('DURABLE | Contention | Postgres', () => {
     expect(completed.length).toBe(200);
   }, 120_000);
 
-  // 500+ scale tests are slow (4+ min). Skip in regular suite runs.
   const runHighScale = process.env.CONTENTION_HIGH_SCALE === '1';
   it.skipIf(!runHighScale)('scale-500: 500 concurrent assembly-line workflows', async () => {
     const client = new Client({ connection });
@@ -213,6 +266,13 @@ describe('DURABLE | Contention | Postgres', () => {
       (r) => r && typeof r === 'object' && 'results' in r,
     );
     expect(completed.length).toBe(500);
+
+    const profiles = await logMeshDistribution('scale-500');
+    const engines = profiles.filter((p) => !p.worker_topic);
+    const activeEngines = engines.filter(
+      (p) => p.counts && Object.values(p.counts).reduce((a, b) => a + b, 0) > 0,
+    );
+    console.log(`  Active engines: ${activeEngines.length}/${engines.length}`);
   }, 300_000);
 
   /**
