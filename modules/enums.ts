@@ -201,6 +201,22 @@ export const HMSH_XPENDING_COUNT =
   parseInt(process.env.HMSH_XPENDING_COUNT, 10) || 10;
 export const HMSH_BATCH_SIZE =
   parseInt(process.env.HMSH_BATCH_SIZE, 10) || 10;
+/**
+ * Minimum batch size under adaptive scaling (default: 1).
+ *
+ * When stream depth is high, the adaptive logic reduces batch size
+ * to relieve back-pressure. This value is the floor — the smallest
+ * batch the system will fetch per consume cycle.
+ *
+ *   - 1 (default): fully serial under max stress, safest
+ *   - 2: retains some parallelism while limiting contention
+ *
+ * Both values produce equivalent throughput in practice (~233s for
+ * 1000 concurrent workflows). The reduction from the configured
+ * HMSH_BATCH_SIZE is what matters most — the floor is a safety net.
+ */
+export const HMSH_BATCH_SIZE_MIN =
+  parseInt(process.env.HMSH_BATCH_SIZE_MIN, 10) || 1;
 
 /**
  * Postgres stream reservation timeout in seconds (default: 30).
@@ -238,6 +254,34 @@ export const HMSH_BATCH_SIZE =
  */
 export const HMSH_RESERVATION_TIMEOUT_S =
   parseInt(process.env.HMSH_RESERVATION_TIMEOUT_S, 10) || 30;
+
+/**
+ * Maximum reservation timeout in seconds for adaptive scaling (default: 1800).
+ *
+ * This is the ceiling for the adaptive reservation timeout — how far the
+ * system is allowed to stretch under sustained load. The adaptive logic
+ * only uses what it needs based on stream depth; this value defines the
+ * upper bound, not the steady state.
+ *
+ * The tradeoff is recovery time after a consumer crash: if a consumer
+ * reserves a message and dies, that message is unavailable until the
+ * timeout expires. A higher ceiling means longer recovery from crashes
+ * but prevents duplicate delivery under heavy sustained load.
+ *
+ * In practice, crashes are rare and the delay is bounded. The cost of
+ * a ceiling that is too low — duplicate delivery, collation errors,
+ * wasted CPU, workflow stalls — is far higher than a slightly longer
+ * recovery window after a crash.
+ *
+ * **Tuning guidance:**
+ *   - Dedicated infrastructure with ample CPU: lower ceiling is fine (600s)
+ *   - Shared/multi-tenant or CPU-constrained: use the default (1800s)
+ *   - Long-running batch imports or large workflow graphs: increase (3600s+)
+ *   - Cloud deployments without CPU contention: the adaptive logic will
+ *     naturally stay near the starting timeout and rarely approach the ceiling
+ */
+export const HMSH_RESERVATION_TIMEOUT_MAX_S =
+  parseInt(process.env.HMSH_RESERVATION_TIMEOUT_MAX_S, 10) || 1800;
 
 // TASK WORKER
 export const HMSH_EXPIRE_DURATION =
