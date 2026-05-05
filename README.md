@@ -29,34 +29,17 @@ Install the package:
 npm install @hotmeshio/hotmesh
 ```
 
-The repo includes a `docker-compose.yml` that starts Postgres, NATS, and a development container:
+The repo includes a `docker-compose.yml` that starts Postgres and a development container:
 
 ```bash
 docker compose up -d
 ```
 
-Then follow the [Quick Start guide](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/quickstart.md) for a progressive walkthrough — from a single trigger to conditional, parallel, and compositional workflows.
+See the [Durable API reference](https://docs.hotmesh.io/classes/services_durable.Durable.html) for the full API surface — workflows, activities, signals, child workflows, and more.
 
-## Two ways to write workflows
+## Writing workflows
 
-Both approaches reuse your activity functions:
-
-```typescript
-// activities.ts (shared between both approaches)
-export async function checkInventory(itemId: string): Promise<number> {
-  return getInventoryCount(itemId);
-}
-
-export async function reserveItem(itemId: string, quantity: number): Promise<string> {
-  return createReservation(itemId, quantity);
-}
-
-export async function notifyBackorder(itemId: string): Promise<void> {
-  await sendBackorderEmail(itemId);
-}
-```
-
-### Option 1: Code
+**Define the workflow** — plain TypeScript with branching, loops, and error handling. Activities are proxied so their results are checkpointed and replayed on restart.
 
 ```typescript
 // workflows.ts
@@ -76,123 +59,71 @@ export async function orderWorkflow(itemId: string, qty: number) {
     return 'backordered';
   }
 }
+```
 
-// main.ts
-import * as activities from './activities';
+**Start a worker** — connects to Postgres and begins processing workflows on the given task queue.
+
+```typescript
+// worker.ts
+import { Durable } from '@hotmeshio/hotmesh';
+import { Client as Postgres } from 'pg';
+import { orderWorkflow } from './workflows';
 
 const connection = {
   class: Postgres,
   options: { connectionString: 'postgresql://localhost:5432/mydb' }
 };
 
-await Durable.Worker.create({
+const worker = await Durable.Worker.create({
   connection,
   taskQueue: 'orders',
   workflow: orderWorkflow,
-  activities,
 });
+
+await worker.run();
+```
+
+**Run a workflow** — start an execution and await its result. The client can run in a different process, container, or server.
+
+```typescript
+// client.ts
+import { Durable } from '@hotmeshio/hotmesh';
+import { Client as Postgres } from 'pg';
+
+const connection = {
+  class: Postgres,
+  options: { connectionString: 'postgresql://localhost:5432/mydb' }
+};
 
 const client = new Durable.Client({ connection });
 const handle = await client.workflow.start({
   args: ['item-123', 5],
   taskQueue: 'orders',
   workflowName: 'orderWorkflow',
-  workflowId: 'order-456'
+  workflowId: 'order-456',
 });
 
 const result = await handle.result();
 ```
 
-### Option 2: YAML (functional approach)
+### Activities
 
-```yaml
-# order.yaml
-activities:
-  trigger:
-    type: trigger
+Activities are your side-effectful functions — database calls, API requests, anything non-deterministic. HotMesh checkpoints their results so they're never re-executed on replay.
 
-  checkInventory:
-    type: worker
-    topic: inventory.check
-
-  reserveItem:
-    type: worker
-    topic: inventory.reserve
-
-  notifyBackorder:
-    type: worker
-    topic: inventory.backorder.notify
-
-transitions:
-  trigger:
-    - to: checkInventory
-
-  checkInventory:
-    - to: reserveItem
-      conditions:
-        match:
-          - expected: true
-            actual:
-              '@pipe':
-                - ['{checkInventory.output.data.availableQty}', '{trigger.output.data.requestedQty}']
-                - ['{@conditional.gte}']
-
-    - to: notifyBackorder
-      conditions:
-        match:
-          - expected: false
-            actual:
-              '@pipe':
-                - ['{checkInventory.output.data.availableQty}', '{trigger.output.data.requestedQty}']
-                - ['{@conditional.gte}']
-```
-
-Deploy and run as follows:
 ```typescript
-// main.ts (reuses same activities.ts)
-import * as activities from './activities';
+// activities.ts
+export async function checkInventory(itemId: string): Promise<number> {
+  return getInventoryCount(itemId);
+}
 
-const hotMesh = await HotMesh.init({
-  appId: 'orders',
-  engine: { connection },
-  workers: [
-    {
-      topic: 'inventory.check',
-      connection,
-      callback: async (data) => {
-        const availableQty = await activities.checkInventory(data.data.itemId);
-        return { metadata: { ...data.metadata }, data: { availableQty } };
-      }
-    },
-    {
-      topic: 'inventory.reserve',
-      connection,
-      callback: async (data) => {
-        const reservationId = await activities.reserveItem(data.data.itemId, data.data.quantity);
-        return { metadata: { ...data.metadata }, data: { reservationId } };
-      }
-    },
-    {
-      topic: 'inventory.backorder.notify',
-      connection,
-      callback: async (data) => {
-        await activities.notifyBackorder(data.data.itemId);
-        return { metadata: { ...data.metadata } };
-      }
-    }
-  ]
-});
+export async function reserveItem(itemId: string, quantity: number): Promise<string> {
+  return createReservation(itemId, quantity);
+}
 
-await hotMesh.deploy('./order.yaml');
-await hotMesh.activate('1');
-
-const result = await hotMesh.pubsub('order.requested', {
-  itemId: 'item-123',
-  requestedQty: 5
-});
+export async function notifyBackorder(itemId: string): Promise<void> {
+  await sendBackorderEmail(itemId);
+}
 ```
-
-Both compile to the same distributed execution model.
 
 ## Common patterns
 
@@ -320,6 +251,12 @@ There is no proprietary dashboard. Workflow state lives in Postgres, so use what
 - **Handle API** — `handle.status()`, `handle.state(true)`, and `handle.export()` give programmatic access to any running or completed workflow.
 - **Logging** — set `HMSH_LOGLEVEL` (`debug`, `info`, `warn`, `error`, `silent`) to control log verbosity.
 - **OpenTelemetry** — set `HMSH_TELEMETRY=true` to emit spans and metrics. Plug in any OTel-compatible collector.
+
+## YAML workflows
+
+HotMesh also supports a declarative YAML syntax. The same activities run in both modes — the difference is compilation speed. YAML workflows compile ~10x faster because the execution graph is declared upfront rather than discovered through replay. The tradeoff is expressiveness: YAML uses a functional pipe syntax for conditions and transformations instead of native TypeScript control flow.
+
+See the [Quick Start guide](https://github.com/hotmeshio/sdk-typescript/blob/main/docs/quickstart.md) for YAML examples and the `tests/functional/` directory for working implementations.
 
 ## Architecture
 
