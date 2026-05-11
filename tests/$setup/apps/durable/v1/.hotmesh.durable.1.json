@@ -507,9 +507,9 @@
             }
           },
           "proxyer": {
-            "title": "Invokes the activity flow and awaits the response",
-            "type": "await",
-            "topic": "durable.activity.execute",
+            "title": "Calls the activity function directly via worker topic",
+            "type": "worker",
+            "topic": "{worker.output.data.workflowTopic}",
             "input": {
               "schema": {
                 "type": "object",
@@ -585,6 +585,16 @@
                 }
               }
             },
+            "output": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "response": {
+                    "type": "any"
+                  }
+                }
+              }
+            },
             "job": {
               "maps": {
                 "idempotentcy-marker[-]": {
@@ -605,8 +615,149 @@
                     },
                     {
                       "@pipe": [
+                        {
+                          "@pipe": [
+                            [
+                              "{$self.output.data.$error}",
+                              "{$self.output.metadata.err}"
+                            ],
+                            [
+                              "{@logical.or}"
+                            ]
+                          ]
+                        },
+                        {
+                          "@pipe": [
+                            {
+                              "@pipe": [
+                                [
+                                  "$error"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.data.$error}",
+                                  "{$self.output.data}"
+                                ],
+                                [
+                                  "{@conditional.nullish}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "ac"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.ac}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "au"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.au}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "job_id"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{worker.output.data.workflowId}"
+                                ]
+                              ]
+                            },
+                            [
+                              "{@object.create}"
+                            ]
+                          ]
+                        },
+                        {
+                          "@pipe": [
+                            {
+                              "@pipe": [
+                                [
+                                  "data"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.data.response}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "ac"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.ac}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "au"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.au}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "job_id"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{worker.output.data.workflowId}"
+                                ]
+                              ]
+                            },
+                            [
+                              "{@object.create}"
+                            ]
+                          ]
+                        },
                         [
-                          "{$self.output.data.response}"
+                          "{@conditional.ternary}"
                         ]
                       ]
                     },
@@ -624,7 +775,8 @@
             "ancestor": "cycle_hook",
             "input": {
               "maps": {
-                "retryCount": 0
+                "retryCount": 0,
+                "throttleSeconds": 0
               }
             }
           },
@@ -1279,9 +1431,9 @@
             }
           },
           "signaler_proxyer": {
-            "title": "Invokes the activity flow and awaits the response",
-            "type": "await",
-            "topic": "durable.activity.execute",
+            "title": "Calls the activity function directly via worker topic",
+            "type": "worker",
+            "topic": "{signaler_worker.output.data.workflowTopic}",
             "input": {
               "schema": {
                 "type": "object",
@@ -1357,6 +1509,16 @@
                 }
               }
             },
+            "output": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "response": {
+                    "type": "any"
+                  }
+                }
+              }
+            },
             "job": {
               "maps": {
                 "idempotentcy-marker[-]": {
@@ -1377,8 +1539,149 @@
                     },
                     {
                       "@pipe": [
+                        {
+                          "@pipe": [
+                            [
+                              "{$self.output.data.$error}",
+                              "{$self.output.metadata.err}"
+                            ],
+                            [
+                              "{@logical.or}"
+                            ]
+                          ]
+                        },
+                        {
+                          "@pipe": [
+                            {
+                              "@pipe": [
+                                [
+                                  "$error"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.data.$error}",
+                                  "{$self.output.data}"
+                                ],
+                                [
+                                  "{@conditional.nullish}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "ac"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.ac}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "au"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.au}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "job_id"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{signaler_worker.output.data.workflowId}"
+                                ]
+                              ]
+                            },
+                            [
+                              "{@object.create}"
+                            ]
+                          ]
+                        },
+                        {
+                          "@pipe": [
+                            {
+                              "@pipe": [
+                                [
+                                  "data"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.data.response}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "ac"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.ac}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "au"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.au}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "job_id"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{signaler_worker.output.data.workflowId}"
+                                ]
+                              ]
+                            },
+                            [
+                              "{@object.create}"
+                            ]
+                          ]
+                        },
                         [
-                          "{$self.output.data.response}"
+                          "{@conditional.ternary}"
                         ]
                       ]
                     },
@@ -1396,7 +1699,8 @@
             "ancestor": "signaler_cycle_hook",
             "input": {
               "maps": {
-                "retryCount": 0
+                "retryCount": 0,
+                "throttleSeconds": 0
               }
             }
           },
@@ -2222,9 +2526,23 @@
             }
           },
           "collator_proxyer": {
-            "title": "Invokes the activity flow and awaits the response",
-            "type": "await",
-            "topic": "durable.activity.execute",
+            "title": "Calls the activity function directly via worker topic",
+            "type": "worker",
+            "topic": {
+              "@pipe": [
+                [
+                  "{collator_trigger.output.data.items}",
+                  "{collator_cycle_hook.output.data.cur_index}"
+                ],
+                [
+                  "{@array.get}",
+                  "workflowTopic"
+                ],
+                [
+                  "{@object.get}"
+                ]
+              ]
+            },
             "input": {
               "schema": {
                 "type": "object",
@@ -2406,8 +2724,149 @@
                     },
                     {
                       "@pipe": [
+                        {
+                          "@pipe": [
+                            [
+                              "{$self.output.data.$error}",
+                              "{$self.output.metadata.err}"
+                            ],
+                            [
+                              "{@logical.or}"
+                            ]
+                          ]
+                        },
+                        {
+                          "@pipe": [
+                            {
+                              "@pipe": [
+                                [
+                                  "type"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "proxy"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "$error"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.data.$error}",
+                                  "{$self.output.data}"
+                                ],
+                                [
+                                  "{@conditional.nullish}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "ac"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.ac}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "au"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.au}"
+                                ]
+                              ]
+                            },
+                            [
+                              "{@object.create}"
+                            ]
+                          ]
+                        },
+                        {
+                          "@pipe": [
+                            {
+                              "@pipe": [
+                                [
+                                  "type"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "proxy"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "data"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.data.response}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "ac"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.ac}"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "au"
+                                ]
+                              ]
+                            },
+                            {
+                              "@pipe": [
+                                [
+                                  "{$self.output.metadata.au}"
+                                ]
+                              ]
+                            },
+                            [
+                              "{@object.create}"
+                            ]
+                          ]
+                        },
                         [
-                          "{$self.output.data.response}"
+                          "{@conditional.ternary}"
                         ]
                       ]
                     },
@@ -2566,6 +3025,11 @@
                 ]
               }
             }
+          ],
+          "collator_proxyer": [
+            {
+              "to": "collator_cycler"
+            }
           ]
         },
         "hooks": {
@@ -2594,291 +3058,6 @@
                   }
                 ]
               }
-            }
-          ]
-        }
-      },
-      {
-        "subscribes": "durable.activity.execute",
-        "publishes": "durable.activity.executed",
-        "expire": 0,
-        "input": {
-          "schema": {
-            "type": "object",
-            "properties": {
-              "parentWorkflowId": {
-                "type": "string"
-              },
-              "originJobId": {
-                "type": "string"
-              },
-              "workflowId": {
-                "type": "string"
-              },
-              "workflowTopic": {
-                "type": "string"
-              },
-              "activityName": {
-                "type": "string"
-              },
-              "arguments": {
-                "type": "array"
-              },
-              "backoffCoefficient": {
-                "type": "number"
-              },
-              "maximumAttempts": {
-                "type": "number"
-              }
-            }
-          }
-        },
-        "output": {
-          "schema": {
-            "type": "object",
-            "properties": {
-              "response": {
-                "type": "any"
-              },
-              "done": {
-                "type": "boolean"
-              }
-            }
-          }
-        },
-        "activities": {
-          "activity_trigger": {
-            "title": "Activity Flow Trigger",
-            "type": "trigger",
-            "stats": {
-              "id": "{$self.input.data.workflowId}",
-              "key": "{$self.input.data.parentWorkflowId}",
-              "parent": "{$self.input.data.originJobId}",
-              "adjacent": "{$self.input.data.parentWorkflowId}"
-            }
-          },
-          "activity_cycle_hook": {
-            "title": "Activity Flow Pivot - Cycling Descendants Point Here",
-            "type": "hook",
-            "cycle": true,
-            "output": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "retryCount": {
-                    "type": "number"
-                  }
-                }
-              },
-              "maps": {
-                "retryCount": 0
-              }
-            }
-          },
-          "activity_worker": {
-            "title": "Activity Worker - Calls Activity Functions",
-            "type": "worker",
-            "topic": "{activity_trigger.output.data.workflowTopic}",
-            "retry": {
-              "599": [
-                2
-              ]
-            },
-            "input": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "parentWorkflowId": {
-                    "type": "string"
-                  },
-                  "workflowId": {
-                    "type": "string"
-                  },
-                  "workflowTopic": {
-                    "type": "string"
-                  },
-                  "activityName": {
-                    "type": "string"
-                  },
-                  "arguments": {
-                    "type": "array"
-                  }
-                }
-              },
-              "maps": {
-                "parentWorkflowId": "{activity_trigger.output.data.parentWorkflowId}",
-                "workflowId": "{activity_trigger.output.data.workflowId}",
-                "workflowTopic": "{activity_trigger.output.data.workflowTopic}",
-                "activityName": "{activity_trigger.output.data.activityName}",
-                "arguments": "{activity_trigger.output.data.arguments}"
-              }
-            },
-            "output": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "response": {
-                    "type": "any"
-                  }
-                }
-              }
-            },
-            "job": {
-              "maps": {
-                "response": "{$self.output.data.response}"
-              }
-            }
-          },
-          "activity_retryer": {
-            "title": "Pauses for an exponentially-throttled amount of time after a 599 (retryable) error",
-            "type": "hook",
-            "sleep": {
-              "@pipe": [
-                [
-                  "{activity_trigger.output.data.backoffCoefficient}",
-                  10
-                ],
-                [
-                  "{@logical.or}",
-                  "{activity_cycle_hook.output.data.retryCount}"
-                ],
-                [
-                  "{@math.pow}"
-                ]
-              ]
-            }
-          },
-          "activity_retry_cycler": {
-            "title": "Cycles back to the activity_cycle_hook pivot, incrementing the `retryCount` (the exponential)",
-            "type": "cycle",
-            "ancestor": "activity_cycle_hook",
-            "input": {
-              "maps": {
-                "retryCount": {
-                  "@pipe": [
-                    [
-                      "{activity_cycle_hook.output.data.retryCount}",
-                      1
-                    ],
-                    [
-                      "{@math.add}"
-                    ]
-                  ]
-                }
-              }
-            }
-          },
-          "activity_closer": {
-            "title": "Marks the activity workflow as done",
-            "type": "hook",
-            "job": {
-              "maps": {
-                "done": true
-              }
-            }
-          }
-        },
-        "transitions": {
-          "activity_trigger": [
-            {
-              "to": "activity_cycle_hook"
-            }
-          ],
-          "activity_cycle_hook": [
-            {
-              "to": "activity_worker"
-            }
-          ],
-          "activity_worker": [
-            {
-              "to": "activity_closer",
-              "conditions": {
-                "code": [
-                  200,
-                  598,
-                  597,
-                  596
-                ]
-              }
-            },
-            {
-              "to": "activity_closer",
-              "conditions": {
-                "code": [
-                  599
-                ],
-                "match": [
-                  {
-                    "expected": true,
-                    "actual": {
-                      "@pipe": [
-                        {
-                          "@pipe": [
-                            [
-                              "{activity_cycle_hook.output.data.retryCount}"
-                            ]
-                          ]
-                        },
-                        {
-                          "@pipe": [
-                            [
-                              "{activity_trigger.input.data.maximumAttempts}",
-                              5
-                            ],
-                            [
-                              "{@conditional.nullish}"
-                            ]
-                          ]
-                        },
-                        [
-                          "{@conditional.greater_than_or_equal}"
-                        ]
-                      ]
-                    }
-                  }
-                ]
-              }
-            },
-            {
-              "to": "activity_retryer",
-              "conditions": {
-                "code": 599,
-                "match": [
-                  {
-                    "expected": true,
-                    "actual": {
-                      "@pipe": [
-                        {
-                          "@pipe": [
-                            [
-                              "{activity_cycle_hook.output.data.retryCount}"
-                            ]
-                          ]
-                        },
-                        {
-                          "@pipe": [
-                            [
-                              "{activity_trigger.input.data.maximumAttempts}",
-                              5
-                            ],
-                            [
-                              "{@conditional.nullish}"
-                            ]
-                          ]
-                        },
-                        [
-                          "{@conditional.less_than}"
-                        ]
-                      ]
-                    }
-                  }
-                ]
-              }
-            }
-          ],
-          "activity_retryer": [
-            {
-              "to": "activity_retry_cycler"
             }
           ]
         }

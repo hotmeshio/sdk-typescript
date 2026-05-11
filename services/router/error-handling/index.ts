@@ -29,20 +29,15 @@ export class ErrorHandler {
       const maxInterval = typeof retry.maximumInterval === 'string'
         ? parseInt(retry.maximumInterval)
         : (retry.maximumInterval || 120);
-      
-      // Check if we can retry (next attempt would be attempt #tryCount+2, must be <= maxAttempts)
-      // tryCount=0 is 1st attempt, tryCount=1 is 2nd attempt, etc.
-      // So after tryCount, we've made (tryCount + 1) attempts
-      // We can retry if (tryCount + 1) < maxAttempts
+      const initialIntervalS = (retry as any).initialInterval || 1;
+
       if ((tryCount + 1) < maxAttempts) {
-        // Exponential backoff: min(coefficient^(try+1), maxInterval)
-        // First retry (after try=0): coefficient^1
-        // Second retry (after try=1): coefficient^2, etc.
+        // Exponential backoff: min(initialInterval * coefficient^(try+1), maxInterval)
         const backoffSeconds = Math.min(
-          Math.pow(backoffCoeff, tryCount + 1),
+          initialIntervalS * Math.pow(backoffCoeff, tryCount + 1),
           maxInterval
         );
-        return [true, backoffSeconds * 1000]; // Convert to milliseconds
+        return [true, backoffSeconds * 1000];
       }
       return [false, 0];
     }
@@ -137,6 +132,7 @@ export class ErrorHandler {
       streamData: StreamData | StreamDataResponse,
     ) => Promise<string>,
     retry?: RetryPolicy,
+    onRetryScheduled?: (topic: string, delayMs: number) => void,
   ): Promise<string> {
     const [shouldRetry, timeout] = this.shouldRetry(input, output, retry);
     if (shouldRetry) {
@@ -145,29 +141,37 @@ export class ErrorHandler {
       if (!retry) {
         await sleepFor(timeout);
       }
-      
+
       // Create new message with incremented try count
       const newMessage: any = {
         data: input.data,
         metadata: { ...input.metadata, try: (input.metadata.try || 0) + 1 },
         policies: input.policies,
       };
-      
+
       // Propagate retry config to new message (for immutable pattern)
       if ((input as any)._streamRetryConfig) {
         newMessage._streamRetryConfig = (input as any)._streamRetryConfig;
       }
-      
+
       // Add visibility delay for production-ready retry with retry
       if (retry && timeout > 0) {
         newMessage._visibilityDelayMs = timeout;
       }
-      
+
       // Track retry attempt count in database
       const currentAttempt = (input as any)._retryAttempt || 0;
       newMessage._retryAttempt = currentAttempt + 1;
-      
-      return (await publishMessage(input.metadata.topic, newMessage)) as string;
+
+      const messageId = (await publishMessage(input.metadata.topic, newMessage)) as string;
+
+      // Schedule a targeted NOTIFY so the consumer wakes up when
+      // the visibility-delayed message becomes visible
+      if (retry && timeout > 0 && onRetryScheduled) {
+        onRetryScheduled(input.metadata.topic, timeout);
+      }
+
+      return messageId;
     } else {
       const structuredError = this.structureError(input, output);
       (structuredError as any)._retryAttempt =

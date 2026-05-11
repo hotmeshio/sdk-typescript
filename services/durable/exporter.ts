@@ -562,13 +562,13 @@ class ExporterService {
     const workflowArgsField = this.resolveSymbolField(symbolSets, 'trigger', 'trigger/output/data/arguments');
 
     // ── 1. Enrich activity inputs ──
-    if (activityArgsField) {
+    {
       const activityEvents = execution.events.filter(
         (e) => e.event_type === 'activity_task_scheduled' || e.event_type === 'activity_task_completed' || e.event_type === 'activity_task_failed',
       );
 
       if (activityEvents.length > 0) {
-        const { byJobId, byNameIndex } = await this.store.getActivityInputs(workflowId, activityArgsField);
+        const { byJobId, byNameIndex } = await this.store.getActivityInputs(workflowId, activityArgsField || '');
 
         for (const evt of activityEvents) {
           const attrs = evt.attributes as any;

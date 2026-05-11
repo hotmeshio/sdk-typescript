@@ -492,15 +492,13 @@ export class WorkerService {
           //use code 599 as a proxy for all retryable errors
           // (basically anything not 596, 597, 598)
           return {
-            status: StreamStatus.SUCCESS,
+            status: StreamStatus.ERROR,
             code: 599,
             metadata: { ...data.metadata },
             data: {
-              $error: {
-                message: err.message,
-                stack: err.stack,
-                code: HMSH_CODE_DURABLE_RETRYABLE,
-              },
+              message: err.message,
+              stack: err.stack,
+              code: HMSH_CODE_DURABLE_RETRYABLE,
             },
           };
         } else if (err instanceof DurableTimeoutError) {
@@ -774,15 +772,13 @@ export class WorkerService {
           //use code 599 as a proxy for all retryable errors
           // (basically anything not 596, 597, 598)
           return {
-            status: StreamStatus.SUCCESS,
+            status: StreamStatus.ERROR,
             code: HMSH_CODE_DURABLE_RETRYABLE,
             metadata: { ...data.metadata },
             data: {
-              $error: {
-                message: err.message,
-                stack: err.stack,
-                timestamp: formatISODate(new Date()),
-              },
+              message: err.message,
+              stack: err.stack,
+              code: HMSH_CODE_DURABLE_RETRYABLE,
             },
           } as StreamDataResponse;
         }

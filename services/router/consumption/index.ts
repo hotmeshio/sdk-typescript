@@ -813,11 +813,13 @@ export class ConsumptionManager<
         // Extract retry policy with priority:
         // 1. Use message-level _streamRetryConfig (from database columns or previous retry)
         // 2. Fall back to router-level retry (from worker config)
-        const retry = (input as any)._streamRetryConfig 
+        const streamRetryConfig = (input as any)._streamRetryConfig;
+        const retry = streamRetryConfig
           ? {
-              maximumAttempts: (input as any)._streamRetryConfig.max_retry_attempts,
-              backoffCoefficient: (input as any)._streamRetryConfig.backoff_coefficient,
-              maximumInterval: (input as any)._streamRetryConfig.maximum_interval_seconds,
+              maximumAttempts: streamRetryConfig.max_retry_attempts,
+              backoffCoefficient: streamRetryConfig.backoff_coefficient,
+              maximumInterval: streamRetryConfig.maximum_interval_seconds,
+              initialInterval: streamRetryConfig.initialInterval ?? (input as any).data?.initialInterval ?? 1,
             }
           : this.retry;
         
@@ -826,6 +828,14 @@ export class ConsumptionManager<
           output,
           this.publishMessage.bind(this),
           retry,
+          (topic: string, delayMs: number) => {
+            // Schedule a targeted NOTIFY so the consumer wakes up
+            // when the visibility-delayed retry message becomes visible
+            if (typeof (this.stream as any).scheduleStreamNotify === 'function') {
+              const streamKey = this.stream.mintKey(KeyType.STREAMS, { topic });
+              (this.stream as any).scheduleStreamNotify(streamKey, delayMs);
+            }
+          },
         );
       } else if (typeof output.metadata !== 'object') {
         output.metadata = { ...input.metadata, guid: guid() };

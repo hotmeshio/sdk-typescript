@@ -1883,6 +1883,31 @@ class PostgresStoreService extends StoreService<
       }
     }
 
+    // If no results from legacy approach, try direct worker approach:
+    // extract arguments from proxyer messages in worker_streams
+    if (byNameIndex.size === 0) {
+      const { GET_PROXYER_STREAM_INPUTS } = await import('./exporter-sql');
+      const streamSql = GET_PROXYER_STREAM_INPUTS.replace(/{schema}/g, schemaName);
+      const streamResult = await this.pgClient.query(streamSql, [workflowId]);
+
+      for (const row of streamResult.rows) {
+        try {
+          const msg = typeof row.message === 'string' ? JSON.parse(row.message) : row.message;
+          const data = msg?.data;
+          if (data?.activityName && data?.arguments) {
+            const activityName = data.activityName;
+            const wfId = data.workflowId || '';
+            const idxMatch = wfId.match(/-(\d+)$/);
+            const execIndex = idxMatch ? idxMatch[1] : '0';
+            byNameIndex.set(`${activityName}:${execIndex}`, data.arguments);
+            byJobId.set(wfId, data.arguments);
+          }
+        } catch {
+          // Skip unparseable messages
+        }
+      }
+    }
+
     return { byJobId, byNameIndex };
   }
 

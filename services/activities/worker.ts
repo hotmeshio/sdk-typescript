@@ -196,6 +196,20 @@ class Worker extends Activity {
         retry: this.config.retry,
       };
     }
+    // Propagate per-activity retry config as _streamRetryConfig so
+    // the engine-level retry mechanism uses it for exponential backoff.
+    // The durable module's maximumAttempts means max retries
+    // (total executions = 1 + maximumAttempts), while the engine's
+    // max_retry_attempts means total attempts. Add 1 to align.
+    if (jobData?.maximumAttempts || jobData?.backoffCoefficient || jobData?.maximumInterval || jobData?.initialInterval) {
+      const durableMaxAttempts = (jobData.maximumAttempts as number) ?? 50;
+      (streamData as any)._streamRetryConfig = {
+        max_retry_attempts: durableMaxAttempts + 1,
+        backoff_coefficient: (jobData.backoffCoefficient as number) ?? 10,
+        maximum_interval_seconds: (jobData.maximumInterval as number) ?? 120,
+        initialInterval: (jobData.initialInterval as number) ?? 1,
+      };
+    }
     return (await this.engine.router?.publishMessage(
       topic,
       streamData,
