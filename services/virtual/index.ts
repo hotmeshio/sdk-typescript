@@ -464,10 +464,12 @@ class Virtual {
     if (isValidCron(params.options.interval)) {
       //cron syntax
       cron = params.options.interval;
-      const nextDelay = new CronHandler().nextDelay(cron);
-      delay = nextDelay > 0 ? nextDelay : undefined;
+      delay = new CronHandler().nextDelay(cron);
     } else {
       const seconds = s(params.options.interval);
+      if (isNaN(seconds)) {
+        throw new Error(`Invalid cron/interval expression: ${params.options.interval}`);
+      }
       interval = Math.max(seconds, HMSH_FIDELITY_SECONDS);
       delay = params.options.delay ? s(params.options.delay) : undefined;
     }
