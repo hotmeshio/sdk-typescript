@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as utils from '../../../modules/utils';
+import { CronHandler } from '../../../services/pipe/functions/cron';
 import { StreamStatus } from '../../../types/stream';
 
 describe('utils module', () => {
@@ -63,6 +64,79 @@ describe('utils module', () => {
       expect(
         utils.matchesStatus(StreamStatus.PENDING, StreamStatus.PENDING),
       ).toBe(true);
+    });
+  });
+
+  describe('isValidCron function', () => {
+    // These plain expressions worked with the old regex too
+    it('should accept a simple every-minute expression', () => {
+      expect(utils.isValidCron('* * * * *')).toBe(true);
+    });
+
+    it('should accept a fixed-time expression', () => {
+      expect(utils.isValidCron('0 12 * * *')).toBe(true);
+    });
+
+    // These are the expressions the old regex REJECTED, causing the bug
+    it('should accept step values (*/15)', () => {
+      expect(utils.isValidCron('*/15 * * * *')).toBe(true);
+    });
+
+    it('should accept step values (*/1)', () => {
+      expect(utils.isValidCron('*/1 * * * *')).toBe(true);
+    });
+
+    it('should accept ranges in minutes (1-30)', () => {
+      expect(utils.isValidCron('1-30 * * * *')).toBe(true);
+    });
+
+    it('should accept ranges in hours (9-17)', () => {
+      expect(utils.isValidCron('0 9-17 * * *')).toBe(true);
+    });
+
+    it('should accept lists (1,15,30)', () => {
+      expect(utils.isValidCron('1,15,30 * * * *')).toBe(true);
+    });
+
+    it('should accept combined range-step (1-30/5)', () => {
+      expect(utils.isValidCron('1-30/5 * * * *')).toBe(true);
+    });
+
+    // Invalid expressions should still return false
+    it('should reject garbage strings', () => {
+      expect(utils.isValidCron('not a cron')).toBe(false);
+    });
+
+    it('should reject out-of-range values', () => {
+      expect(utils.isValidCron('60 * * * *')).toBe(false);
+    });
+
+    it('should reject invalid field values', () => {
+      expect(utils.isValidCron('abc def ghi jkl mno')).toBe(false);
+    });
+  });
+
+  describe('CronHandler.nextDelay function', () => {
+    it('should return a positive number for a valid cron expression', () => {
+      const handler = new CronHandler();
+      const delay = handler.nextDelay('0 0 * * *');
+      expect(delay).toBeGreaterThan(0);
+    });
+
+    it('should return a positive number for step values', () => {
+      const handler = new CronHandler();
+      const delay = handler.nextDelay('*/15 * * * *');
+      expect(delay).toBeGreaterThan(0);
+    });
+
+    it('should throw on an invalid cron expression', () => {
+      const handler = new CronHandler();
+      expect(() => handler.nextDelay('not valid')).toThrow('Invalid cron expression');
+    });
+
+    it('should throw on undefined input', () => {
+      const handler = new CronHandler();
+      expect(() => handler.nextDelay(undefined as any)).toThrow('Invalid cron expression');
     });
   });
 

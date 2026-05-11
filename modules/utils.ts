@@ -1,6 +1,7 @@
 import os from 'os';
 import { createHash } from 'crypto';
 
+import { parseExpression } from 'cron-parser';
 import { nanoid } from 'nanoid';
 import ms from 'ms';
 
@@ -307,9 +308,12 @@ export function restoreHierarchy(obj: StringAnyType): StringAnyType {
  * @private
  */
 export function isValidCron(cronExpression: string): boolean {
-  const cronRegex =
-    /^(\*|([0-5]?\d)) (\*|([01]?\d|2[0-3])) (\*|([12]?\d|3[01])) (\*|([1-9]|1[0-2])) (\*|([0-6](?:-[0-6])?(?:,[0-6])?))$/;
-  return cronRegex.test(cronExpression);
+  try {
+    parseExpression(cronExpression);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
