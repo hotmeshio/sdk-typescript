@@ -320,9 +320,9 @@ app:
               retryCount: 0
 
         proxyer:
-          title: Invokes the activity flow and awaits the response
-          type: await
-          topic: durable.activity.execute
+          title: Calls the activity function directly via worker topic
+          type: worker
+          topic: '{worker.output.data.workflowTopic}'
           input:
             schema:
               type: object
@@ -366,6 +366,12 @@ app:
                   - ['{worker.output.data.maximumAttempts}','{trigger.output.data.maximumAttempts}']
                   - ['{@conditional.nullish}', 5]
                   - ['{@conditional.nullish}']
+          output:
+            schema:
+              type: object
+              properties:
+                response:
+                  type: any
           job:
             maps:
               idempotentcy-marker[-]:
@@ -374,7 +380,47 @@ app:
                     - ['-proxy', '{worker.output.data.workflowDimension}', '-', '{worker.output.data.index}', '-']
                     - ['{@string.concat}']
                   - '@pipe':
-                    - ['{$self.output.data.response}']
+                    - '@pipe':
+                      - ['{$self.output.data.$error}', '{$self.output.metadata.err}']
+                      - ['{@logical.or}']
+                    - '@pipe':
+                      - '@pipe':
+                        - [$error]
+                      - '@pipe':
+                        - ['{$self.output.data.$error}', '{$self.output.data}']
+                        - ['{@conditional.nullish}']
+                      - '@pipe':
+                        - [ac]
+                      - '@pipe':
+                        - ['{$self.output.metadata.ac}']
+                      - '@pipe':
+                        - [au]
+                      - '@pipe':
+                        - ['{$self.output.metadata.au}']
+                      - '@pipe':
+                        - ['job_id']
+                      - '@pipe':
+                        - ['{worker.output.data.workflowId}']
+                      - ['{@object.create}']
+                    - '@pipe':
+                      - '@pipe':
+                        - [data]
+                      - '@pipe':
+                        - ['{$self.output.data.response}']
+                      - '@pipe':
+                        - [ac]
+                      - '@pipe':
+                        - ['{$self.output.metadata.ac}']
+                      - '@pipe':
+                        - [au]
+                      - '@pipe':
+                        - ['{$self.output.metadata.au}']
+                      - '@pipe':
+                        - ['job_id']
+                      - '@pipe':
+                        - ['{worker.output.data.workflowId}']
+                      - ['{@object.create}']
+                    - ['{@conditional.ternary}']
                   - ['{@object.create}']
 
         proxy_cycler:
@@ -467,25 +513,6 @@ app:
           input:
             maps:
               retryCount: 0
-
-        retryer:
-          title: Pauses for an exponentially-throttled amount of time after a 599 (retryable) error
-          type: hook
-          sleep:
-            '@pipe':
-              - ['{trigger.output.data.backoffCoefficient}', '{cycle_hook.output.data.retryCount}']
-              - ['{@math.pow}']
-
-        retry_cycler:
-          title: Cycles back to the cycle_hook pivot, increasing the retryCount (the exponential)
-          type: cycle
-          ancestor: cycle_hook
-          input:
-            maps:
-              retryCount:
-                '@pipe':
-                  - ['{cycle_hook.output.data.retryCount}', 1]
-                  - ['{@math.add}']
 
         closer:
           title: Closes the `Signal In` Channel, allowing for final cleanup
@@ -775,9 +802,9 @@ app:
               retryCount: 0
 
         signaler_proxyer:
-          title: Invokes the activity flow and awaits the response
-          type: await
-          topic: durable.activity.execute
+          title: Calls the activity function directly via worker topic
+          type: worker
+          topic: '{signaler_worker.output.data.workflowTopic}'
           input:
             schema:
               type: object
@@ -821,6 +848,12 @@ app:
                   - ['{signaler_worker.output.data.maximumAttempts}','{trigger.output.data.maximumAttempts}']
                   - ['{@conditional.nullish}', 5]
                   - ['{@conditional.nullish}']
+          output:
+            schema:
+              type: object
+              properties:
+                response:
+                  type: any
           job:
             maps:
               idempotentcy-marker[-]:
@@ -829,7 +862,47 @@ app:
                     - ['-proxy', '{signaler_worker.output.data.workflowDimension}', '-', '{signaler_worker.output.data.index}', '-']
                     - ['{@string.concat}']
                   - '@pipe':
-                    - ['{$self.output.data.response}']
+                    - '@pipe':
+                      - ['{$self.output.data.$error}', '{$self.output.metadata.err}']
+                      - ['{@logical.or}']
+                    - '@pipe':
+                      - '@pipe':
+                        - [$error]
+                      - '@pipe':
+                        - ['{$self.output.data.$error}', '{$self.output.data}']
+                        - ['{@conditional.nullish}']
+                      - '@pipe':
+                        - [ac]
+                      - '@pipe':
+                        - ['{$self.output.metadata.ac}']
+                      - '@pipe':
+                        - [au]
+                      - '@pipe':
+                        - ['{$self.output.metadata.au}']
+                      - '@pipe':
+                        - ['job_id']
+                      - '@pipe':
+                        - ['{signaler_worker.output.data.workflowId}']
+                      - ['{@object.create}']
+                    - '@pipe':
+                      - '@pipe':
+                        - [data]
+                      - '@pipe':
+                        - ['{$self.output.data.response}']
+                      - '@pipe':
+                        - [ac]
+                      - '@pipe':
+                        - ['{$self.output.metadata.ac}']
+                      - '@pipe':
+                        - [au]
+                      - '@pipe':
+                        - ['{$self.output.metadata.au}']
+                      - '@pipe':
+                        - ['job_id']
+                      - '@pipe':
+                        - ['{signaler_worker.output.data.workflowId}']
+                      - ['{@object.create}']
+                    - ['{@conditional.ternary}']
                   - ['{@object.create}']
 
         signaler_proxy_cycler:
@@ -923,25 +996,6 @@ app:
             maps:
               retryCount: 0
 
-        signaler_retryer:
-          title: Pauses signal in subprocess for an exponentially-throttled amount of time after a 599 (retryable) error
-          type: hook
-          sleep:
-            '@pipe':
-              - ['{trigger.output.data.backoffCoefficient}', '{signaler_cycle_hook.output.data.retryCount}']
-              - ['{@math.pow}']
-
-        signaler_retry_cycler:
-          title: Cycles back to the signaler_cycle_hook pivot, increasing the retryCount (the exponential)
-          type: cycle
-          ancestor: signaler_cycle_hook
-          input:
-            maps:
-              retryCount:
-                '@pipe':
-                  - ['{signaler_cycle_hook.output.data.retryCount}', 1]
-                  - ['{@math.add}']
-
       transitions:
         trigger:
           - to: cycle_hook
@@ -965,9 +1019,6 @@ app:
           - to: proxyer
             conditions:
               code: 591
-          - to: retryer
-            conditions:
-              code: 599
         collator:
           - to: collate_cycler
         childer:
@@ -976,8 +1027,6 @@ app:
           - to: proxy_cycler
         sleeper:
           - to: sleep_cycler
-        retryer:
-          - to: retry_cycler
         ### SUBPROCESS TRANSITIONS ###
         signaler:
           - to: signaler_cycle_hook
@@ -998,9 +1047,6 @@ app:
           - to: signaler_proxyer
             conditions:
               code: 591
-          - to: signaler_retryer
-            conditions:
-              code: 599
         signaler_collator:
           - to: signaler_collate_cycler
         signaler_childer:
@@ -1009,8 +1055,6 @@ app:
           - to: signaler_proxy_cycler
         signaler_sleeper:
           - to: signaler_sleep_cycler
-        signaler_retryer:
-          - to: signaler_retry_cycler
 
       hooks:
         durable.flow.signal:
@@ -1255,9 +1299,13 @@ app:
                   - ['{@object.create}']
 
         collator_proxyer:
-          title: Invokes the activity flow and awaits the response
-          type: await
-          topic: durable.activity.execute
+          title: Calls the activity function directly via worker topic
+          type: worker
+          topic:
+            '@pipe':
+              - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+              - ['{@array.get}', workflowTopic]
+              - ['{@object.get}']
           input:
             schema:
               type: object
@@ -1338,7 +1386,47 @@ app:
                   - '@pipe':
                     - ['{collator_cycle_hook.output.data.cur_index}']
                   - '@pipe':
-                    - ['{$self.output.data.response}']
+                    - '@pipe':
+                      - ['{$self.output.data.$error}', '{$self.output.metadata.err}']
+                      - ['{@logical.or}']
+                    - '@pipe':
+                      - '@pipe':
+                        - [type]
+                      - '@pipe':
+                        - ['proxy']
+                      - '@pipe':
+                        - [$error]
+                      - '@pipe':
+                        - ['{$self.output.data.$error}', '{$self.output.data}']
+                        - ['{@conditional.nullish}']
+                      - '@pipe':
+                        - [ac]
+                      - '@pipe':
+                        - ['{$self.output.metadata.ac}']
+                      - '@pipe':
+                        - [au]
+                      - '@pipe':
+                        - ['{$self.output.metadata.au}']
+                      - ['{@object.create}']
+                    - '@pipe':
+                      - '@pipe':
+                        - [type]
+                      - '@pipe':
+                        - ['proxy']
+                      - '@pipe':
+                        - [data]
+                      - '@pipe':
+                        - ['{$self.output.data.response}']
+                      - '@pipe':
+                        - [ac]
+                      - '@pipe':
+                        - ['{$self.output.metadata.ac}']
+                      - '@pipe':
+                        - [au]
+                      - '@pipe':
+                        - ['{$self.output.metadata.au}']
+                      - ['{@object.create}']
+                    - ['{@conditional.ternary}']
                   - ['{@object.create}']
 
       transitions:
@@ -1350,7 +1438,7 @@ app:
               code: 200
               match:
                 - expected: true
-                  actual: 
+                  actual:
                     '@pipe':
                       - '@pipe':
                         - ['{$job.data.cur_index}']
@@ -1363,7 +1451,7 @@ app:
               code: 200
               match:
                 - expected: 590
-                  actual: 
+                  actual:
                     '@pipe':
                       - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                       - ['{@array.get}', code]
@@ -1373,7 +1461,7 @@ app:
               code: 200
               match:
                 - expected: 591
-                  actual: 
+                  actual:
                     '@pipe':
                       - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                       - ['{@array.get}', code]
@@ -1383,7 +1471,7 @@ app:
               code: 200
               match:
                 - expected: 588
-                  actual: 
+                  actual:
                     '@pipe':
                       - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                       - ['{@array.get}', code]
@@ -1393,11 +1481,13 @@ app:
               code: 200
               match:
                 - expected: 595
-                  actual: 
+                  actual:
                     '@pipe':
                       - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
                       - ['{@array.get}', code]
                       - ['{@object.get}']
+        collator_proxyer:
+          - to: collator_cycler
 
       hooks:
         durable.wfs.signal:
@@ -1410,166 +1500,3 @@ app:
                       - ['{@array.get}', signalId]
                       - ['{@object.get}']
                   actual: '{$self.hook.data.id}'
-
-
-
-    ###################################################
-    #          THE REENTRANT ACTIVITY FLOW            #
-    #                                                 #
-    - subscribes: durable.activity.execute
-      publishes: durable.activity.executed
-
-      expire: 0
-
-      input:
-        schema:
-          type: object
-          properties:
-            parentWorkflowId:
-              type: string
-            originJobId:
-              type: string
-            workflowId:
-              type: string
-            workflowTopic:
-              type: string
-            activityName:
-              type: string
-            arguments:
-              type: array
-            backoffCoefficient:
-              type: number
-            maximumAttempts:
-              type: number
-      output:
-        schema:
-          type: object
-          properties:
-            response:
-              type: any
-            done:
-              type: boolean
-
-      activities:
-        activity_trigger:
-          title: Activity Flow Trigger
-          type: trigger
-          stats:
-            id: '{$self.input.data.workflowId}'
-            key: '{$self.input.data.parentWorkflowId}'
-            parent: '{$self.input.data.originJobId}'
-            adjacent: '{$self.input.data.parentWorkflowId}'
-
-        activity_cycle_hook:
-          title: Activity Flow Pivot - Cycling Descendants Point Here
-          type: hook
-          cycle: true
-          output:
-            schema:
-              type: object
-              properties:
-                retryCount:
-                  type: number
-            maps:
-              retryCount: 0
-
-        activity_worker:
-          title: Activity Worker - Calls Activity Functions
-          type: worker
-          topic: '{activity_trigger.output.data.workflowTopic}'
-          retry:
-            '599': [2]
-          input:
-            schema:
-              type: object
-              properties:
-                parentWorkflowId:
-                  type: string
-                workflowId:
-                  type: string
-                workflowTopic:
-                  type: string
-                activityName:
-                  type: string
-                arguments:
-                  type: array
-            maps:
-              parentWorkflowId: '{activity_trigger.output.data.parentWorkflowId}'
-              workflowId: '{activity_trigger.output.data.workflowId}'
-              workflowTopic: '{activity_trigger.output.data.workflowTopic}'
-              activityName: '{activity_trigger.output.data.activityName}'
-              arguments: '{activity_trigger.output.data.arguments}'
-          output:
-            schema:
-              type: object
-              properties:
-                response:
-                  type: any
-          job:
-            maps:
-              response: '{$self.output.data.response}'
-
-        activity_retryer:
-          title: Pauses for an exponentially-throttled amount of time after a 599 (retryable) error
-          type: hook
-          sleep:
-            '@pipe':
-              - ['{activity_trigger.output.data.backoffCoefficient}', 10]
-              - ['{@logical.or}', '{activity_cycle_hook.output.data.retryCount}']
-              - ['{@math.pow}']
-
-        activity_retry_cycler:
-          title: Cycles back to the activity_cycle_hook pivot, incrementing the `retryCount` (the exponential)
-          type: cycle
-          ancestor: activity_cycle_hook
-          input:
-            maps:
-              retryCount:
-                '@pipe':
-                  - ['{activity_cycle_hook.output.data.retryCount}', 1]
-                  - ['{@math.add}']
-
-        activity_closer:
-          title: Marks the activity workflow as done
-          type: hook
-          job:
-            maps:
-              done: true
-
-      transitions:
-        activity_trigger:
-          - to: activity_cycle_hook
-        activity_cycle_hook:
-          - to: activity_worker
-        activity_worker:
-          - to: activity_closer
-            conditions:
-              code: [200, 598, 597, 596]
-          - to: activity_closer
-            conditions:
-              code: [599]
-              match:
-                - expected: true
-                  actual:
-                    '@pipe':
-                      - '@pipe':
-                        - ['{activity_cycle_hook.output.data.retryCount}']
-                      - '@pipe':
-                        - ['{activity_trigger.input.data.maximumAttempts}', 5]
-                        - ['{@conditional.nullish}']
-                      - ['{@conditional.greater_than_or_equal}']
-          - to: activity_retryer
-            conditions:
-              code: 599
-              match:
-                - expected: true
-                  actual: 
-                    '@pipe':
-                      - '@pipe':
-                        - ['{activity_cycle_hook.output.data.retryCount}']
-                      - '@pipe':
-                        - ['{activity_trigger.input.data.maximumAttempts}', 5]
-                        - ['{@conditional.nullish}']
-                      - ['{@conditional.less_than}']
-        activity_retryer:
-          - to: activity_retry_cycler

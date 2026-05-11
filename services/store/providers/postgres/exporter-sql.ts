@@ -36,6 +36,17 @@ export const GET_ACTIVITY_INPUTS = `
 `;
 
 /**
+ * Fetch activity inputs from worker_streams for direct worker proxyer activities.
+ */
+export const GET_PROXYER_STREAM_INPUTS = `
+  SELECT message
+  FROM {schema}.worker_streams
+  WHERE jid = $1
+    AND aid IN ('proxyer', 'collator_proxyer', 'signaler_proxyer')
+  ORDER BY created_at, id
+`;
+
+/**
  * Fetch all worker stream messages for a job AND its child activities.
  * Child activity jobs use the pattern: -{parentJobId}-$activityName-N
  * Uses the partial index on (jid, created_at) WHERE jid != '' for efficiency.

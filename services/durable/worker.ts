@@ -492,15 +492,13 @@ export class WorkerService {
           //use code 599 as a proxy for all retryable errors
           // (basically anything not 596, 597, 598)
           return {
-            status: StreamStatus.SUCCESS,
+            status: StreamStatus.ERROR,
             code: 599,
             metadata: { ...data.metadata },
             data: {
-              $error: {
-                message: err.message,
-                stack: err.stack,
-                code: HMSH_CODE_DURABLE_RETRYABLE,
-              },
+              message: err.message,
+              stack: err.stack,
+              code: HMSH_CODE_DURABLE_RETRYABLE,
             },
           };
         } else if (err instanceof DurableTimeoutError) {
@@ -774,15 +772,13 @@ export class WorkerService {
           //use code 599 as a proxy for all retryable errors
           // (basically anything not 596, 597, 598)
           return {
-            status: StreamStatus.SUCCESS,
+            status: StreamStatus.ERROR,
             code: HMSH_CODE_DURABLE_RETRYABLE,
             metadata: { ...data.metadata },
             data: {
-              $error: {
-                message: err.message,
-                stack: err.stack,
-                timestamp: formatISODate(new Date()),
-              },
+              message: err.message,
+              stack: err.stack,
+              code: HMSH_CODE_DURABLE_RETRYABLE,
             },
           } as StreamDataResponse;
         }
@@ -1210,9 +1206,24 @@ export class WorkerService {
           );
         }
         isProcessing = true;
+        const errorCode = err.code || new DurableRetryError(err.message).code;
+        if (errorCode === HMSH_CODE_DURABLE_RETRYABLE) {
+          // Retryable errors use status: ERROR so the engine-level
+          // retry mechanism (handleRetry + _streamRetryConfig) kicks in
+          return withPatchMarkers({
+            status: StreamStatus.ERROR,
+            code: errorCode,
+            metadata: { ...data.metadata },
+            data: {
+              message: err.message,
+              stack: err.stack,
+              code: errorCode,
+            },
+          } as StreamDataResponse);
+        }
         return withPatchMarkers({
           status: StreamStatus.SUCCESS,
-          code: err.code || new DurableRetryError(err.message).code,
+          code: errorCode,
           metadata: { ...data.metadata },
           data: {
             $error: {
@@ -1220,7 +1231,7 @@ export class WorkerService {
               type: err.name,
               name: err.name,
               stack: err.stack,
-              code: err.code || new DurableRetryError(err.message).code,
+              code: errorCode,
             },
           },
         } as StreamDataResponse);

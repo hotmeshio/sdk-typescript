@@ -282,6 +282,34 @@ class PostgresStreamService extends StreamService<
     );
   }
 
+  /**
+   * Schedule a NOTIFY for a worker stream after a delay. Used to wake up
+   * consumers when a visibility-delayed retry message becomes visible,
+   * avoiding the need to wait for the scout's fallback poll.
+   */
+  scheduleStreamNotify(streamName: string, delayMs: number): void {
+    const target = this.resolveStreamTarget(streamName);
+    const prefix = target.isEngine ? 'eng_' : 'wrk_';
+    let channelName = `${prefix}${target.streamName}`;
+    if (channelName.length > 63) {
+      channelName = channelName.substring(0, 63);
+    }
+    const payload = JSON.stringify({
+      stream_name: target.streamName,
+      table_type: target.isEngine ? 'engine' : 'worker',
+    });
+    setTimeout(async () => {
+      try {
+        await this.streamClient.query(
+          `SELECT pg_notify($1, $2)`,
+          [channelName, payload],
+        );
+      } catch {
+        // Best-effort; the scout fallback will pick it up
+      }
+    }, delayMs);
+  }
+
   _publishMessages(
     streamName: string,
     messages: string[],

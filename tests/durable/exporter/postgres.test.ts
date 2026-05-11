@@ -151,31 +151,51 @@ describe('DURABLE | exporter | enrichment | Postgres', () => {
 
       expect(execution).toBeDefined();
       expect(execution.workflow_id).toBe(handle.workflowId);
-      expect(execution.events.length).toBeGreaterThan(0);
 
-      // Activity events should now have inputs enriched
-      const activityScheduled = execution.events.find(
+      // All 3 activities should produce scheduled + completed event pairs
+      const scheduled = execution.events.filter(
         (e) => e.event_type === 'activity_task_scheduled',
       );
-      expect(activityScheduled).toBeDefined();
-      const scheduledAttrs = activityScheduled?.attributes as any;
-      expect(scheduledAttrs.input).toBeDefined();
-      expect(Array.isArray(scheduledAttrs.input)).toBe(true);
-
-      const activityCompleted = execution.events.find(
+      const completed = execution.events.filter(
         (e) => e.event_type === 'activity_task_completed',
       );
-      expect(activityCompleted).toBeDefined();
-      const completedAttrs = activityCompleted?.attributes as any;
-      expect(completedAttrs.input).toBeDefined();
-      expect(completedAttrs.result).toBeDefined();
+      expect(scheduled.length).toBe(3);
+      expect(completed.length).toBe(3);
 
-      // Verify the input matches what was passed to the activity
-      if (completedAttrs.activity_type === 'greet') {
-        expect(completedAttrs.input).toContain('HotMesh');
-      } else if (completedAttrs.activity_type === 'doubleValue') {
-        expect(completedAttrs.input).toContain(42);
+      // Every scheduled event should have enriched inputs
+      for (const evt of scheduled) {
+        const attrs = evt.attributes as any;
+        expect(attrs.input).toBeDefined();
+        expect(Array.isArray(attrs.input)).toBe(true);
       }
+
+      // Every completed event should have both input and result
+      for (const evt of completed) {
+        const attrs = evt.attributes as any;
+        expect(attrs.input).toBeDefined();
+        expect(attrs.result).toBeDefined();
+      }
+
+      // Build a lookup by activity name for specific assertions
+      const byName: Record<string, any> = {};
+      for (const evt of completed) {
+        const attrs = evt.attributes as any;
+        byName[attrs.activity_type] = attrs;
+      }
+
+      // greet: input=['HotMesh'], result='Hello, HotMesh!'
+      expect(byName.greet.input).toContain('HotMesh');
+      expect(byName.greet.result).toBe('Hello, HotMesh!');
+
+      // doubleValue: input=[42], result=84
+      expect(byName.doubleValue.input).toContain(42);
+      expect(byName.doubleValue.result).toBe(84);
+
+      // formatResult: receives outputs from both prior activities
+      // input=['Hello, HotMesh!', 84]
+      expect(byName.formatResult.input).toContain('Hello, HotMesh!');
+      expect(byName.formatResult.input).toContain(84);
+      expect(byName.formatResult.result).toBe('Hello, HotMesh! (value=84)');
     }, 10_000);
 
     it('should work with both late and early binding in sequence', async () => {
