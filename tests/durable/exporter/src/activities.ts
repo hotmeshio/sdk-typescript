@@ -7,3 +7,7 @@ export async function greet(name: string): Promise<string> {
 export async function doubleValue(value: number): Promise<number> {
   return value * 2;
 }
+
+export async function formatResult(greeting: string, doubled: number): Promise<string> {
+  return `${greeting} (value=${doubled})`;
+}

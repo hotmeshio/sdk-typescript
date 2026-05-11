@@ -1,22 +1,3 @@
-/**
- *********** HOTMESH 'DURABLE' MODULE APPLICATION GRAPH **********
- *
- * This HotMesh application spec uses 50 activities and 25 transitions
- * to model a durable workflow engine using a pluggable backend.
- *
- * This YAML file can also serve as a useful starting point for building
- * Integration/BPM/Workflow servers in general (MuleSoft, etc) without the need
- * for a physical application server.
- *
- * Possible use cases include:
- * * Orchestration servers
- * * Integration servers
- * * BPMN engines
- * * Reentrant process servers
- * * Service Meshes
- * * Master Data Management systems
- */
-
 const APP_VERSION = '12';
 const APP_ID = 'durable';
 
@@ -150,12 +131,10 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
             maps:
               retryCount: 0
-              throttleSeconds: 0
 
         throttler:
-          title: Pauses for an exponentially-throttled amount of time after a retryable error or passes through immediately
+          title: Pass-through hook between cycle_hook and worker
           type: hook
-          sleep: '{cycle_hook.output.data.throttleSeconds}'
 
         worker:
           title: Main Worker - Calls linked Workflow functions
@@ -199,6 +178,22 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     - ['{trigger.output.data.maximumAttempts}', 5]
                     - ['{@conditional.nullish}']
                   - ['{@conditional.less_than}']
+              maximumAttempts:
+                '@pipe':
+                  - ['{trigger.output.data.maximumAttempts}', 5]
+                  - ['{@conditional.nullish}']
+              backoffCoefficient:
+                '@pipe':
+                  - ['{trigger.output.data.backoffCoefficient}', 10]
+                  - ['{@conditional.nullish}']
+              maximumInterval:
+                '@pipe':
+                  - ['{trigger.output.data.maximumInterval}', 120]
+                  - ['{@conditional.nullish}']
+              initialInterval:
+                '@pipe':
+                  - ['{trigger.output.data.initialInterval}', 1]
+                  - ['{@conditional.nullish}']
           output:
             schema:
               type: object
@@ -361,7 +356,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
           input:
             maps:
               retryCount: 0
-              throttleSeconds: 0
               continueGeneration: '{cycle_hook.output.data.continueGeneration}'
               continueArgs: '{cycle_hook.output.data.continueArgs}'
 
@@ -537,31 +531,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   - '@pipe':
                     - [0]
                   - ['{@conditional.ternary}']
-              throttleSeconds:
-                '@pipe':
-                  - '@pipe':
-                    - ['{childer.output.metadata.err}']
-                  - '@pipe':
-                    - '@pipe':
-                      - '@pipe':
-                        - '@pipe':
-                          - ['{trigger.output.data.backoffCoefficient}', 10]
-                          - ['{@conditional.nullish}']
-                        - '@pipe':
-                          - ['{cycle_hook.output.data.retryCount}', 0]
-                          - ['{@conditional.nullish}']
-                        - ['{@math.pow}']
-                      - '@pipe':
-                        - ['{trigger.output.data.initialInterval}', 1]
-                        - ['{@conditional.nullish}']
-                      - ['{@math.multiply}']
-                    - '@pipe':
-                      - ['{trigger.output.data.maximumInterval}', 120]
-                      - ['{@logical.or}']
-                    - ['{@math.min}']
-                  - '@pipe':
-                    - [0]
-                  - ['{@conditional.ternary}']
               continueGeneration: '{cycle_hook.output.data.continueGeneration}'
               continueArgs: '{cycle_hook.output.data.continueArgs}'
 
@@ -698,7 +667,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
           input:
             maps:
               retryCount: 0
-              throttleSeconds: 0
               continueGeneration: '{cycle_hook.output.data.continueGeneration}'
               continueArgs: '{cycle_hook.output.data.continueArgs}'
 
@@ -803,35 +771,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
           input:
             maps:
               retryCount: 0
-              throttleSeconds: 0
-              continueGeneration: '{cycle_hook.output.data.continueGeneration}'
-              continueArgs: '{cycle_hook.output.data.continueArgs}'
-
-        retryer:
-          title: Cycles back to the cycle_hook pivot, increasing the retryCount (the exponential)
-          type: cycle
-          ancestor: cycle_hook
-          input:
-            maps:
-              retryCount:
-                '@pipe':
-                  - ['{cycle_hook.output.data.retryCount}', 0]
-                  - ['{@logical.or}', 1]
-                  - ['{@math.add}']
-              throttleSeconds:
-                '@pipe':
-                  - '@pipe':
-                    - '@pipe':
-                      - ['{trigger.output.data.backoffCoefficient}', 10]
-                      - ['{@conditional.nullish}']
-                    - '@pipe':
-                      - ['{cycle_hook.output.data.retryCount}', 0]
-                      - ['{@conditional.nullish}']
-                    - ['{@math.pow}']
-                  - '@pipe':
-                    - ['{trigger.output.data.maximumInterval}', 120]
-                    - ['{@logical.or}']
-                  - ['{@math.min}']
               continueGeneration: '{cycle_hook.output.data.continueGeneration}'
               continueArgs: '{cycle_hook.output.data.continueArgs}'
 
@@ -842,7 +781,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
           input:
             maps:
               retryCount: 0
-              throttleSeconds: 0
               continueArgs: '{worker.output.data.arguments}'
               continueGeneration:
                 '@pipe':
@@ -857,30 +795,10 @@ const getWorkflowYAML = (app: string, version: string): string => {
           job:
             maps:
               done: true
-              $error: '{worker.output.data.$error}'
-              jc: '{$job.metadata.jc}'
-              ju:
+              $error:
                 '@pipe':
-                  - ['{@date.toISOXString}']
-
-        closer:
-          title: Closes the \`Signal In\` Hook Channel, so the workflow can exit
-          type: signal
-          subtype: one
-          topic: ${app}.flow.signal
-          statusThreshold: 1
-          signal:
-            schema:
-              type: object
-              properties:
-                id:
-                  type: string
-            maps:
-              id: '{$job.metadata.jid}'
-          job:
-            maps:
-              done: true
-              $error: '{worker.output.data.$error}'
+                  - ['{worker.output.data.$error}', '{worker.output.metadata.$error}']
+                  - ['{@conditional.nullish}']
               jc: '{$job.metadata.jc}'
               ju:
                 '@pipe':
@@ -904,8 +822,39 @@ const getWorkflowYAML = (app: string, version: string): string => {
               done: true
               $error:
                 '@pipe':
-                  - ['{worker.output.data.$error}', 'code', 597]
-                  - ['{@object.set}']
+                  - '@pipe':
+                    - ['{worker.output.data.$error}', '{worker.output.metadata.$error}']
+                    - ['{@conditional.nullish}']
+                  - '@pipe':
+                    - [message, 'maximum retry attempts exceeded', code, 597]
+                    - ['{@object.create}']
+                  - ['{@conditional.nullish}']
+              jc: '{$job.metadata.jc}'
+              ju:
+                '@pipe':
+                  - ['{@date.toISOXString}']
+
+        closer:
+          title: Closes the \`Signal In\` Hook Channel, so the workflow can exit
+          type: signal
+          subtype: one
+          topic: ${app}.flow.signal
+          statusThreshold: 1
+          signal:
+            schema:
+              type: object
+              properties:
+                id:
+                  type: string
+            maps:
+              id: '{$job.metadata.jid}'
+          job:
+            maps:
+              done: true
+              $error:
+                '@pipe':
+                  - ['{worker.output.data.$error}', '{worker.output.metadata.$error}']
+                  - ['{@conditional.nullish}']
               jc: '{$job.metadata.jc}'
               ju:
                 '@pipe':
@@ -941,13 +890,11 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
             maps:
               retryCount: 0
-              throttleSeconds: 0
 
         signaler_throttler:
-          title: Pauses between failed hook executions for an exponentially-throttled amount of time after a retryable error
+          title: Pass-through hook between signaler_cycle_hook and signaler_worker
           type: hook
-          sleep: '{signaler_cycle_hook.output.data.throttleSeconds}'
-    
+
         signaler_worker:
           title: Signal In - Worker
           type: worker
@@ -985,6 +932,22 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     - ['{trigger.output.data.maximumAttempts}', 5]
                     - ['{@conditional.nullish}']
                   - ['{@conditional.less_than}']
+              maximumAttempts:
+                '@pipe':
+                  - ['{trigger.output.data.maximumAttempts}', 5]
+                  - ['{@conditional.nullish}']
+              backoffCoefficient:
+                '@pipe':
+                  - ['{trigger.output.data.backoffCoefficient}', 10]
+                  - ['{@conditional.nullish}']
+              maximumInterval:
+                '@pipe':
+                  - ['{trigger.output.data.maximumInterval}', 120]
+                  - ['{@conditional.nullish}']
+              initialInterval:
+                '@pipe':
+                  - ['{trigger.output.data.initialInterval}', 1]
+                  - ['{@conditional.nullish}']
 
           output:
             schema:
@@ -1145,7 +1108,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
           input:
             maps:
               retryCount: 0
-              throttleSeconds: 0
 
         signaler_childer:
           title: Awaits a child flow to be executed/started
@@ -1315,32 +1277,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   - '@pipe':
                     - [0]
                   - ['{@conditional.ternary}']
-              throttleSeconds:
-                '@pipe':
-                  - '@pipe':
-                    - ['{signaler_childer.output.metadata.err}']
-                  - '@pipe':
-                    - '@pipe':
-                      - '@pipe':
-                        - '@pipe':
-                          - ['{trigger.output.data.backoffCoefficient}', 10]
-                          - ['{@conditional.nullish}']
-                        - '@pipe':
-                          - ['{signaler_cycle_hook.output.data.retryCount}', 0]
-                          - ['{@conditional.nullish}']
-                        - ['{@math.pow}']
-                      - '@pipe':
-                        - ['{trigger.output.data.initialInterval}', 1]
-                        - ['{@conditional.nullish}']
-                      - ['{@math.multiply}']
-                    - '@pipe':
-                      - ['{trigger.output.data.maximumInterval}', 120]
-                      - ['{@logical.or}']
-                    - ['{@math.min}']
-                  - '@pipe':
-                    - [0]
-                  - ['{@conditional.ternary}']
-  
+
         signaler_proxyer:
           title: Calls the activity function directly via worker topic
           type: worker
@@ -1474,7 +1411,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
           input:
             maps:
               retryCount: 0
-              throttleSeconds: 0
 
         signaler_collator:
           title: Awaits the collator to resolve the idempotent items as a sequential set
@@ -1577,34 +1513,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
           input:
             maps:
               retryCount: 0
-              throttleSeconds: 0
 
-        signaler_retryer:
-          title: Cycles back to the signaler_cycle_hook pivot, increasing the retryCount (the exponential)
-          type: cycle
-          ancestor: signaler_cycle_hook
-          input:
-            maps:
-              retryCount:
-                '@pipe':
-                  - ['{signaler_cycle_hook.output.data.retryCount}', 0]
-                  - ['{@logical.or}', 1]
-                  - ['{@math.add}']
-              throttleSeconds:
-                '@pipe':
-                  - '@pipe':
-                    - '@pipe':
-                      - ['{trigger.output.data.backoffCoefficient}', 10]
-                      - ['{@conditional.nullish}']
-                    - '@pipe':
-                      - ['{signaler_cycle_hook.output.data.retryCount}', 0]
-                      - ['{@conditional.nullish}']
-                    - ['{@math.pow}']
-                  - '@pipe':
-                    - ['{trigger.output.data.maximumInterval}', 120]
-                    - ['{@logical.or}']
-                  - ['{@math.min}']
-  
       transitions:
         trigger:
           - to: cycle_hook
@@ -1665,22 +1574,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
           - to: continuer
             conditions:
               code: 592
-          - to: retryer
-            conditions:
-              code: 599
-              match:
-                - expected: true
-                  actual: 
-                    '@pipe':
-                      - '@pipe':
-                        - ['{cycle_hook.output.data.retryCount}']
-                      - '@pipe':
-                        - ['{trigger.output.data.maximumAttempts}', 5]
-                        - ['{@conditional.nullish}']
-                      - ['{@conditional.less_than}']
           - to: stopper
             conditions:
-              code: [590, 591, 596, 597, 598, 599]
+              code: [590, 591, 596, 597, 598]
               match:
                 - expected: true
                   actual:
@@ -1731,19 +1627,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
           - to: signaler_proxyer
             conditions:
               code: 591
-          - to: signaler_retryer
-            conditions:
-              code: 599
-              match:
-                - expected: true
-                  actual: 
-                    '@pipe':
-                      - '@pipe':
-                        - ['{signaler_cycle_hook.output.data.retryCount}']
-                      - '@pipe':
-                        - ['{trigger.output.data.maximumAttempts}', 5]
-                        - ['{@conditional.nullish}']
-                      - ['{@conditional.less_than}']
         signaler_collator:
           - to: signaler_collate_cycler
         signaler_childer:

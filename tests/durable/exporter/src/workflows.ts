@@ -9,13 +9,14 @@ const { workflow } = Durable;
 export async function testWorkflow(
   name: string,
   value: number,
-): Promise<{ greeting: string; doubled: number }> {
-  const { greet, doubleValue } = workflow.proxyActivities<typeof activities>({
+): Promise<{ greeting: string; doubled: number; formatted: string }> {
+  const { greet, doubleValue, formatResult } = workflow.proxyActivities<typeof activities>({
     activities,
   });
 
   const greeting = await greet(name);
   const doubled = await doubleValue(value);
+  const formatted = await formatResult(greeting, doubled);
 
-  return { greeting, doubled };
+  return { greeting, doubled, formatted };
 }
