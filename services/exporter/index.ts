@@ -36,7 +36,7 @@ import {
  *
  * @remarks
  * This is the lower-level exporter used by the HotMesh engine directly.
- * For durable workflow exports, use {@link services/durable/exporter.ExporterService}
+ * For durable workflow exports, use the `ExporterService` in `services/durable/exporter`
  * which produces structured timeline and execution history formats.
  */
 class ExporterService {
