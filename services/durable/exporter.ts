@@ -197,6 +197,32 @@ function computeSummary(events: WorkflowExecutionEvent[]): WorkflowExecutionSumm
 
 // ── Exporter Service ─────────────────────────────────────────────────────────
 
+/**
+ * Exports durable workflow execution data in two formats:
+ *
+ * ### Raw export (`export()`)
+ * Returns a {@link DurableJobExport} with five sections:
+ * - **data** — workflow input arguments (what was passed to `workflow.start()`)
+ * - **state** — current workflow state: `done` flag, `response`, `$error`, timestamps (`jc`/`ju`)
+ * - **status** — HotMesh semaphore (`0` = complete, `> 0` = activities pending, `< 0` = failed)
+ * - **timeline** — ordered list of idempotent operations: proxy activities, child workflows,
+ *   sleeps, signals, and collated (Promise.all) results with per-entry timing and output
+ * - **transitions** — activity execution log with `created`/`updated` timestamps per dimension
+ *
+ * Use `allow`/`block` options to limit which sections are returned (e.g., omit
+ * `transitions` to reduce payload size). Use `values: false` to strip result
+ * payloads from timeline entries.
+ *
+ * ### Execution history (`exportExecution()`)
+ * Returns a {@link WorkflowExecution} — a Temporal-style event history with
+ * typed events (`activity_task_scheduled`, `timer_fired`, `workflow_execution_signaled`, etc.),
+ * chronological ordering, back-references between scheduled/completed pairs, and a summary
+ * with activity/child/timer/signal counts.
+ *
+ * Supports **sparse** mode (default, no extra I/O) and **verbose** mode (recursively
+ * fetches child workflow histories up to `max_depth`). Use `enrich_inputs` to attach
+ * activity and child workflow input arguments to events.
+ */
 class ExporterService {
   appId: string;
   logger: ILogger;
@@ -215,8 +241,30 @@ class ExporterService {
   }
 
   /**
-   * Convert the job hash from its compiled format into a DurableJobExport object with
-   * facets that describe the workflow in terms relevant to narrative storytelling.
+   * Export the raw workflow job as a structured {@link DurableJobExport}.
+   *
+   * The result contains five sections (filterable via `options.allow` / `options.block`):
+   *
+   * | Section | Contents |
+   * |---|---|
+   * | `data` | Workflow input arguments passed to `workflow.start()` |
+   * | `state` | Current state: `done`, `response`, `$error`, timestamps |
+   * | `status` | Semaphore value: `0` = idle, `> 0` = pending, `< 0` = error |
+   * | `timeline` | Ordered idempotent markers: activities, children, sleeps, signals |
+   * | `transitions` | Per-activity execution timestamps by dimension |
+   *
+   * @param jobId - the workflow ID to export
+   * @param options - controls which sections to include and whether to include values
+   * @returns the exported workflow data
+   *
+   * @example
+   * ```typescript
+   * // Full export
+   * const full = await handle.export();
+   *
+   * // Timeline only, without result payloads (smaller response)
+   * const slim = await handle.export({ allow: ['timeline'], values: false });
+   * ```
    */
   async export(
     jobId: string,
@@ -232,13 +280,45 @@ class ExporterService {
   }
 
   /**
-   * Export a workflow execution as a structured event history.
+   * Export a workflow execution as a structured event history ({@link WorkflowExecution}).
    *
-   * **Sparse mode** (default): transforms the main workflow's timeline
-   * into a flat event list. No additional I/O beyond the initial export.
+   * Returns a Temporal-style event list with typed events, chronological ordering,
+   * back-references (e.g., `scheduled_event_id` on completed activities), and a
+   * {@link WorkflowExecutionSummary} with counts by category.
    *
-   * **Verbose mode**: recursively fetches child workflow jobs and attaches
-   * their executions as nested `children`.
+   * **Event types produced:**
+   * - `workflow_execution_started` / `completed` / `failed` — lifecycle bookends
+   * - `activity_task_scheduled` / `completed` / `failed` — proxy activity calls
+   * - `child_workflow_execution_started` / `completed` / `failed` — child workflows
+   * - `timer_started` / `timer_fired` — `workflow.sleep()` calls
+   * - `workflow_execution_signaled` — `workflow.condition()` signals received
+   *
+   * **Modes:**
+   * - `sparse` (default) — transforms the workflow's timeline markers into events.
+   *   No extra database queries beyond the initial job export.
+   * - `verbose` — recursively fetches child workflow jobs and attaches their full
+   *   event histories as nested `children` (up to `max_depth`, default 5).
+   *
+   * **Options:**
+   * - `exclude_system` — omit internal/interceptor activities (names starting with `lt`)
+   * - `omit_results` — strip `result` and `input` payloads from event attributes
+   * - `enrich_inputs` — attach activity/child workflow input arguments to events
+   * - `allow_direct_query` — fallback to raw DB queries for expired/pruned jobs
+   *
+   * @param jobId - the workflow ID
+   * @param workflowTopic - the task queue topic (used as `workflow_type`)
+   * @param options - controls mode, filtering, and enrichment
+   *
+   * @example
+   * ```typescript
+   * // Sparse export with system activities filtered out
+   * const exec = await handle.exportExecution({ exclude_system: true });
+   * console.log(exec.summary.activities.user); // user activity count
+   *
+   * // Verbose export with full child workflow trees
+   * const deep = await handle.exportExecution({ mode: 'verbose', max_depth: 3 });
+   * console.log(deep.children); // nested WorkflowExecution[]
+   * ```
    */
   async exportExecution(
     jobId: string,
@@ -1004,10 +1084,22 @@ class ExporterService {
   }
 
   /**
-   * Inflates the job data into a DurableJobExport object
-   * @param jobHash - the job data
-   * @param dependencyList - the list of dependencies for the job
-   * @returns - the inflated job data
+   * Inflate a raw Redis/Postgres job hash into a structured {@link DurableJobExport}.
+   *
+   * HotMesh stores workflow state as a flat hash with 3-character symbolized keys
+   * (e.g., `aBC,0,0` → `worker/output/data`). This method decodes each entry and
+   * sorts it into one of four buckets:
+   *
+   * - **Transitions** (`aBC,0,0` pattern) — activity start/stop timestamps by dimension
+   * - **Data** (`_`-prefixed keys) — workflow input arguments
+   * - **Timeline** (`-`-prefixed keys) — idempotent operation markers (proxy, child, sleep, etc.)
+   * - **State** (3-char keys) — workflow metadata (done flag, response, error, timestamps)
+   *
+   * Use `options.allow` / `options.block` to limit which sections appear in the result.
+   *
+   * @param jobHash - the raw key-value hash from the store
+   * @param options - filtering and value options
+   * @returns structured export with data, state, status, timeline, and transitions
    */
   inflate(jobHash: StringStringType, options: ExportOptions): DurableJobExport {
     const timeline: TimelineType[] = [];

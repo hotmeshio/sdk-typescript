@@ -19,8 +19,25 @@ import {
 } from '../../types/serializer';
 
 /**
- * Downloads job data and expands process data and
- * includes dependency list
+ * System-level exporter for HotMesh job data. Decodes the flat, symbolized
+ * hash stored in Redis/Postgres into a human-readable {@link JobExport}
+ * with three sections:
+ *
+ * - **process** — a nested object reflecting the activity execution tree.
+ *   Each activity's input, output, and metadata are organized by their
+ *   dimensional path (e.g., `0/0/worker/output/data`).
+ * - **dependencies** — list of dependent jobs (child workflows, hooks, signals)
+ *   spawned during execution.
+ * - **status** — the raw semaphore value from the job hash.
+ *
+ * Optionally, set `enrich_inputs: true` to produce a flat `activities` array
+ * ({@link ActivityDetail}[]) that merges stream message history (inputs, timing,
+ * retries) with process outputs — useful for dashboards and debugging views.
+ *
+ * @remarks
+ * This is the lower-level exporter used by the HotMesh engine directly.
+ * For durable workflow exports, use {@link services/durable/exporter.ExporterService}
+ * which produces structured timeline and execution history formats.
  */
 class ExporterService {
   appId: string;
@@ -41,9 +58,18 @@ class ExporterService {
   }
 
   /**
-   * Convert the job hash into a JobExport object.
-   * This object contains various facets that describe the interaction
-   * in terms relevant to narrative storytelling.
+   * Export a job as a structured {@link JobExport}.
+   *
+   * Reads the raw job hash from the store, inflates symbolized keys into
+   * readable paths, and organizes data into `process`, `dependencies`,
+   * and `status` sections.
+   *
+   * When `enrich_inputs` is true, also fetches stream message history and
+   * produces a flat `activities` array with per-activity input/output,
+   * timing, retry attempts, and cycle iteration info.
+   *
+   * @param jobId - the job ID to export
+   * @param options - controls enrichment behavior
    */
   async export(jobId: string, options: ExportOptions = {}): Promise<JobExport> {
     if (!this.symbols) {
@@ -66,19 +92,27 @@ class ExporterService {
   }
 
   /**
-   * Inflates the key
-   * into a human-readable JSON path, reflecting the
-   * tree-like structure of the unidimensional Hash
+   * Resolve a 3-character symbol key to its full path (e.g., `aBC` → `worker/output/data`).
+   * Returns the key unchanged if no symbol mapping exists.
    */
   inflateKey(key: string): string {
     return key in this.symbols ? this.symbols[key] : key;
   }
 
   /**
-   * Inflates the job data into a JobExport object
-   * @param jobHash - the job data
-   * @param dependencyList - the list of dependencies for the job
-   * @returns - the inflated job data
+   * Decode a raw job hash into a structured {@link JobExport}.
+   *
+   * Walks every key in the flat hash and classifies it:
+   * - **3-char + dimension** (`aBC,0,0`) — activity process state, organized into
+   *   a nested hierarchy by dimension path and symbolized key
+   * - **3-char only** (`aBC`) — top-level job state (done, response, error, etc.)
+   *
+   * The `process` result is a nested tree where dimensions are path segments
+   * (e.g., `{ "0": { "0": { "worker": { "output": { "data": ... } } } } }`).
+   *
+   * @param jobHash - the raw key-value hash from the store
+   * @param dependencyList - raw dependency strings from the store
+   * @returns structured export with process tree, dependencies, and status
    */
   inflate(jobHash: StringStringType, dependencyList: string[]): JobExport {
     //the list of actions taken in the workflow and hook functions
@@ -199,11 +233,16 @@ class ExporterService {
   }
 
   /**
-   * Inflates the dependency data into a JobExport object by
-   * organizing the dimensional isolate in such a way as to interleave
-   * into a story
-   * @param data - the dependency data
-   * @returns - the organized dependency data
+   * Parse raw dependency strings into structured {@link DependencyExport} entries.
+   *
+   * Each dependency string encodes the action type, topic, group ID, and job ID
+   * of a spawned sub-job (child workflow, hook, or signal cleanup). The job ID
+   * suffix reveals whether it originated from a hook (dimensional address + counter)
+   * or the main flow (counter only).
+   *
+   * @param data - raw dependency strings from the store
+   * @param actions - accumulator for action tracking (hooks vs main flow)
+   * @returns structured dependency list
    */
   inflateDependencyData(
     data: string[],
