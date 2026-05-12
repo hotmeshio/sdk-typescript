@@ -1,4 +1,4 @@
-const APP_VERSION = '12';
+const APP_VERSION = '13';
 const APP_ID = 'durable';
 
 /**
@@ -131,10 +131,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
                   type: number
             maps:
               retryCount: 0
-
-        throttler:
-          title: Pass-through hook between cycle_hook and worker
-          type: hook
 
         worker:
           title: Main Worker - Calls linked Workflow functions
@@ -891,10 +887,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
             maps:
               retryCount: 0
 
-        signaler_throttler:
-          title: Pass-through hook between signaler_cycle_hook and signaler_worker
-          type: hook
-
         signaler_worker:
           title: Signal In - Worker
           type: worker
@@ -1527,8 +1519,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
                       - ['{@conditional.nullish}']
         ## MAIN PROCESS TRANSITIONS ##
         cycle_hook:
-          - to: throttler
-        throttler:
           - to: worker
         worker:
           - to: ender
@@ -1601,8 +1591,6 @@ const getWorkflowYAML = (app: string, version: string): string => {
             conditions:
               code: 202
         signaler_cycle_hook:
-          - to: signaler_throttler
-        signaler_throttler:
           - to: signaler_worker
         signaler_worker:
           - to: signaler_sleeper

@@ -55,22 +55,54 @@ export class WorkflowHandleService {
   }
 
   /**
-   * Exports the full workflow state (job hash, metadata, activity
-   * results) as a JSON object.
+   * Export the raw workflow state as a {@link DurableJobExport} with five sections:
+   *
+   * - **data** — workflow input arguments
+   * - **state** — done flag, response, error, timestamps
+   * - **status** — semaphore (`0` = complete, `> 0` = pending, `< 0` = error)
+   * - **timeline** — ordered idempotent markers for activities, children, sleeps, signals
+   * - **transitions** — per-activity execution timestamps by dimension
+   *
+   * Use `allow` / `block` to limit sections and `values: false` to strip payloads.
+   *
+   * @example
+   * ```typescript
+   * const raw = await handle.export();
+   * console.log(raw.state);    // { done: true, response: '...' }
+   * console.log(raw.timeline); // [{ key: '-proxy-1-', value: {...} }, ...]
+   *
+   * // Lightweight export: timeline keys only, no payloads
+   * const slim = await handle.export({ allow: ['timeline'], values: false });
+   * ```
    */
   async export(options?: ExportOptions): Promise<DurableJobExport> {
     return this.exporter.export(this.workflowId, options);
   }
 
   /**
-   * Exports the workflow as an execution event history.
+   * Export the workflow as a structured event history ({@link WorkflowExecution}).
    *
-   * **Sparse mode** (default): transforms the main workflow's timeline
-   * into a flat event list with workflow lifecycle, activity, child workflow,
-   * timer, and signal events.
+   * Returns a chronologically ordered event list with Temporal-style typed events,
+   * back-references between scheduled/completed pairs, and a summary with counts.
    *
-   * **Verbose mode**: recursively fetches child workflow jobs and attaches
-   * their full execution histories as nested `children`.
+   * **Event types:** `activity_task_scheduled/completed/failed`,
+   * `child_workflow_execution_started/completed/failed`, `timer_started/fired`,
+   * `workflow_execution_started/completed/failed/signaled`
+   *
+   * **Modes:**
+   * - `sparse` (default) — single query, transforms timeline markers into events
+   * - `verbose` — recursively fetches child workflows as nested `children`
+   *
+   * **Options:** `exclude_system`, `omit_results`, `enrich_inputs`, `allow_direct_query`
+   *
+   * @example
+   * ```typescript
+   * const exec = await handle.exportExecution({ exclude_system: true });
+   * for (const event of exec.events) {
+   *   console.log(event.event_type, event.attributes);
+   * }
+   * console.log(exec.summary); // { activities: { total: 5, ... }, timers: 1, ... }
+   * ```
    */
   async exportExecution(
     options?: ExecutionExportOptions,

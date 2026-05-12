@@ -3,7 +3,14 @@ import { StringAnyType } from './serializer';
 export type ExportItem = [string | null, string, any];
 
 /**
- * job export data can be large, particularly transitions the timeline
+ * Selectable sections of a {@link DurableJobExport}. Use with `allow` (allowlist)
+ * or `block` (blocklist) in {@link ExportOptions} to control export size.
+ *
+ * - `data` — workflow input arguments
+ * - `state` — current state (done, response, error, timestamps)
+ * - `status` — semaphore value
+ * - `timeline` — idempotent operation markers (can be large for complex workflows)
+ * - `transitions` — activity execution timestamps (can be large with many cycles)
  */
 export type ExportFields =
   | 'data'
@@ -95,6 +102,19 @@ export interface TransitionType {
   updated: string;
 }
 
+/**
+ * Raw export of a durable workflow job, returned by `handle.export()`.
+ *
+ * Contains five sections (filterable via {@link ExportOptions}):
+ *
+ * | Section | Type | Description |
+ * |---|---|---|
+ * | `data` | object | Workflow input arguments passed to `workflow.start()` |
+ * | `state` | object | Current state: `done` flag, `response`, `$error`, `jc`/`ju` timestamps |
+ * | `status` | number | Semaphore: `0` = idle/complete, `> 0` = pending activities, `< 0` = error |
+ * | `timeline` | array | Ordered idempotent markers for each operation (proxy, child, sleep, signal) |
+ * | `transitions` | array | Activity start/stop timestamps organized by dimension |
+ */
 export interface DurableJobExport {
   data?: StringAnyType;
   state?: StringAnyType;
@@ -286,6 +306,20 @@ export interface WorkflowExecutionSummary {
 
 export type WorkflowExecutionStatus = 'running' | 'completed' | 'failed';
 
+/**
+ * Structured execution history for a durable workflow, returned by
+ * `handle.exportExecution()`.
+ *
+ * Events are chronologically ordered with sequential `event_id` values.
+ * Completed/failed events carry `scheduled_event_id` or `initiated_event_id`
+ * back-references to their corresponding scheduled/started events.
+ *
+ * The `summary` provides aggregate counts by category (activities, child
+ * workflows, timers, signals) for quick dashboard rendering.
+ *
+ * In `verbose` mode, `children` contains recursively fetched child workflow
+ * executions, each with their own events and summaries.
+ */
 export interface WorkflowExecution {
   workflow_id: string;
   workflow_type: string;
@@ -301,10 +335,33 @@ export interface WorkflowExecution {
   stream_history?: StreamHistoryEntry[];
 }
 
+/**
+ * Options for `handle.exportExecution()`. Controls event filtering, enrichment,
+ * and traversal depth for child workflows.
+ */
 export interface ExecutionExportOptions {
+  /**
+   * `sparse` (default) — single-query export from the workflow's timeline markers.
+   * `verbose` — recursively fetches child workflow jobs and attaches their full
+   * event histories as nested `children` arrays.
+   */
   mode?: ExportMode;
+  /**
+   * When true, omits internal/interceptor activities (names starting with `lt`)
+   * from the event list. Useful for user-facing dashboards.
+   * @default false
+   */
   exclude_system?: boolean;
+  /**
+   * When true, strips `result` and `input` payloads from event attributes.
+   * Reduces response size while preserving event structure and timing.
+   * @default false
+   */
   omit_results?: boolean;
+  /**
+   * Maximum recursion depth for verbose mode child workflow fetching.
+   * @default 5
+   */
   max_depth?: number;
   /**
    * When true, enriches activity and child workflow events with their inputs
