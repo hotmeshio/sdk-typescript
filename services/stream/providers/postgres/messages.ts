@@ -276,13 +276,18 @@ export async function fetchMessages(
       const batchSize = options?.batchSize || 1;
       const reservationTimeout = options?.reservationTimeout || HMSH_RESERVATION_TIMEOUT_S;
 
-      const res = await client.query(
+      // Two-pass dequeue: stale reservations first (FIFO — they have
+      // lower ids and have waited longest), then fresh messages. Split
+      // avoids an OR that prevents the planner from using partial
+      // indexes cleanly. Stale check is a fast no-op (empty index scan)
+      // when there are no timed-out reservations.
+      let res = await client.query(
         `UPDATE ${tableName}
          SET reserved_at = NOW(), reserved_by = $3
          WHERE id IN (
            SELECT id FROM ${tableName}
            WHERE stream_name = $1
-             AND (reserved_at IS NULL OR reserved_at < NOW() - INTERVAL '${reservationTimeout} seconds')
+             AND reserved_at < NOW() - INTERVAL '${reservationTimeout} seconds'
              AND expired_at IS NULL
              AND visible_at <= NOW()
            ORDER BY id
@@ -292,6 +297,26 @@ export async function fetchMessages(
          RETURNING ${returningClause}`,
         [streamName, batchSize, consumerName],
       );
+
+      // Fresh messages: unreserved, visible, not expired
+      if (res.rows.length === 0) {
+        res = await client.query(
+          `UPDATE ${tableName}
+           SET reserved_at = NOW(), reserved_by = $3
+           WHERE id IN (
+             SELECT id FROM ${tableName}
+             WHERE stream_name = $1
+               AND reserved_at IS NULL
+               AND expired_at IS NULL
+               AND visible_at <= NOW()
+             ORDER BY id
+             LIMIT $2
+             FOR UPDATE SKIP LOCKED
+           )
+           RETURNING ${returningClause}`,
+          [streamName, batchSize, consumerName],
+        );
+      }
 
       const messages: StreamMessage[] = res.rows.map((row: any) => {
         const data = parseStreamMessage(row.message);
