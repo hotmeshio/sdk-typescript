@@ -192,23 +192,33 @@ async function createTables(
   `);
 
   for (let i = 0; i < 8; i++) {
+    // fillfactor 70: reserves 30% page space for HOT updates (reserve/ack cycle)
     await client.query(`
       CREATE TABLE IF NOT EXISTS ${schemaName}.engine_streams_part_${i}
       PARTITION OF ${engineTable}
-      FOR VALUES WITH (modulus 8, remainder ${i});
+      FOR VALUES WITH (modulus 8, remainder ${i})
+      WITH (fillfactor = 70);
     `);
   }
 
+  // Dedicated dequeue index: columns match the hot-path query exactly
+  // (stream_name = $1, visible_at <= NOW(), ORDER BY id) with partial
+  // filter on reserved_at IS NULL AND expired_at IS NULL.
+  // Replaces the old active_messages index that had reserved_at as a
+  // column (redundant with the WHERE filter, displacing visible_at).
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_engine_streams_active_messages
-    ON ${engineTable} (stream_name, reserved_at, visible_at, id)
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_dequeue
+    ON ${engineTable} (stream_name, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
 
+  // Stale-reservation recovery: covers the timed-out reservation path
+  // (reserved_at < NOW() - INTERVAL) separately from the hot path so
+  // the planner can use each index cleanly without an OR.
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_engine_streams_message_fetch
-    ON ${engineTable} (stream_name, visible_at, id)
-    WHERE expired_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_stale_reservations
+    ON ${engineTable} (stream_name, reserved_at, visible_at, id)
+    WHERE reserved_at IS NOT NULL AND expired_at IS NULL;
   `);
 
   await client.query(`
@@ -270,23 +280,27 @@ async function createTables(
   `);
 
   for (let i = 0; i < 8; i++) {
+    // fillfactor 70: reserves 30% page space for HOT updates (reserve/ack cycle)
     await client.query(`
       CREATE TABLE IF NOT EXISTS ${schemaName}.worker_streams_part_${i}
       PARTITION OF ${workerTable}
-      FOR VALUES WITH (modulus 8, remainder ${i});
+      FOR VALUES WITH (modulus 8, remainder ${i})
+      WITH (fillfactor = 70);
     `);
   }
 
+  // Dedicated dequeue index (see engine_streams comments above)
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_worker_streams_active_messages
-    ON ${workerTable} (stream_name, reserved_at, visible_at, id)
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_dequeue
+    ON ${workerTable} (stream_name, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
 
+  // Stale-reservation recovery (see engine_streams comments above)
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
-    ON ${workerTable} (stream_name, visible_at, id)
-    WHERE expired_at IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_stale_reservations
+    ON ${workerTable} (stream_name, reserved_at, visible_at, id)
+    WHERE reserved_at IS NOT NULL AND expired_at IS NULL;
   `);
 
   await client.query(`
