@@ -143,8 +143,9 @@ export async function setStatus(
 
 //─── metadata binding ────────────────────────────────────────────────
 
-export function bindJobMetadata(instance: StateContext): void {
-  instance.context.metadata.ju = formatISODate(new Date());
+export function bindJobMetadata(_instance: StateContext): void {
+  // ju (job_updated) is maintained by the jobs.updated_at trigger —
+  // no need to serialize it into jobs_attributes on every activity.
 }
 
 export function bindActivityMetadata(instance: StateContext): void {

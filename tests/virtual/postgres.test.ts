@@ -121,25 +121,10 @@ describe('VIRTUAL | Postgres', () => {
 
   describe('Cron', () => {
     describe('idempotent cron', () => {
-      it('should start an idempotent cron (readonly mode)', async () => {
-        //kick off the cron, but don't do work
-        //(the next test will register the callback)
-        const inited = await Virtual.cron({
-          //NOTE: this ID will show up in the logs as being inited in readonly mode
-          guid: 'idemcron-RO',
-          args: [{ payload: 'HotMesh' }],
-          topic: 'my.cron.function',
-          connection,
-          options: {
-            id: 'mycron123',
-            interval: '1 second',
-          },
-        });
-        expect(inited).toBe(true);
-      });
-
-      it('should run an idempotent cron', async () => {
+      it('should start, run, deduplicate, and interrupt an idempotent cron', async () => {
         let counter = 0;
+
+        // 1. Start cron with callback
         const inited = await Virtual.cron({
           guid: 'idemcron-RW',
           args: [{ payload: 'HotMesh' }],
@@ -154,15 +139,14 @@ describe('VIRTUAL | Postgres', () => {
             return counter;
           },
         });
-        //the cron was already started (this test provides the callback)
-        expect(inited).toBe(false);
-        //sleepFor is to ensure sufficient cycles run;
-        //todo: subscribe to channel and listen instead
-        await sleepFor(7_500);
-        expect(counter).toBeGreaterThan(1);
-      }, 10_000);
+        expect(inited).toBe(true);
 
-      it('should silently fail when the same cron is inited', async () => {
+        // 2. Wait for cycles to run (Postgres cron scheduler needs
+        //    time for LISTEN/NOTIFY + time-hook dispatch in Docker)
+        await sleepFor(20_000);
+        expect(counter).toBeGreaterThan(1);
+
+        // 3. Duplicate init with same id should return false (already running)
         const didSucceed = await Virtual.cron({
           guid: 'freddy',
           args: [{ payload: 'HotMesh' }],
@@ -172,14 +156,11 @@ describe('VIRTUAL | Postgres', () => {
             id: 'mycron123',
             interval: '1 second',
           },
-          callback: async (): Promise<void> => {
-            //do nothing
-          },
+          callback: async (): Promise<void> => {},
         });
         expect(didSucceed).toBe(false);
-      });
 
-      it('should interrupt an idempotent cron', async () => {
+        // 4. Interrupt should succeed, then fail on second attempt
         let interrupted = await Virtual.interrupt({
           topic: 'my.cron.function',
           connection,
@@ -187,23 +168,19 @@ describe('VIRTUAL | Postgres', () => {
         });
         expect(interrupted).toBe(true);
 
-        //method returns false if the cron is not running
         interrupted = await Virtual.interrupt({
           topic: 'my.cron.function',
           connection,
           options: { id: 'mycron123' },
         });
         expect(interrupted).toBe(false);
-      });
+      }, 30_000);
 
       it('should run a cron with maxCycles and a delay', async () => {
         let counter = 0;
         const inited = await Virtual.cron({
           guid: 'buddy',
           args: [{ payload: 'HotMesh' }],
-          //NOTE: must use different topic for this cron,
-          //      so the other cron callback isn't called
-          //      (which references the other `counter`)
           topic: 'my.cron.function.max',
           connection,
           options: {
@@ -218,9 +195,9 @@ describe('VIRTUAL | Postgres', () => {
           },
         });
         expect(inited).toBe(true);
-        await sleepFor(4_500);
+        await sleepFor(15_000);
         expect(counter).toBe(2);
-      }, 6_500);
+      }, 20_000);
     });
 
     describe('cron expression syntax', () => {

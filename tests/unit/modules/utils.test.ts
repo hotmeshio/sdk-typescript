@@ -129,14 +129,14 @@ describe('utils module', () => {
       expect(delay).toBeGreaterThan(0);
     });
 
-    it('should throw on an invalid cron expression', () => {
+    it('should return -1 on an invalid cron expression', () => {
       const handler = new CronHandler();
-      expect(() => handler.nextDelay('not valid')).toThrow('Invalid cron expression');
+      expect(handler.nextDelay('not valid')).toBe(-1);
     });
 
-    it('should throw on undefined input', () => {
+    it('should return -1 on undefined input', () => {
       const handler = new CronHandler();
-      expect(() => handler.nextDelay(undefined as any)).toThrow('Invalid cron expression');
+      expect(handler.nextDelay(undefined as any)).toBe(-1);
     });
   });
 

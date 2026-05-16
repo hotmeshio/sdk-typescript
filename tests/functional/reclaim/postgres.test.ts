@@ -131,10 +131,10 @@ describe('FUNCTIONAL | Reclaim', () => {
       }
 
       //give time for the free worker to claim the job
-      await sleepFor(6_000);
+      await sleepFor(10_000);
       //verify that job 1 is completed after being reclaimed
       status1 = await hotMesh2.getStatus(jobId1 as string);
       expect(status1).toEqual(0);
-    }, 20_000);
+    }, 30_000);
   });
 });

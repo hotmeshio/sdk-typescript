@@ -371,11 +371,19 @@ export function _hset(
       `;
       params.push(key, fields[':'], options?.entity ?? null);
     } else {
-      // Update existing job or insert new one
+      // Two-pass upsert: UPDATE existing live job, INSERT only if no
+      // live job exists. Avoids ON CONFLICT seq_scan on partitioned
+      // tables that lack a unique partial index.
       sql = `
+        WITH existing AS (
+          UPDATE ${targetTable}
+          SET status = $2
+          WHERE key = $1 AND is_live
+          RETURNING 1
+        )
         INSERT INTO ${targetTable} (id, key, status, entity)
-        VALUES (gen_random_uuid(), $1, $2, $3)
-        ON CONFLICT (key) WHERE is_live DO UPDATE SET status = EXCLUDED.status
+        SELECT gen_random_uuid(), $1, $2, $3
+        WHERE NOT EXISTS (SELECT 1 FROM existing)
         RETURNING 1 as count
       `;
       params.push(key, fields[':'], options?.entity ?? null);
@@ -599,31 +607,20 @@ export function _hgetall(
   const isJobsTableResult = isJobsTable(tableName);
 
   if (isJobsTableResult) {
+    // Single CTE: reads jobs row once, then joins attributes
     const sql = `
       WITH valid_job AS (
         SELECT id, status, context
         FROM ${tableName}
         WHERE key = $1 AND is_live
-      ),
-      job_data AS (
-        SELECT 'status' AS field, status::text AS value
-        FROM ${tableName}
-        WHERE key = $1 AND is_live
-
-        UNION ALL
-
-        SELECT 'context' AS field, context::text AS value
-        FROM ${tableName}
-        WHERE key = $1 AND is_live
-      ),
-      attribute_data AS (
-        SELECT symbol || dimension AS field, value
-        FROM ${tableName}_attributes
-        WHERE job_id IN (SELECT id FROM valid_job)
       )
-      SELECT * FROM job_data
+      SELECT 'status' AS field, status::text AS value FROM valid_job
       UNION ALL
-      SELECT * FROM attribute_data;
+      SELECT 'context' AS field, context::text AS value FROM valid_job
+      UNION ALL
+      SELECT symbol || dimension AS field, value
+      FROM ${tableName}_attributes
+      WHERE job_id = (SELECT id FROM valid_job);
     `;
     return { sql, params: [key] };
   } else {
