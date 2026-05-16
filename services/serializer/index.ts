@@ -44,7 +44,7 @@ export const MDATA_SYMBOLS = {
     ],
   },
   JOB_UPDATE: {
-    KEYS: ['ju', 'err'],
+    KEYS: ['err'],
   },
 };
 

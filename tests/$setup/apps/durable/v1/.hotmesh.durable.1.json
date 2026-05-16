@@ -775,8 +775,7 @@
             "ancestor": "cycle_hook",
             "input": {
               "maps": {
-                "retryCount": 0,
-                "throttleSeconds": 0
+                "retryCount": 0
               }
             }
           },
@@ -925,41 +924,6 @@
             "input": {
               "maps": {
                 "retryCount": 0
-              }
-            }
-          },
-          "retryer": {
-            "title": "Pauses for an exponentially-throttled amount of time after a 599 (retryable) error",
-            "type": "hook",
-            "sleep": {
-              "@pipe": [
-                [
-                  "{trigger.output.data.backoffCoefficient}",
-                  "{cycle_hook.output.data.retryCount}"
-                ],
-                [
-                  "{@math.pow}"
-                ]
-              ]
-            }
-          },
-          "retry_cycler": {
-            "title": "Cycles back to the cycle_hook pivot, increasing the retryCount (the exponential)",
-            "type": "cycle",
-            "ancestor": "cycle_hook",
-            "input": {
-              "maps": {
-                "retryCount": {
-                  "@pipe": [
-                    [
-                      "{cycle_hook.output.data.retryCount}",
-                      1
-                    ],
-                    [
-                      "{@math.add}"
-                    ]
-                  ]
-                }
               }
             }
           },
@@ -1699,8 +1663,7 @@
             "ancestor": "signaler_cycle_hook",
             "input": {
               "maps": {
-                "retryCount": 0,
-                "throttleSeconds": 0
+                "retryCount": 0
               }
             }
           },
@@ -1852,41 +1815,6 @@
                 "retryCount": 0
               }
             }
-          },
-          "signaler_retryer": {
-            "title": "Pauses signal in subprocess for an exponentially-throttled amount of time after a 599 (retryable) error",
-            "type": "hook",
-            "sleep": {
-              "@pipe": [
-                [
-                  "{trigger.output.data.backoffCoefficient}",
-                  "{signaler_cycle_hook.output.data.retryCount}"
-                ],
-                [
-                  "{@math.pow}"
-                ]
-              ]
-            }
-          },
-          "signaler_retry_cycler": {
-            "title": "Cycles back to the signaler_cycle_hook pivot, increasing the retryCount (the exponential)",
-            "type": "cycle",
-            "ancestor": "signaler_cycle_hook",
-            "input": {
-              "maps": {
-                "retryCount": {
-                  "@pipe": [
-                    [
-                      "{signaler_cycle_hook.output.data.retryCount}",
-                      1
-                    ],
-                    [
-                      "{@math.add}"
-                    ]
-                  ]
-                }
-              }
-            }
           }
         },
         "transitions": {
@@ -1938,12 +1866,6 @@
               "conditions": {
                 "code": 591
               }
-            },
-            {
-              "to": "retryer",
-              "conditions": {
-                "code": 599
-              }
             }
           ],
           "collator": [
@@ -1964,11 +1886,6 @@
           "sleeper": [
             {
               "to": "sleep_cycler"
-            }
-          ],
-          "retryer": [
-            {
-              "to": "retry_cycler"
             }
           ],
           "signaler": [
@@ -2008,12 +1925,6 @@
               "conditions": {
                 "code": 591
               }
-            },
-            {
-              "to": "signaler_retryer",
-              "conditions": {
-                "code": 599
-              }
             }
           ],
           "signaler_collator": [
@@ -2034,11 +1945,6 @@
           "signaler_sleeper": [
             {
               "to": "signaler_sleep_cycler"
-            }
-          ],
-          "signaler_retryer": [
-            {
-              "to": "signaler_retry_cycler"
             }
           ]
         },

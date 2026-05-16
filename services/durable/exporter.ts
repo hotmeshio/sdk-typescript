@@ -804,9 +804,24 @@ class ExporterService {
     const metadata = state?.output?.metadata ?? state?.metadata;
     const stateData = state?.output?.data ?? state?.data;
     const jobCreated = metadata?.jc ?? stateData?.jc ?? metadata?.ac;
-    const jobUpdated = metadata?.ju ?? stateData?.ju ?? metadata?.au;
     const startTime = parseTimestamp(jobCreated);
-    const closeTime = parseTimestamp(jobUpdated);
+
+    // Derive close time from the latest activity update (au) in the
+    // timeline, falling back to metadata.au. ju is no longer updated
+    // after creation — jobs.updated_at is the authoritative source,
+    // but it's not available in the DurableJobExport format.
+    let latestAu: string | null = null;
+    for (const entry of raw.timeline || []) {
+      const val = entry.value as Record<string, any> | undefined;
+      const au = val?.au as string | undefined;
+      if (au) {
+        const parsed = parseTimestamp(au);
+        if (parsed && (!latestAu || parsed > latestAu)) {
+          latestAu = parsed;
+        }
+      }
+    }
+    const closeTime = latestAu ?? parseTimestamp(metadata?.au);
 
     // ── Synthetic workflow_execution_started ─────────────────────────
     if (startTime) {
