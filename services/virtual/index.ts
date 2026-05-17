@@ -13,6 +13,7 @@ import {
 } from '../../modules/utils';
 import {
   VirtualConnectParams,
+  VirtualContext,
   VirtualCronParams,
   VirtualExecParams,
   VirtualFlushParams,
@@ -22,9 +23,17 @@ import {
 import { StreamData } from '../../types/stream';
 import { ProviderConfig, ProvidersConfig } from '../../types/provider';
 import { HMNS, KeyType } from '../../modules/key';
+import { virtualAsyncLocalStorage } from '../../modules/storage';
+import { RetryPolicy } from '../../types/stream';
 import { CronHandler } from '../pipe/functions/cron';
 
 import { getWorkflowYAML, VERSION } from './schemas/factory';
+
+const DEFAULT_RETRY_POLICY: RetryPolicy = {
+  maximumAttempts: 3,
+  backoffCoefficient: 2,
+  maximumInterval: 30,
+};
 
 /**
  * Virtual creates a virtual network of functions, connecting any
@@ -278,13 +287,22 @@ class Virtual {
         {
           topic: params.topic,
           connection,
-          retry: params.retry ?? {
-            maximumAttempts: 3,
-            backoffCoefficient: 2,
-            maximumInterval: 30,
-          },
+          retry: params.retry ?? DEFAULT_RETRY_POLICY,
           callback: async function (input: StreamData) {
-            const response = await params.callback.apply(this, input.data.args);
+            const context = new Map<string, any>([
+              ['topic', params.topic],
+              ['workflowId', input.metadata.jid ?? ''],
+              ['workflowName', input.metadata.wfn ?? ''],
+              ['dimension', input.metadata.dad ?? ''],
+              ['attempt', input.metadata.try ?? 1],
+              ['guid', input.metadata.guid],
+              ['traceId', input.metadata.trc ?? ''],
+              ['spanId', input.metadata.spn ?? ''],
+            ]);
+            const response = await virtualAsyncLocalStorage.run(
+              context,
+              () => params.callback.apply(this, input.data.args),
+            );
             return {
               metadata: { ...input.metadata },
               data: { response },
@@ -544,6 +562,45 @@ class Virtual {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Returns the execution context for the current Virtual callback.
+   * Must be called from inside a `Virtual.cron` or `Virtual.exec`
+   * callback — throws if called outside that scope.
+   *
+   * @example
+   * ```typescript
+   * await Virtual.cron({
+   *   topic: 'my.cron',
+   *   connection,
+   *   args: [],
+   *   options: { id: 'daily', interval: '0 0 * * *' },
+   *   callback: async () => {
+   *     const ctx = Virtual.getContext();
+   *     console.log(ctx.workflowId); // 'daily'
+   *     console.log(ctx.attempt);    // 1
+   *   },
+   * });
+   * ```
+   */
+  static getContext(): VirtualContext {
+    const store = virtualAsyncLocalStorage.getStore();
+    if (!store) {
+      throw new Error(
+        'Virtual.getContext() called outside of a Virtual callback execution context',
+      );
+    }
+    return {
+      topic: store.get('topic'),
+      workflowId: store.get('workflowId'),
+      workflowName: store.get('workflowName'),
+      dimension: store.get('dimension'),
+      attempt: store.get('attempt'),
+      guid: store.get('guid'),
+      traceId: store.get('traceId'),
+      spanId: store.get('spanId'),
+    };
   }
 
   /**
