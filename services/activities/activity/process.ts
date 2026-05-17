@@ -8,6 +8,7 @@ import {
   GetStateError,
   InactiveJobError,
 } from '../../../modules/errors';
+import { CollationFaultType } from '../../../types/collator';
 import { CollatorService } from '../../collator';
 import { EngineService } from '../../engine';
 import { ILogger } from '../../logger';
@@ -132,10 +133,27 @@ export async function processEvent(
     telemetry.setActivityAttributes({});
   } catch (error) {
     if (error instanceof CollationError) {
-      // INACTIVE is legitimate duplicate detection — the Postgres atomic
-      // CTE (collateLeg2Entry) serializes via row locks, so the GUID
-      // ledger value is correct. Silent ack is the right behavior:
-      // the work was already done by a prior delivery of this message.
+      //FORBIDDEN: Leg1 not complete — signal arrived in the window
+      //between registerHook (standalone) and Leg1 transaction commit.
+      //Rethrow so the stream message is retried with backoff; by then
+      //Leg1 will have committed and Leg2 processing will succeed.
+      //The GUID marker was already committed by notarizeLeg2Entry;
+      //on retry, collateLeg2Entry's SETNX is a no-op for the same
+      //GUID, and verifySyntheticInteger sees no steps done → allowed.
+      if (error.fault === CollationFaultType.FORBIDDEN) {
+        instance.logger.warn('process-event-forbidden-retry', {
+          jid: instance.context.metadata.jid,
+          aid: instance.metadata.aid,
+          message: 'Leg1 not committed yet; rethrowing for stream retry',
+          error,
+        });
+        throw error;
+      }
+      // INACTIVE/DUPLICATE: legitimate duplicate detection — the
+      // Postgres atomic CTE (collateLeg2Entry) serializes via row
+      // locks, so the GUID ledger value is correct. Silent ack is
+      // the right behavior: the work was already done by a prior
+      // delivery of this message.
       const now = Date.now();
       if (now - collationWindowStart > COLLATION_WINDOW_MS) {
         collationErrorCount = 0;
