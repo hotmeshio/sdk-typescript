@@ -219,8 +219,8 @@ interface VirtualInterruptParams {
 
 /**
  * Execution context available inside Virtual callbacks via
- * {@link Virtual.getContext}.  Populated automatically by the
- * AsyncLocalStorage wrapper in {@link Virtual.connect}.
+ * `Virtual.getContext()`.  Populated automatically by the
+ * AsyncLocalStorage wrapper in `Virtual.connect()`.
  *
  * @example
  * ```typescript
@@ -241,8 +241,8 @@ interface VirtualInterruptParams {
 interface VirtualContext {
   /**
    * The worker topic that routed this invocation.
-   * Matches the `topic` passed to {@link Virtual.cron} or
-   * {@link Virtual.connect}.
+   * Matches the `topic` passed to `Virtual.cron()` or
+   * `Virtual.connect()`.
    */
   topic: string;
   /**
@@ -264,7 +264,7 @@ interface VirtualContext {
   dimension: string;
   /**
    * Current retry attempt (1-based).  `1` on the first try,
-   * incremented on each retry per the {@link RetryPolicy}.
+   * incremented on each retry per the `RetryPolicy`.
    */
   attempt: number;
   /**

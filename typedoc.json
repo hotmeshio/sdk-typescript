@@ -34,6 +34,7 @@
     "services/pipe/functions/symbol.ts",
     "services/pipe/functions/unary.ts",
     "services/exporter/index.ts",
+    "services/store/index.ts",
     "services/store/cache.ts",
     "services/hotmesh/index.ts",
     "services/virtual/index.ts",
