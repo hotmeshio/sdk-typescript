@@ -1040,9 +1040,14 @@ class PostgresStoreService extends StoreService<
   /**
    * Leg1: set hook signal, atomically detecting a pending signal.
    *
-   * Standalone (no transaction): single CTE query that reads any existing
-   * pending value, then inserts the hook signal (overwriting pending or
-   * expired entries). Returns `{success, pendingData}` in one round trip.
+   * Standalone (no transaction): acquires a per-key advisory lock to
+   * serialize with concurrent getHookSignal calls, then reads any
+   * existing pending value and inserts the hook signal.
+   *
+   * The advisory lock prevents a race where the CTE's read snapshot
+   * misses a concurrently inserted pending signal — under READ
+   * COMMITTED, ON CONFLICT sees committed writes but the SELECT CTE
+   * does not, causing the pending data to be silently overwritten.
    *
    * In a transaction: queues the setnxex; pending detection deferred.
    */
@@ -1064,37 +1069,42 @@ class PostgresStoreService extends StoreService<
     const kv = this.kvsql();
     const tableName = kv.tableForKey(fullKey);
     const storedKey = kv.storageKey(fullKey);
-    const sql = `
-      WITH pre AS (
-        SELECT value FROM ${tableName}
-        WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
-      ),
-      ins AS (
-        INSERT INTO ${tableName} (key, value, expiry)
-        VALUES ($1, $2, NOW() + INTERVAL '${delay} seconds')
-        ON CONFLICT (key) DO UPDATE
-          SET value = EXCLUDED.value, expiry = EXCLUDED.expiry
-          WHERE ${tableName}.expiry IS NULL
-            OR ${tableName}.expiry <= NOW()
-            OR ${tableName}.value LIKE '$pending::%'
-        RETURNING true as success
-      )
-      SELECT
-        COALESCE((SELECT success FROM ins), false) as success,
-        (SELECT value FROM pre) as existing_value
-    `;
+
+    //acquire per-key advisory lock (session-level) to serialize
+    //with concurrent getHookSignal for the same signal key
+    await this.pgClient.query(
+      'SELECT pg_advisory_lock(901, hashtext($1))',
+      [storedKey],
+    );
     try {
-      const res = await this.pgClient.query(sql, [storedKey, jobId]);
-      const row = res.rows[0] || {};
-      const success = row.success === true;
-      const existing = row.existing_value;
-      if (success && existing?.startsWith('$pending::')) {
-        return {
-          success: true,
-          pendingData: existing.slice('$pending::'.length),
-        };
+      //read existing value under lock
+      const readRes = await this.pgClient.query(
+        `SELECT value FROM ${tableName}
+         WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())`,
+        [storedKey],
+      );
+
+      let pendingData: string | undefined;
+      if (readRes.rows.length > 0) {
+        const existing = readRes.rows[0].value;
+        if (existing?.startsWith('$pending::')) {
+          pendingData = existing.slice('$pending::'.length);
+        } else {
+          //hook already set (retry) — no change needed
+          return { success: false };
+        }
       }
-      return { success };
+
+      //insert hook value (or overwrite pending)
+      await this.pgClient.query(
+        `INSERT INTO ${tableName} (key, value, expiry)
+         VALUES ($1, $2, NOW() + INTERVAL '${delay} seconds')
+         ON CONFLICT (key) DO UPDATE
+           SET value = EXCLUDED.value, expiry = EXCLUDED.expiry`,
+        [storedKey, jobId],
+      );
+
+      return { success: true, pendingData };
     } catch (error: any) {
       if (
         error?.message?.includes('closed') ||
@@ -1103,6 +1113,15 @@ class PostgresStoreService extends StoreService<
         return { success: false };
       }
       throw error;
+    } finally {
+      try {
+        await this.pgClient.query(
+          'SELECT pg_advisory_unlock(901, hashtext($1))',
+          [storedKey],
+        );
+      } catch {
+        //lock auto-releases on session close
+      }
     }
   }
 
@@ -1110,10 +1129,13 @@ class PostgresStoreService extends StoreService<
    * Leg2: get hook signal OR atomically set a pending signal.
    *
    * When `pendingData` is provided and no hook signal exists, the
-   * pending value is inserted in the SAME SQL statement — no second
-   * round trip. This is the transactional edge that prevents the
-   * signal from being lost: by the time the query returns, the
-   * pending key is already visible to leg1's setnxex.
+   * pending value is stored so leg1's setHookSignal can detect it.
+   *
+   * Uses a per-key advisory lock to serialize with concurrent
+   * setHookSignal calls. Without the lock, a CTE race exists where
+   * the read snapshot misses a concurrently inserted hook signal AND
+   * the pending INSERT fails on conflict (the hook has valid expiry),
+   * silently losing the signal.
    *
    * When `pendingData` is omitted, behaves as a plain read.
    */
@@ -1135,39 +1157,43 @@ class PostgresStoreService extends StoreService<
       return value;
     }
 
-    //atomic get-or-set-pending: one round trip
     const kv = this.kvsql();
     const tableName = kv.tableForKey(fullKey);
     const storedKey = kv.storageKey(fullKey);
     const expire = pendingExpire || HMSH_PENDING_SIGNAL_EXPIRE;
     const pendingValue = `$pending::${pendingData}`;
 
-    const sql = `
-      WITH existing AS (
-        SELECT value FROM ${tableName}
-        WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
-      ),
-      pending AS (
-        INSERT INTO ${tableName} (key, value, expiry)
-        SELECT $1, $2, NOW() + INTERVAL '${expire} seconds'
-        WHERE NOT EXISTS (SELECT 1 FROM existing)
-        ON CONFLICT (key) DO UPDATE
-          SET value = EXCLUDED.value, expiry = EXCLUDED.expiry
-          WHERE ${tableName}.expiry IS NULL OR ${tableName}.expiry <= NOW()
-        RETURNING true as inserted
-      )
-      SELECT
-        (SELECT value FROM existing) as hook_value,
-        (SELECT inserted FROM pending) as pending_inserted
-    `;
+    //acquire per-key advisory lock (session-level) to serialize
+    //with concurrent setHookSignal for the same signal key
+    await this.pgClient.query(
+      'SELECT pg_advisory_lock(901, hashtext($1))',
+      [storedKey],
+    );
     try {
-      const res = await this.pgClient.query(sql, [storedKey, pendingValue]);
-      const row = res.rows[0] || {};
-      const hookValue = row.hook_value;
-      if (hookValue && !hookValue.startsWith('$pending::')) {
-        return hookValue;
+      //read existing value under lock
+      const readRes = await this.pgClient.query(
+        `SELECT value FROM ${tableName}
+         WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())`,
+        [storedKey],
+      );
+
+      if (readRes.rows.length > 0) {
+        const value = readRes.rows[0].value;
+        if (value && !value.startsWith('$pending::')) {
+          //hook found — return it
+          return value;
+        }
       }
-      //no hook signal; pending was inserted (or already existed)
+
+      //no hook signal — store pending
+      await this.pgClient.query(
+        `INSERT INTO ${tableName} (key, value, expiry)
+         VALUES ($1, $2, NOW() + INTERVAL '${expire} seconds')
+         ON CONFLICT (key) DO UPDATE
+           SET value = EXCLUDED.value, expiry = EXCLUDED.expiry`,
+        [storedKey, pendingValue],
+      );
+
       return undefined;
     } catch (error: any) {
       if (
@@ -1177,6 +1203,15 @@ class PostgresStoreService extends StoreService<
         return undefined;
       }
       throw error;
+    } finally {
+      try {
+        await this.pgClient.query(
+          'SELECT pg_advisory_unlock(901, hashtext($1))',
+          [storedKey],
+        );
+      } catch {
+        //lock auto-releases on session close
+      }
     }
   }
 

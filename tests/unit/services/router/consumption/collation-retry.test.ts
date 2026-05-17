@@ -147,6 +147,76 @@ describe('processEvent | CollationError INACTIVE silent ack', () => {
 });
 
 // ═════════════════════════════════════════════════════════════════════
+// Layer 1b: processEvent — FORBIDDEN is rethrown (not silently acked)
+// ═════════════════════════════════════════════════════════════════════
+
+describe('processEvent | CollationError FORBIDDEN rethrown for retry', () => {
+  const forbiddenError = new CollationError(
+    1000000000001, 2, 'enter', CollationFaultType.FORBIDDEN,
+  );
+
+  it('should rethrow FORBIDDEN so the stream message is retried', async () => {
+    // FORBIDDEN = Leg1 not complete; signal arrived between
+    // registerHook (standalone) and Leg1 transaction commit.
+    // The GUID marker was already committed by notarizeLeg2Entry,
+    // so the message MUST be retried — silent ack would lose the signal.
+    const ctx = createMockProcessContext({
+      verifyReentry: vi.fn().mockRejectedValue(forbiddenError),
+    });
+
+    await expect(processEvent(ctx)).rejects.toThrow(CollationError);
+    expect(ctx.logger.warn).toHaveBeenCalledWith(
+      'process-event-forbidden-retry',
+      expect.objectContaining({
+        jid: 'j1',
+        aid: 'a1',
+        message: 'Leg1 not committed yet; rethrowing for stream retry',
+      }),
+    );
+  });
+
+  it('FORBIDDEN should NOT delete the hook signal (error propagates past deleteWebHookSignal)', async () => {
+    // When processEvent rethrows FORBIDDEN, control never reaches
+    // processWebHookEvent's deleteWebHookSignal call. The hook signal
+    // is preserved for the retry attempt.
+    const ctx = createMockProcessContext({
+      verifyReentry: vi.fn().mockRejectedValue(forbiddenError),
+    });
+
+    const thrown = await processEvent(ctx).catch((e: Error) => e);
+    expect(thrown).toBeInstanceOf(CollationError);
+    expect((thrown as CollationError).fault).toBe(CollationFaultType.FORBIDDEN);
+    // bindActivityData should NOT have been called (error before it)
+    expect(ctx.bindActivityData).not.toHaveBeenCalled();
+    expect(ctx.mapJobData).not.toHaveBeenCalled();
+    expect(ctx.executeStepProtocol).not.toHaveBeenCalled();
+  });
+
+  it('INACTIVE should still be silently acked (not rethrown)', async () => {
+    // Regression guard: INACTIVE is a legitimate duplicate.
+    const inactiveError = new CollationError(
+      889000001010001, 2, 'enter', CollationFaultType.INACTIVE,
+    );
+    const ctx = createMockProcessContext({
+      verifyReentry: vi.fn().mockRejectedValue(inactiveError),
+    });
+
+    await expect(processEvent(ctx)).resolves.toBeUndefined();
+  });
+
+  it('DUPLICATE should still be silently acked (not rethrown)', async () => {
+    const duplicateError = new CollationError(
+      889000001010001, 2, 'enter', CollationFaultType.DUPLICATE,
+    );
+    const ctx = createMockProcessContext({
+      verifyReentry: vi.fn().mockRejectedValue(duplicateError),
+    });
+
+    await expect(processEvent(ctx)).resolves.toBeUndefined();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════
 // Layer 2: consumeOne — duplicate messages are acked without retry
 // ═════════════════════════════════════════════════════════════════════
 
