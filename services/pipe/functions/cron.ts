@@ -30,8 +30,11 @@ class CronHandler {
    * ```
    */
   nextDelay(cronExpression: string): number {
-    if (!isValidCron(cronExpression)) {
+    if (cronExpression == null || typeof cronExpression !== 'string') {
       return -1;
+    }
+    if (!isValidCron(cronExpression)) {
+      throw new Error(`Invalid cron expression: ${cronExpression}`);
     }
     const interval = parseExpression(cronExpression, { utc: true });
     const nextDate = interval.next().toDate();

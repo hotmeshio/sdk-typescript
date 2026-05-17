@@ -81,7 +81,7 @@ class TaskService {
   ): Promise<void> {
     const fromNow = Date.now() + inSeconds * 1000;
     const fidelityMS = HMSH_FIDELITY_SECONDS * 1000;
-    const awakenTimeSlot = Math.floor(fromNow / fidelityMS) * fidelityMS;
+    const awakenTimeSlot = Math.ceil(fromNow / fidelityMS) * fidelityMS;
     await this.store.registerTimeHook(
       jobId,
       gId,

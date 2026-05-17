@@ -217,8 +217,78 @@ interface VirtualInterruptParams {
   options: VirtualInterruptOptions;
 }
 
+/**
+ * Execution context available inside Virtual callbacks via
+ * `Virtual.getContext()`.  Populated automatically by the
+ * AsyncLocalStorage wrapper in `Virtual.connect()`.
+ *
+ * @example
+ * ```typescript
+ * await Virtual.cron({
+ *   topic: 'billing.daily',
+ *   connection,
+ *   args: [],
+ *   options: { id: 'billing-run', interval: '0 0 * * *' },
+ *   callback: async () => {
+ *     const ctx = Virtual.getContext();
+ *     // ctx.workflowId  === 'billing-run'
+ *     // ctx.topic        === 'billing.daily'
+ *     // ctx.guid         === unique per invocation
+ *   },
+ * });
+ * ```
+ */
+interface VirtualContext {
+  /**
+   * The worker topic that routed this invocation.
+   * Matches the `topic` passed to `Virtual.cron()` or
+   * `Virtual.connect()`.
+   */
+  topic: string;
+  /**
+   * Workflow / job ID.  For cron callbacks this is the `id`
+   * from `options.id`.  For `Virtual.exec` calls this is the
+   * auto-generated or user-supplied job identifier.
+   */
+  workflowId: string;
+  /**
+   * Internal workflow name (the graph subscription topic,
+   * e.g. `hmsh.cron` or `hmsh.call`).
+   */
+  workflowName: string;
+  /**
+   * Dimensional address for this execution within the
+   * workflow's DAG.  Encodes the cycle iteration and
+   * parallel branch position.
+   */
+  dimension: string;
+  /**
+   * Current retry attempt (1-based).  `1` on the first try,
+   * incremented on each retry per the `RetryPolicy`.
+   */
+  attempt: number;
+  /**
+   * Globally unique identifier for the stream message that
+   * triggered this callback.  A new GUID is minted for every
+   * invocation, including retries and cycle iterations, so it
+   * serves as an idempotency key for exactly-once processing.
+   */
+  guid: string;
+  /**
+   * OpenTelemetry trace ID propagated from the originating
+   * workflow.  Empty string when tracing is not configured.
+   */
+  traceId: string;
+  /**
+   * OpenTelemetry span ID propagated from the parent activity.
+   * Empty string when tracing is not configured.
+   */
+  spanId: string;
+}
+
 export {
   VirtualConnectParams,
+  VirtualContext,
   VirtualExecParams,
   VirtualCronParams,
   VirtualExecOptions,

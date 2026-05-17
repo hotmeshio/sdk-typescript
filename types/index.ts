@@ -165,6 +165,7 @@ export {
 } from './provider';
 export {
   VirtualConnectParams,
+  VirtualContext,
   VirtualExecParams,
   VirtualCronParams,
   VirtualExecOptions,
