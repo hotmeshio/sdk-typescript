@@ -54,16 +54,13 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
     SET search_path = ${schemaName}, pg_temp
     AS $$
     ${STREAM_ACCESS_CHECK}
-      -- Two-pass dequeue: stale reservations first (FIFO — lower ids,
-      -- waited longest), then fresh. Split avoids OR that prevents
-      -- partial index usage. Stale check is a fast no-op when empty.
       RETURN QUERY
       UPDATE ${workerTable} ws
       SET reserved_at = NOW(), reserved_by = p_consumer_id
       WHERE ws.id IN (
         SELECT ws2.id FROM ${workerTable} ws2
         WHERE ws2.stream_name = p_stream_name
-          AND ws2.reserved_at < NOW() - (p_reservation_timeout_sec || ' seconds')::INTERVAL
+          AND (ws2.reserved_at IS NULL OR ws2.reserved_at < NOW() - (p_reservation_timeout_sec || ' seconds')::INTERVAL)
           AND ws2.expired_at IS NULL
           AND ws2.visible_at <= NOW()
         ORDER BY ws2.id
@@ -72,25 +69,6 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
       )
       RETURNING ws.id, ws.message, ws.workflow_name, ws.max_retry_attempts,
                 ws.backoff_coefficient, ws.maximum_interval_seconds, ws.retry_attempt;
-
-      -- Fresh messages: unreserved, visible, not expired
-      IF NOT FOUND THEN
-        RETURN QUERY
-        UPDATE ${workerTable} ws
-        SET reserved_at = NOW(), reserved_by = p_consumer_id
-        WHERE ws.id IN (
-          SELECT ws2.id FROM ${workerTable} ws2
-          WHERE ws2.stream_name = p_stream_name
-            AND ws2.reserved_at IS NULL
-            AND ws2.expired_at IS NULL
-            AND ws2.visible_at <= NOW()
-          ORDER BY ws2.id
-          LIMIT p_batch_size
-          FOR UPDATE SKIP LOCKED
-        )
-        RETURNING ws.id, ws.message, ws.workflow_name, ws.max_retry_attempts,
-                  ws.backoff_coefficient, ws.maximum_interval_seconds, ws.retry_attempt;
-      END IF;
     END;
     $$;`,
 
