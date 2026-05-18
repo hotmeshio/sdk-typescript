@@ -133,13 +133,10 @@ export async function processEvent(
     telemetry.setActivityAttributes({});
   } catch (error) {
     if (error instanceof CollationError) {
-      //FORBIDDEN: Leg1 not complete — signal arrived in the window
-      //between registerHook (standalone) and Leg1 transaction commit.
-      //Rethrow so the stream message is retried with backoff; by then
-      //Leg1 will have committed and Leg2 processing will succeed.
-      //The GUID marker was already committed by notarizeLeg2Entry;
-      //on retry, collateLeg2Entry's SETNX is a no-op for the same
-      //GUID, and verifySyntheticInteger sees no steps done → allowed.
+      //FORBIDDEN: Leg1 not complete — should not occur after the fix
+      //that moved setHookSignal to post-commit. If seen, it indicates
+      //a new race window not covered by the fix. Rethrow so the inline
+      //retry in processWebHookEvent can attempt recovery.
       if (error.fault === CollationFaultType.FORBIDDEN) {
         instance.logger.warn('process-event-forbidden-retry', {
           jid: instance.context.metadata.jid,

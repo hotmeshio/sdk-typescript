@@ -188,6 +188,16 @@ class Hook extends Activity {
         //Category A: duplexed hook registration (Leg2 handles completion)
         if (!isResume) {
           await this.doHook(telemetry);
+        } else if (this.config.hook?.topic) {
+          //DUPLICATE: Leg1 completed previously but hook registration
+          //may not have happened (crash between transaction.exec and
+          //registerWebHookSignal). Attempt registration — setHookSignal
+          //is idempotent (returns success:false if hook already exists).
+          const hookResult = await this.registerWebHookSignal();
+          const pending = hookResult && hookResult.pending;
+          if (pending) {
+            await this.redeliverPendingSignal(pending);
+          }
         }
       } else {
         //Category B: passthrough with crash-safe step protocol + GUID ledger
@@ -225,7 +235,11 @@ class Hook extends Activity {
 
   async doHook(telemetry: TelemetryService): Promise<void> {
     const transaction = this.store.transact();
-    const hookResult = await this.registerHook(transaction);
+
+    //register time hooks (sleep) inside the transaction — these
+    //don't participate in the signal race
+    await this.registerTimeHook(transaction);
+
     this.mapOutputData();
     this.mapJobData();
     await this.setState(transaction);
@@ -234,11 +248,16 @@ class Hook extends Activity {
     await transaction.exec();
     telemetry.mapActivityAttributes();
 
-    //if a pending signal was detected (signal arrived before hook
-    //registered), re-publish the WEBHOOK so leg2 processes it
-    //now that the hook signal is committed and state is saved
-    if (hookResult && hookResult.pending) {
-      await this.redeliverPendingSignal(hookResult.pending);
+    //register the web hook signal AFTER the transaction commits.
+    //this eliminates the FORBIDDEN window: the hook signal is never
+    //visible before Leg1 completion. If Leg2 arrives before this
+    //point, getHookSignal finds no hook and stores $pending, which
+    //setHookSignal will detect and return for redelivery.
+    const hookResult = await this.registerWebHookSignal();
+    const pending = hookResult && hookResult.pending;
+
+    if (pending) {
+      await this.redeliverPendingSignal(pending);
     }
   }
 
@@ -283,14 +302,63 @@ class Hook extends Activity {
     return rules?.[topic]?.[0] as HookRule;
   }
 
+  /**
+   * Register the time hook (sleep) inside the Leg1 transaction.
+   * Time hooks don't participate in the signal race — they're
+   * purely internal timeout registrations.
+   */
+  async registerTimeHook(
+    transaction: ProviderTransaction,
+  ): Promise<void> {
+    if (this.config.sleep) {
+      const duration = Pipe.resolve(this.config.sleep, this.context);
+      if (!isNaN(duration) && Number(duration) > 0) {
+        await this.engine.taskService.registerTimeHook(
+          this.context.metadata.jid,
+          this.context.metadata.gid,
+          `${this.metadata.aid}${this.metadata.dad || ''}`,
+          'sleep',
+          duration,
+          this.metadata.dad || '',
+          transaction,
+        );
+      }
+    }
+  }
+
+  /**
+   * Register the web hook signal AFTER the Leg1 transaction commits.
+   * This ensures the hook signal is never visible before Leg1
+   * completion, eliminating the FORBIDDEN window where Leg2 could
+   * find the hook but fail on the collation check.
+   *
+   * If a pending signal was stored by an early-arriving Leg2,
+   * setHookSignal atomically detects and returns it.
+   */
+  async registerWebHookSignal(): Promise<{ pending?: string } | void> {
+    if (this.config.hook?.topic) {
+      const hookResult = await this.engine.taskService.registerWebHook(
+        this.config.hook.topic,
+        this.context,
+        this.resolveDad(),
+        this.context.metadata.expire,
+      );
+      if (hookResult.pending) {
+        return { pending: hookResult.pending };
+      }
+    }
+  }
+
+  /**
+   * @deprecated Use registerTimeHook + registerWebHookSignal instead.
+   * Kept for backward compatibility with tests that monkey-patch this method.
+   */
   async registerHook(
     transaction?: ProviderTransaction,
   ): Promise<{ jobId?: string; pending?: string } | void> {
     let jobId: string | undefined;
     let pending: string | undefined;
     if (this.config.hook?.topic) {
-      //hook signal is set standalone (not in the transaction) so the
-      //single CTE query can atomically detect a pending signal collision
       const hookResult = await this.engine.taskService.registerWebHook(
         this.config.hook.topic,
         this.context,
