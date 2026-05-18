@@ -151,6 +151,8 @@ describe('DURABLE | Contention | Postgres', () => {
 
   it(`scale-10: ${TARGET_SMALL} concurrent assembly-line workflows`, async () => {
     const client = new Client({ connection });
+    const t0 = Date.now();
+    console.log(`[scale-10] Starting ${TARGET_SMALL} workflows...`);
     const startPromises = Array.from({ length: TARGET_SMALL }, (_, i) => {
       return client.workflow.start({
         args: [`Widget-10-${i}`, STATIONS],
@@ -161,7 +163,13 @@ describe('DURABLE | Contention | Postgres', () => {
       });
     });
     const handles = await Promise.all(startPromises) as WorkflowHandleService[];
-    const results = await Promise.all(handles.map((h) => h.result()));
+    console.log(`[scale-10] [${((Date.now() - t0) / 1000).toFixed(1)}s] All ${TARGET_SMALL} enqueued. Waiting for results...`);
+    let doneCount = 0;
+    const results = await Promise.all(handles.map((h) => h.result().then((r) => {
+      doneCount++;
+      console.log(`[scale-10] [${((Date.now() - t0) / 1000).toFixed(1)}s] Completed: ${doneCount}/${TARGET_SMALL}`);
+      return r;
+    })));
     const completed = results.filter(
       (r) => r && typeof r === 'object' && 'results' in r,
     );
@@ -196,6 +204,8 @@ describe('DURABLE | Contention | Postgres', () => {
 
   it('scale-100-analysis: 100 concurrent with distribution analysis', async () => {
     const client = new Client({ connection });
+    const t0 = Date.now();
+    console.log(`[scale-100] Starting 100 workflows...`);
     const startPromises = Array.from({ length: 100 }, (_, i) => {
       return client.workflow.start({
         args: [`Widget-100-${i}`, STATIONS],
@@ -206,7 +216,15 @@ describe('DURABLE | Contention | Postgres', () => {
       });
     });
     const handles = await Promise.all(startPromises) as WorkflowHandleService[];
-    const results = await Promise.all(handles.map((h) => h.result()));
+    console.log(`[scale-100] [${((Date.now() - t0) / 1000).toFixed(1)}s] All 100 enqueued. Waiting for results...`);
+    let doneCount = 0;
+    const results = await Promise.all(handles.map((h) => h.result().then((r) => {
+      doneCount++;
+      if (doneCount % 10 === 0 || doneCount === 100) {
+        console.log(`[scale-100] [${((Date.now() - t0) / 1000).toFixed(1)}s] Completed: ${doneCount}/100`);
+      }
+      return r;
+    })));
     const completed = results.filter(
       (r) => r && typeof r === 'object' && 'results' in r,
     );

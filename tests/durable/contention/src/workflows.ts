@@ -38,7 +38,8 @@ export async function stepIterator(
   const ctx = Durable.workflow.workflowInfo();
   const results: StationResult[] = [];
 
-  for (const [i, step] of steps.entries()) {
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
     const signalId = `step-${i}-${ctx.workflowId}`;
     const childWorkflowId = `ws-${ctx.workflowId}-${i}`;
 
@@ -59,7 +60,6 @@ export async function stepIterator(
 
     const result = await Durable.workflow.condition<StationResult>(
       signalId,
-      '120s',
     );
     if (result === false) {
       throw new Error(`Timed out waiting for step ${i} (${step.stationName})`);

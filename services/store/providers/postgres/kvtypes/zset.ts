@@ -119,19 +119,6 @@ export const zsetModule = (context: any) => ({
   ): { sql: string; params: any[] } {
     const tableName = context.tableForKey(key, 'sorted_set');
     const selectColumns = facet === 'WITHSCORES' ? 'member, score' : 'member';
-
-    // Fast path: (0, -1) means "get all" — skip COUNT/ROW_NUMBER entirely
-    if (start === 0 && stop === -1) {
-      const sql = `
-        SELECT ${selectColumns}
-        FROM ${tableName}
-        WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
-        ORDER BY score ASC, member ASC;
-      `;
-      return { sql, params: [context.storageKey(key)] };
-    }
-
-    // General case: negative indices require COUNT for resolution
     const sql = `
       WITH total_entries AS (
         SELECT COUNT(*) - 1 AS max_index FROM ${tableName}
