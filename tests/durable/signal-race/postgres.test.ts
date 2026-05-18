@@ -12,7 +12,7 @@ import * as workflows from './src/workflows';
 
 const { Connection, Client, Worker } = Durable;
 
-const CONCURRENCY = 50;
+const CONCURRENCY = 100;
 
 describe('DURABLE | signal-race | Postgres', () => {
   let postgresClient: ProviderNativeClient;
@@ -71,14 +71,23 @@ describe('DURABLE | signal-race | Postgres', () => {
       }),
     ]);
 
+    const t0 = Date.now();
+    console.log(`[signal-race] All ${CONCURRENCY * 2} workflows launched. Waiting for results...`);
+
     const handles = await Promise.all(allPromises);
     const parentHandles = handles.filter(
       (_, i) => i % 2 === 0,
     ) as WorkflowHandleService[];
 
-    // Collect all parent results — they should all resolve with signal data
+    let doneCount = 0;
     const results = await Promise.all(
-      parentHandles.map((h) => h.result()),
+      parentHandles.map((h) => h.result().then((r) => {
+        doneCount++;
+        if (doneCount % 20 === 0 || doneCount === CONCURRENCY) {
+          console.log(`[signal-race] [${((Date.now() - t0) / 1000).toFixed(1)}s] Completed: ${doneCount}/${CONCURRENCY}`);
+        }
+        return r;
+      })),
     );
 
     const completed = results.filter((r) => r !== 'timed_out');

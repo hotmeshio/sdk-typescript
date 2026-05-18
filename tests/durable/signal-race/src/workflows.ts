@@ -8,7 +8,6 @@ export async function parent(id: string): Promise<string> {
   const signalId = `race-signal-${id}`;
   const result = await Durable.workflow.condition<{ value: string }>(
     signalId,
-    '30s',
   );
   if (result === false) return 'timed_out';
   return result.value;

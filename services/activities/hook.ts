@@ -12,7 +12,9 @@ import {
   StreamDataType,
   StreamStatus,
 } from '../../types/stream';
-import { guid } from '../../modules/utils';
+import { CollationError } from '../../modules/errors';
+import { CollationFaultType } from '../../types/collator';
+import { guid, sleepFor } from '../../modules/utils';
 
 import { Activity } from './activity';
 
@@ -337,9 +339,38 @@ class Hook extends Activity {
       this.context.metadata.jid = jobId;
       this.context.metadata.gid = gId;
       this.context.metadata.dad = dad;
-      await this.processEvent(status, code, 'hook');
-      if (code === 200) {
-        await taskService.deleteWebHookSignal(this.config.hook.topic, data);
+
+      // Inline retry for FORBIDDEN: Leg2 arrived in the window between
+      // setHookSignal (standalone) and Leg1 transaction.exec(). The 100B
+      // ledger digit is not yet visible. Leg1 needs only milliseconds to
+      // commit — retry here, inside the message processing loop, before
+      // consumeOne's finally block acks the message. Stream-level retry
+      // won't help: ENGINE consumers have no retry policy, so shouldRetry
+      // returns [false, 0] and the message is ack'd with no retry.
+      const MAX_FORBIDDEN_RETRIES = 5;
+      const FORBIDDEN_RETRY_DELAY_MS = 50;
+      for (let attempt = 0; attempt <= MAX_FORBIDDEN_RETRIES; attempt++) {
+        try {
+          await this.processEvent(status, code, 'hook');
+          if (code === 200) {
+            await taskService.deleteWebHookSignal(this.config.hook.topic, data);
+          }
+          return;
+        } catch (error) {
+          if (error instanceof CollationError &&
+              error.fault === CollationFaultType.FORBIDDEN &&
+              attempt < MAX_FORBIDDEN_RETRIES) {
+            this.logger.warn('hook-webhook-forbidden-inline-retry', {
+              attempt: attempt + 1,
+              maxAttempts: MAX_FORBIDDEN_RETRIES,
+              jid: this.context.metadata.jid,
+              aid: this.metadata.aid,
+            });
+            await sleepFor(FORBIDDEN_RETRY_DELAY_MS * (attempt + 1));
+            continue;
+          }
+          throw error;
+        }
       }
     }
   }
