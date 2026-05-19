@@ -26,6 +26,7 @@ export async function deploySchema(
     // First, check if tables already exist (no lock needed)
     const tablesExist = await checkIfTablesExist(client, schemaName);
     if (tablesExist) {
+      await ensureIndexes(client, schemaName);
       return;
     }
 
@@ -162,6 +163,54 @@ async function waitForTablesCreation(
 
   logger.error('stream-table-create-timeout', { schemaName });
   throw new Error('Timeout waiting for stream table creation');
+}
+
+/**
+ * Ensure correct indexes exist on existing databases. Drops stale
+ * PR #169 split indexes that can't serve the single-pass OR query,
+ * then creates the correct indexes via IF NOT EXISTS.
+ */
+async function ensureIndexes(
+  client: any,
+  schemaName: string,
+): Promise<void> {
+  const engineTable = `${schemaName}.engine_streams`;
+  const workerTable = `${schemaName}.worker_streams`;
+
+  // Drop PR #169 split indexes that cause seq scans with the OR query
+  for (const idx of [
+    'idx_engine_streams_dequeue',
+    'idx_engine_streams_stale_reservations',
+    'idx_worker_streams_dequeue',
+    'idx_worker_streams_stale_reservations',
+  ]) {
+    await client.query(`DROP INDEX IF EXISTS ${schemaName}.${idx}`);
+  }
+
+  // Ensure the correct indexes exist for the single-pass OR query:
+  //   (reserved_at IS NULL OR reserved_at < timeout) AND expired_at IS NULL
+  // The message_fetch index covers all non-expired messages regardless
+  // of reserved_at, letting the planner use an index scan + heap filter.
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_active_messages
+    ON ${engineTable} (stream_name, reserved_at, visible_at, id)
+    WHERE reserved_at IS NULL AND expired_at IS NULL;
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_message_fetch
+    ON ${engineTable} (stream_name, visible_at, id)
+    WHERE expired_at IS NULL;
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_active_messages
+    ON ${workerTable} (stream_name, reserved_at, visible_at, id)
+    WHERE reserved_at IS NULL AND expired_at IS NULL;
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
+    ON ${workerTable} (stream_name, visible_at, id)
+    WHERE expired_at IS NULL;
+  `);
 }
 
 async function createTables(
