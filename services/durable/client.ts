@@ -274,14 +274,30 @@ export class ClientService {
       namespace?: string,
       expire?: string,
     ): Promise<string> => {
-      const topic = `${namespace ?? APP_ID}.wfs.signal`;
-      return await (
-        await this.getHotMeshClient(topic, namespace)
-      ).signal(topic, {
+      const ns = namespace ?? APP_ID;
+      const payload = {
         id: signalId,
         data,
         ...(expire ? { $expire: expire } : {}),
-      });
+      };
+      //try inline waiter (v14+: single condition handled without collator)
+      try {
+        const waitTopic = `${ns}.wfs.wait`;
+        await (
+          await this.getHotMeshClient(waitTopic, namespace)
+        ).signal(waitTopic, payload);
+      } catch {
+        //no hook rule for wfs.wait (pre-v14 or Promise.all) — ignore
+      }
+      //also signal collator path (Promise.all or pre-v14 single conditions)
+      try {
+        const signalTopic = `${ns}.wfs.signal`;
+        return await (
+          await this.getHotMeshClient(signalTopic, namespace)
+        ).signal(signalTopic, payload);
+      } catch {
+        //no hook rule for wfs.signal — ignore
+      }
     },
 
     /**

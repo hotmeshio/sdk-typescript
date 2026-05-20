@@ -1,5 +1,6 @@
 import {
   HMSH_CODE_DURABLE_ALL,
+  HMSH_CODE_DURABLE_WAIT,
   HMSH_CODE_DURABLE_RETRYABLE,
   HMSH_CODE_DURABLE_TIMEOUT,
   HMSH_CODE_DURABLE_MAXED,
@@ -1030,12 +1031,35 @@ export class WorkerService {
           return;
         }
         if (
-          err instanceof DurableWaitForError ||
-          interruptionRegistry.length > 1
+          err instanceof DurableWaitForError &&
+          interruptionRegistry.length === 1
         ) {
+          //single condition() — handle inline, no collator needed
+          isProcessing = true;
+          const workflowInput = data.data as unknown as WorkflowDataType;
+          const execIndex = counter.counter;
+          const { workflowId, workflowDimension, originJobId } = workflowInput;
+          return withPatchMarkers({
+            status: StreamStatus.SUCCESS,
+            code: HMSH_CODE_DURABLE_WAIT,
+            metadata: { ...data.metadata },
+            data: {
+              code: HMSH_CODE_DURABLE_WAIT,
+              signalId: interruptionRegistry[0].signalId,
+              index: execIndex,
+              workflowDimension:
+                interruptionRegistry[0].workflowDimension ||
+                workflowDimension ||
+                '',
+              duration: interruptionRegistry[0].duration,
+              workflowId,
+              originJobId: originJobId || workflowId,
+            },
+          } as StreamDataResponse);
+        } else if (interruptionRegistry.length > 1) {
           isProcessing = true;
 
-          //NOTE: this type is spawned when `Promise.all` is used OR if the interruption is a `condition`
+          //NOTE: this type is spawned when `Promise.all` is used (multiple items to collate)
           const workflowInput = data.data as unknown as WorkflowDataType;
           const execIndex = counter.counter - interruptionRegistry.length + 1;
           const {

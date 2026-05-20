@@ -512,14 +512,15 @@ class Deployer {
       if (graph.hooks) {
         for (const topic in graph.hooks) {
           hookRules[topic] = graph.hooks[topic];
-          const activityId = graph.hooks[topic][0].to;
-          const targetActivity = graph.activities[activityId];
-          if (targetActivity) {
-            if (!targetActivity.hook) {
-              targetActivity.hook = {};
+          //create back-reference to the hook topic for ALL target activities
+          for (const rule of graph.hooks[topic]) {
+            const targetActivity = graph.activities[rule.to];
+            if (targetActivity) {
+              if (!targetActivity.hook) {
+                targetActivity.hook = {};
+              }
+              targetActivity.hook.topic = topic;
             }
-            //create back-reference to the hook topic
-            targetActivity.hook.topic = topic;
           }
         }
       }
