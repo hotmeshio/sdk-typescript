@@ -265,6 +265,13 @@ export const KVTables = (context: PostgresStoreService) => ({
                 expiry TIMESTAMP WITH TIME ZONE
               );
             `);
+            if (tableDef.name === 'signal_registry') {
+              await client.query(`
+                CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_expiry
+                  ON ${fullTableName} (expiry)
+                  WHERE expiry IS NOT NULL;
+              `);
+            }
             break;
 
           case 'hash':

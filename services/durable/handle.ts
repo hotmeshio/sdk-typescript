@@ -134,11 +134,29 @@ export class WorkflowHandleService {
     data: Record<any, any>,
     expire?: string,
   ): Promise<void> {
-    await this.hotMesh.signal(`${this.hotMesh.appId}.wfs.signal`, {
+    const payload = {
       id: signalId,
       data,
       ...(expire ? { $expire: expire } : {}),
-    });
+    };
+    //try inline waiter (v14+: single condition handled without collator)
+    try {
+      await this.hotMesh.signal(
+        `${this.hotMesh.appId}.wfs.wait`,
+        payload,
+      );
+    } catch {
+      //no hook rule for wfs.wait (pre-v14 or Promise.all) — ignore
+    }
+    //also signal collator path (Promise.all or pre-v14 single conditions)
+    try {
+      await this.hotMesh.signal(
+        `${this.hotMesh.appId}.wfs.signal`,
+        payload,
+      );
+    } catch {
+      //no hook rule for wfs.signal — ignore
+    }
   }
 
   /**

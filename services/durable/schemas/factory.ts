@@ -1,4 +1,4 @@
-const APP_VERSION = '13';
+const APP_VERSION = '14';
 const APP_ID = 'durable';
 
 /**
@@ -316,14 +316,22 @@ const getWorkflowYAML = (app: string, version: string): string => {
               schema:
                 type: object
                 properties:
+                  signalId:
+                    type: string
+                    description: the signal identifier to wait for
                   index:
                     type: number
-                    description: the index of the first signal in the array
-                  signal:
-                    type: object
-                    properties:
-                      signal:
-                        type: string
+                    description: the replay index (COUNTER++)
+                  workflowDimension:
+                    type: string
+                    description: empty string or dimensional path (,0,0,1)
+                  duration:
+                    type: number
+                    description: optional timeout in seconds
+                  workflowId:
+                    type: string
+                  originJobId:
+                    type: string
           job:
             maps:
               response: '{$self.output.data.response}'
@@ -347,6 +355,47 @@ const getWorkflowYAML = (app: string, version: string): string => {
 
         sleep_cycler:
           title: Cycles back to the cycle_hook pivot
+          type: cycle
+          ancestor: cycle_hook
+          input:
+            maps:
+              retryCount: 0
+              continueGeneration: '{cycle_hook.output.data.continueGeneration}'
+              continueArgs: '{cycle_hook.output.data.continueArgs}'
+
+        waiter:
+          title: Waits for a matching signal or optional timeout (single condition)
+          type: hook
+          sleep: '{worker.output.data.duration}'
+          hook:
+            type: object
+            properties:
+              signalData:
+                type: object
+          output:
+            maps:
+              signalId: '{worker.output.data.signalId}'
+          job:
+            maps:
+              idempotentcy-marker[-]:
+                '@pipe':
+                  - '@pipe':
+                    - ['-wait', '{worker.output.data.workflowDimension}', '-', '{worker.output.data.index}', '-']
+                    - ['{@string.concat}']
+                  - '@pipe':
+                    - '@pipe':
+                      - ['{$self.hook.data.id}']
+                    - '@pipe':
+                      - [type, wait, data, '{$self.hook.data}', ac, '{$job.metadata.jc}', au, '{$self.output.metadata.au}']
+                      - ['{@object.create}']
+                    - '@pipe':
+                      - [timedOut, true, ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
+                      - ['{@object.create}']
+                    - ['{@conditional.ternary}']
+                  - ['{@object.create}']
+
+        wait_cycler:
+          title: Cycles back to the cycle_hook after signal wait
           type: cycle
           ancestor: cycle_hook
           input:
@@ -1068,14 +1117,22 @@ const getWorkflowYAML = (app: string, version: string): string => {
               schema:
                 type: object
                 properties:
+                  signalId:
+                    type: string
+                    description: the signal identifier to wait for
                   index:
                     type: number
-                    description: the index of the first signal in the array
-                  signal:
-                    type: object
-                    properties:
-                      signal:
-                        type: string
+                    description: the replay index (COUNTER++)
+                  workflowDimension:
+                    type: string
+                    description: empty string or dimensional path (,0,0,1)
+                  duration:
+                    type: number
+                    description: optional timeout in seconds
+                  workflowId:
+                    type: string
+                  originJobId:
+                    type: string
 
         signaler_sleeper:
           title: Pauses a single thread within the worker for a set amount of seconds while the main flow thread and all other subthreads remain active
@@ -1095,6 +1152,45 @@ const getWorkflowYAML = (app: string, version: string): string => {
 
         signaler_sleep_cycler:
           title: Cycles back to the signaler_cycle_hook pivot
+          type: cycle
+          ancestor: signaler_cycle_hook
+          input:
+            maps:
+              retryCount: 0
+
+        signaler_waiter:
+          title: Waits for a matching signal or optional timeout (single condition in signal-in path)
+          type: hook
+          sleep: '{signaler_worker.output.data.duration}'
+          hook:
+            type: object
+            properties:
+              signalData:
+                type: object
+          output:
+            maps:
+              signalId: '{signaler_worker.output.data.signalId}'
+          job:
+            maps:
+              idempotentcy-marker[-]:
+                '@pipe':
+                  - '@pipe':
+                    - ['-wait', '{signaler_worker.output.data.workflowDimension}', '-', '{signaler_worker.output.data.index}', '-']
+                    - ['{@string.concat}']
+                  - '@pipe':
+                    - '@pipe':
+                      - ['{$self.hook.data.id}']
+                    - '@pipe':
+                      - [type, wait, data, '{$self.hook.data}', ac, '{$job.metadata.jc}', au, '{$self.output.metadata.au}']
+                      - ['{@object.create}']
+                    - '@pipe':
+                      - [timedOut, true, ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
+                      - ['{@object.create}']
+                    - ['{@conditional.ternary}']
+                  - ['{@object.create}']
+
+        signaler_wait_cycler:
+          title: Cycles back to signaler_cycle_hook after signal wait
           type: cycle
           ancestor: signaler_cycle_hook
           input:
@@ -1542,6 +1638,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
           - to: sleeper
             conditions:
               code: 588
+          - to: waiter
+            conditions:
+              code: 595
           - to: collator
             conditions:
               code: 589
@@ -1585,6 +1684,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
           - to: proxy_cycler
         sleeper:
           - to: sleep_cycler
+        waiter:
+          - to: wait_cycler
         ### SUBPROCESS TRANSITIONS (REENTRY) ###
         signaler:
           - to: signaler_cycle_hook
@@ -1596,6 +1697,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
           - to: signaler_sleeper
             conditions:
               code: 588
+          - to: signaler_waiter
+            conditions:
+              code: 595
           - to: signaler_collator
             conditions:
               code: 589
@@ -1623,6 +1727,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
           - to: signaler_proxy_cycler
         signaler_sleeper:
           - to: signaler_sleep_cycler
+        signaler_waiter:
+          - to: signaler_wait_cycler
 
       hooks:
         ${app}.flow.signal:
@@ -1631,7 +1737,17 @@ const getWorkflowYAML = (app: string, version: string): string => {
               match:
                 - expected: '{trigger.output.data.workflowId}'
                   actual: '{$self.hook.data.id}'
-
+        ${app}.wfs.wait:
+          - to: waiter
+            conditions:
+              match:
+                - expected: '{worker.output.data.signalId}'
+                  actual: '{$self.hook.data.id}'
+          - to: signaler_waiter
+            conditions:
+              match:
+                - expected: '{signaler_worker.output.data.signalId}'
+                  actual: '{$self.hook.data.id}'
 
 
     ###################################################
