@@ -7,7 +7,6 @@ import {
 } from '../../types/exporter';
 import { JobInterruptOptions, JobOutput } from '../../types/job';
 import { StreamError } from '../../types/stream';
-
 import { ExporterService } from './exporter';
 
 /**
@@ -139,23 +138,23 @@ export class WorkflowHandleService {
       data,
       ...(expire ? { $expire: expire } : {}),
     };
-    //try inline waiter (v14+: single condition handled without collator)
-    try {
-      await this.hotMesh.signal(
-        `${this.hotMesh.appId}.wfs.wait`,
-        payload,
-      );
-    } catch {
-      //no hook rule for wfs.wait (pre-v14 or Promise.all) — ignore
-    }
-    //also signal collator path (Promise.all or pre-v14 single conditions)
+    //send collator topic first (creates pending if no collator),
+    //then inline waiter topic (delivers and cleans up collator pending)
     try {
       await this.hotMesh.signal(
         `${this.hotMesh.appId}.wfs.signal`,
         payload,
       );
     } catch {
-      //no hook rule for wfs.signal — ignore
+      //no hook rule — ignore
+    }
+    try {
+      await this.hotMesh.signal(
+        `${this.hotMesh.appId}.wfs.wait`,
+        payload,
+      );
+    } catch {
+      //no hook rule — ignore
     }
   }
 
