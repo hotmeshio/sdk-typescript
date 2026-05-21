@@ -1063,49 +1063,56 @@ class PostgresStoreService extends StoreService<
     const delay = Math.max(hook.expire, HMSH_SIGNAL_EXPIRE);
 
     if (transaction) {
-      await this.kvsql(transaction).setnxex(fullKey, jobId, delay);
-      return { success: true };
-    }
-
-    const kv = this.kvsql();
-    const tableName = kv.tableForKey(fullKey);
-    const storedKey = kv.storageKey(fullKey);
-
-    //acquire per-key advisory lock (session-level) to serialize
-    //with concurrent getHookSignal for the same signal key
-    await this.pgClient.query(
-      'SELECT pg_advisory_lock(901, hashtext($1))',
-      [storedKey],
-    );
-    try {
-      //read existing value under lock
-      const readRes = await this.pgClient.query(
-        `SELECT value FROM ${tableName}
-         WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())`,
-        [storedKey],
-      );
-
-      let pendingData: string | undefined;
-      if (readRes.rows.length > 0) {
-        const existing = readRes.rows[0].value;
-        if (existing?.startsWith('$pending::')) {
-          pendingData = existing.slice('$pending::'.length);
-        } else {
-          //hook already set (retry) — no change needed
-          return { success: false };
-        }
-      }
-
-      //insert hook value (or overwrite pending)
-      await this.pgClient.query(
+      //in-transaction: unconditional upsert (overwrites $pending)
+      const kv = this.kvsql();
+      const tableName = kv.tableForKey(fullKey);
+      const storedKey = kv.storageKey(fullKey);
+      (transaction as any).addCommand(
         `INSERT INTO ${tableName} (key, value, expiry)
          VALUES ($1, $2, NOW() + INTERVAL '${delay} seconds')
          ON CONFLICT (key) DO UPDATE
            SET value = EXCLUDED.value, expiry = EXCLUDED.expiry`,
         [storedKey, jobId],
+        'boolean',
+      );
+      return { success: true };
+    }
+
+    //standalone: atomic CTE — read prior value + upsert in one statement.
+    //eliminates the advisory lock TOCTOU race (reentrant on same session).
+    const kv = this.kvsql();
+    const tableName = kv.tableForKey(fullKey);
+    const storedKey = kv.storageKey(fullKey);
+
+    try {
+      const result = await this.pgClient.query(
+        `WITH prior AS (
+          SELECT value FROM ${tableName}
+          WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
+        )
+        INSERT INTO ${tableName} (key, value, expiry)
+        VALUES ($1, $2, NOW() + INTERVAL '${delay} seconds')
+        ON CONFLICT (key) DO UPDATE
+          SET value = EXCLUDED.value, expiry = EXCLUDED.expiry
+        RETURNING (SELECT value FROM prior) as prior_value`,
+        [storedKey, jobId],
       );
 
-      return { success: true, pendingData };
+      const priorValue = result.rows[0]?.prior_value;
+      if (priorValue?.startsWith('$pending::')) {
+        this.logger.debug('hook-signal-pending-consumed', {
+          key: signalKey,
+        });
+        return {
+          success: true,
+          pendingData: priorValue.slice('$pending::'.length),
+        };
+      }
+      if (priorValue && !priorValue.startsWith('$pending::')) {
+        //hook already set by a previous Leg1 (idempotent)
+        return { success: false };
+      }
+      return { success: true };
     } catch (error: any) {
       if (
         error?.message?.includes('closed') ||
@@ -1114,15 +1121,6 @@ class PostgresStoreService extends StoreService<
         return { success: false };
       }
       throw error;
-    } finally {
-      try {
-        await this.pgClient.query(
-          'SELECT pg_advisory_unlock(901, hashtext($1))',
-          [storedKey],
-        );
-      } catch {
-        //lock auto-releases on session close
-      }
     }
   }
 
@@ -1158,43 +1156,45 @@ class PostgresStoreService extends StoreService<
       return value;
     }
 
+    //atomic CTE: check for hook, store $pending if not found.
+    //eliminates the advisory lock TOCTOU race (reentrant on same session).
     const kv = this.kvsql();
     const tableName = kv.tableForKey(fullKey);
     const storedKey = kv.storageKey(fullKey);
     const expire = pendingExpire || HMSH_PENDING_SIGNAL_EXPIRE;
     const pendingValue = `$pending::${pendingData}`;
 
-    //acquire per-key advisory lock (session-level) to serialize
-    //with concurrent setHookSignal for the same signal key
-    await this.pgClient.query(
-      'SELECT pg_advisory_lock(901, hashtext($1))',
-      [storedKey],
-    );
     try {
-      //read existing value under lock
-      const readRes = await this.pgClient.query(
-        `SELECT value FROM ${tableName}
-         WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())`,
-        [storedKey],
-      );
-
-      if (readRes.rows.length > 0) {
-        const value = readRes.rows[0].value;
-        if (value && !value.startsWith('$pending::')) {
-          //hook found — return it
-          return value;
-        }
-      }
-
-      //no hook signal — store pending
-      await this.pgClient.query(
-        `INSERT INTO ${tableName} (key, value, expiry)
-         VALUES ($1, $2, NOW() + INTERVAL '${expire} seconds')
-         ON CONFLICT (key) DO UPDATE
-           SET value = EXCLUDED.value, expiry = EXCLUDED.expiry`,
+      const result = await this.pgClient.query(
+        `WITH prior AS (
+          SELECT value FROM ${tableName}
+          WHERE key = $1 AND (expiry IS NULL OR expiry > NOW())
+        )
+        INSERT INTO ${tableName} (key, value, expiry)
+        VALUES ($1, $2, NOW() + INTERVAL '${expire} seconds')
+        ON CONFLICT (key) DO UPDATE
+          SET value = CASE
+            WHEN ${tableName}.value LIKE '$pending::%' THEN EXCLUDED.value
+            ELSE ${tableName}.value
+          END,
+          expiry = CASE
+            WHEN ${tableName}.value LIKE '$pending::%' THEN EXCLUDED.expiry
+            ELSE ${tableName}.expiry
+          END
+        RETURNING (SELECT value FROM prior) as prior_value`,
         [storedKey, pendingValue],
       );
 
+      const priorValue = result.rows[0]?.prior_value;
+      if (priorValue && !priorValue.startsWith('$pending::')) {
+        //hook found — return the composite job key
+        return priorValue;
+      }
+      //no hook — $pending was stored (or updated existing pending)
+      this.logger.debug('hook-signal-pending-stored', {
+        topic,
+        resolved,
+      });
       return undefined;
     } catch (error: any) {
       if (
@@ -1204,15 +1204,6 @@ class PostgresStoreService extends StoreService<
         return undefined;
       }
       throw error;
-    } finally {
-      try {
-        await this.pgClient.query(
-          'SELECT pg_advisory_unlock(901, hashtext($1))',
-          [storedKey],
-        );
-      } catch {
-        //lock auto-releases on session close
-      }
     }
   }
 
