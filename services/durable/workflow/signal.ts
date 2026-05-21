@@ -77,20 +77,17 @@ export async function signal(
       data,
       ...(expire ? { $expire: expire } : {}),
     };
-    //try inline waiter (v14+: single condition handled without collator)
+    //send collator topic first (creates pending if no collator),
+    //then inline waiter topic (delivers and cleans up collator pending)
     try {
-      await hotMeshClient.signal(`${namespace}.wfs.wait`, payload);
+      await hotMeshClient.signal(`${namespace}.wfs.signal`, payload);
     } catch {
-      //no hook rule for wfs.wait (pre-v14 or Promise.all) — ignore
+      //no hook rule — ignore
     }
-    //also signal collator path (Promise.all or pre-v14 single conditions)
     try {
-      return await hotMeshClient.signal(
-        `${namespace}.wfs.signal`,
-        payload,
-      );
+      return await hotMeshClient.signal(`${namespace}.wfs.wait`, payload);
     } catch {
-      //no hook rule for wfs.signal — ignore
+      //no hook rule — ignore
     }
   }
 }

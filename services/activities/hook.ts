@@ -422,6 +422,22 @@ class Hook extends Activity {
           await this.processEvent(status, code, 'hook');
           if (code === 200) {
             await taskService.deleteWebHookSignal(this.config.hook.topic, data);
+            //clean up orphan pending on the sibling signal topic
+            //  wfs.wait delivered → remove wfs.signal pending
+            //  wfs.signal delivered → remove wfs.wait pending
+            const topic = this.config.hook.topic;
+            const siblingTopic = topic.includes('.wfs.wait')
+              ? topic.replace('.wfs.wait', '.wfs.signal')
+              : topic.includes('.wfs.signal')
+                ? topic.replace('.wfs.signal', '.wfs.wait')
+                : null;
+            if (siblingTopic) {
+              try {
+                await taskService.deleteWebHookSignal(siblingTopic, data);
+              } catch {
+                //sibling entry may not exist — ignore
+              }
+            }
           }
           return;
         } catch (error) {

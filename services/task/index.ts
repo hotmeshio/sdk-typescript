@@ -192,6 +192,7 @@ class TaskService {
     return rules?.[topic]?.[0] as HookRule;
   }
 
+
   async registerWebHook(
     topic: string,
     context: JobState,

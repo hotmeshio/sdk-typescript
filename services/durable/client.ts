@@ -280,23 +280,23 @@ export class ClientService {
         data,
         ...(expire ? { $expire: expire } : {}),
       };
-      //try inline waiter (v14+: single condition handled without collator)
-      try {
-        const waitTopic = `${ns}.wfs.wait`;
-        await (
-          await this.getHotMeshClient(waitTopic, namespace)
-        ).signal(waitTopic, payload);
-      } catch {
-        //no hook rule for wfs.wait (pre-v14 or Promise.all) — ignore
-      }
-      //also signal collator path (Promise.all or pre-v14 single conditions)
+      //send collator topic first (creates pending if no collator),
+      //then inline waiter topic (delivers and cleans up collator pending)
       try {
         const signalTopic = `${ns}.wfs.signal`;
-        return await (
+        await (
           await this.getHotMeshClient(signalTopic, namespace)
         ).signal(signalTopic, payload);
       } catch {
-        //no hook rule for wfs.signal — ignore
+        //no hook rule — ignore
+      }
+      try {
+        const waitTopic = `${ns}.wfs.wait`;
+        return await (
+          await this.getHotMeshClient(waitTopic, namespace)
+        ).signal(waitTopic, payload);
+      } catch {
+        //no hook rule — ignore
       }
     },
 
