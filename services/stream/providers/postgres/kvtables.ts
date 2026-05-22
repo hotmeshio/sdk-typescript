@@ -177,38 +177,39 @@ async function ensureIndexes(
   const engineTable = `${schemaName}.engine_streams`;
   const workerTable = `${schemaName}.worker_streams`;
 
-  // Drop PR #169 split indexes that cause seq scans with the OR query
+  // Drop legacy indexes that don't include the priority column
   for (const idx of [
     'idx_engine_streams_dequeue',
     'idx_engine_streams_stale_reservations',
     'idx_worker_streams_dequeue',
     'idx_worker_streams_stale_reservations',
+    'idx_engine_streams_active_messages',
+    'idx_engine_streams_message_fetch',
+    'idx_worker_streams_active_messages',
+    'idx_worker_streams_message_fetch',
   ]) {
     await client.query(`DROP INDEX IF EXISTS ${schemaName}.${idx}`);
   }
 
-  // Ensure the correct indexes exist for the single-pass OR query:
-  //   (reserved_at IS NULL OR reserved_at < timeout) AND expired_at IS NULL
-  // The message_fetch index covers all non-expired messages regardless
-  // of reserved_at, letting the planner use an index scan + heap filter.
+  // Recreate with priority-aware ordering for priority DESC, id ASC dequeue
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_engine_streams_active_messages
-    ON ${engineTable} (stream_name, reserved_at, visible_at, id)
+    ON ${engineTable} (stream_name, priority DESC, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_engine_streams_message_fetch
-    ON ${engineTable} (stream_name, visible_at, id)
+    ON ${engineTable} (stream_name, priority DESC, visible_at, id)
     WHERE expired_at IS NULL;
   `);
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_worker_streams_active_messages
-    ON ${workerTable} (stream_name, reserved_at, visible_at, id)
+    ON ${workerTable} (stream_name, priority DESC, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
-    ON ${workerTable} (stream_name, visible_at, id)
+    ON ${workerTable} (stream_name, priority DESC, visible_at, id)
     WHERE expired_at IS NULL;
   `);
 }
@@ -236,6 +237,7 @@ async function createTables(
       maximum_interval_seconds INT DEFAULT 120,
       visible_at TIMESTAMPTZ DEFAULT NOW(),
       retry_attempt INT DEFAULT 0,
+      priority INT NOT NULL DEFAULT 0,
       PRIMARY KEY (stream_name, id)
     ) PARTITION BY HASH (stream_name);
   `);
@@ -250,13 +252,13 @@ async function createTables(
 
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_engine_streams_active_messages
-    ON ${engineTable} (stream_name, reserved_at, visible_at, id)
+    ON ${engineTable} (stream_name, priority DESC, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
 
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_engine_streams_message_fetch
-    ON ${engineTable} (stream_name, visible_at, id)
+    ON ${engineTable} (stream_name, priority DESC, visible_at, id)
     WHERE expired_at IS NULL;
   `);
 
@@ -283,14 +285,6 @@ async function createTables(
     WHERE dead_lettered_at IS NOT NULL;
   `);
 
-  // Migration: add dead_lettered_at column to existing tables
-  await client.query(`
-    DO $$ BEGIN
-      ALTER TABLE ${engineTable} ADD COLUMN IF NOT EXISTS dead_lettered_at TIMESTAMPTZ;
-    EXCEPTION WHEN duplicate_column THEN NULL;
-    END $$;
-  `);
-
   // ---- WORKER_STREAMS table ----
   const workerTable = `${schemaName}.worker_streams`;
   await client.query(`
@@ -314,6 +308,7 @@ async function createTables(
       maximum_interval_seconds INT DEFAULT 120,
       visible_at TIMESTAMPTZ DEFAULT NOW(),
       retry_attempt INT DEFAULT 0,
+      priority INT NOT NULL DEFAULT 0,
       PRIMARY KEY (stream_name, id)
     ) PARTITION BY HASH (stream_name);
   `);
@@ -328,13 +323,13 @@ async function createTables(
 
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_worker_streams_active_messages
-    ON ${workerTable} (stream_name, reserved_at, visible_at, id)
+    ON ${workerTable} (stream_name, priority DESC, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
 
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
-    ON ${workerTable} (stream_name, visible_at, id)
+    ON ${workerTable} (stream_name, priority DESC, visible_at, id)
     WHERE expired_at IS NULL;
   `);
 
@@ -360,26 +355,6 @@ async function createTables(
     ON ${workerTable} (dead_lettered_at, stream_name)
     WHERE dead_lettered_at IS NOT NULL;
   `);
-
-  // Migration: add dead_lettered_at column to existing tables
-  await client.query(`
-    DO $$ BEGIN
-      ALTER TABLE ${workerTable} ADD COLUMN IF NOT EXISTS dead_lettered_at TIMESTAMPTZ;
-    EXCEPTION WHEN duplicate_column THEN NULL;
-    END $$;
-  `);
-
-  // ---- Export fidelity columns and indexes ----
-  // These columns surface stream message metadata for efficient job history queries.
-  // Migration: add columns to existing tables (no-op on fresh installs)
-  for (const col of ['jid', 'aid', 'dad', 'msg_type', 'topic']) {
-    await client.query(`
-      DO $$ BEGIN
-        ALTER TABLE ${workerTable} ADD COLUMN IF NOT EXISTS ${col} TEXT NOT NULL DEFAULT '';
-      EXCEPTION WHEN duplicate_column THEN NULL;
-      END $$;
-    `);
-  }
 
   // All messages for a job, ordered by time
   await client.query(`

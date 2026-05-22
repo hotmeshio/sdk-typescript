@@ -63,7 +63,7 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
           AND (ws2.reserved_at IS NULL OR ws2.reserved_at < NOW() - (p_reservation_timeout_sec || ' seconds')::INTERVAL)
           AND ws2.expired_at IS NULL
           AND ws2.visible_at <= NOW()
-        ORDER BY ws2.id
+        ORDER BY ws2.priority DESC, ws2.id
         LIMIT p_batch_size
         FOR UPDATE SKIP LOCKED
       )
@@ -126,7 +126,8 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
       p_backoff_coefficient NUMERIC DEFAULT NULL,
       p_maximum_interval_seconds INT DEFAULT NULL,
       p_visible_at TIMESTAMPTZ DEFAULT NOW(),
-      p_retry_attempt INT DEFAULT 0
+      p_retry_attempt INT DEFAULT 0,
+      p_priority INT DEFAULT 0
     )
     RETURNS BIGINT
     LANGUAGE plpgsql SECURITY DEFINER
@@ -147,15 +148,15 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
 
       IF p_max_retry_attempts IS NOT NULL THEN
         INSERT INTO ${engineTable}
-          (stream_name, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)
+          (stream_name, message, priority, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)
         VALUES
-          (engine_stream_name, p_message, p_max_retry_attempts, p_backoff_coefficient, p_maximum_interval_seconds, p_visible_at, p_retry_attempt)
+          (engine_stream_name, p_message, p_priority, p_max_retry_attempts, p_backoff_coefficient, p_maximum_interval_seconds, p_visible_at, p_retry_attempt)
         RETURNING id INTO new_id;
       ELSE
         INSERT INTO ${engineTable}
-          (stream_name, message, visible_at, retry_attempt)
+          (stream_name, message, priority, visible_at, retry_attempt)
         VALUES
-          (engine_stream_name, p_message, p_visible_at, p_retry_attempt)
+          (engine_stream_name, p_message, p_priority, p_visible_at, p_retry_attempt)
         RETURNING id INTO new_id;
       END IF;
 

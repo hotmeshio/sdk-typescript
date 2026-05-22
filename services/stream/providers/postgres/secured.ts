@@ -13,6 +13,7 @@ import { parseStreamMessage } from '../../../../modules/utils';
 import { PostgresClientType } from '../../../../types/postgres';
 import { ProviderClient } from '../../../../types/provider';
 import { StreamMessage } from '../../../../types/stream';
+import { getMessagePriority } from './messages';
 
 /**
  * Dequeue messages from worker_streams via stored procedure.
@@ -188,8 +189,10 @@ export async function publishMessagesSecured(
       const hasRetryConfig =
         retryConfig && 'max_retry_attempts' in retryConfig;
 
+      const priority = getMessagePriority(data.type);
+
       const res = await client.query(
-        `SELECT ${schema}.worker_respond($1, $2, $3, $4, $5, $6, $7)`,
+        `SELECT ${schema}.worker_respond($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           streamName,
           cleanMessage,
@@ -198,6 +201,7 @@ export async function publishMessagesSecured(
           hasRetryConfig ? retryConfig.maximum_interval_seconds : null,
           visibleAt,
           retryAttempt,
+          priority,
         ],
       );
       ids.push(res.rows[0]?.worker_respond?.toString() ?? '0');

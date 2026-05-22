@@ -87,7 +87,7 @@ export async function provisionWorkerRole(
     `${safeSchema}.worker_dequeue(TEXT, INT, TEXT, INT)`,
     `${safeSchema}.worker_ack(TEXT, BIGINT[])`,
     `${safeSchema}.worker_dead_letter(TEXT, BIGINT[])`,
-    `${safeSchema}.worker_respond(TEXT, TEXT, INT, NUMERIC, INT, TIMESTAMPTZ, INT)`,
+    `${safeSchema}.worker_respond(TEXT, TEXT, INT, NUMERIC, INT, TIMESTAMPTZ, INT, INT)`,
     `${safeSchema}.worker_listen(TEXT)`,
     `${safeSchema}.worker_unlisten(TEXT)`,
   ];
