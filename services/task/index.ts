@@ -114,8 +114,10 @@ class TaskService {
   }
 
   /**
-   * Callback handler that takes an item from a work list and
-   * processes according to its type
+   * Callback handler that processes expired time hooks.
+   * Sleep types are handled server-side (TIMEHOOK inserted into
+   * engine_streams transactionally). Non-sleep types (expire,
+   * interrupt, delist) are returned for the caller to dispatch.
    */
   async processTimeHooks(
     timeEventCallback: (
@@ -124,37 +126,34 @@ class TaskService {
       activityId: string,
       type: WorkListTaskType,
     ) => Promise<void>,
-    listKey?: string,
   ): Promise<void> {
     if (await this.shouldScout()) {
       try {
-        const workListTask = await this.store.getNextTask(listKey);
+        const workListTask = await this.store.getNextTask();
 
         if (Array.isArray(workListTask)) {
-          const [listKey, target, gId, activityId, type] = workListTask;
+          const [, target, gId, activityId, type] = workListTask;
           if (type === 'child') {
-            //continue; this child is listed here for convenience, but
-            //  will be expired by an origin ancestor and is listed there
+            //skip; handled by ancestor
           } else if (type === 'delist') {
-            //delist the signalKey (target)
             const key = this.store.mintKey(KeyType.SIGNALS, {
               appId: this.store.appId,
             });
             await this.store.delistSignalKey(key, target);
           } else {
-            //awaken/expire/interrupt
+            //expire/interrupt
             await timeEventCallback(target, gId, activityId, type);
           }
           await sleepFor(0);
           this.errorCount = 0;
-          this.processTimeHooks(timeEventCallback, listKey);
+          this.processTimeHooks(timeEventCallback);
         } else if (workListTask) {
-          //a worklist was just emptied; try again immediately
+          //sleep handled server-side; continue draining
           await sleepFor(0);
           this.errorCount = 0;
           this.processTimeHooks(timeEventCallback);
         } else {
-          //no worklists exist; sleep before checking
+          //no tasks; sleep before checking
           const sleep = XSleepFor(HMSH_FIDELITY_SECONDS * 1000);
           this.cleanupTimeout = sleep.timerId;
           await sleep.promise;
@@ -162,7 +161,6 @@ class TaskService {
           this.processTimeHooks(timeEventCallback);
         }
       } catch (err) {
-        //most common reasons: deleted job not found; container stopping; test stopping
         this.logger.warn('task-process-timehooks-error', err);
         await sleepFor(1_000 * this.errorCount++);
         if (this.errorCount < 5) {

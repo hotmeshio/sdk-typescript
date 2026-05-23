@@ -530,6 +530,99 @@ export const KVTables = (context: PostgresStoreService) => ({
             `);
             break;
 
+          case 'time_hooks':
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${fullTableName} (
+                id BIGSERIAL PRIMARY KEY,
+                type TEXT NOT NULL,
+                job_id TEXT NOT NULL,
+                graph_id TEXT NOT NULL,
+                activity_id TEXT NOT NULL,
+                dad TEXT NOT NULL DEFAULT '',
+                score DOUBLE PRECISION NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+              );
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_score
+              ON ${fullTableName} (score);
+            `);
+            // Server-side function: atomically pop expired hook + insert TIMEHOOK into engine_streams
+            await client.query(`
+              CREATE OR REPLACE FUNCTION ${tableDef.schema}.process_next_time_hook(
+                p_now_ms DOUBLE PRECISION,
+                p_stream_name TEXT,
+                p_guid TEXT
+              )
+              RETURNS TABLE (
+                hook_id BIGINT,
+                hook_type TEXT,
+                hook_job_id TEXT,
+                hook_graph_id TEXT,
+                hook_activity_id TEXT,
+                hook_dad TEXT,
+                hook_score DOUBLE PRECISION,
+                handled_by_db BOOLEAN
+              ) AS $$
+              DECLARE
+                v_row RECORD;
+                v_aid TEXT;
+                v_dad TEXT;
+                v_parts TEXT[];
+                v_message TEXT;
+              BEGIN
+                DELETE FROM ${fullTableName}
+                WHERE id = (
+                  SELECT ts.id
+                  FROM ${fullTableName} ts
+                  WHERE ts.score <= p_now_ms
+                  ORDER BY ts.score ASC, ts.id ASC
+                  FOR UPDATE SKIP LOCKED
+                  LIMIT 1
+                )
+                RETURNING * INTO v_row;
+
+                IF v_row IS NULL THEN
+                  RETURN;
+                END IF;
+
+                IF v_row.type = 'sleep' THEN
+                  v_parts := string_to_array(v_row.activity_id, ',');
+                  v_aid := v_parts[1];
+                  IF array_length(v_parts, 1) > 1 THEN
+                    v_dad := ',' || array_to_string(v_parts[2:], ',');
+                  ELSE
+                    v_dad := v_row.dad;
+                  END IF;
+
+                  v_message := json_build_object(
+                    'type', 'timehook',
+                    'metadata', json_build_object(
+                      'guid', p_guid,
+                      'jid', v_row.job_id,
+                      'gid', v_row.graph_id,
+                      'dad', v_dad,
+                      'aid', v_aid
+                    ),
+                    'data', json_build_object('timestamp', extract(epoch from now()) * 1000)
+                  )::text;
+
+                  INSERT INTO ${tableDef.schema}.engine_streams
+                    (stream_name, message, priority)
+                  VALUES
+                    (p_stream_name, v_message, 5);
+
+                  RETURN QUERY SELECT v_row.id, v_row.type, v_row.job_id, v_row.graph_id,
+                                      v_row.activity_id, v_row.dad, v_row.score, true;
+                ELSE
+                  RETURN QUERY SELECT v_row.id, v_row.type, v_row.job_id, v_row.graph_id,
+                                      v_row.activity_id, v_row.dad, v_row.score, false;
+                END IF;
+              END;
+              $$ LANGUAGE plpgsql;
+            `);
+            break;
+
           default:
             context.logger.warn(`Unknown table type for ${tableDef.name}`);
             break;
@@ -609,7 +702,7 @@ export const KVTables = (context: PostgresStoreService) => ({
       {
         schema: schemaName,
         name: 'task_schedules',
-        type: 'sorted_set',
+        type: 'time_hooks',
       },
       {
         schema: schemaName,

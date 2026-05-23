@@ -7,6 +7,7 @@ import {
   VALSEP,
   TYPSEP,
 } from '../../../../modules/key';
+import { guid } from '../../../../modules/utils';
 import { ILogger } from '../../../logger';
 import {
   MDATA_SYMBOLS,
@@ -1298,10 +1299,9 @@ class PostgresStoreService extends StoreService<
   }
 
   /**
-   * registers a hook activity to be awakened (uses ZSET to
-   * store the 'sleep group' and LIST to store the events
-   * for the given sleep group. Sleep groups are
-   * organized into 'n'-second blocks (LISTS))
+   * Register a time hook (sleep, expire, interrupt, etc.) as a single
+   * row in task_schedules. The server-side process_next_time_hook
+   * function handles transactional processing when the timer fires.
    */
   async registerTimeHook(
     jobId: string,
@@ -1312,22 +1312,21 @@ class PostgresStoreService extends StoreService<
     dad: string,
     transaction?: ProviderTransaction,
   ): Promise<void> {
-    const listKey = this.mintKey(KeyType.TIME_RANGE, {
-      appId: this.appId,
-      timeValue: deletionTime,
-    });
-    //register the task in the LIST
-    const timeEvent = [type, activityId, gId, dad, jobId].join(VALSEP);
-    const len = await this.kvsql(transaction).rpush(listKey, timeEvent);
-    //register the LIST in the ZSET
-    if (transaction || len === 1) {
-      const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
-      await this.zAdd(zsetKey, deletionTime.toString(), listKey, transaction);
+    const schemaName = this.kvsql().safeName(this.appId);
+    const sql = `INSERT INTO ${schemaName}.task_schedules
+      (type, job_id, graph_id, activity_id, dad, score)
+      VALUES ($1, $2, $3, $4, $5, $6)`;
+    const params = [type, jobId, gId, activityId, dad, deletionTime];
+
+    if (transaction && typeof (transaction as any).addCommand === 'function') {
+      (transaction as any).addCommand(sql, params);
+    } else {
+      await this.pgClient.query(sql, params);
     }
   }
 
   async getNextTask(
-    listKey?: string,
+    _listKey?: string,
   ): Promise<
     | [
         listKey: string,
@@ -1338,47 +1337,28 @@ class PostgresStoreService extends StoreService<
       ]
     | boolean
   > {
-    const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
-    listKey = listKey || await this.zRangeByScore(zsetKey, 0, Date.now());
-    if (listKey) {
-      let [pType, pKey] = this.resolveTaskKeyContext(listKey);
-      const timeEvent = await this.kvsql().lpop(pKey);
-      if (timeEvent) {
-        //deconstruct composite key
-        let [type, activityId, gId, _pd, ...jobId] = timeEvent.split(VALSEP);
-        const jid = jobId.join(VALSEP);
+    const schemaName = this.kvsql().safeName(this.appId);
+    const result = await this.pgClient.query(
+      `SELECT * FROM ${schemaName}.process_next_time_hook($1, $2, $3)`,
+      [Date.now(), this.appId, guid()],
+    );
 
-        if (type === 'delist') {
-          pType = 'delist';
-        } else if (type === 'child') {
-          pType = 'child';
-        } else if (type === 'expire-child') {
-          type = 'expire';
-        }
-        return [listKey, jid, gId, activityId, pType];
-      }
-      await this.kvsql().zrem(zsetKey, listKey);
+    if (result.rows.length === 0) {
+      return false;
+    }
+
+    const row = result.rows[0];
+    if (row.handled_by_db) {
+      //sleep was handled server-side (TIMEHOOK inserted into engine_streams)
       return true;
     }
-    return false;
-  }
 
-  /**
-   * when processing time jobs, the target LIST ID returned
-   * from the ZSET query can be prefixed to denote what to
-   * do with the work list. (not everything is known in advance,
-   * so the ZSET key defines HOW to approach the work in the
-   * generic LIST (lists typically contain target job ids)
-   * @param {string} listKey - composite key
-   */
-  resolveTaskKeyContext(listKey: string): [WorkListTaskType, string] {
-    if (listKey.startsWith(`${TYPSEP}INTERRUPT`)) {
-      return ['interrupt', listKey.split(TYPSEP)[2]];
-    } else if (listKey.startsWith(`${TYPSEP}EXPIRE`)) {
-      return ['expire', listKey.split(TYPSEP)[2]];
-    } else {
-      return ['sleep', listKey];
+    //non-sleep types: return data for the caller to dispatch
+    let type = row.hook_type as WorkListTaskType;
+    if (type === 'expire-child') {
+      type = 'expire';
     }
+    return ['', row.hook_job_id, row.hook_graph_id, row.hook_activity_id, type];
   }
 
   /**
@@ -1748,7 +1728,7 @@ class PostgresStoreService extends StoreService<
       const workListTask = await this.getNextTask();
 
       if (Array.isArray(workListTask)) {
-        const [listKey, target, gId, activityId, type] = workListTask;
+        const [, target, gId, activityId, type] = workListTask;
 
         if (type === 'child') {
           // Skip child tasks - they're handled by ancestors
@@ -1761,7 +1741,7 @@ class PostgresStoreService extends StoreService<
           await timeEventCallback(target, gId, activityId, type);
         }
       } else if (workListTask === true) {
-        // A worklist was emptied, continue processing
+        // Sleep handled server-side, continue draining
         continue;
       } else {
         // No more tasks ready
@@ -1826,19 +1806,16 @@ class PostgresStoreService extends StoreService<
    */
   private async getNextAwakeningTime(): Promise<number | null> {
     const schemaName = this.kvsql().safeName(this.appId);
-    const appKey = '';
 
     try {
       const result = await this.pgClient.query(
-        `SELECT ${schemaName}.get_next_awakening_time($1) as next_time`,
-        [appKey],
+        `SELECT score FROM ${schemaName}.task_schedules
+         WHERE score > $1
+         ORDER BY score ASC LIMIT 1`,
+        [Date.now()],
       );
 
-      if (result.rows[0]?.next_time) {
-        return new Date(result.rows[0].next_time).getTime();
-      }
-
-      return null;
+      return result.rows[0]?.score ?? null;
     } catch (error) {
       this.logger.error('postgres-get-next-awakening-error', { error });
       return null;

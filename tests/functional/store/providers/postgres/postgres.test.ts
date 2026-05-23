@@ -480,8 +480,7 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
   });
 
   describe('Time Triggers', () => {
-    it('should register job activities for sleep/awake events', async () => {
-      // Register jobs to be awakened/triggered
+    it('should register time hooks as rows in task_schedules', async () => {
       const jobId1 = 'job-id-1';
       const jobId2 = 'job-id-2';
       const gId1 = 'gid-1';
@@ -490,65 +489,43 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
       const dad2 = ',0,2';
       const activityId = 'activity-id';
       const awakenTime = Date.now();
-      const type = 'sleep';
+
       await postgresStoreService.registerTimeHook(
-        jobId1,
-        gId1,
-        activityId,
-        type,
-        awakenTime,
-        dad1,
+        jobId1, gId1, activityId, 'sleep', awakenTime, dad1,
       );
       await postgresStoreService.registerTimeHook(
-        jobId2,
-        gId2,
-        activityId,
-        type,
-        awakenTime,
-        dad2,
+        jobId2, gId2, activityId, 'sleep', awakenTime, dad2,
       );
 
-      // Check that the jobs were added to the correct list
-      const listKey = postgresStoreService.mintKey(KeyType.TIME_RANGE, {
-        appId: appConfig.id,
-        timeValue: awakenTime,
-      });
+      // Verify rows were inserted directly
+      const schemaName = (postgresStoreService as any).kvsql().safeName(appConfig.id);
+      const rows = await postgresClient.query(
+        `SELECT * FROM ${schemaName}.task_schedules ORDER BY id`,
+      );
+      expect(rows.rows.length).toBe(2);
+      expect(rows.rows[0].job_id).toBe(jobId1);
+      expect(rows.rows[0].type).toBe('sleep');
+      expect(rows.rows[0].activity_id).toBe(activityId);
+      expect(rows.rows[1].job_id).toBe(jobId2);
+    });
 
-      const jobList = await postgresStoreService.storeClient.lrange(
-        listKey,
-        0,
-        -1,
-      );
-      expect(jobList?.[0]).toEqual(
-        `${type}${VALSEP}${activityId}${VALSEP}${gId1}${VALSEP}${dad1}${VALSEP}${jobId1}`,
-      );
-      expect(jobList?.[1]).toEqual(
-        `${type}${VALSEP}${activityId}${VALSEP}${gId2}${VALSEP}${dad2}${VALSEP}${jobId2}`,
+    it('should return non-sleep tasks for caller to dispatch', async () => {
+      const jobId = 'expire-job-1';
+      const gId = 'gid-expire';
+      const activityId = 'activity-expire';
+      const awakenTime = Date.now();
+
+      await postgresStoreService.registerTimeHook(
+        jobId, gId, activityId, 'expire', awakenTime, '',
       );
 
-      // Retrieve the next job to be triggered (to receive a time event)
-      const [nextListKey, nextJobId, nextGID, nextActivityId] =
-        (await postgresStoreService.getNextTask()) as [
-          string,
-          string,
-          string,
-          string,
-          'sleep' | 'expire' | 'interrupt',
-        ];
-      expect(nextListKey).toEqual(listKey);
-      expect(nextJobId).toEqual(jobId1);
-      expect(nextGID).toEqual(gId1);
-      expect(nextActivityId).toEqual(activityId);
-      // Check that jobId1 was removed from the list
-      const updatedJobList = await postgresStoreService.storeClient.lrange(
-        listKey,
-        0,
-        -1,
-      );
-      expect(updatedJobList.length).toEqual(1);
-      expect(updatedJobList[0]).toEqual(
-        `${type}${VALSEP}${activityId}${VALSEP}${gId2}${VALSEP}${dad2}${VALSEP}${jobId2}`,
-      );
+      const result = await postgresStoreService.getNextTask();
+      expect(Array.isArray(result)).toBe(true);
+      const [, rJobId, rGId, rActivityId, rType] = result as [string, string, string, string, string];
+      expect(rJobId).toBe(jobId);
+      expect(rGId).toBe(gId);
+      expect(rActivityId).toBe(activityId);
+      expect(rType).toBe('expire');
     });
   });
 
