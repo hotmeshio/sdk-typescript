@@ -27,6 +27,7 @@ import {
 } from '../../types/quorum';
 import { SubServiceFactory } from '../sub/factory';
 import { StoreServiceFactory } from '../store/factory';
+import { StreamConsumerRegistry } from '../stream/registry';
 
 class QuorumService {
   namespace: string;
@@ -209,7 +210,10 @@ class QuorumService {
         namespace: this.namespace,
         app_id: this.appId,
         stream,
-        counts: this.engine.router.counts,
+        counts: {
+          ...this.engine.router.counts,
+          ...StreamConsumerRegistry.getEngineCounts(this.namespace, this.appId),
+        },
         error_count: this.engine.router.errorCount,
         timestamp: formatISODate(new Date()),
         inited: this.engine.inited,

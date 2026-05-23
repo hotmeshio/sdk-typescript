@@ -14,9 +14,10 @@ import { getNotificationChannelName } from './kvtables';
  */
 export class NotificationManager<TService> {
   // Static maps shared across all instances with the same client
+  // Structure: client → consumerKey → consumerName → NotificationConsumer
   private static clientNotificationConsumers: Map<
     any,
-    Map<string, Map<any, NotificationConsumer>>
+    Map<string, Map<string, NotificationConsumer>>
   > = new Map();
   private static clientNotificationHandlers: Map<any, boolean> = new Map();
   private static clientFallbackPollers: Map<any, NodeJS.Timeout> = new Map();
@@ -125,14 +126,14 @@ export class NotificationManager<TService> {
       consumerKey,
       instanceMap,
     ] of clientNotificationConsumers.entries()) {
-      for (const [instance, consumer] of instanceMap.entries()) {
+      for (const [, consumer] of instanceMap.entries()) {
         if (
           consumer.isListening &&
           now - consumer.lastFallbackCheck > this.getFallbackInterval()
         ) {
           try {
             const messages = await fetchMessages(
-              instance as TService,
+              consumer.serviceInstance as TService,
               consumer,
             );
 
@@ -206,12 +207,9 @@ export class NotificationManager<TService> {
         return;
       }
 
-      for (const [instance, consumer] of instanceMap.entries()) {
-        if (consumer.isListening) {
-          const serviceInstance = instance as any;
-          if (serviceInstance.fetchAndDeliverMessages) {
-            serviceInstance.fetchAndDeliverMessages(consumer);
-          }
+      for (const [, consumer] of instanceMap.entries()) {
+        if (consumer.isListening && consumer.serviceInstance?.fetchAndDeliverMessages) {
+          consumer.serviceInstance.fetchAndDeliverMessages(consumer);
         }
       }
     } catch (error) {
@@ -295,7 +293,8 @@ export class NotificationManager<TService> {
       }
     }
 
-    // Register consumer for this instance
+    // Register consumer keyed by consumerName (unique per Router).
+    // serviceInstance is stored in the consumer for fetchAndDeliverMessages dispatch.
     const consumer: NotificationConsumer = {
       streamName,
       groupName,
@@ -303,9 +302,10 @@ export class NotificationManager<TService> {
       callback,
       isListening: true,
       lastFallbackCheck: Date.now(),
+      serviceInstance,
     };
 
-    instanceMap.set(serviceInstance, consumer);
+    instanceMap.set(consumerName, consumer);
     this.instanceNotificationConsumers.add(consumerKey);
 
     this.logger.debug('postgres-stream-notification-setup-complete', {
@@ -345,40 +345,46 @@ export class NotificationManager<TService> {
       return;
     }
 
-    const consumer = instanceMap.get(serviceInstance);
-    if (consumer) {
-      consumer.isListening = false;
-      instanceMap.delete(serviceInstance);
-      this.instanceNotificationConsumers.delete(consumerKey);
+    // Find and stop all consumers belonging to this serviceInstance
+    const toDelete: string[] = [];
+    for (const [key, consumer] of instanceMap.entries()) {
+      if (consumer.serviceInstance === serviceInstance) {
+        consumer.isListening = false;
+        toDelete.push(key);
+      }
+    }
+    for (const key of toDelete) {
+      instanceMap.delete(key);
+    }
+    this.instanceNotificationConsumers.delete(consumerKey);
 
-      if (instanceMap.size === 0) {
-        clientNotificationConsumers.delete(consumerKey);
-        const channelName = getNotificationChannelName(resolvedStreamName, isEngine);
+    if (instanceMap.size === 0) {
+      clientNotificationConsumers.delete(consumerKey);
+      const channelName = getNotificationChannelName(resolvedStreamName, isEngine);
 
-        try {
-          // In secured mode, use stored procedure for validated UNLISTEN
-          if (serviceAny.securedMode && serviceAny.safeName) {
-            const schema = serviceAny.safeName(serviceAny.appId);
-            await this.client.query(
-              `SELECT ${schema}.worker_unlisten($1)`,
-              [resolvedStreamName],
-            );
-          } else {
-            await this.client.query(`UNLISTEN "${channelName}"`);
-          }
-          this.logger.debug('postgres-stream-unlisten', {
-            streamName,
-            groupName,
-            channelName,
-          });
-        } catch (error) {
-          this.logger.error('postgres-stream-unlisten-error', {
-            streamName,
-            groupName,
-            channelName,
-            error,
-          });
+      try {
+        // In secured mode, use stored procedure for validated UNLISTEN
+        if (serviceAny.securedMode && serviceAny.safeName) {
+          const schema = serviceAny.safeName(serviceAny.appId);
+          await this.client.query(
+            `SELECT ${schema}.worker_unlisten($1)`,
+            [resolvedStreamName],
+          );
+        } else {
+          await this.client.query(`UNLISTEN "${channelName}"`);
         }
+        this.logger.debug('postgres-stream-unlisten', {
+          streamName,
+          groupName,
+          channelName,
+        });
+      } catch (error) {
+        this.logger.error('postgres-stream-unlisten-error', {
+          streamName,
+          groupName,
+          channelName,
+          error,
+        });
       }
     }
   }
@@ -402,36 +408,41 @@ export class NotificationManager<TService> {
       for (const consumerKey of this.instanceNotificationConsumers) {
         const instanceMap = clientNotificationConsumers.get(consumerKey);
         if (instanceMap) {
-          const consumer = instanceMap.get(serviceInstance);
-          if (consumer) {
-            consumer.isListening = false;
-            instanceMap.delete(serviceInstance);
+          // Find and stop all consumers belonging to this serviceInstance
+          const toDelete: string[] = [];
+          for (const [key, consumer] of instanceMap.entries()) {
+            if (consumer.serviceInstance === serviceInstance) {
+              consumer.isListening = false;
+              toDelete.push(key);
+            }
+          }
+          for (const key of toDelete) {
+            instanceMap.delete(key);
+          }
 
-            if (instanceMap.size === 0) {
-              clientNotificationConsumers.delete(consumerKey);
+          if (instanceMap.size === 0) {
+            clientNotificationConsumers.delete(consumerKey);
 
-              // Extract resolved stream name and isEngine from the consumer key
-              // Consumer key format: resolvedStreamName:groupName
-              const isEngine = consumer.groupName === 'ENGINE';
-              const resolvedStreamName = consumerKey.substring(0, consumerKey.lastIndexOf(':'));
-              const channelName = getNotificationChannelName(resolvedStreamName, isEngine);
+            // Extract resolved stream name and isEngine from the consumer key
+            // Consumer key format: resolvedStreamName:groupName
+            const groupName = consumerKey.substring(consumerKey.lastIndexOf(':') + 1);
+            const isEngine = groupName === 'ENGINE';
+            const resolvedStreamName = consumerKey.substring(0, consumerKey.lastIndexOf(':'));
+            const channelName = getNotificationChannelName(resolvedStreamName, isEngine);
 
-              try {
-                await this.client.query(`UNLISTEN "${channelName}"`);
-                this.logger.debug('postgres-stream-cleanup-unlisten', {
-                  streamName: consumer.streamName,
-                  groupName: consumer.groupName,
+            try {
+              await this.client.query(`UNLISTEN "${channelName}"`);
+              this.logger.debug('postgres-stream-cleanup-unlisten', {
+                consumerKey,
+                channelName,
+              });
+            } catch (error) {
+              if (!error.message?.includes('Client was closed')) {
+                this.logger.error('postgres-stream-cleanup-unlisten-error', {
+                  consumerKey,
                   channelName,
+                  error,
                 });
-              } catch (error) {
-                if (!error.message?.includes('Client was closed')) {
-                  this.logger.error('postgres-stream-cleanup-unlisten-error', {
-                    streamName: consumer.streamName,
-                    groupName: consumer.groupName,
-                    channelName,
-                    error,
-                  });
-                }
               }
             }
           }

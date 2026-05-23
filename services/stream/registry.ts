@@ -8,6 +8,8 @@ import {
   StreamRole,
 } from '../../types/stream';
 import { KeyType } from '../../modules/key';
+import { guid as makeGuid } from '../../modules/utils';
+import { HMSH_ENGINE_CONCURRENCY } from '../../modules/enums';
 
 type WorkerCallback = (data: StreamData) => Promise<StreamDataResponse | void>;
 
@@ -19,17 +21,17 @@ interface WorkerConsumerEntry {
 }
 
 interface EngineConsumerEntry {
-  router: Router<StreamService<ProviderClient, ProviderTransaction>>;
+  routers: Router<StreamService<ProviderClient, ProviderTransaction>>[];
   callbacks: WorkerCallback[];
   stream: StreamService<ProviderClient, ProviderTransaction>;
   logger: ILogger;
 }
 
 /**
- * Process-wide singleton registry that manages one consumer per task queue (workers)
- * and one per appId (engines). Instead of N consumers each polling independently,
- * one consumer fetches batches from the stream and dispatches to registered callbacks
- * based on the `workflow_name` column (workers) or round-robin (engines).
+ * Process-wide singleton registry that manages one consumer per task queue
+ * (workers) and N consumers per appId (engines). Engine concurrency is
+ * controlled by HMSH_ENGINE_CONCURRENCY — each consumer independently
+ * dequeues from the engine stream using FOR UPDATE SKIP LOCKED.
  */
 class StreamConsumerRegistry {
   private static workerConsumers: Map<string, WorkerConsumerEntry> = new Map();
@@ -112,7 +114,8 @@ class StreamConsumerRegistry {
 
   /**
    * Register an engine callback for an appId.
-   * If no consumer exists for this appId, a singleton Router is created.
+   * Creates HMSH_ENGINE_CONCURRENCY independent consumers that
+   * dequeue from the engine stream in parallel via SKIP LOCKED.
    */
   static async registerEngine(
     namespace: string,
@@ -132,34 +135,42 @@ class StreamConsumerRegistry {
 
     if (!entry) {
       const throttle = await store.getThrottleRate();
-      const router = new Router(
-        {
-          namespace,
-          appId,
-          guid,
-          role: StreamRole.ENGINE,
-          reclaimDelay: config?.reclaimDelay,
-          reclaimCount: config?.reclaimCount,
-          throttle,
-        },
-        stream,
-        logger,
-      );
+      const streamKey = stream.mintKey(KeyType.STREAMS, { appId });
+      const dispatchCallback = StreamConsumerRegistry.createEngineDispatcher(key);
 
       entry = {
-        router,
+        routers: [],
         callbacks: [],
         stream,
         logger,
       };
       StreamConsumerRegistry.engineConsumers.set(key, entry);
 
-      // Create the dispatch callback
-      const dispatchCallback = StreamConsumerRegistry.createEngineDispatcher(key);
+      for (let i = 0; i < HMSH_ENGINE_CONCURRENCY; i++) {
+        const consumerGuid = makeGuid();
+        const router = new Router(
+          {
+            namespace,
+            appId,
+            guid: consumerGuid,
+            role: StreamRole.ENGINE,
+            reclaimDelay: config?.reclaimDelay,
+            reclaimCount: config?.reclaimCount,
+            throttle,
+          },
+          stream,
+          logger,
+        );
+        entry.routers.push(router);
+        router.consumeMessages(streamKey, 'ENGINE', consumerGuid, dispatchCallback);
+      }
 
-      // Start consuming from the engine stream
-      const streamKey = stream.mintKey(KeyType.STREAMS, { appId });
-      router.consumeMessages(streamKey, 'ENGINE', guid, dispatchCallback);
+      if (HMSH_ENGINE_CONCURRENCY > 1) {
+        logger.info('stream-consumer-registry-engine-parallel', {
+          appId,
+          concurrency: HMSH_ENGINE_CONCURRENCY,
+        });
+      }
     }
 
     entry.callbacks.push(callback);
@@ -277,9 +288,30 @@ class StreamConsumerRegistry {
     entry.callbacks = entry.callbacks.filter(cb => cb !== callback);
 
     if (entry.callbacks.length === 0) {
-      await entry.router.stopConsuming();
+      for (const router of entry.routers) {
+        await router.stopConsuming();
+      }
       StreamConsumerRegistry.engineConsumers.delete(key);
     }
+  }
+
+  /**
+   * Aggregate engine message counts across all consumers for an appId.
+   */
+  static getEngineCounts(
+    namespace: string,
+    appId: string,
+  ): { [key: string]: number } {
+    const key = `${namespace}:${appId}:engine`;
+    const entry = StreamConsumerRegistry.engineConsumers.get(key);
+    if (!entry) return {};
+    const merged: { [key: string]: number } = {};
+    for (const router of entry.routers) {
+      for (const [code, count] of Object.entries(router.counts)) {
+        merged[code] = (merged[code] || 0) + (count as number);
+      }
+    }
+    return merged;
   }
 
   /**
@@ -290,7 +322,9 @@ class StreamConsumerRegistry {
       await entry.router.stopConsuming();
     }
     for (const [, entry] of StreamConsumerRegistry.engineConsumers) {
-      await entry.router.stopConsuming();
+      for (const router of entry.routers) {
+        await router.stopConsuming();
+      }
     }
     StreamConsumerRegistry.workerConsumers.clear();
     StreamConsumerRegistry.engineConsumers.clear();

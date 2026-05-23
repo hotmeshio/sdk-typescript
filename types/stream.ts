@@ -349,4 +349,6 @@ export interface NotificationConsumer {
   isListening: boolean;
   /** Timestamp of the last fallback check (used for periodic polling) */
   lastFallbackCheck: number;
+  /** Service instance that owns this consumer (for fetchAndDeliverMessages dispatch) */
+  serviceInstance?: any;
 }
