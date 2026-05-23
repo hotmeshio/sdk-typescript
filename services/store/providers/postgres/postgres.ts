@@ -1041,11 +1041,11 @@ class PostgresStoreService extends StoreService<
   /**
    * Leg1: set hook signal, atomically detecting a pending signal.
    *
-   * Standalone (no transaction): uses INSERT ON CONFLICT no-op inside
-   * a mini-transaction to acquire a row lock and capture the current
-   * value. If a concurrent getHookSignal stored $pending, the row
-   * lock ensures we see it after their transaction commits. Then
-   * overwrites with the hook value via UPDATE.
+   * Standalone (no transaction): INSERT ON CONFLICT no-op captures the
+   * current row value via RETURNING, then a follow-up UPDATE overwrites
+   * with the hook value. No explicit transaction — the two statements
+   * are serialized by the single-threaded event loop on the shared
+   * connection.
    *
    * In a transaction: queues the setnxex; pending detection deferred.
    */
@@ -1075,24 +1075,18 @@ class PostgresStoreService extends StoreService<
       return { success: true };
     }
 
-    //standalone: row-lock via INSERT ON CONFLICT no-op, then UPDATE.
-    //
-    //The no-op (SET value = table.value) acquires a row lock without
-    //modifying data, and RETURNING gives us the accurate current value —
-    //including values committed by concurrent transactions we blocked on.
-    //This closes the CTE snapshot race where a concurrent $pending insert
-    //could be silently overwritten because the prior CTE read a stale
-    //snapshot under READ COMMITTED.
+    //standalone: INSERT ON CONFLICT no-op captures the current row
+    //value (including values from concurrent transactions that committed
+    //before our INSERT resolved). xmax = 0 distinguishes fresh insert
+    //from conflict. If the row existed, a follow-up UPDATE overwrites
+    //with the hook value. No explicit transaction needed — on a shared
+    //connection, Node.js serializes the two awaited queries.
     const kv = this.kvsql();
     const tableName = kv.tableForKey(fullKey);
     const storedKey = kv.storageKey(fullKey);
 
     try {
-      await this.pgClient.query('BEGIN');
-
-      //step 1: insert-or-lock — if row exists, no-op acquires row lock.
-      //xmax = 0 distinguishes fresh insert from conflict (including the
-      //edge case where the existing value equals our jobId).
+      //step 1: insert-or-lock — if row exists, no-op acquires row lock
       const lockResult = await this.pgClient.query(
         `INSERT INTO ${tableName} (key, value, expiry)
          VALUES ($1, $2, NOW() + INTERVAL '${delay} seconds')
@@ -1106,7 +1100,7 @@ class PostgresStoreService extends StoreService<
       const isPending = captured?.startsWith('$pending::');
 
       if (!wasInsert) {
-        //row existed — overwrite with hook value
+        //step 2: row existed — overwrite with hook value
         await this.pgClient.query(
           `UPDATE ${tableName}
            SET value = $1, expiry = NOW() + INTERVAL '${delay} seconds'
@@ -1114,8 +1108,6 @@ class PostgresStoreService extends StoreService<
           [jobId, storedKey],
         );
       }
-
-      await this.pgClient.query('COMMIT');
 
       if (isPending) {
         this.logger.debug('hook-signal-pending-consumed', {
@@ -1132,7 +1124,6 @@ class PostgresStoreService extends StoreService<
       }
       return { success: true };
     } catch (error: any) {
-      try { await this.pgClient.query('ROLLBACK'); } catch { /* ignore */ }
       if (
         error?.message?.includes('closed') ||
         error?.message?.includes('queryable')
@@ -1149,11 +1140,9 @@ class PostgresStoreService extends StoreService<
    * When `pendingData` is provided and no hook signal exists, the
    * pending value is stored so leg1's setHookSignal can detect it.
    *
-   * Uses INSERT ON CONFLICT no-op inside a mini-transaction to
-   * acquire a row lock and capture the current value. If a concurrent
-   * setHookSignal registered a hook, the row lock ensures we see it
-   * after their transaction commits. RETURNING on the no-op gives us
-   * the accurate post-commit value — closing the CTE snapshot race.
+   * INSERT ON CONFLICT no-op captures the current row value via
+   * RETURNING. If a hook exists, returns it without modification.
+   * Otherwise stores $pending for leg1 to consume.
    *
    * When `pendingData` is omitted, behaves as a plain read.
    */
@@ -1175,7 +1164,9 @@ class PostgresStoreService extends StoreService<
       return value;
     }
 
-    //row-lock via INSERT ON CONFLICT no-op, then conditional UPDATE.
+    //INSERT ON CONFLICT no-op captures the current row value. If a
+    //hook exists, return it without modification. If no hook (fresh
+    //insert or existing pending), store/update the pending value.
     const kv = this.kvsql();
     const tableName = kv.tableForKey(fullKey);
     const storedKey = kv.storageKey(fullKey);
@@ -1183,8 +1174,6 @@ class PostgresStoreService extends StoreService<
     const pendingValue = `$pending::${pendingData}`;
 
     try {
-      await this.pgClient.query('BEGIN');
-
       //step 1: insert-or-lock — if row exists, no-op acquires row lock
       const lockResult = await this.pgClient.query(
         `INSERT INTO ${tableName} (key, value, expiry)
@@ -1199,12 +1188,11 @@ class PostgresStoreService extends StoreService<
 
       if (!wasInsert && captured && !captured.startsWith('$pending::')) {
         //hook exists (registered by concurrent or prior Leg1) — return it
-        await this.pgClient.query('COMMIT');
         return captured;
       }
 
       if (!wasInsert && captured?.startsWith('$pending::')) {
-        //existing pending — update with our new pending value
+        //step 2: existing pending — update with our new pending value
         await this.pgClient.query(
           `UPDATE ${tableName}
            SET value = $1, expiry = NOW() + INTERVAL '${expire} seconds'
@@ -1213,8 +1201,6 @@ class PostgresStoreService extends StoreService<
         );
       }
 
-      await this.pgClient.query('COMMIT');
-
       //no hook — $pending was stored (or updated existing pending)
       this.logger.debug('hook-signal-pending-stored', {
         topic,
@@ -1222,7 +1208,6 @@ class PostgresStoreService extends StoreService<
       });
       return undefined;
     } catch (error: any) {
-      try { await this.pgClient.query('ROLLBACK'); } catch { /* ignore */ }
       if (
         error?.message?.includes('closed') ||
         error?.message?.includes('queryable')
