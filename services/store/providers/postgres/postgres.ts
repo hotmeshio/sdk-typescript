@@ -2054,6 +2054,11 @@ class PostgresStoreService extends StoreService<
         created_at: row.created_at instanceof Date
           ? row.created_at.toISOString()
           : String(row.created_at),
+        reserved_at: row.reserved_at
+          ? (row.reserved_at instanceof Date
+            ? row.reserved_at.toISOString()
+            : String(row.reserved_at))
+          : undefined,
         expired_at: row.expired_at
           ? (row.expired_at instanceof Date
             ? row.expired_at.toISOString()

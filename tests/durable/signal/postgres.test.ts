@@ -101,5 +101,34 @@ describe('DURABLE | signal | Postgres', () => {
         ]);
       }, 15_000);
     });
+
+    describe('export', () => {
+      it('should order proxy activity before condition in execution timeline', async () => {
+        const execution = await handle.exportExecution();
+
+        // Find the proxy (activity) and wait (signal) events
+        const activityEvents = execution.events.filter(
+          e => e.event_type === 'activity_task_scheduled' || e.event_type === 'activity_task_completed',
+        );
+        const signalEvents = execution.events.filter(
+          e => e.event_type === 'workflow_execution_signaled',
+        );
+
+        expect(activityEvents.length).toBeGreaterThan(0);
+        expect(signalEvents.length).toBeGreaterThan(0);
+
+        // The first activity_task_scheduled (proxy greet) must appear before
+        // the first workflow_execution_signaled (condition) in the sorted events array.
+        // Both are sorted chronologically by event_time.
+        const firstActivity = execution.events.findIndex(
+          e => e.event_type === 'activity_task_scheduled',
+        );
+        const firstSignal = execution.events.findIndex(
+          e => e.event_type === 'workflow_execution_signaled',
+        );
+
+        expect(firstActivity).toBeLessThan(firstSignal);
+      }, 10_000);
+    });
   });
 });

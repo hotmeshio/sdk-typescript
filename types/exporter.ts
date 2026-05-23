@@ -404,6 +404,7 @@ export interface StreamHistoryEntry {
   status?: string;
   code?: number;
   created_at: string;
+  reserved_at?: string;
   expired_at?: string;
 }
 

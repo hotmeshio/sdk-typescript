@@ -199,12 +199,12 @@ class ExporterService {
         }
       }
 
-      // Compute timing
-      const startedAt = entry.created_at;
+      // Compute timing: reserved_at = when processing began, expired_at = when ack'd
+      const startedAt = entry.reserved_at || entry.created_at;
       const completedAt = entry.expired_at;
       let durationMs: number | undefined;
-      if (startedAt && completedAt) {
-        durationMs = new Date(completedAt).getTime() - new Date(startedAt).getTime();
+      if (entry.reserved_at && completedAt) {
+        durationMs = new Date(completedAt).getTime() - new Date(entry.reserved_at).getTime();
       }
 
       activities.push({
