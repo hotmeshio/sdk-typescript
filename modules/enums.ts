@@ -219,6 +219,15 @@ export const HMSH_BATCH_SIZE_MIN =
   parseInt(process.env.HMSH_BATCH_SIZE_MIN, 10) || 1;
 
 /**
+ * Number of concurrent engine consumers per appId (default: 1).
+ * Each consumer independently dequeues from the engine stream
+ * using FOR UPDATE SKIP LOCKED, distributing message processing
+ * across the mesh.
+ */
+export const HMSH_ENGINE_CONCURRENCY =
+  parseInt(process.env.HMSH_ENGINE_CONCURRENCY, 10) || 1;
+
+/**
  * Postgres stream reservation timeout in seconds (default: 30).
  *
  * This is the **starting** reservation timeout for the Postgres stream

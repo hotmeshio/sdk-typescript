@@ -4,9 +4,8 @@ import {
   KeyStoreParams,
   KeyType,
   HMNS,
-  VALSEP,
-  TYPSEP,
 } from '../../../../modules/key';
+import { guid } from '../../../../modules/utils';
 import { ILogger } from '../../../logger';
 import {
   MDATA_SYMBOLS,
@@ -1041,11 +1040,11 @@ class PostgresStoreService extends StoreService<
   /**
    * Leg1: set hook signal, atomically detecting a pending signal.
    *
-   * Standalone (no transaction): uses INSERT ON CONFLICT no-op inside
-   * a mini-transaction to acquire a row lock and capture the current
-   * value. If a concurrent getHookSignal stored $pending, the row
-   * lock ensures we see it after their transaction commits. Then
-   * overwrites with the hook value via UPDATE.
+   * Standalone (no transaction): INSERT ON CONFLICT no-op captures the
+   * current row value via RETURNING, then a follow-up UPDATE overwrites
+   * with the hook value. No explicit transaction — the two statements
+   * are serialized by the single-threaded event loop on the shared
+   * connection.
    *
    * In a transaction: queues the setnxex; pending detection deferred.
    */
@@ -1075,24 +1074,18 @@ class PostgresStoreService extends StoreService<
       return { success: true };
     }
 
-    //standalone: row-lock via INSERT ON CONFLICT no-op, then UPDATE.
-    //
-    //The no-op (SET value = table.value) acquires a row lock without
-    //modifying data, and RETURNING gives us the accurate current value —
-    //including values committed by concurrent transactions we blocked on.
-    //This closes the CTE snapshot race where a concurrent $pending insert
-    //could be silently overwritten because the prior CTE read a stale
-    //snapshot under READ COMMITTED.
+    //standalone: INSERT ON CONFLICT no-op captures the current row
+    //value (including values from concurrent transactions that committed
+    //before our INSERT resolved). xmax = 0 distinguishes fresh insert
+    //from conflict. If the row existed, a follow-up UPDATE overwrites
+    //with the hook value. No explicit transaction needed — on a shared
+    //connection, Node.js serializes the two awaited queries.
     const kv = this.kvsql();
     const tableName = kv.tableForKey(fullKey);
     const storedKey = kv.storageKey(fullKey);
 
     try {
-      await this.pgClient.query('BEGIN');
-
-      //step 1: insert-or-lock — if row exists, no-op acquires row lock.
-      //xmax = 0 distinguishes fresh insert from conflict (including the
-      //edge case where the existing value equals our jobId).
+      //step 1: insert-or-lock — if row exists, no-op acquires row lock
       const lockResult = await this.pgClient.query(
         `INSERT INTO ${tableName} (key, value, expiry)
          VALUES ($1, $2, NOW() + INTERVAL '${delay} seconds')
@@ -1106,7 +1099,7 @@ class PostgresStoreService extends StoreService<
       const isPending = captured?.startsWith('$pending::');
 
       if (!wasInsert) {
-        //row existed — overwrite with hook value
+        //step 2: row existed — overwrite with hook value
         await this.pgClient.query(
           `UPDATE ${tableName}
            SET value = $1, expiry = NOW() + INTERVAL '${delay} seconds'
@@ -1114,8 +1107,6 @@ class PostgresStoreService extends StoreService<
           [jobId, storedKey],
         );
       }
-
-      await this.pgClient.query('COMMIT');
 
       if (isPending) {
         this.logger.debug('hook-signal-pending-consumed', {
@@ -1132,7 +1123,6 @@ class PostgresStoreService extends StoreService<
       }
       return { success: true };
     } catch (error: any) {
-      try { await this.pgClient.query('ROLLBACK'); } catch { /* ignore */ }
       if (
         error?.message?.includes('closed') ||
         error?.message?.includes('queryable')
@@ -1149,11 +1139,9 @@ class PostgresStoreService extends StoreService<
    * When `pendingData` is provided and no hook signal exists, the
    * pending value is stored so leg1's setHookSignal can detect it.
    *
-   * Uses INSERT ON CONFLICT no-op inside a mini-transaction to
-   * acquire a row lock and capture the current value. If a concurrent
-   * setHookSignal registered a hook, the row lock ensures we see it
-   * after their transaction commits. RETURNING on the no-op gives us
-   * the accurate post-commit value — closing the CTE snapshot race.
+   * INSERT ON CONFLICT no-op captures the current row value via
+   * RETURNING. If a hook exists, returns it without modification.
+   * Otherwise stores $pending for leg1 to consume.
    *
    * When `pendingData` is omitted, behaves as a plain read.
    */
@@ -1175,7 +1163,9 @@ class PostgresStoreService extends StoreService<
       return value;
     }
 
-    //row-lock via INSERT ON CONFLICT no-op, then conditional UPDATE.
+    //INSERT ON CONFLICT no-op captures the current row value. If a
+    //hook exists, return it without modification. If no hook (fresh
+    //insert or existing pending), store/update the pending value.
     const kv = this.kvsql();
     const tableName = kv.tableForKey(fullKey);
     const storedKey = kv.storageKey(fullKey);
@@ -1183,8 +1173,6 @@ class PostgresStoreService extends StoreService<
     const pendingValue = `$pending::${pendingData}`;
 
     try {
-      await this.pgClient.query('BEGIN');
-
       //step 1: insert-or-lock — if row exists, no-op acquires row lock
       const lockResult = await this.pgClient.query(
         `INSERT INTO ${tableName} (key, value, expiry)
@@ -1199,12 +1187,11 @@ class PostgresStoreService extends StoreService<
 
       if (!wasInsert && captured && !captured.startsWith('$pending::')) {
         //hook exists (registered by concurrent or prior Leg1) — return it
-        await this.pgClient.query('COMMIT');
         return captured;
       }
 
       if (!wasInsert && captured?.startsWith('$pending::')) {
-        //existing pending — update with our new pending value
+        //step 2: existing pending — update with our new pending value
         await this.pgClient.query(
           `UPDATE ${tableName}
            SET value = $1, expiry = NOW() + INTERVAL '${expire} seconds'
@@ -1213,8 +1200,6 @@ class PostgresStoreService extends StoreService<
         );
       }
 
-      await this.pgClient.query('COMMIT');
-
       //no hook — $pending was stored (or updated existing pending)
       this.logger.debug('hook-signal-pending-stored', {
         topic,
@@ -1222,7 +1207,6 @@ class PostgresStoreService extends StoreService<
       });
       return undefined;
     } catch (error: any) {
-      try { await this.pgClient.query('ROLLBACK'); } catch { /* ignore */ }
       if (
         error?.message?.includes('closed') ||
         error?.message?.includes('queryable')
@@ -1313,36 +1297,46 @@ class PostgresStoreService extends StoreService<
   }
 
   /**
-   * registers a hook activity to be awakened (uses ZSET to
-   * store the 'sleep group' and LIST to store the events
-   * for the given sleep group. Sleep groups are
-   * organized into 'n'-second blocks (LISTS))
+   * Register a time hook by inserting a TIMEHOOK message directly into
+   * engine_streams with a future visible_at. The message is invisible
+   * until the sleep duration elapses, then the engine's normal dequeue
+   * picks it up — no intermediate table, no polling, fully transactional.
    */
   async registerTimeHook(
     jobId: string,
     gId: string,
     activityId: string,
-    type: WorkListTaskType,
+    _type: WorkListTaskType,
     deletionTime: number,
     dad: string,
     transaction?: ProviderTransaction,
   ): Promise<void> {
-    const listKey = this.mintKey(KeyType.TIME_RANGE, {
-      appId: this.appId,
-      timeValue: deletionTime,
+    const schemaName = this.kvsql().safeName(this.appId);
+    const delayMs = deletionTime - Date.now();
+    const parts = activityId.split(',');
+    const aid = parts[0];
+    const msgDad = parts.length > 1 ? ',' + parts.slice(1).join(',') : dad;
+
+    const message = JSON.stringify({
+      type: 'timehook',
+      metadata: { guid: guid(), jid: jobId, gid: gId, dad: msgDad, aid },
+      data: { timestamp: Date.now() },
     });
-    //register the task in the LIST
-    const timeEvent = [type, activityId, gId, dad, jobId].join(VALSEP);
-    const len = await this.kvsql(transaction).rpush(listKey, timeEvent);
-    //register the LIST in the ZSET
-    if (transaction || len === 1) {
-      const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
-      await this.zAdd(zsetKey, deletionTime.toString(), listKey, transaction);
+
+    const sql = `INSERT INTO ${schemaName}.engine_streams
+      (stream_name, message, priority, visible_at)
+      VALUES ($1, $2, 5, NOW() + INTERVAL '${Math.max(delayMs, 0)} milliseconds')`;
+    const params = [this.appId, message];
+
+    if (transaction && typeof (transaction as any).addCommand === 'function') {
+      (transaction as any).addCommand(sql, params);
+    } else {
+      await this.pgClient.query(sql, params);
     }
   }
 
   async getNextTask(
-    listKey?: string,
+    _listKey?: string,
   ): Promise<
     | [
         listKey: string,
@@ -1353,47 +1347,9 @@ class PostgresStoreService extends StoreService<
       ]
     | boolean
   > {
-    const zsetKey = this.mintKey(KeyType.TIME_RANGE, { appId: this.appId });
-    listKey = listKey || await this.zRangeByScore(zsetKey, 0, Date.now());
-    if (listKey) {
-      let [pType, pKey] = this.resolveTaskKeyContext(listKey);
-      const timeEvent = await this.kvsql().lpop(pKey);
-      if (timeEvent) {
-        //deconstruct composite key
-        let [type, activityId, gId, _pd, ...jobId] = timeEvent.split(VALSEP);
-        const jid = jobId.join(VALSEP);
-
-        if (type === 'delist') {
-          pType = 'delist';
-        } else if (type === 'child') {
-          pType = 'child';
-        } else if (type === 'expire-child') {
-          type = 'expire';
-        }
-        return [listKey, jid, gId, activityId, pType];
-      }
-      await this.kvsql().zrem(zsetKey, listKey);
-      return true;
-    }
+    //no-op: time hooks are now engine_streams messages with future visible_at.
+    //the engine's normal dequeue handles them when they become visible.
     return false;
-  }
-
-  /**
-   * when processing time jobs, the target LIST ID returned
-   * from the ZSET query can be prefixed to denote what to
-   * do with the work list. (not everything is known in advance,
-   * so the ZSET key defines HOW to approach the work in the
-   * generic LIST (lists typically contain target job ids)
-   * @param {string} listKey - composite key
-   */
-  resolveTaskKeyContext(listKey: string): [WorkListTaskType, string] {
-    if (listKey.startsWith(`${TYPSEP}INTERRUPT`)) {
-      return ['interrupt', listKey.split(TYPSEP)[2]];
-    } else if (listKey.startsWith(`${TYPSEP}EXPIRE`)) {
-      return ['expire', listKey.split(TYPSEP)[2]];
-    } else {
-      return ['sleep', listKey];
-    }
   }
 
   /**
@@ -1655,241 +1611,6 @@ class PostgresStoreService extends StoreService<
     }
   }
 
-  /**
-   * Enhanced time scout that uses LISTEN/NOTIFY to reduce polling
-   */
-  async startTimeScoutWithNotifications(
-    timeEventCallback: (
-      jobId: string,
-      gId: string,
-      activityId: string,
-      type: WorkListTaskType,
-    ) => Promise<void>,
-  ): Promise<void> {
-    const channelName = `time_hooks_${this.appId}`;
-
-    try {
-      // Set up LISTEN for time notifications
-      await this.pgClient.query(`LISTEN "${channelName}"`);
-
-      // Set up notification handler with channel filtering
-      this.pgClient.on('notification', (notification) => {
-        // Only handle time notifications (channels starting with "time_hooks_")
-        // Ignore sub and stream notifications from other providers
-        if (notification.channel.startsWith('time_hooks_')) {
-          this.handleTimeNotification(notification, timeEventCallback);
-        } else {
-          // This is likely a notification from sub or stream provider, ignore it
-          this.logger.debug('postgres-store-ignoring-non-time-notification', {
-            channel: notification.channel,
-            payloadPreview: notification.payload.substring(0, 100),
-          });
-        }
-      });
-
-      this.logger.debug('postgres-time-scout-notifications-started', {
-        appId: this.appId,
-        channelName,
-      });
-
-      // Start the enhanced time scout loop
-      await this.processTimeHooksWithNotifications(timeEventCallback);
-    } catch (error) {
-      this.logger.error('postgres-time-scout-notifications-error', {
-        appId: this.appId,
-        error,
-      });
-      // Fall back to regular polling mode
-      throw error;
-    }
-  }
-
-  /**
-   * Handle time notifications from PostgreSQL
-   */
-  private async handleTimeNotification(
-    notification: any,
-    timeEventCallback: (
-      jobId: string,
-      gId: string,
-      activityId: string,
-      type: WorkListTaskType,
-    ) => Promise<void>,
-  ): Promise<void> {
-    try {
-      const payload = JSON.parse(notification.payload);
-      const { type, app_id, next_awakening, ready_at } = payload;
-
-      if (app_id !== this.appId) {
-        return; // Not for this app
-      }
-
-      this.logger.debug('postgres-time-notification-received', {
-        type,
-        appId: app_id,
-        nextAwakening: next_awakening,
-        readyAt: ready_at,
-      });
-
-      if (type === 'time_hooks_ready') {
-        // Process any ready time hooks immediately
-        await this.processReadyTimeHooks(timeEventCallback);
-      } else if (type === 'time_schedule_updated') {
-        // Update our sleep timing if we're the time scout
-        await this.updateTimeScoutSleep(next_awakening);
-      }
-    } catch (error) {
-      this.logger.error('postgres-time-notification-handle-error', {
-        notification,
-        error,
-      });
-    }
-  }
-
-  /**
-   * Process time hooks that are ready to be awakened
-   */
-  private async processReadyTimeHooks(
-    timeEventCallback: (
-      jobId: string,
-      gId: string,
-      activityId: string,
-      type: WorkListTaskType,
-    ) => Promise<void>,
-  ): Promise<void> {
-    let hasMoreTasks = true;
-
-    while (hasMoreTasks) {
-      const workListTask = await this.getNextTask();
-
-      if (Array.isArray(workListTask)) {
-        const [listKey, target, gId, activityId, type] = workListTask;
-
-        if (type === 'child') {
-          // Skip child tasks - they're handled by ancestors
-        } else if (type === 'delist') {
-          // Delist the signal key
-          const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-          await this.delistSignalKey(key, target);
-        } else {
-          // Process the task
-          await timeEventCallback(target, gId, activityId, type);
-        }
-      } else if (workListTask === true) {
-        // A worklist was emptied, continue processing
-        continue;
-      } else {
-        // No more tasks ready
-        hasMoreTasks = false;
-      }
-    }
-  }
-
-  /**
-   * Enhanced time scout process that uses notifications
-   */
-  private async processTimeHooksWithNotifications(
-    timeEventCallback: (
-      jobId: string,
-      gId: string,
-      activityId: string,
-      type: WorkListTaskType,
-    ) => Promise<void>,
-  ): Promise<void> {
-    let currentSleepTimeout: NodeJS.Timeout | null = null;
-
-    // Function to calculate next sleep duration
-    const calculateNextSleep = async (): Promise<number> => {
-      const nextAwakeningTime = await this.getNextAwakeningTime();
-
-      if (nextAwakeningTime) {
-        const sleepMs = nextAwakeningTime - Date.now();
-        return Math.max(sleepMs, 0);
-      }
-
-      // Default sleep if no tasks scheduled
-      return HMSH_FIDELITY_SECONDS * 1000;
-    };
-
-    // Main loop
-    while (true) {
-      try {
-        if (await this.shouldScout()) {
-          // Process any ready tasks
-          await this.processReadyTimeHooks(timeEventCallback);
-
-          // Calculate next sleep
-          const sleepMs = await calculateNextSleep();
-
-          // Sleep with ability to be interrupted by notifications
-          await new Promise<void>((resolve) => {
-            currentSleepTimeout = setTimeout(resolve, sleepMs);
-          });
-        } else {
-          // Not the scout, sleep longer
-          await sleepFor(HMSH_SCOUT_INTERVAL_SECONDS * 1000);
-        }
-      } catch (error) {
-        this.logger.error('postgres-time-scout-loop-error', { error });
-        await sleepFor(1000);
-      }
-    }
-  }
-
-  /**
-   * Get the next awakening time from the database
-   */
-  private async getNextAwakeningTime(): Promise<number | null> {
-    const schemaName = this.kvsql().safeName(this.appId);
-    const appKey = '';
-
-    try {
-      const result = await this.pgClient.query(
-        `SELECT ${schemaName}.get_next_awakening_time($1) as next_time`,
-        [appKey],
-      );
-
-      if (result.rows[0]?.next_time) {
-        return new Date(result.rows[0].next_time).getTime();
-      }
-
-      return null;
-    } catch (error) {
-      this.logger.error('postgres-get-next-awakening-error', { error });
-      return null;
-    }
-  }
-
-  /**
-   * Update the time scout's sleep timing based on schedule changes
-   */
-  private async updateTimeScoutSleep(nextAwakening: number): Promise<void> {
-    // This could be used to interrupt current sleep and recalculate
-    // For now, just log the schedule update
-    this.logger.debug('postgres-time-schedule-updated', {
-      nextAwakening,
-      currentTime: Date.now(),
-    });
-  }
-
-  /**
-   * Enhanced shouldScout that can handle notifications
-   */
-  async shouldScout(): Promise<boolean> {
-    const wasScout = this.isScout;
-    const isScout =
-      wasScout || (this.isScout = await this.reserveScoutRole('time'));
-    if (isScout) {
-      if (!wasScout) {
-        setTimeout(() => {
-          this.isScout = false;
-        }, HMSH_SCOUT_INTERVAL_SECONDS * 1_000);
-      }
-      return true;
-    }
-    return false;
-  }
-
   // ── Exporter queries ───────────────────────────────────────────────────────
 
   /**
@@ -2092,6 +1813,11 @@ class PostgresStoreService extends StoreService<
         created_at: row.created_at instanceof Date
           ? row.created_at.toISOString()
           : String(row.created_at),
+        reserved_at: row.reserved_at
+          ? (row.reserved_at instanceof Date
+            ? row.reserved_at.toISOString()
+            : String(row.reserved_at))
+          : undefined,
         expired_at: row.expired_at
           ? (row.expired_at instanceof Date
             ? row.expired_at.toISOString()

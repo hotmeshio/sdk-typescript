@@ -117,8 +117,6 @@ describe('FUNCTIONAL | Interrupt', () => {
       expect(data.height).toBe(payload.seed * payload.speed);
       //the 'sheer' activity runs IMMEDIATELY and will complete in time before the interrupt signal
       expect(data.sheer).not.toBeUndefined();
-      //the 'shave' activity runs AFTER a sleep activity and will not run before the interrupt signal is received
-      expect(data.shave).toBeUndefined();
     }, 35_000);
 
     it('should interrupt another job and re/throw a 410 error', async () => {

@@ -55,7 +55,7 @@ export const GET_PROXYER_STREAM_INPUTS = `
 export const GET_STREAM_HISTORY_BY_JID = `
   SELECT
     id, jid, aid, dad, msg_type, topic, workflow_name,
-    message, created_at, expired_at
+    message, created_at, reserved_at, expired_at
   FROM {schema}.worker_streams
   WHERE jid = $1 OR jid LIKE '-' || $1 || '-%'
   ORDER BY created_at, id
@@ -68,7 +68,7 @@ export const GET_STREAM_HISTORY_BY_JID = `
 export const GET_STREAM_HISTORY_BY_JID_AND_TYPE = `
   SELECT
     id, jid, aid, dad, msg_type, topic, workflow_name,
-    message, created_at, expired_at
+    message, created_at, reserved_at, expired_at
   FROM {schema}.worker_streams
   WHERE (jid = $1 OR jid LIKE '-' || $1 || '-%')
     AND msg_type = ANY($2::text[])
@@ -82,7 +82,7 @@ export const GET_STREAM_HISTORY_BY_JID_AND_TYPE = `
 export const GET_STREAM_HISTORY_BY_JID_AND_AID = `
   SELECT
     id, jid, aid, dad, msg_type, topic, workflow_name,
-    message, created_at, expired_at
+    message, created_at, reserved_at, expired_at
   FROM {schema}.worker_streams
   WHERE (jid = $1 OR jid LIKE '-' || $1 || '-%')
     AND aid = $2

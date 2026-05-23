@@ -8,6 +8,8 @@ import {
   isSystemActivity,
   mapStatus,
 } from '../../../services/durable/exporter';
+import { ExporterService } from '../../../services/exporter';
+import { StreamHistoryEntry } from '../../../types/exporter';
 
 // ── parseTimestamp ───────────────────────────────────────────────────────────
 
@@ -200,5 +202,77 @@ describe('mapStatus', () => {
 
   it('should return "running" for NaN status', () => {
     expect(mapStatus(NaN)).toBe('running');
+  });
+});
+
+// ── buildActivities (duration calculation) ──────────────────────────────────
+
+describe('ExporterService.buildActivities', () => {
+  const exporter = new ExporterService('test', {} as any, { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any);
+
+  it('should compute duration from reserved_at to expired_at (not created_at)', () => {
+    const history: StreamHistoryEntry[] = [
+      {
+        id: 1,
+        jid: 'job-1',
+        aid: 'worker',
+        dad: ',0,0',
+        msg_type: 'worker',
+        topic: 'test',
+        workflow_name: 'testWf',
+        data: { input: 'value' },
+        created_at: '2026-05-23T10:00:00.000Z',  // queued
+        reserved_at: '2026-05-23T10:00:02.000Z',  // dequeued (2s queue wait)
+        expired_at: '2026-05-23T10:00:05.000Z',   // completed (3s processing)
+      },
+    ];
+
+    const activities = exporter.buildActivities({}, history);
+    expect(activities).toHaveLength(1);
+    expect(activities[0].started_at).toBe('2026-05-23T10:00:02.000Z');
+    expect(activities[0].completed_at).toBe('2026-05-23T10:00:05.000Z');
+    expect(activities[0].duration_ms).toBe(3000); // 3s processing, NOT 5s total
+  });
+
+  it('should fall back to created_at for started_at when reserved_at is missing', () => {
+    const history: StreamHistoryEntry[] = [
+      {
+        id: 2,
+        jid: 'job-2',
+        aid: 'worker',
+        dad: ',0,0',
+        msg_type: 'worker',
+        topic: 'test',
+        workflow_name: 'testWf',
+        data: {},
+        created_at: '2026-05-23T10:00:00.000Z',
+        expired_at: '2026-05-23T10:00:03.000Z',
+      },
+    ];
+
+    const activities = exporter.buildActivities({}, history);
+    expect(activities[0].started_at).toBe('2026-05-23T10:00:00.000Z');
+    expect(activities[0].duration_ms).toBeUndefined(); // no reserved_at = no accurate duration
+  });
+
+  it('should leave duration_ms undefined when expired_at is missing', () => {
+    const history: StreamHistoryEntry[] = [
+      {
+        id: 3,
+        jid: 'job-3',
+        aid: 'worker',
+        dad: ',0,0',
+        msg_type: 'worker',
+        topic: 'test',
+        workflow_name: 'testWf',
+        data: {},
+        created_at: '2026-05-23T10:00:00.000Z',
+        reserved_at: '2026-05-23T10:00:01.000Z',
+      },
+    ];
+
+    const activities = exporter.buildActivities({}, history);
+    expect(activities[0].started_at).toBe('2026-05-23T10:00:01.000Z');
+    expect(activities[0].duration_ms).toBeUndefined();
   });
 });

@@ -480,75 +480,11 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
   });
 
   describe('Time Triggers', () => {
-    it('should register job activities for sleep/awake events', async () => {
-      // Register jobs to be awakened/triggered
-      const jobId1 = 'job-id-1';
-      const jobId2 = 'job-id-2';
-      const gId1 = 'gid-1';
-      const gId2 = 'gid-2';
-      const dad1 = ',0,1';
-      const dad2 = ',0,2';
-      const activityId = 'activity-id';
-      const awakenTime = Date.now();
-      const type = 'sleep';
-      await postgresStoreService.registerTimeHook(
-        jobId1,
-        gId1,
-        activityId,
-        type,
-        awakenTime,
-        dad1,
-      );
-      await postgresStoreService.registerTimeHook(
-        jobId2,
-        gId2,
-        activityId,
-        type,
-        awakenTime,
-        dad2,
-      );
-
-      // Check that the jobs were added to the correct list
-      const listKey = postgresStoreService.mintKey(KeyType.TIME_RANGE, {
-        appId: appConfig.id,
-        timeValue: awakenTime,
-      });
-
-      const jobList = await postgresStoreService.storeClient.lrange(
-        listKey,
-        0,
-        -1,
-      );
-      expect(jobList?.[0]).toEqual(
-        `${type}${VALSEP}${activityId}${VALSEP}${gId1}${VALSEP}${dad1}${VALSEP}${jobId1}`,
-      );
-      expect(jobList?.[1]).toEqual(
-        `${type}${VALSEP}${activityId}${VALSEP}${gId2}${VALSEP}${dad2}${VALSEP}${jobId2}`,
-      );
-
-      // Retrieve the next job to be triggered (to receive a time event)
-      const [nextListKey, nextJobId, nextGID, nextActivityId] =
-        (await postgresStoreService.getNextTask()) as [
-          string,
-          string,
-          string,
-          string,
-          'sleep' | 'expire' | 'interrupt',
-        ];
-      expect(nextListKey).toEqual(listKey);
-      expect(nextJobId).toEqual(jobId1);
-      expect(nextGID).toEqual(gId1);
-      expect(nextActivityId).toEqual(activityId);
-      // Check that jobId1 was removed from the list
-      const updatedJobList = await postgresStoreService.storeClient.lrange(
-        listKey,
-        0,
-        -1,
-      );
-      expect(updatedJobList.length).toEqual(1);
-      expect(updatedJobList[0]).toEqual(
-        `${type}${VALSEP}${activityId}${VALSEP}${gId2}${VALSEP}${dad2}${VALSEP}${jobId2}`,
-      );
+    it('should return false from getNextTask (timers use engine_streams visibility)', async () => {
+      // Time hooks are now engine_streams messages with future visible_at.
+      // getNextTask is a no-op — the engine dequeue handles everything.
+      const result = await postgresStoreService.getNextTask();
+      expect(result).toBe(false);
     });
   });
 

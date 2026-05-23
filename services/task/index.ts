@@ -2,14 +2,12 @@ import {
   HMSH_EXPIRE_DURATION,
   HMSH_FIDELITY_SECONDS,
   HMSH_PENDING_SIGNAL_EXPIRE,
-  HMSH_SCOUT_INTERVAL_SECONDS,
 } from '../../modules/enums';
-import { s, XSleepFor, sleepFor } from '../../modules/utils';
+import { s } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { Pipe } from '../pipe';
 import { StoreService } from '../store';
 import { HookInterface, HookRule, HookSignal } from '../../types/hook';
-import { KeyType } from '../../types/hotmesh';
 import { JobCompletionOptions, JobState } from '../../types/job';
 import { ProviderClient, ProviderTransaction } from '../../types/provider';
 import { WorkListTaskType } from '../../types/task';
@@ -18,9 +16,6 @@ import { WEBSEP } from '../../modules/key';
 class TaskService {
   store: StoreService<ProviderClient, ProviderTransaction>;
   logger: ILogger;
-  cleanupTimeout: NodeJS.Timeout | null = null;
-  isScout = false;
-  errorCount = 0;
 
   constructor(
     store: StoreService<ProviderClient, ProviderTransaction>,
@@ -94,97 +89,23 @@ class TaskService {
   }
 
   /**
-   * Should this engine instance play the role of 'scout' on behalf
-   * of the entire quorum? The scout role is responsible for processing
-   * task lists on behalf of the collective.
-   */
-  async shouldScout() {
-    const wasScout = this.isScout;
-    const isScout =
-      wasScout || (this.isScout = await this.store.reserveScoutRole('time'));
-    if (isScout) {
-      if (!wasScout) {
-        setTimeout(() => {
-          this.isScout = false;
-        }, HMSH_SCOUT_INTERVAL_SECONDS * 1_000);
-      }
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Callback handler that takes an item from a work list and
-   * processes according to its type
+   * No-op: time hooks are now engine_streams messages with future visible_at.
+   * The engine's normal dequeue handles them when they become visible.
+   * Kept for interface compatibility with quorum/engine callers.
    */
   async processTimeHooks(
-    timeEventCallback: (
+    _timeEventCallback: (
       jobId: string,
       gId: string,
       activityId: string,
       type: WorkListTaskType,
     ) => Promise<void>,
-    listKey?: string,
   ): Promise<void> {
-    if (await this.shouldScout()) {
-      try {
-        const workListTask = await this.store.getNextTask(listKey);
-
-        if (Array.isArray(workListTask)) {
-          const [listKey, target, gId, activityId, type] = workListTask;
-          if (type === 'child') {
-            //continue; this child is listed here for convenience, but
-            //  will be expired by an origin ancestor and is listed there
-          } else if (type === 'delist') {
-            //delist the signalKey (target)
-            const key = this.store.mintKey(KeyType.SIGNALS, {
-              appId: this.store.appId,
-            });
-            await this.store.delistSignalKey(key, target);
-          } else {
-            //awaken/expire/interrupt
-            await timeEventCallback(target, gId, activityId, type);
-          }
-          await sleepFor(0);
-          this.errorCount = 0;
-          this.processTimeHooks(timeEventCallback, listKey);
-        } else if (workListTask) {
-          //a worklist was just emptied; try again immediately
-          await sleepFor(0);
-          this.errorCount = 0;
-          this.processTimeHooks(timeEventCallback);
-        } else {
-          //no worklists exist; sleep before checking
-          const sleep = XSleepFor(HMSH_FIDELITY_SECONDS * 1000);
-          this.cleanupTimeout = sleep.timerId;
-          await sleep.promise;
-          this.errorCount = 0;
-          this.processTimeHooks(timeEventCallback);
-        }
-      } catch (err) {
-        //most common reasons: deleted job not found; container stopping; test stopping
-        this.logger.warn('task-process-timehooks-error', err);
-        await sleepFor(1_000 * this.errorCount++);
-        if (this.errorCount < 5) {
-          this.processTimeHooks(timeEventCallback);
-        }
-      }
-    } else {
-      //didn't get the scout role; try again in 'one-ish' minutes
-      const sleep = XSleepFor(
-        HMSH_SCOUT_INTERVAL_SECONDS * 1_000 * 2 * Math.random(),
-      );
-      this.cleanupTimeout = sleep.timerId;
-      await sleep.promise;
-      this.processTimeHooks(timeEventCallback);
-    }
+    //nothing to poll — sleeps are engine_streams messages
   }
 
   cancelCleanup() {
-    if (this.cleanupTimeout !== undefined) {
-      clearTimeout(this.cleanupTimeout);
-      this.cleanupTimeout = undefined;
-    }
+    //no-op: time hooks no longer use polling
   }
 
   async getHookRule(topic: string): Promise<HookRule | undefined> {
@@ -303,67 +224,6 @@ class TaskService {
     }
   }
 
-  /**
-   * Enhanced processTimeHooks that uses notifications for PostgreSQL stores
-   */
-  async processTimeHooksWithNotifications(
-    timeEventCallback: (
-      jobId: string,
-      gId: string,
-      activityId: string,
-      type: WorkListTaskType,
-    ) => Promise<void>,
-  ): Promise<void> {
-    // Check if the store supports notifications
-    if (this.isPostgresStore() && this.supportsNotifications()) {
-      try {
-        this.logger.info('task-using-notification-mode', {
-          appId: this.store.appId,
-          message:
-            'Time scout using PostgreSQL LISTEN/NOTIFY mode for efficient task processing',
-        });
-        // Use the PostgreSQL store's notification-based approach
-        await (this.store as any).startTimeScoutWithNotifications(
-          timeEventCallback,
-        );
-      } catch (error) {
-        this.logger.warn('task-notifications-fallback', {
-          appId: this.store.appId,
-          error: error.message,
-          fallbackTo: 'polling',
-          message:
-            'Notification mode failed - falling back to traditional polling',
-        });
-        // Fall back to regular polling
-        await this.processTimeHooks(timeEventCallback);
-      }
-    } else {
-      this.logger.info('task-using-polling-mode', {
-        appId: this.store.appId,
-        storeType: this.store.constructor.name,
-        message:
-          'Time scout using traditional polling mode (notifications not available)',
-      });
-      // Use regular polling for non-PostgreSQL stores
-      await this.processTimeHooks(timeEventCallback);
-    }
-  }
-
-  /**
-   * Check if this is a PostgreSQL store
-   */
-  private isPostgresStore(): boolean {
-    return this.store.constructor.name === 'PostgresStoreService';
-  }
-
-  /**
-   * Check if the store supports notifications
-   */
-  private supportsNotifications(): boolean {
-    return (
-      typeof (this.store as any).startTimeScoutWithNotifications === 'function'
-    );
-  }
 }
 
 export { TaskService };

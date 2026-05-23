@@ -14,12 +14,12 @@ import {
 } from '../../../../types/provider';
 
 const STREAM_PRIORITY_MAP: Record<string, number> = {
-  [StreamDataType.WEBHOOK]: 4,
-  [StreamDataType.SIGNAL]: 4,
-  [StreamDataType.INTERRUPT]: 4,
-  [StreamDataType.TIMEHOOK]: 3,
+  [StreamDataType.INTERRUPT]: 6,
+  [StreamDataType.TIMEHOOK]: 5,
+  [StreamDataType.WEBHOOK]: 5,
+  [StreamDataType.SIGNAL]: 5,
+  [StreamDataType.TRANSITION]: 4,
   [StreamDataType.RESULT]: 3,
-  [StreamDataType.TRANSITION]: 2,
   [StreamDataType.RESPONSE]: 2,
   [StreamDataType.WORKER]: 1,
   [StreamDataType.AWAIT]: 0,

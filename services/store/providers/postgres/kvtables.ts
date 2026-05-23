@@ -560,7 +560,6 @@ export const KVTables = (context: PostgresStoreService) => ({
       'throttles',
       'roles',
       'task_priorities',
-      'task_schedules',
       'task_lists',
       'events',
       'jobs',
@@ -605,11 +604,6 @@ export const KVTables = (context: PostgresStoreService) => ({
         schema: schemaName,
         name: 'roles',
         type: 'string',
-      },
-      {
-        schema: schemaName,
-        name: 'task_schedules',
-        type: 'sorted_set',
       },
       {
         schema: schemaName,
