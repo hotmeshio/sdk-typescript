@@ -480,52 +480,11 @@ describe('FUNCTIONAL | PostgresStoreService', () => {
   });
 
   describe('Time Triggers', () => {
-    it('should register time hooks as rows in task_schedules', async () => {
-      const jobId1 = 'job-id-1';
-      const jobId2 = 'job-id-2';
-      const gId1 = 'gid-1';
-      const gId2 = 'gid-2';
-      const dad1 = ',0,1';
-      const dad2 = ',0,2';
-      const activityId = 'activity-id';
-      const awakenTime = Date.now();
-
-      await postgresStoreService.registerTimeHook(
-        jobId1, gId1, activityId, 'sleep', awakenTime, dad1,
-      );
-      await postgresStoreService.registerTimeHook(
-        jobId2, gId2, activityId, 'sleep', awakenTime, dad2,
-      );
-
-      // Verify rows were inserted directly
-      const schemaName = (postgresStoreService as any).kvsql().safeName(appConfig.id);
-      const rows = await postgresClient.query(
-        `SELECT * FROM ${schemaName}.task_schedules ORDER BY id`,
-      );
-      expect(rows.rows.length).toBe(2);
-      expect(rows.rows[0].job_id).toBe(jobId1);
-      expect(rows.rows[0].type).toBe('sleep');
-      expect(rows.rows[0].activity_id).toBe(activityId);
-      expect(rows.rows[1].job_id).toBe(jobId2);
-    });
-
-    it('should return non-sleep tasks for caller to dispatch', async () => {
-      const jobId = 'expire-job-1';
-      const gId = 'gid-expire';
-      const activityId = 'activity-expire';
-      const awakenTime = Date.now();
-
-      await postgresStoreService.registerTimeHook(
-        jobId, gId, activityId, 'expire', awakenTime, '',
-      );
-
+    it('should return false from getNextTask (timers use engine_streams visibility)', async () => {
+      // Time hooks are now engine_streams messages with future visible_at.
+      // getNextTask is a no-op — the engine dequeue handles everything.
       const result = await postgresStoreService.getNextTask();
-      expect(Array.isArray(result)).toBe(true);
-      const [, rJobId, rGId, rActivityId, rType] = result as [string, string, string, string, string];
-      expect(rJobId).toBe(jobId);
-      expect(rGId).toBe(gId);
-      expect(rActivityId).toBe(activityId);
-      expect(rType).toBe('expire');
+      expect(result).toBe(false);
     });
   });
 

@@ -4,8 +4,6 @@ import {
   KeyStoreParams,
   KeyType,
   HMNS,
-  VALSEP,
-  TYPSEP,
 } from '../../../../modules/key';
 import { guid } from '../../../../modules/utils';
 import { ILogger } from '../../../logger';
@@ -1299,24 +1297,36 @@ class PostgresStoreService extends StoreService<
   }
 
   /**
-   * Register a time hook (sleep, expire, interrupt, etc.) as a single
-   * row in task_schedules. The server-side process_next_time_hook
-   * function handles transactional processing when the timer fires.
+   * Register a time hook by inserting a TIMEHOOK message directly into
+   * engine_streams with a future visible_at. The message is invisible
+   * until the sleep duration elapses, then the engine's normal dequeue
+   * picks it up — no intermediate table, no polling, fully transactional.
    */
   async registerTimeHook(
     jobId: string,
     gId: string,
     activityId: string,
-    type: WorkListTaskType,
+    _type: WorkListTaskType,
     deletionTime: number,
     dad: string,
     transaction?: ProviderTransaction,
   ): Promise<void> {
     const schemaName = this.kvsql().safeName(this.appId);
-    const sql = `INSERT INTO ${schemaName}.task_schedules
-      (type, job_id, graph_id, activity_id, dad, score)
-      VALUES ($1, $2, $3, $4, $5, $6)`;
-    const params = [type, jobId, gId, activityId, dad, deletionTime];
+    const delayMs = deletionTime - Date.now();
+    const parts = activityId.split(',');
+    const aid = parts[0];
+    const msgDad = parts.length > 1 ? ',' + parts.slice(1).join(',') : dad;
+
+    const message = JSON.stringify({
+      type: 'timehook',
+      metadata: { guid: guid(), jid: jobId, gid: gId, dad: msgDad, aid },
+      data: { timestamp: Date.now() },
+    });
+
+    const sql = `INSERT INTO ${schemaName}.engine_streams
+      (stream_name, message, priority, visible_at)
+      VALUES ($1, $2, 5, NOW() + INTERVAL '${Math.max(delayMs, 0)} milliseconds')`;
+    const params = [this.appId, message];
 
     if (transaction && typeof (transaction as any).addCommand === 'function') {
       (transaction as any).addCommand(sql, params);
@@ -1337,28 +1347,9 @@ class PostgresStoreService extends StoreService<
       ]
     | boolean
   > {
-    const schemaName = this.kvsql().safeName(this.appId);
-    const result = await this.pgClient.query(
-      `SELECT * FROM ${schemaName}.process_next_time_hook($1, $2, $3)`,
-      [Date.now(), this.appId, guid()],
-    );
-
-    if (result.rows.length === 0) {
-      return false;
-    }
-
-    const row = result.rows[0];
-    if (row.handled_by_db) {
-      //sleep was handled server-side (TIMEHOOK inserted into engine_streams)
-      return true;
-    }
-
-    //non-sleep types: return data for the caller to dispatch
-    let type = row.hook_type as WorkListTaskType;
-    if (type === 'expire-child') {
-      type = 'expire';
-    }
-    return ['', row.hook_job_id, row.hook_graph_id, row.hook_activity_id, type];
+    //no-op: time hooks are now engine_streams messages with future visible_at.
+    //the engine's normal dequeue handles them when they become visible.
+    return false;
   }
 
   /**
@@ -1618,238 +1609,6 @@ class PostgresStoreService extends StoreService<
       });
       // Don't throw - fall back to polling mode
     }
-  }
-
-  /**
-   * Enhanced time scout that uses LISTEN/NOTIFY to reduce polling
-   */
-  async startTimeScoutWithNotifications(
-    timeEventCallback: (
-      jobId: string,
-      gId: string,
-      activityId: string,
-      type: WorkListTaskType,
-    ) => Promise<void>,
-  ): Promise<void> {
-    const channelName = `time_hooks_${this.appId}`;
-
-    try {
-      // Set up LISTEN for time notifications
-      await this.pgClient.query(`LISTEN "${channelName}"`);
-
-      // Set up notification handler with channel filtering
-      this.pgClient.on('notification', (notification) => {
-        // Only handle time notifications (channels starting with "time_hooks_")
-        // Ignore sub and stream notifications from other providers
-        if (notification.channel.startsWith('time_hooks_')) {
-          this.handleTimeNotification(notification, timeEventCallback);
-        } else {
-          // This is likely a notification from sub or stream provider, ignore it
-          this.logger.debug('postgres-store-ignoring-non-time-notification', {
-            channel: notification.channel,
-            payloadPreview: notification.payload.substring(0, 100),
-          });
-        }
-      });
-
-      this.logger.debug('postgres-time-scout-notifications-started', {
-        appId: this.appId,
-        channelName,
-      });
-
-      // Start the enhanced time scout loop
-      await this.processTimeHooksWithNotifications(timeEventCallback);
-    } catch (error) {
-      this.logger.error('postgres-time-scout-notifications-error', {
-        appId: this.appId,
-        error,
-      });
-      // Fall back to regular polling mode
-      throw error;
-    }
-  }
-
-  /**
-   * Handle time notifications from PostgreSQL
-   */
-  private async handleTimeNotification(
-    notification: any,
-    timeEventCallback: (
-      jobId: string,
-      gId: string,
-      activityId: string,
-      type: WorkListTaskType,
-    ) => Promise<void>,
-  ): Promise<void> {
-    try {
-      const payload = JSON.parse(notification.payload);
-      const { type, app_id, next_awakening, ready_at } = payload;
-
-      if (app_id !== this.appId) {
-        return; // Not for this app
-      }
-
-      this.logger.debug('postgres-time-notification-received', {
-        type,
-        appId: app_id,
-        nextAwakening: next_awakening,
-        readyAt: ready_at,
-      });
-
-      if (type === 'time_hooks_ready') {
-        // Process any ready time hooks immediately
-        await this.processReadyTimeHooks(timeEventCallback);
-      } else if (type === 'time_schedule_updated') {
-        // Update our sleep timing if we're the time scout
-        await this.updateTimeScoutSleep(next_awakening);
-      }
-    } catch (error) {
-      this.logger.error('postgres-time-notification-handle-error', {
-        notification,
-        error,
-      });
-    }
-  }
-
-  /**
-   * Process time hooks that are ready to be awakened
-   */
-  private async processReadyTimeHooks(
-    timeEventCallback: (
-      jobId: string,
-      gId: string,
-      activityId: string,
-      type: WorkListTaskType,
-    ) => Promise<void>,
-  ): Promise<void> {
-    let hasMoreTasks = true;
-
-    while (hasMoreTasks) {
-      const workListTask = await this.getNextTask();
-
-      if (Array.isArray(workListTask)) {
-        const [, target, gId, activityId, type] = workListTask;
-
-        if (type === 'child') {
-          // Skip child tasks - they're handled by ancestors
-        } else if (type === 'delist') {
-          // Delist the signal key
-          const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
-          await this.delistSignalKey(key, target);
-        } else {
-          // Process the task
-          await timeEventCallback(target, gId, activityId, type);
-        }
-      } else if (workListTask === true) {
-        // Sleep handled server-side, continue draining
-        continue;
-      } else {
-        // No more tasks ready
-        hasMoreTasks = false;
-      }
-    }
-  }
-
-  /**
-   * Enhanced time scout process that uses notifications
-   */
-  private async processTimeHooksWithNotifications(
-    timeEventCallback: (
-      jobId: string,
-      gId: string,
-      activityId: string,
-      type: WorkListTaskType,
-    ) => Promise<void>,
-  ): Promise<void> {
-    let currentSleepTimeout: NodeJS.Timeout | null = null;
-
-    // Function to calculate next sleep duration
-    const calculateNextSleep = async (): Promise<number> => {
-      const nextAwakeningTime = await this.getNextAwakeningTime();
-
-      if (nextAwakeningTime) {
-        const sleepMs = nextAwakeningTime - Date.now();
-        return Math.max(sleepMs, 0);
-      }
-
-      // Default sleep if no tasks scheduled
-      return HMSH_FIDELITY_SECONDS * 1000;
-    };
-
-    // Main loop
-    while (true) {
-      try {
-        if (await this.shouldScout()) {
-          // Process any ready tasks
-          await this.processReadyTimeHooks(timeEventCallback);
-
-          // Calculate next sleep
-          const sleepMs = await calculateNextSleep();
-
-          // Sleep with ability to be interrupted by notifications
-          await new Promise<void>((resolve) => {
-            currentSleepTimeout = setTimeout(resolve, sleepMs);
-          });
-        } else {
-          // Not the scout, sleep longer
-          await sleepFor(HMSH_SCOUT_INTERVAL_SECONDS * 1000);
-        }
-      } catch (error) {
-        this.logger.error('postgres-time-scout-loop-error', { error });
-        await sleepFor(1000);
-      }
-    }
-  }
-
-  /**
-   * Get the next awakening time from the database
-   */
-  private async getNextAwakeningTime(): Promise<number | null> {
-    const schemaName = this.kvsql().safeName(this.appId);
-
-    try {
-      const result = await this.pgClient.query(
-        `SELECT score FROM ${schemaName}.task_schedules
-         WHERE score > $1
-         ORDER BY score ASC LIMIT 1`,
-        [Date.now()],
-      );
-
-      return result.rows[0]?.score ?? null;
-    } catch (error) {
-      this.logger.error('postgres-get-next-awakening-error', { error });
-      return null;
-    }
-  }
-
-  /**
-   * Update the time scout's sleep timing based on schedule changes
-   */
-  private async updateTimeScoutSleep(nextAwakening: number): Promise<void> {
-    // This could be used to interrupt current sleep and recalculate
-    // For now, just log the schedule update
-    this.logger.debug('postgres-time-schedule-updated', {
-      nextAwakening,
-      currentTime: Date.now(),
-    });
-  }
-
-  /**
-   * Enhanced shouldScout that can handle notifications
-   */
-  async shouldScout(): Promise<boolean> {
-    const wasScout = this.isScout;
-    const isScout =
-      wasScout || (this.isScout = await this.reserveScoutRole('time'));
-    if (isScout) {
-      if (!wasScout) {
-        setTimeout(() => {
-          this.isScout = false;
-        }, HMSH_SCOUT_INTERVAL_SECONDS * 1_000);
-      }
-      return true;
-    }
-    return false;
   }
 
   // ── Exporter queries ───────────────────────────────────────────────────────
