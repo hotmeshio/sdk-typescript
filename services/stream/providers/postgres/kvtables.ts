@@ -246,7 +246,8 @@ async function createTables(
     await client.query(`
       CREATE TABLE IF NOT EXISTS ${schemaName}.engine_streams_part_${i}
       PARTITION OF ${engineTable}
-      FOR VALUES WITH (modulus 8, remainder ${i});
+      FOR VALUES WITH (modulus 8, remainder ${i})
+      WITH (fillfactor = 70);
     `);
   }
 
@@ -317,7 +318,8 @@ async function createTables(
     await client.query(`
       CREATE TABLE IF NOT EXISTS ${schemaName}.worker_streams_part_${i}
       PARTITION OF ${workerTable}
-      FOR VALUES WITH (modulus 8, remainder ${i});
+      FOR VALUES WITH (modulus 8, remainder ${i})
+      WITH (fillfactor = 70);
     `);
   }
 

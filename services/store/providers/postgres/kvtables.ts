@@ -206,6 +206,18 @@ export const KVTables = (context: PostgresStoreService) => ({
       `);
     }
 
+    // v0.17.6: add dedicated is_live partial index for hot-path queries
+    const { rows: idxRows } = await client.query(
+      `SELECT 1 FROM pg_indexes WHERE indexname = 'idx_jobs_key_live' AND schemaname = $1 LIMIT 1`,
+      [schemaName],
+    );
+    if (idxRows.length === 0) {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_jobs_key_live
+        ON ${jobsTable} (key) WHERE is_live;
+      `);
+    }
+
   },
 
   async createTables(
@@ -324,14 +336,16 @@ export const KVTables = (context: PostgresStoreService) => ({
               ON ${fullTableName} USING GIN (context);
             `);
 
-            // Create partitions using a DO block
+            // Create partitions with fillfactor 70: reserves 30% page space
+            // for HOT updates (status update cycle in setStatusAndCollateGuid)
             await client.query(`
               DO $$
               BEGIN
                 FOR i IN 0..7 LOOP
                   EXECUTE format(
                     'CREATE TABLE IF NOT EXISTS ${fullTableName}_part_%s PARTITION OF ${fullTableName}
-                    FOR VALUES WITH (modulus 8, remainder %s)',
+                    FOR VALUES WITH (modulus 8, remainder %s)
+                    WITH (fillfactor = 70)',
                     i, i
                   );
                 END LOOP;
@@ -344,9 +358,20 @@ export const KVTables = (context: PostgresStoreService) => ({
               ON ${fullTableName} (key, expired_at) INCLUDE (is_live);
             `);
 
+            // Dedicated partial index for the hot-path (WHERE key = $1 AND is_live).
+            // Covers the uniqueness trigger, hget, hgetall, hincrbyfloat, and
+            // the upsert — all of which use AND is_live directly.
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_key_live
+              ON ${fullTableName} (key)
+              WHERE is_live;
+            `);
+
+            // status in INCLUDE (not key) so semaphore increments don't
+            // force index key updates — allows HOT on the hottest write path.
             await client.query(`
               CREATE INDEX IF NOT EXISTS idx_${tableDef.name}_entity_status
-              ON ${fullTableName} (entity, status);
+              ON ${fullTableName} (entity) INCLUDE (status);
             `);
 
             await client.query(`
@@ -394,7 +419,7 @@ export const KVTables = (context: PostgresStoreService) => ({
                   IF EXISTS (
                     SELECT 1 FROM ${fullTableName}
                     WHERE key = NEW.key
-                    AND (expired_at IS NULL OR expired_at > NOW())
+                    AND is_live
                     AND id <> NEW.id
                   ) THEN
                     RAISE EXCEPTION 'A live job with key % already exists.', NEW.key;
@@ -472,14 +497,16 @@ export const KVTables = (context: PostgresStoreService) => ({
                   EXECUTE FUNCTION ${schemaName}.update_attributes_updated_at();
             `);
 
-            // Create partitions for attributes table
+            // Create partitions with fillfactor 70: reserves 30% page space
+            // for HOT updates (frequent upserts in hincrbyfloat/collateLeg2Entry)
             await client.query(`
               DO $$
               BEGIN
                 FOR i IN 0..7 LOOP
                   EXECUTE format(
                     'CREATE TABLE IF NOT EXISTS ${attributesTableName}_part_%s PARTITION OF ${attributesTableName}
-                    FOR VALUES WITH (modulus 8, remainder %s)',
+                    FOR VALUES WITH (modulus 8, remainder %s)
+                    WITH (fillfactor = 70)',
                     i, i
                   );
                 END LOOP;
