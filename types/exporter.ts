@@ -160,6 +160,7 @@ export type WorkflowEventType =
   | 'child_workflow_execution_failed'
   | 'timer_started'
   | 'timer_fired'
+  | 'signal_wait_started'
   | 'workflow_execution_signaled';
 
 export type WorkflowEventCategory =
@@ -254,6 +255,13 @@ export interface TimerFiredAttributes {
   execution_index: number;
 }
 
+export interface SignalWaitStartedAttributes {
+  kind: 'signal_wait_started';
+  signal_name: string;
+  timeline_key: string;
+  execution_index: number;
+}
+
 export interface WorkflowExecutionSignaledAttributes {
   kind: 'workflow_execution_signaled';
   signal_name: string;
@@ -274,6 +282,7 @@ export type WorkflowEventAttributes =
   | ChildWorkflowExecutionFailedAttributes
   | TimerStartedAttributes
   | TimerFiredAttributes
+  | SignalWaitStartedAttributes
   | WorkflowExecutionSignaledAttributes;
 
 export interface WorkflowExecutionEvent {

@@ -938,9 +938,17 @@ class ExporterService {
             || val?.data?.id
             || val?.data?.data?.id
             || `signal-${entry.index}`;
-          const ts = auIso || acIso;
-          if (ts) {
-            events.push(makeEvent(nextId++, 'workflow_execution_signaled', 'signal', ts, dur, false, {
+
+          if (acIso) {
+            events.push(makeEvent(nextId++, 'signal_wait_started', 'signal', acIso, null, false, {
+              kind: 'signal_wait_started',
+              signal_name: signalName,
+              timeline_key: entry.key,
+              execution_index: entry.index,
+            }));
+          }
+          if (auIso) {
+            events.push(makeEvent(nextId++, 'workflow_execution_signaled', 'signal', auIso, dur, false, {
               kind: 'workflow_execution_signaled',
               signal_name: signalName,
               input: options.omit_results ? undefined : val?.data?.data,
