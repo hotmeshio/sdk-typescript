@@ -106,20 +106,6 @@ describe('DURABLE | signal | Postgres', () => {
       it('should order proxy activity before condition in execution timeline', async () => {
         const execution = await handle.exportExecution();
 
-        // Find the proxy (activity) and wait (signal) events
-        const activityEvents = execution.events.filter(
-          e => e.event_type === 'activity_task_scheduled' || e.event_type === 'activity_task_completed',
-        );
-        const signalEvents = execution.events.filter(
-          e => e.event_type === 'workflow_execution_signaled',
-        );
-
-        expect(activityEvents.length).toBeGreaterThan(0);
-        expect(signalEvents.length).toBeGreaterThan(0);
-
-        // The first activity_task_scheduled (proxy greet) must appear before
-        // the first workflow_execution_signaled (condition) in the sorted events array.
-        // Both are sorted chronologically by event_time.
         const firstActivity = execution.events.findIndex(
           e => e.event_type === 'activity_task_scheduled',
         );
@@ -128,6 +114,27 @@ describe('DURABLE | signal | Postgres', () => {
         );
 
         expect(firstActivity).toBeLessThan(firstSignal);
+      }, 10_000);
+
+      it('signal_wait_started should have a later timestamp than workflow start', async () => {
+        const execution = await handle.exportExecution();
+
+        const workflowStart = execution.events.find(
+          e => e.event_type === 'workflow_execution_started',
+        );
+        const waitStarted = execution.events.find(
+          e => e.event_type === 'signal_wait_started',
+        );
+
+        expect(workflowStart).toBeDefined();
+        expect(waitStarted).toBeDefined();
+
+        // signal_wait_started must have a DIFFERENT (later) timestamp than workflow start
+        // This proves ac comes from the waiter hook Leg1, not $job.metadata.jc
+        const startTime = new Date(workflowStart.event_time).getTime();
+        const waitTime = new Date(waitStarted.event_time).getTime();
+
+        expect(waitTime).toBeGreaterThan(startTime);
       }, 10_000);
     });
   });

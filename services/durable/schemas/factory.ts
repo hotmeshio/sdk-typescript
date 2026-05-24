@@ -1,4 +1,4 @@
-const APP_VERSION = '14';
+const APP_VERSION = '15';
 const APP_ID = 'durable';
 
 /**
@@ -386,7 +386,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     - '@pipe':
                       - ['{$self.hook.data.id}']
                     - '@pipe':
-                      - [type, wait, data, '{$self.hook.data}', ac, '{$job.metadata.jc}', au, '{$self.output.metadata.au}']
+                      - [type, wait, data, '{$self.hook.data}', ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
                       - ['{@object.create}']
                     - '@pipe':
                       - [timedOut, true, ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
@@ -1181,7 +1181,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     - '@pipe':
                       - ['{$self.hook.data.id}']
                     - '@pipe':
-                      - [type, wait, data, '{$self.hook.data}', ac, '{$job.metadata.jc}', au, '{$self.output.metadata.au}']
+                      - [type, wait, data, '{$self.hook.data}', ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
                       - ['{@object.create}']
                     - '@pipe':
                       - [timedOut, true, ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
