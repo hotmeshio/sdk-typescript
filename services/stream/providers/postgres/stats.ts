@@ -59,6 +59,7 @@ export async function getStreamDepths(
       `SELECT stream_name, COUNT(*) AS count
        FROM ${tableName}
        WHERE stream_name = ANY($1::text[])
+         AND expired_at IS NULL
        GROUP BY stream_name`,
       [streams],
     );
