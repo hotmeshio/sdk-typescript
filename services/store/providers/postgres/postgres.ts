@@ -1567,7 +1567,7 @@ class PostgresStoreService extends StoreService<
     const resolveRate = (response: StringStringType, topic: string) => {
       const rate = topic in response ? Number(response[topic]) : 0;
       if (isNaN(rate)) return 0;
-      if (rate == -1) return MAX_DELAY;
+      if (rate < 0) return -1;
       return Math.max(Math.min(rate, MAX_DELAY), 0);
     };
 

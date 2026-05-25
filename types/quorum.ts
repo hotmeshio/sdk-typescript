@@ -33,12 +33,8 @@ export type ThrottleOptions = {
   guid?: string;
   /** target a worker quorum */
   topic?: string;
-  /** entity/noun */
-  entity?: string;
-  /** in milliseconds; set to -1 for indefinite throttle */
+  /** delay in milliseconds: 0 = resume, -1 = pause, >0 = delay per message */
   throttle: number;
-  /** namespace */
-  namespace?: string;
 };
 
 /**
