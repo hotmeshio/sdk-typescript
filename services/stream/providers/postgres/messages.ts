@@ -145,29 +145,29 @@ export function buildPublishSQL(
   const hasVisibilityDelays = parsedMessages.some(pm => pm.visibilityDelayMs > 0);
 
   if (isEngine) {
-    // Engine table: no group_name, no workflow_name
+    // Engine table: includes jid for job tracing
     if (noneHaveConfig && !hasVisibilityDelays) {
-      insertColumns = '(stream_name, message, priority)';
+      insertColumns = '(stream_name, jid, message, priority)';
       parsedMessages.forEach((pm) => {
         const paramOffset = params.length + 1;
-        valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1})`);
-        params.push(pm.message, pm.priority);
+        valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2})`);
+        params.push(pm.jid, pm.message, pm.priority);
       });
     } else if (noneHaveConfig && hasVisibilityDelays) {
-      insertColumns = '(stream_name, message, priority, visible_at, retry_attempt)';
+      insertColumns = '(stream_name, jid, message, priority, visible_at, retry_attempt)';
       parsedMessages.forEach((pm) => {
         const paramOffset = params.length + 1;
         if (pm.visibilityDelayMs > 0) {
           const visibleAtSQL = `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`;
-          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, ${visibleAtSQL}, $${paramOffset + 2})`);
-          params.push(pm.message, pm.priority, pm.retryAttempt);
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, ${visibleAtSQL}, $${paramOffset + 3})`);
+          params.push(pm.jid, pm.message, pm.priority, pm.retryAttempt);
         } else {
-          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, DEFAULT, $${paramOffset + 2})`);
-          params.push(pm.message, pm.priority, pm.retryAttempt);
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, DEFAULT, $${paramOffset + 3})`);
+          params.push(pm.jid, pm.message, pm.priority, pm.retryAttempt);
         }
       });
     } else {
-      insertColumns = '(stream_name, message, priority, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)';
+      insertColumns = '(stream_name, jid, message, priority, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)';
       parsedMessages.forEach((pm) => {
         const visibleAtClause = pm.visibilityDelayMs > 0
           ? `NOW() + INTERVAL '${pm.visibilityDelayMs} milliseconds'`
@@ -175,8 +175,9 @@ export function buildPublishSQL(
 
         if (pm.hasExplicitConfig) {
           const paramOffset = params.length + 1;
-          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, $${paramOffset + 4}, ${visibleAtClause}, $${paramOffset + 5})`);
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, $${paramOffset + 3}, $${paramOffset + 4}, $${paramOffset + 5}, ${visibleAtClause}, $${paramOffset + 6})`);
           params.push(
+            pm.jid,
             pm.message,
             pm.priority,
             pm.retry.max_retry_attempts,
@@ -186,8 +187,8 @@ export function buildPublishSQL(
           );
         } else {
           const paramOffset = params.length + 1;
-          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, DEFAULT, DEFAULT, DEFAULT, ${visibleAtClause}, $${paramOffset + 2})`);
-          params.push(pm.message, pm.priority, pm.retryAttempt);
+          valuesClauses.push(`($1, $${paramOffset}, $${paramOffset + 1}, $${paramOffset + 2}, DEFAULT, DEFAULT, DEFAULT, ${visibleAtClause}, $${paramOffset + 3})`);
+          params.push(pm.jid, pm.message, pm.priority, pm.retryAttempt);
         }
       });
     }

@@ -198,6 +198,82 @@ describe('FUNCTIONAL | Quorum | Postgres', () => {
       hotMesh.quorum?.unsub(callback);
     });
 
+    it('pause (-1) stores -1 directly, not MAX_DELAY', async () => {
+      await hotMesh.throttle({ throttle: -1 });
+      await sleepFor(1000);
+
+      const savedRate = await hotMesh.engine?.store?.getThrottleRate(':');
+      expect(savedRate).toBe(-1);
+    });
+
+    it('resume from pause: -1 → 0', async () => {
+      // Ensure paused from previous test
+      const pausedRate = await hotMesh.engine?.store?.getThrottleRate(':');
+      expect(pausedRate).toBe(-1);
+
+      await hotMesh.throttle({ throttle: 0 });
+      await sleepFor(1000);
+
+      const resumedRate = await hotMesh.engine?.store?.getThrottleRate(':');
+      expect(resumedRate).toBe(0);
+    });
+
+    it('topic-scoped pause stores -1 for that topic only', async () => {
+      // First resume globally
+      await hotMesh.throttle({ throttle: 0 });
+      await sleepFor(500);
+
+      // Pause a specific topic
+      await hotMesh.throttle({ topic: 'calculation.execute', throttle: -1 });
+      await sleepFor(1000);
+
+      const topicRate = await hotMesh.engine?.store?.getThrottleRate(
+        'calculation.execute',
+      );
+      expect(topicRate).toBe(-1);
+
+      // Global rate should still be 0 (resumed)
+      const globalRate = await hotMesh.engine?.store?.getThrottleRate(':');
+      expect(globalRate).toBe(0);
+
+      // Clean up: resume the topic
+      await hotMesh.throttle({ topic: 'calculation.execute', throttle: 0 });
+      await sleepFor(500);
+    });
+
+    it('broadcasts -1 directly (not MAX_DELAY) to quorum', async () => {
+      let receivedThrottle: number | undefined;
+      const callback = (topic: string, message: QuorumMessage) => {
+        if (message.type === 'throttle') {
+          receivedThrottle = (message as ThrottleMessage).throttle;
+        }
+      };
+      hotMesh.quorum?.sub(callback);
+
+      await hotMesh.throttle({ throttle: -1 });
+      await sleepFor(1000);
+
+      hotMesh.quorum?.unsub(callback);
+      expect(receivedThrottle).toBe(-1);
+
+      // Clean up
+      await hotMesh.throttle({ throttle: 0 });
+      await sleepFor(500);
+    });
+
+    it('ThrottleManager.isPaused() returns true for -1', async () => {
+      const { ThrottleManager } = await import('../../../services/router/throttling');
+      const mgr = new ThrottleManager(0);
+
+      expect(mgr.isPaused()).toBe(false);
+      mgr.setThrottle(5000);
+      expect(mgr.isPaused()).toBe(false);
+      mgr.setThrottle(-1);
+      expect(mgr.isPaused()).toBe(true);
+      mgr.setThrottle(0);
+      expect(mgr.isPaused()).toBe(false);
+    });
+
     it('sends a `rollcall` message to WORKER quorum members', async () => {
       let count = 0;
       const callback = (topic: string, message: QuorumMessage) => {

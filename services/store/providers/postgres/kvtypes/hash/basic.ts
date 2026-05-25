@@ -599,31 +599,20 @@ export function _hgetall(
   const isJobsTableResult = isJobsTable(tableName);
 
   if (isJobsTableResult) {
+    // Single CTE: reads jobs row once, then joins attributes
     const sql = `
       WITH valid_job AS (
         SELECT id, status, context
         FROM ${tableName}
         WHERE key = $1 AND is_live
-      ),
-      job_data AS (
-        SELECT 'status' AS field, status::text AS value
-        FROM ${tableName}
-        WHERE key = $1 AND is_live
-
-        UNION ALL
-
-        SELECT 'context' AS field, context::text AS value
-        FROM ${tableName}
-        WHERE key = $1 AND is_live
-      ),
-      attribute_data AS (
-        SELECT symbol || dimension AS field, value
-        FROM ${tableName}_attributes
-        WHERE job_id IN (SELECT id FROM valid_job)
       )
-      SELECT * FROM job_data
+      SELECT 'status' AS field, status::text AS value FROM valid_job
       UNION ALL
-      SELECT * FROM attribute_data;
+      SELECT 'context' AS field, context::text AS value FROM valid_job
+      UNION ALL
+      SELECT symbol || dimension AS field, value
+      FROM ${tableName}_attributes
+      WHERE job_id = (SELECT id FROM valid_job);
     `;
     return { sql, params: [key] };
   } else {

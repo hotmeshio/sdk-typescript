@@ -25,11 +25,11 @@ export class RouterConfigManager {
   static validateThrottle(delayInMillis: number): void {
     if (
       !Number.isInteger(delayInMillis) ||
-      delayInMillis < 0 ||
-      delayInMillis > MAX_DELAY
+      (delayInMillis < -1) ||
+      (delayInMillis > MAX_DELAY)
     ) {
       throw new Error(
-        `Throttle must be a non-negative integer and not exceed ${MAX_DELAY} ms; send -1 to throttle indefinitely`,
+        'Throttle must be -1 (pause) or a non-negative integer (ms delay); 0 = resume',
       );
     }
   }

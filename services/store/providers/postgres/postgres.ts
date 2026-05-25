@@ -675,11 +675,10 @@ class PostgresStoreService extends StoreService<
     this.serializer.resetSymbols(symKeys, symVals, dIds);
 
     const hashData = this.serializer.package(state, symbolNames);
-    if (status !== null) {
-      hashData[':'] = status.toString();
-    } else {
-      delete hashData[':'];
-    }
+    // ':' (status) is NOT written to jobs_attributes — jobs.status is
+    // maintained by setStatus/setStatusAndCollateGuid. The attribute row
+    // was redundant, never read, and contended on every activity.
+    delete hashData[':'];
     await this.kvsql(transaction).hset(hashKey, hashData);
     return jobId;
   }
@@ -1568,7 +1567,7 @@ class PostgresStoreService extends StoreService<
     const resolveRate = (response: StringStringType, topic: string) => {
       const rate = topic in response ? Number(response[topic]) : 0;
       if (isNaN(rate)) return 0;
-      if (rate == -1) return MAX_DELAY;
+      if (rate < 0) return -1;
       return Math.max(Math.min(rate, MAX_DELAY), 0);
     };
 

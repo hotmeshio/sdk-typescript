@@ -8,7 +8,6 @@ import {
   ThrottleMessage,
   ThrottleOptions,
 } from '../../types/quorum';
-import { MAX_DELAY } from '../../modules/enums';
 
 interface QuorumContext {
   engine: EngineService | null;
@@ -33,19 +32,14 @@ export async function throttle(
   instance: QuorumContext,
   options: ThrottleOptions,
 ): Promise<boolean> {
-  let throttleValue: number;
-  if (options.throttle === -1) {
-    throttleValue = MAX_DELAY;
-  } else {
-    throttleValue = options.throttle;
-  }
+  const throttleValue = options.throttle;
   if (
     !Number.isInteger(throttleValue) ||
-    throttleValue < 0 ||
-    throttleValue > MAX_DELAY
+    (throttleValue < -1) ||
+    (throttleValue !== -1 && throttleValue < 0)
   ) {
     throw new Error(
-      `Throttle must be a non-negative integer and not exceed ${MAX_DELAY} ms; send -1 to throttle indefinitely`,
+      'Throttle must be -1 (pause) or a non-negative integer (ms delay); 0 = resume',
     );
   }
   const throttleMessage: ThrottleMessage = {
