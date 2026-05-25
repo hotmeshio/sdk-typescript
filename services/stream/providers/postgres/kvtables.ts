@@ -212,6 +212,24 @@ async function ensureIndexes(
     ON ${workerTable} (stream_name, priority DESC, visible_at, id)
     WHERE expired_at IS NULL;
   `);
+
+  // v0.18.0: add jid column to engine_streams for job tracing
+  const { rows: jidCol } = await client.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_schema = $1 AND table_name = 'engine_streams' AND column_name = 'jid'
+     LIMIT 1`,
+    [schemaName],
+  );
+  if (jidCol.length === 0) {
+    await client.query(
+      `ALTER TABLE ${engineTable} ADD COLUMN jid TEXT NOT NULL DEFAULT ''`,
+    );
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_engine_streams_jid_created
+      ON ${engineTable} (jid, created_at)
+      WHERE jid != '';
+    `);
+  }
 }
 
 async function createTables(
@@ -226,6 +244,7 @@ async function createTables(
     CREATE TABLE IF NOT EXISTS ${engineTable} (
       id BIGSERIAL,
       stream_name TEXT NOT NULL,
+      jid TEXT NOT NULL DEFAULT '',
       message TEXT NOT NULL,
       created_at TIMESTAMPTZ DEFAULT NOW(),
       reserved_at TIMESTAMPTZ,
@@ -284,6 +303,13 @@ async function createTables(
     CREATE INDEX IF NOT EXISTS idx_engine_streams_dead_lettered
     ON ${engineTable} (dead_lettered_at, stream_name)
     WHERE dead_lettered_at IS NOT NULL;
+  `);
+
+  // All engine messages for a job, ordered by time
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_jid_created
+    ON ${engineTable} (jid, created_at)
+    WHERE jid != '';
   `);
 
   // ---- WORKER_STREAMS table ----
