@@ -248,6 +248,10 @@ class NatsStreamService extends StreamService<NatsClientType, NatsPubAckType> {
     return [];
   }
 
+  isScout(): boolean {
+    return false; // NATS doesn't use the scout pattern
+  }
+
   async getStreamStats(streamName: string): Promise<StreamStats> {
     try {
       const info = await this.jsm.streams.info(streamName);

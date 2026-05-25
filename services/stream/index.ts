@@ -123,6 +123,9 @@ export abstract class StreamService<
   // Monitoring and maintenance
   abstract getStreamStats(streamName: string): Promise<StreamStats>;
 
+  /** Whether this instance currently holds the scout role. */
+  abstract isScout(): boolean;
+
   abstract getStreamDepth(streamName: string): Promise<number>;
   abstract getStreamDepths(
     streamName: { stream: string }[],
