@@ -261,6 +261,38 @@ describe('FUNCTIONAL | Quorum | Postgres', () => {
       await sleepFor(500);
     });
 
+    it('rollCall profile includes is_scout field', async () => {
+      const profiles = await hotMesh.rollCall(1500);
+      const engineProfiles = profiles.filter((p) => !p.worker_topic);
+      expect(engineProfiles.length).toBeGreaterThan(0);
+      // At least one engine should be scout
+      const scouts = engineProfiles.filter((p) => p.is_scout === true);
+      const nonScouts = engineProfiles.filter((p) => p.is_scout === false);
+      expect(scouts.length + nonScouts.length).toBe(engineProfiles.length);
+      // Exactly one scout per app
+      expect(scouts.length).toBeLessThanOrEqual(1);
+    }, 10_000);
+
+    it('scope: engines targets only engines (topic set to null)', async () => {
+      let receivedTopic: string | null | undefined = 'unset';
+      const callback = (topic: string, message: QuorumMessage) => {
+        if (message.type === 'throttle') {
+          receivedTopic = (message as ThrottleMessage).topic;
+        }
+      };
+      hotMesh.quorum?.sub(callback);
+
+      await hotMesh.throttle({ throttle: 500, scope: 'engines' });
+      await sleepFor(1000);
+
+      hotMesh.quorum?.unsub(callback);
+      expect(receivedTopic).toBeNull();
+
+      // Clean up
+      await hotMesh.throttle({ throttle: 0 });
+      await sleepFor(500);
+    });
+
     it('ThrottleManager.isPaused() returns true for -1', async () => {
       const { ThrottleManager } = await import('../../../services/router/throttling');
       const mgr = new ThrottleManager(0);

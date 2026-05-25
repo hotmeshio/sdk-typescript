@@ -49,7 +49,17 @@ export async function throttle(
   if (options.guid) {
     throttleMessage.guid = options.guid;
   }
-  if (options.topic !== undefined) {
+  // Scope determines channel targeting:
+  // 'engines' → set topic to null (workers suppress null-topic throttles)
+  // 'workers' → requires a topic to route to worker channels only
+  // 'all' / undefined → default behavior (engines + workers)
+  if (options.scope === 'engines') {
+    throttleMessage.topic = null;
+  } else if (options.scope === 'workers' && !options.topic) {
+    // Workers-only without a specific topic: broadcast to all worker channels
+    // by omitting topic (workers receive on global channel) but NOT setting null
+    // (which would suppress workers). The existing behavior is correct here.
+  } else if (options.topic !== undefined) {
     throttleMessage.topic = options.topic;
   }
   await instance.engine.store.setThrottleRate(throttleMessage);

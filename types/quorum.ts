@@ -33,6 +33,8 @@ export type ThrottleOptions = {
   guid?: string;
   /** target a worker quorum */
   topic?: string;
+  /** target engines only, workers only, or all (default: 'all') */
+  scope?: 'engines' | 'workers' | 'all';
   /** delay in milliseconds: 0 = resume, -1 = pause, >0 = delay per message */
   throttle: number;
 };
@@ -83,6 +85,8 @@ export interface QuorumProfile {
   reclaimDelay?: number;
   /** Max messages to reclaim per cycle. */
   reclaimCount?: number;
+  /** Whether this engine currently holds the scout role (polls for delayed messages). */
+  is_scout?: boolean;
   /** Host-level memory, CPU, and network stats. */
   system?: SystemHealth;
   /** Stringified worker callback function (only if `signature: true` in rollcall). */

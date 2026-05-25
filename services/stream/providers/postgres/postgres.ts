@@ -561,6 +561,10 @@ class PostgresStreamService extends StreamService<
     return Messages.retryMessages(streamName, groupName, options);
   }
 
+  isScout(): boolean {
+    return this.scoutManager?.isCurrentlyScout() ?? false;
+  }
+
   async getStreamStats(streamName: string): Promise<StreamStats> {
     const target = this.resolveStreamTarget(streamName);
     return Stats.getStreamStats(

@@ -218,6 +218,7 @@ class QuorumService {
         timestamp: formatISODate(new Date()),
         inited: this.engine.inited,
         throttle: this.engine.router.throttle,
+        is_scout: this.engine.stream.isScout(),
         reclaimDelay: this.engine.router.reclaimDelay,
         reclaimCount: this.engine.router.reclaimCount,
         system: await getSystemHealth(),
