@@ -1,4 +1,5 @@
 import { CollationError, InactiveJobError } from '../../modules/errors';
+import { HMSH_MAX_CYCLES } from '../../modules/enums';
 import { CollationFaultType, CollationStage } from '../../types/collator';
 import { ActivityDuplex } from '../../types/activity';
 import { HotMeshGraph } from '../../types/hotmesh';
@@ -75,6 +76,17 @@ class CollatorService {
     const ancestors = activity.config.ancestors;
     const ancestorIndex = ancestors.indexOf(targetActivityId);
     const dimensions = activity.metadata.dad.split(','); //e.g., `,0,0,1,0`
+
+    // Safety cap: prevent infinite cycle loops
+    const currentCycle = parseInt(dimensions[ancestorIndex] || '0', 10);
+    if (currentCycle >= HMSH_MAX_CYCLES) {
+      throw new Error(
+        `Cycle limit exceeded for job ${activity.context.metadata.jid} ` +
+        `(${currentCycle} >= HMSH_MAX_CYCLES=${HMSH_MAX_CYCLES}) at DAD ${activity.metadata.dad}. ` +
+        `Set HMSH_MAX_CYCLES env var to increase the limit.`,
+      );
+    }
+
     dimensions.length = ancestorIndex + 1;
     dimensions.push('0');
     return dimensions.join(',');

@@ -14,6 +14,7 @@
  *   (default)  → Worker.processEvent          (worker response)
  */
 
+import { DuplicateJobError } from '../../modules/errors';
 import { Hook } from '../activities/hook';
 import { Trigger } from '../activities/trigger';
 import { Await } from '../activities/await';
@@ -140,7 +141,23 @@ async function dispatchAwait(
     streamData.data,
     context as JobState,
   )) as Trigger;
-  await handler.process();
+  try {
+    await handler.process();
+  } catch (error) {
+    if (error instanceof DuplicateJobError) {
+      // The child workflow already exists from a prior spawn attempt
+      // (crash recovery). This AWAIT message is a replay — the child
+      // will deliver its RESULT back to the parent via the normal path.
+      // Acknowledge the message so it doesn't loop.
+      instance.logger.info('dispatch-await-child-exists', {
+        childJobId: error.jobId,
+        parentJobId: streamData.metadata.jid,
+        parentDad: streamData.metadata.dad,
+      });
+      return;
+    }
+    throw error;
+  }
 }
 
 async function dispatchResult(
