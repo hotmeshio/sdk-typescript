@@ -156,6 +156,8 @@ export const MAX_DELAY = 2147483647; // Maximum allowed delay in milliseconds fo
 export const HMSH_MAX_RETRIES = parseInt(process.env.HMSH_MAX_RETRIES, 10) || 3;
 export const HMSH_POISON_MESSAGE_THRESHOLD =
   parseInt(process.env.HMSH_POISON_MESSAGE_THRESHOLD, 10) || 5;
+export const HMSH_MAX_CYCLES =
+  parseInt(process.env.HMSH_MAX_CYCLES, 10) || 10_000;
 export const HMSH_MAX_TIMEOUT_MS =
   parseInt(process.env.HMSH_MAX_TIMEOUT_MS, 10) || 60000;
 export const HMSH_GRADUATED_INTERVAL_MS =
