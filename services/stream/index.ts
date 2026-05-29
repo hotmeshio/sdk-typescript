@@ -118,7 +118,9 @@ export abstract class StreamService<
 
   // Adaptive reservation timeout — set by the consumption manager
   // based on stream depth. Providers read this when reserving messages.
-  reservationTimeout: number = 30;
+  // Includes a +5s buffer over the activity deadline so the deadline
+  // always fires before reclaim (see ConsumptionManager.LEASE_BUFFER_S).
+  reservationTimeout: number = 35;
 
   // Monitoring and maintenance
   abstract getStreamStats(streamName: string): Promise<StreamStats>;

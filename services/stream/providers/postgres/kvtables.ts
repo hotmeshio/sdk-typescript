@@ -214,22 +214,14 @@ async function ensureIndexes(
   `);
 
   // v0.18.0: add jid column to engine_streams for job tracing
-  const { rows: jidCol } = await client.query(
-    `SELECT 1 FROM information_schema.columns
-     WHERE table_schema = $1 AND table_name = 'engine_streams' AND column_name = 'jid'
-     LIMIT 1`,
-    [schemaName],
+  await client.query(
+    `ALTER TABLE ${engineTable} ADD COLUMN IF NOT EXISTS jid TEXT NOT NULL DEFAULT ''`,
   );
-  if (jidCol.length === 0) {
-    await client.query(
-      `ALTER TABLE ${engineTable} ADD COLUMN jid TEXT NOT NULL DEFAULT ''`,
-    );
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_engine_streams_jid_created
-      ON ${engineTable} (jid, created_at)
-      WHERE jid != '';
-    `);
-  }
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_jid_created
+    ON ${engineTable} (jid, created_at)
+    WHERE jid != '';
+  `);
 }
 
 async function createTables(

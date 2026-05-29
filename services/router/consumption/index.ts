@@ -1,4 +1,9 @@
 import { guid } from '../../../modules/utils';
+import {
+  LeaseExpiredError,
+  ErrorCategory,
+  classifyError,
+} from '../../../modules/errors';
 import { ILogger } from '../../logger';
 import { StreamService } from '../../stream';
 import { ThrottleManager } from '../throttling';
@@ -64,6 +69,10 @@ export class ConsumptionManager<
   private static readonly DEPTH_CHECK_INTERVAL_MS = 10_000;
   private static readonly DEPTH_SCALE_UP_THRESHOLD = 100;
   private static readonly DEPTH_SCALE_DOWN_THRESHOLD = 10;
+  // Buffer between the activity deadline (N) and the reclaim interval
+  // (N+5). The function gets the full configured timeout; the extra 5s
+  // ensures the deadline fires before a reclaimant can pick up the message.
+  private static readonly LEASE_BUFFER_S = 5;
 
   constructor(
     stream: S,
@@ -133,7 +142,8 @@ export class ConsumptionManager<
       }
 
       if (this.adaptiveReservationTimeout !== prevTimeout) {
-        this.stream.reservationTimeout = this.adaptiveReservationTimeout;
+        this.stream.reservationTimeout =
+          this.adaptiveReservationTimeout + ConsumptionManager.LEASE_BUFFER_S;
         this.logger.info('stream-reservation-timeout-adjusted', {
           stream,
           depth,
@@ -375,7 +385,7 @@ export class ConsumptionManager<
         enableNotifications: true,
         notificationCallback,
         blockTimeout: HMSH_BLOCK_TIME_MS,
-        reservationTimeout: HMSH_RESERVATION_TIMEOUT_S,
+        reservationTimeout: HMSH_RESERVATION_TIMEOUT_S + ConsumptionManager.LEASE_BUFFER_S,
       });
 
       // Don't block here - let the worker initialization complete
@@ -448,7 +458,7 @@ export class ConsumptionManager<
             {
               blockTimeout: streamDuration,
               batchSize,
-              reservationTimeout: this.adaptiveReservationTimeout,
+              reservationTimeout: this.adaptiveReservationTimeout + ConsumptionManager.LEASE_BUFFER_S,
               enableBackoff: true,
               initialBackoff: INITIAL_STREAM_BACKOFF,
               maxBackoff: MAX_STREAM_BACKOFF,
@@ -468,7 +478,7 @@ export class ConsumptionManager<
             {
               blockTimeout: streamDuration,
               batchSize,
-              reservationTimeout: this.adaptiveReservationTimeout,
+              reservationTimeout: this.adaptiveReservationTimeout + ConsumptionManager.LEASE_BUFFER_S,
               enableBackoff: false,
               maxRetries: 1,
             },
@@ -705,15 +715,69 @@ export class ConsumptionManager<
       return;
     }
 
+    // Lease deadline: the full configured reservation timeout (N).
+    // The reclaim interval is N+5s, so the deadline always fires
+    // before a reclaimant can pick up the message. This preserves
+    // the user's contract — if they set 30s, the function gets 30s.
+    const deadlineMs = this.adaptiveReservationTimeout * 1000;
+
     let output: StreamDataResponse | void;
     const telemetry = new RouterTelemetry(this.appId);
     try {
       telemetry.startStreamSpan(input, this.role);
-      output = await this.execStreamLeg(input, stream, id, callback.bind(this));
+
+      let deadlineTimer: ReturnType<typeof setTimeout>;
+      const deadlinePromise = new Promise<never>((_, reject) => {
+        deadlineTimer = setTimeout(
+          () =>
+            reject(
+              new LeaseExpiredError(deadlineMs, this.adaptiveReservationTimeout),
+            ),
+          deadlineMs,
+        );
+      });
+
+      try {
+        output = await Promise.race([
+          this.execStreamLeg(input, stream, id, callback.bind(this)),
+          deadlinePromise,
+        ]);
+      } finally {
+        clearTimeout(deadlineTimer);
+      }
+
       telemetry.setStreamErrorFromOutput(output);
       this.errorCount = 0;
     } catch (err) {
-      this.logger.error(`stream-read-one-error`, { group, stream, id, err });
+      const category = classifyError(err);
+
+      if (err instanceof LeaseExpiredError) {
+        // FATAL: lease expired — do NOT ack. The message remains in the
+        // stream for a reclaimant to pick up cleanly. Any partial writes
+        // from this consumer are idempotent via collation.
+        this.logger.error('stream-lease-expired', {
+          category,
+          group,
+          stream,
+          id,
+          deadlineMs,
+          reservationTimeoutS: this.adaptiveReservationTimeout,
+          topic: input.metadata?.topic,
+          activityId: input.metadata?.aid,
+          jobId: input.metadata?.jid,
+        });
+        telemetry.setStreamErrorFromException(err);
+        telemetry.endStreamSpan();
+        return; // NO ack — leave for reclaimant
+      }
+
+      this.logger.error(`stream-read-one-error`, {
+        category,
+        group,
+        stream,
+        id,
+        err,
+      });
       telemetry.setStreamErrorFromException(err);
       output = this.errorHandler.structureUnhandledError(
         input,
@@ -721,9 +785,6 @@ export class ConsumptionManager<
       );
     }
     try {
-      // When the ENGINE itself fails to process a message (e.g., schema not
-      // found, missing subscription), do NOT republish the error back to the
-      // engine stream — that creates an infinite poison loop. The engine
       // When the ENGINE encounters an infrastructure error (schema not found,
       // subscription missing — code 598), the message is permanently unprocessable.
       // Do NOT republish it — that creates an infinite poison loop. Only suppress
@@ -731,6 +792,7 @@ export class ConsumptionManager<
       // duplicates, workflow failures) must still flow through normally.
       if (group === 'ENGINE' && output?.code === 598) {
         this.logger.error(`stream-engine-dispatch-fatal`, {
+          category: ErrorCategory.FATAL,
           stream, id, group,
           aid: (input as any).metadata?.aid,
           jid: (input as any).metadata?.jid,
@@ -744,6 +806,7 @@ export class ConsumptionManager<
       // If publishResponse fails, still ack the message to prevent
       // infinite reprocessing. Log the error for debugging.
       this.logger.error(`stream-publish-response-error`, {
+        category: classifyError(publishErr),
         group, stream, id, error: publishErr,
       });
       this.errorCount++;
@@ -765,6 +828,7 @@ export class ConsumptionManager<
       output = await callback(input);
     } catch (error) {
       this.logger.error(`stream-call-function-error`, {
+        category: classifyError(error),
         error,
         input: input,
         stack: error.stack,
