@@ -14,7 +14,7 @@
  *   (default)  → Worker.processEvent          (worker response)
  */
 
-import { DuplicateJobError } from '../../modules/errors';
+import { DuplicateJobError, classifyError } from '../../modules/errors';
 import { Hook } from '../activities/hook';
 import { Trigger } from '../activities/trigger';
 import { Await } from '../activities/await';
@@ -150,6 +150,7 @@ async function dispatchAwait(
       // will deliver its RESULT back to the parent via the normal path.
       // Acknowledge the message so it doesn't loop.
       instance.logger.info('dispatch-await-child-exists', {
+        category: classifyError(error),
         childJobId: error.jobId,
         parentJobId: streamData.metadata.jid,
         parentDad: streamData.metadata.dad,

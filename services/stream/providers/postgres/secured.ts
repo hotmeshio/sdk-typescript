@@ -38,7 +38,7 @@ export async function fetchMessagesSecured(
   const maxBackoff = options?.maxBackoff ?? 3000;
   const maxRetries = options?.maxRetries ?? 3;
   const batchSize = options?.batchSize || 1;
-  const reservationTimeout = options?.reservationTimeout || HMSH_RESERVATION_TIMEOUT_S;
+  const reservationTimeout = options?.reservationTimeout || (HMSH_RESERVATION_TIMEOUT_S + 5);
 
   let backoff = initialBackoff;
   let retries = 0;

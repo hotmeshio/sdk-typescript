@@ -295,7 +295,7 @@ export async function fetchMessages(
     while (retries < maxRetries) {
       retries++;
       const batchSize = options?.batchSize || 1;
-      const reservationTimeout = options?.reservationTimeout || HMSH_RESERVATION_TIMEOUT_S;
+      const reservationTimeout = options?.reservationTimeout || (HMSH_RESERVATION_TIMEOUT_S + 5);
 
       const res = await client.query(
         `UPDATE ${tableName}

@@ -7,6 +7,7 @@ import {
   GenerationalError,
   GetStateError,
   InactiveJobError,
+  classifyError,
 } from '../../../modules/errors';
 import { CollationFaultType } from '../../../types/collator';
 import { CollatorService } from '../../collator';
@@ -132,6 +133,8 @@ export async function processEvent(
     telemetry.mapActivityAttributes();
     telemetry.setActivityAttributes({});
   } catch (error) {
+    const category = classifyError(error);
+
     if (error instanceof CollationError) {
       //FORBIDDEN: Leg1 not complete — should not occur after the fix
       //that moved setHookSignal to post-commit. If seen, it indicates
@@ -139,6 +142,7 @@ export async function processEvent(
       //retry in processWebHookEvent can attempt recovery.
       if (error.fault === CollationFaultType.FORBIDDEN) {
         instance.logger.warn('process-event-forbidden-retry', {
+          category,
           jid: instance.context.metadata.jid,
           aid: instance.metadata.aid,
           message: 'Leg1 not committed yet; rethrowing for stream retry',
@@ -159,6 +163,7 @@ export async function processEvent(
       collationErrorCount++;
       if (collationErrorCount === COLLATION_WARN_THRESHOLD) {
         instance.logger.warn('process-event-collation-rate-exceeded', {
+          category,
           count: collationErrorCount,
           windowMs: COLLATION_WINDOW_MS,
           reservationTimeoutS: HMSH_RESERVATION_TIMEOUT_S,
@@ -169,24 +174,33 @@ export async function processEvent(
         });
       }
       instance.logger.warn(`process-event-${error.fault}-error`, {
+        category,
         jid: instance.context.metadata.jid,
         aid: instance.metadata.aid,
         error,
       });
       return;
     } else if (error instanceof InactiveJobError) {
-      instance.logger.info('process-event-inactive-job-error', { error });
+      instance.logger.info('process-event-inactive-job-error', {
+        category,
+        error,
+      });
       return;
     } else if (error instanceof GenerationalError) {
       instance.logger.info('process-event-generational-job-error', {
+        category,
         error,
       });
       return;
     } else if (error instanceof GetStateError) {
-      instance.logger.info('process-event-get-job-error', { error });
+      instance.logger.info('process-event-get-job-error', {
+        category,
+        error,
+      });
       return;
     }
     instance.logger.error('activity-process-event-error', {
+      category,
       error,
       message: error.message,
       stack: error.stack,

@@ -23,6 +23,56 @@ import {
   HMSH_CODE_DURABLE_SLEEP,
 } from './enums';
 
+/**
+ * Error classification for dispatcher logging.
+ *
+ * FATAL       — lease expired, invariant violation, corrupt state.
+ *               The activity must stop immediately; message is NOT acked.
+ * RETRYABLE   — transient infrastructure error (DB timeout, network).
+ *               Normal retry/backoff applies.
+ * TERMINAL    — permanent failure (user code threw, max retries exceeded).
+ *               Message is acked; job is marked failed.
+ * COLLATION   — duplicate delivery detected via GUID ledger.
+ *               Silent ack; no work needed.
+ */
+export enum ErrorCategory {
+  FATAL = 'fatal',
+  RETRYABLE = 'retryable',
+  TERMINAL = 'terminal',
+  COLLATION = 'collation',
+}
+
+export function classifyError(error: unknown): ErrorCategory {
+  if (error instanceof LeaseExpiredError) {
+    return ErrorCategory.FATAL;
+  }
+  if (error instanceof CollationError || error instanceof DuplicateJobError) {
+    return ErrorCategory.COLLATION;
+  }
+  if (error instanceof DurableRetryError) {
+    return ErrorCategory.RETRYABLE;
+  }
+  if (error instanceof DurableTimeoutError) {
+    return ErrorCategory.RETRYABLE;
+  }
+  if (
+    error instanceof DurableFatalError ||
+    error instanceof DurableMaxedError
+  ) {
+    return ErrorCategory.TERMINAL;
+  }
+  if (
+    error instanceof InactiveJobError ||
+    error instanceof GenerationalError ||
+    error instanceof GetStateError
+  ) {
+    return ErrorCategory.TERMINAL;
+  }
+  // Unknown errors default to retryable — the retry budget
+  // will promote them to terminal if they persist.
+  return ErrorCategory.RETRYABLE;
+}
+
 class GetStateError extends Error {
   jobId: string;
   code = HMSH_CODE_NOTFOUND;
@@ -302,6 +352,22 @@ class ExecActivityError extends Error {
   }
 }
 
+class LeaseExpiredError extends Error {
+  code: number;
+  type = 'LeaseExpiredError';
+  deadlineMs: number;
+  reservationTimeoutS: number;
+  constructor(deadlineMs: number, reservationTimeoutS: number) {
+    super(
+      `Activity exceeded lease deadline (${deadlineMs}ms of ${reservationTimeoutS}s reservation). ` +
+        `Aborting to prevent unauthorized writes after lease expiry.`,
+    );
+    this.code = HMSH_CODE_DURABLE_FATAL;
+    this.deadlineMs = deadlineMs;
+    this.reservationTimeoutS = reservationTimeoutS;
+  }
+}
+
 class CollationError extends Error {
   status: number; //15-digit activity collation integer (889000001000001)
   leg: ActivityDuplex;
@@ -339,6 +405,7 @@ export {
   GenerationalError,
   GetStateError,
   InactiveJobError,
+  LeaseExpiredError,
   MapDataError,
   RegisterTimeoutError,
   SetStateError,
