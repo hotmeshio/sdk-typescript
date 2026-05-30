@@ -5,9 +5,10 @@ export interface PostgresClientOptions {
   user?: string;
   password?: string;
   database?: string;
+  connectionString?: string;
   max?: number;
   idleTimeoutMillis?: number;
-  // Add any other options you might need
+  ssl?: boolean | Record<string, unknown>;
 }
 
 export type PostgresJobEnumType =
