@@ -22,15 +22,13 @@ export async function deploySchema(
 
   try {
     const schemaName = appId.replace(/[^a-zA-Z0-9_]/g, '_');
-
-    // First, check if tables already exist (no lock needed)
     const tablesExist = await checkIfTablesExist(client, schemaName);
-    if (tablesExist) {
-      await ensureIndexes(client, schemaName);
-      return;
-    }
 
-    // Tables don't exist, need to acquire lock and create them
+    // Acquire advisory lock for ALL DDL: table creation, index
+    // migrations, and trigger setup. CREATE INDEX IF NOT EXISTS is
+    // not atomic under concurrent transactions — two sessions can
+    // both see the index as absent and both attempt creation,
+    // causing a unique_violation on pg_class_relname_nsp_index.
     const lockId = getAdvisoryLockId(appId);
     const lockResult = await client.query(
       'SELECT pg_try_advisory_lock($1) AS locked',
@@ -39,19 +37,24 @@ export async function deploySchema(
 
     if (lockResult.rows[0].locked) {
       try {
-        await client.query('BEGIN');
+        if (!tablesExist) {
+          await client.query('BEGIN');
 
-        // Double-check tables don't exist (race condition safety)
-        const tablesStillMissing = !(await checkIfTablesExist(
-          client,
-          schemaName,
-        ));
-        if (tablesStillMissing) {
-          await createTables(client, schemaName);
-          await createNotificationTriggers(client, schemaName);
+          // Double-check tables don't exist (race condition safety)
+          const tablesStillMissing = !(await checkIfTablesExist(
+            client,
+            schemaName,
+          ));
+          if (tablesStillMissing) {
+            await createTables(client, schemaName);
+            await createNotificationTriggers(client, schemaName);
+          }
+
+          await client.query('COMMIT');
         }
 
-        await client.query('COMMIT');
+        // Always run index migrations under the lock
+        await ensureIndexes(client, schemaName);
       } finally {
         await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
       }
