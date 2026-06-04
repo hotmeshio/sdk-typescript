@@ -128,6 +128,21 @@ class DBA {
   constructor() {}
 
   /**
+   * Derives a deterministic advisory lock ID from an appId.
+   * Uses a different offset than the stream/store lock IDs to
+   * avoid collisions with those deployment locks.
+   * @private
+   */
+  static getAdvisoryLockId(appId: string): number {
+    let hash = 0x44424130; // 'DBA0' — distinct namespace
+    for (let i = 0; i < appId.length; i++) {
+      hash = (hash << 5) - hash + appId.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash);
+  }
+
+  /**
    * Sanitizes an appId for use as a Postgres schema name.
    * Mirrors the naming logic used during table deployment.
    * @private
@@ -365,8 +380,25 @@ class DBA {
     const schema = DBA.safeName(appId);
     const { client, release } = await DBA.getClient(connection);
     try {
-      await client.query(DBA.getMigrationSQL(schema));
-      await client.query(DBA.getPruneFunctionSQL(schema));
+      // Guard DDL with an advisory lock. CREATE INDEX IF NOT EXISTS
+      // is not atomic under concurrent transactions — two sessions
+      // can both see the index as absent, causing a unique_violation
+      // on pg_class_relname_nsp_index.
+      const lockId = DBA.getAdvisoryLockId(appId);
+      const lockResult = await client.query(
+        'SELECT pg_try_advisory_lock($1) AS locked',
+        [lockId],
+      );
+      if (lockResult.rows[0].locked) {
+        try {
+          await client.query(DBA.getMigrationSQL(schema));
+          await client.query(DBA.getPruneFunctionSQL(schema));
+        } finally {
+          await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
+        }
+      }
+      // If another session holds the lock it is already running
+      // the same idempotent DDL — safe to skip.
     } finally {
       await release();
     }

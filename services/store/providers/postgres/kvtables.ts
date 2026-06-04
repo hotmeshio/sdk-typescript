@@ -34,15 +34,13 @@ export const KVTables = (context: PostgresStoreService) => ({
     }
 
     try {
-      // First, check if tables already exist (no lock needed)
       const tablesExist = await this.checkIfTablesExist(client, appName);
-      if (tablesExist) {
-        // Tables exist; apply any pending migrations
-        await this.migrate(client, appName);
-        return;
-      }
 
-      // Tables don't exist, need to acquire lock and create them
+      // Acquire advisory lock for ALL DDL: table creation and
+      // migrations. CREATE INDEX IF NOT EXISTS is not atomic under
+      // concurrent transactions — two sessions can both see the
+      // index as absent and both attempt creation, causing a
+      // unique_violation on pg_class_relname_nsp_index.
       const lockId = this.getAdvisoryLockId(appName);
       const lockResult = await client.query(
         'SELECT pg_try_advisory_lock($1) AS locked',
@@ -50,23 +48,29 @@ export const KVTables = (context: PostgresStoreService) => ({
       );
 
       if (lockResult.rows[0].locked) {
-        // Begin transaction
-        await client.query('BEGIN');
+        try {
+          if (!tablesExist) {
+            // Begin transaction
+            await client.query('BEGIN');
 
-        // Double-check tables don't exist (race condition safety)
-        const tablesStillMissing = !(await this.checkIfTablesExist(
-          client,
-          appName,
-        ));
-        if (tablesStillMissing) {
-          await this.createTables(client, appName);
+            // Double-check tables don't exist (race condition safety)
+            const tablesStillMissing = !(await this.checkIfTablesExist(
+              client,
+              appName,
+            ));
+            if (tablesStillMissing) {
+              await this.createTables(client, appName);
+            }
+
+            // Commit transaction
+            await client.query('COMMIT');
+          }
+
+          // Always run migrations under the lock
+          await this.migrate(client, appName);
+        } finally {
+          await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
         }
-
-        // Commit transaction
-        await client.query('COMMIT');
-
-        // Release the lock
-        await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
       } else {
         // Release the client before waiting
         if (releaseClient && client.release) {
@@ -235,6 +239,14 @@ export const KVTables = (context: PostgresStoreService) => ({
 
         switch (tableDef.type) {
           case 'relational_app':
+            // Public tables are shared across all appIds. Use a fixed
+            // advisory lock to prevent concurrent CREATE TABLE races
+            // from different appId deployments (each has its own
+            // per-appId lock, but those don't overlap).
+            await client.query(
+              'SELECT pg_advisory_xact_lock($1)',
+              [0x484D5348], // 'HMSH' — fixed lock for public tables
+            );
             await client.query(`
               CREATE TABLE IF NOT EXISTS ${fullTableName} (
                 app_id TEXT PRIMARY KEY,
