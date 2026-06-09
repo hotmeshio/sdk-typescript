@@ -210,6 +210,22 @@ class HotMesh {
     );
     await Init.initEngine(instance, config, instance.logger);
     await Init.initQuorum(instance, config, instance.engine, instance.logger);
+
+    // Register duress broadcast callback: engine router → quorum
+    if (instance.engine?.router && instance.quorum) {
+      const quorum = instance.quorum;
+      const engineGuid = instance.guid;
+      instance.engine.router.setDuressCallback((snapshot) => {
+        quorum.pub({
+          type: 'duress',
+          originator: engineGuid,
+          duress_score_ms: snapshot.score_ms,
+          throttle_ms: snapshot.throttle_ms,
+          level: snapshot.level,
+        });
+      });
+    }
+
     await Init.doWork(instance, config, instance.logger);
     return instance;
   }

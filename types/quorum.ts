@@ -1,6 +1,9 @@
 import { JobOutput } from './job';
 import { StringAnyType } from './serializer';
 
+/** Duress severity level for adaptive engine throttling. */
+export type DuressLevel = 'healthy' | 'mild' | 'moderate' | 'severe';
+
 export interface CPULoad {
   [cpu: string]: string;
 }
@@ -91,6 +94,12 @@ export interface QuorumProfile {
   system?: SystemHealth;
   /** Stringified worker callback function (only if `signature: true` in rollcall). */
   signature?: string;
+  /** Current duress level. Engine routers only. */
+  duress_level?: DuressLevel;
+  /** Current duress score in ms (max EMA across message types). Engine routers only. */
+  duress_score_ms?: number;
+  /** Per-message-type EMA latencies in ms. Engine routers only. */
+  duress_per_type?: Record<string, number>;
 }
 
 interface QuorumMessageBase {
@@ -154,6 +163,18 @@ export interface ThrottleMessage extends QuorumMessageBase {
   throttle: number; //0-n; millis
 }
 
+export interface DuressMessage extends QuorumMessageBase {
+  type: 'duress';
+  /** GUID of the engine that detected duress */
+  originator: string;
+  /** Aggregate duress score (max EMA across message types) in ms */
+  duress_score_ms: number;
+  /** Recommended throttle delay in ms */
+  throttle_ms: number;
+  /** Duress severity level */
+  level: DuressLevel;
+}
+
 export interface RollCallMessage extends QuorumMessageBase {
   type: 'rollcall';
   guid?: string; //target the engine quorum
@@ -198,6 +219,7 @@ export type QuorumMessage =
   | WorkMessage
   | JobMessage
   | ThrottleMessage
+  | DuressMessage
   | RollCallMessage
   | CronMessage
   | UserMessage;

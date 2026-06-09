@@ -407,6 +407,15 @@ class EngineService {
     return Signal.throttle(this, delayInMillis);
   }
 
+  /**
+   * Apply a remote duress signal from the quorum.
+   * Delegates to the router's duress manager.
+   * @private
+   */
+  applyRemoteDuress(throttleMs: number, level: string): void {
+    this.router?.applyRemoteDuress(throttleMs, level as any);
+  }
+
   // ═════════════════════════════════════════════════════════════════
   //  9. PUB/SUB — topic messaging, subscriptions, callbacks
   //     → see pubsub.ts

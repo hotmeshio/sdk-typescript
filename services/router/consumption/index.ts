@@ -10,6 +10,7 @@ import { ThrottleManager } from '../throttling';
 import { ErrorHandler } from '../error-handling';
 import { RouterTelemetry } from '../telemetry';
 import { LifecycleManager } from '../lifecycle';
+import { DuressManager, DuressSnapshot } from '../duress';
 import {
   HMSH_BLOCK_TIME_MS,
   HMSH_GRADUATED_INTERVAL_MS,
@@ -23,6 +24,7 @@ import {
   INITIAL_STREAM_BACKOFF,
   MAX_STREAM_RETRIES,
   HMSH_POISON_MESSAGE_THRESHOLD,
+  HMSH_DURESS_EVAL_INTERVAL,
 } from '../config';
 import {
   StreamData,
@@ -57,6 +59,9 @@ export class ConsumptionManager<
   private set hasReachedMaxBackoff(v: boolean | undefined) { this.router.hasReachedMaxBackoff = v; }
   private router: any;
   private retry: import('../../../types/stream').RetryPolicy | undefined;
+  private duressManager?: DuressManager;
+  private onDuressChange?: (snapshot: DuressSnapshot) => void;
+  private messagesSinceLastEval = 0;
 
   // Adaptive consumption pressure — scales reservation timeout AND batch
   // size based on stream depth. Under load: timeout grows (prevents
@@ -86,6 +91,7 @@ export class ConsumptionManager<
     role: any,
     router: any,
     retry?: import('../../../types/stream').RetryPolicy,
+    duressManager?: DuressManager,
   ) {
     this.stream = stream;
     this.logger = logger;
@@ -98,6 +104,11 @@ export class ConsumptionManager<
     this.role = role;
     this.router = router;
     this.retry = retry;
+    this.duressManager = duressManager;
+  }
+
+  setDuressCallback(callback: (snapshot: DuressSnapshot) => void): void {
+    this.onDuressChange = callback;
   }
 
   /**
@@ -723,6 +734,7 @@ export class ConsumptionManager<
 
     let output: StreamDataResponse | void;
     const telemetry = new RouterTelemetry(this.appId);
+    const processingStart = Date.now();
     try {
       telemetry.startStreamSpan(input, this.role);
 
@@ -784,6 +796,39 @@ export class ConsumptionManager<
         err instanceof Error ? err : new Error(String(err)),
       );
     }
+
+    // Record processing latency for duress detection (engine routers only).
+    // This measures the actual time spent in execStreamLeg — the causal
+    // signal. The prior depth-based mechanism (adjustConsumptionPressure)
+    // responds to queue backlog; this responds to *why* the backlog exists.
+    // Evaluation is amortized over HMSH_DURESS_EVAL_INTERVAL messages to
+    // avoid per-message overhead.
+    if (this.duressManager && input.type) {
+      const processingDuration = Date.now() - processingStart;
+      this.duressManager.recordLatency(
+        input.type as StreamDataType,
+        processingDuration,
+      );
+      if (++this.messagesSinceLastEval >= HMSH_DURESS_EVAL_INTERVAL) {
+        this.messagesSinceLastEval = 0;
+        const snapshot = this.duressManager.evaluate();
+        this.throttleManager.setDuressFloor(snapshot.throttle_ms);
+        if (snapshot.level !== 'healthy') {
+          this.logger.info('stream-duress-detected', {
+            stream,
+            level: snapshot.level,
+            score_ms: snapshot.score_ms,
+            throttle_ms: snapshot.throttle_ms,
+            per_type: snapshot.per_type,
+          });
+        }
+        if (this.duressManager.shouldBroadcast() && this.onDuressChange) {
+          this.duressManager.markBroadcast();
+          this.onDuressChange(snapshot);
+        }
+      }
+    }
+
     try {
       // When the ENGINE encounters an infrastructure error (schema not found,
       // subscription missing — code 598), the message is permanently unprocessable.
