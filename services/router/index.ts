@@ -6,6 +6,7 @@ import {
   StreamDataResponse,
   StreamRole,
 } from '../../types/stream';
+import { DuressLevel } from '../../types/quorum';
 import { ProviderClient, ProviderTransaction } from '../../types/provider';
 
 // Import the new submodules
@@ -15,6 +16,7 @@ import { ErrorHandler } from './error-handling';
 import { RouterTelemetry } from './telemetry';
 import { LifecycleManager, InstanceRegistry } from './lifecycle';
 import { ConsumptionManager } from './consumption';
+import { DuressManager, DuressSnapshot } from './duress';
 
 class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
   // Core properties
@@ -45,6 +47,8 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
   private errorHandler: ErrorHandler;
   private lifecycleManager: LifecycleManager<S>;
   private consumptionManager: ConsumptionManager<S>;
+  private duressManager?: DuressManager;
+  private _pendingDuressSnapshot?: DuressSnapshot;
 
   constructor(config: RouterConfig, stream: S, logger: ILogger) {
     // Apply configuration defaults
@@ -70,6 +74,12 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
       this.logger,
       this.stream,
     );
+
+    // Engine routers get duress detection; workers do not
+    if (this.role === StreamRole.ENGINE) {
+      this.duressManager = new DuressManager();
+    }
+
     this.consumptionManager = new ConsumptionManager(
       this.stream,
       this.logger,
@@ -82,6 +92,7 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
       this.role,
       this,
       this.retry,
+      this.duressManager,
     );
 
     this.resetThrottleState();
@@ -210,6 +221,22 @@ class Router<S extends StreamService<ProviderClient, ProviderTransaction>> {
     output: StreamDataResponse,
   ): StreamDataResponse {
     return this.errorHandler.structureError(input, output);
+  }
+
+  // Duress detection methods (engine routers only)
+  setDuressCallback(
+    callback: (snapshot: DuressSnapshot) => void,
+  ): void {
+    this.consumptionManager.setDuressCallback(callback);
+  }
+
+  applyRemoteDuress(throttleMs: number, level: DuressLevel): void {
+    this.duressManager?.applyRemoteDuress(throttleMs, level);
+    this.throttleManager.setDuressFloor(throttleMs);
+  }
+
+  getDuressSnapshot(): DuressSnapshot | undefined {
+    return this.duressManager?.getSnapshot();
   }
 
   // Static methods for instance management

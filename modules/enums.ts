@@ -332,6 +332,53 @@ export const HMSH_GUID_SIZE = Math.min(
  */
 export const DEFAULT_TASK_QUEUE = 'default';
 
+// DURESS DETECTION — adaptive engine throttling based on processing latency
+/**
+ * EMA smoothing factor for duress latency tracking.
+ * Higher = faster response to spikes, lower = more stable.
+ * @default 0.3
+ */
+export const HMSH_DURESS_ALPHA =
+  parseFloat(process.env.HMSH_DURESS_ALPHA) || 0.3;
+/**
+ * Number of messages between duress evaluations.
+ * @default 10
+ */
+export const HMSH_DURESS_EVAL_INTERVAL =
+  parseInt(process.env.HMSH_DURESS_EVAL_INTERVAL, 10) || 10;
+/**
+ * Max EMA (ms) below which the engine is considered healthy. No throttle applied.
+ * @default 200
+ */
+export const HMSH_DURESS_HEALTHY_CEILING_MS =
+  parseInt(process.env.HMSH_DURESS_HEALTHY_CEILING_MS, 10) || 200;
+/**
+ * Max EMA (ms) below which duress is mild. Light throttle (100-500ms).
+ * @default 1000
+ */
+export const HMSH_DURESS_MILD_CEILING_MS =
+  parseInt(process.env.HMSH_DURESS_MILD_CEILING_MS, 10) || 1000;
+/**
+ * Max EMA (ms) below which duress is moderate. Moderate throttle (500-2000ms).
+ * Above this threshold, duress is severe (2000-5000ms throttle).
+ * @default 5000
+ */
+export const HMSH_DURESS_MODERATE_CEILING_MS =
+  parseInt(process.env.HMSH_DURESS_MODERATE_CEILING_MS, 10) || 5000;
+/**
+ * Minimum interval (ms) between quorum duress broadcasts.
+ * @default 5000
+ */
+export const HMSH_DURESS_BROADCAST_INTERVAL_MS =
+  parseInt(process.env.HMSH_DURESS_BROADCAST_INTERVAL_MS, 10) || 5000;
+/**
+ * Number of consecutive improving evaluations required before
+ * dropping a duress level. Prevents oscillation.
+ * @default 3
+ */
+export const HMSH_DURESS_HYSTERESIS_COUNT =
+  parseInt(process.env.HMSH_DURESS_HYSTERESIS_COUNT, 10) || 3;
+
 /**
  * PostgreSQL NOTIFY payload limit. If a job message exceeds this size,
  * a reference message is sent instead and the subscriber fetches via getState.

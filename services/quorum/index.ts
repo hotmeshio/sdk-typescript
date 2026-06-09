@@ -181,6 +181,14 @@ class QuorumService {
         self.engine.routeToSubscribers(message.topic, jobOutput);
       } else if (message.type === 'cron') {
         self.engine.processTimeHooks();
+      } else if (message.type === 'duress') {
+        // Apply remote duress signal (skip our own broadcasts)
+        if (message.originator !== self.guid) {
+          self.engine.applyRemoteDuress(
+            message.throttle_ms,
+            message.level,
+          );
+        }
       } else if (message.type === 'rollcall') {
         self.doRollCall(message);
       }
@@ -223,6 +231,13 @@ class QuorumService {
         reclaimCount: this.engine.router.reclaimCount,
         system: await getSystemHealth(),
       };
+      // Include duress info if available (engine routers only)
+      const duressSnapshot = this.engine.router.getDuressSnapshot?.();
+      if (duressSnapshot) {
+        profile.duress_level = duressSnapshot.level;
+        profile.duress_score_ms = duressSnapshot.score_ms;
+        profile.duress_per_type = duressSnapshot.per_type;
+      }
     }
     this.subscribe.publish(
       KeyType.QUORUM,

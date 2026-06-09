@@ -1,5 +1,22 @@
+/**
+ * Elastic throttle with two independent inputs:
+ *
+ * 1. **User throttle** — set explicitly via quorum `throttle` command.
+ *    Absolute value: 0 = resume, >0 = delay per message, -1 = pause.
+ *
+ * 2. **Duress floor** — set automatically by the DuressManager based on
+ *    processing latency. The effective throttle is `max(user, duress)`,
+ *    so duress never reduces below what the user set, and pause always
+ *    takes precedence. When duress clears (floor returns to 0), the
+ *    user's original throttle remains in effect.
+ *
+ * `customSleep()` uses the effective throttle, supports dynamic
+ * interruption (if the throttle decreases mid-sleep, the router wakes
+ * early), and handles pause via a bare promise with no timer.
+ */
 export class ThrottleManager {
   private throttle = 0;
+  private duressFloor = 0;
   private isSleeping = false;
   private sleepPromiseResolve: (() => void) | null = null;
   private innerPromiseResolve: (() => void) | null = null;
@@ -11,6 +28,27 @@ export class ThrottleManager {
 
   getThrottle(): number {
     return this.throttle;
+  }
+
+  /**
+   * Set the duress-computed throttle floor. The effective throttle
+   * is max(userThrottle, duressFloor). Pause (throttle < 0) overrides.
+   */
+  setDuressFloor(delayMs: number): void {
+    this.duressFloor = Math.max(0, delayMs);
+  }
+
+  getDuressFloor(): number {
+    return this.duressFloor;
+  }
+
+  /**
+   * Returns the effective throttle: max of user-set throttle and
+   * duress floor. Pause (negative) always takes precedence.
+   */
+  getEffectiveThrottle(): number {
+    if (this.throttle < 0) return this.throttle; // pause overrides
+    return Math.max(this.throttle, this.duressFloor);
   }
 
   setThrottle(delayInMillis: number): void {
@@ -48,11 +86,12 @@ export class ThrottleManager {
    * setThrottle() is called with a non-negative value.
    */
   async customSleep(): Promise<void> {
-    if (this.throttle === 0) return;
+    const effective = this.getEffectiveThrottle();
+    if (effective === 0) return;
     if (this.isSleeping) return;
     this.isSleeping = true;
 
-    if (this.throttle < 0) {
+    if (effective < 0) {
       // Paused: wait indefinitely until setThrottle interrupts
       await new Promise<void>((resolve) => {
         this.innerPromiseResolve = resolve;
@@ -66,15 +105,17 @@ export class ThrottleManager {
     await new Promise<void>(async (outerResolve) => {
       this.sleepPromiseResolve = outerResolve;
       let elapsedTime = Date.now() - startTime;
-      while (elapsedTime < this.throttle && this.throttle > 0) {
+      let target = this.getEffectiveThrottle();
+      while (elapsedTime < target && target > 0) {
         await new Promise<void>((innerResolve) => {
           this.innerPromiseResolve = innerResolve;
           this.sleepTimeout = setTimeout(
             innerResolve,
-            this.throttle - elapsedTime,
+            target - elapsedTime,
           );
         });
         elapsedTime = Date.now() - startTime;
+        target = this.getEffectiveThrottle();
       }
       this.resetThrottleState();
       outerResolve();
