@@ -53,8 +53,9 @@ export async function deploySchema(
           await client.query('COMMIT');
         }
 
-        // Always run index migrations under the lock
+        // Always run index and procedure migrations under the lock
         await ensureIndexes(client, schemaName);
+        await ensureProcedures(client, schemaName);
       } finally {
         await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
       }
@@ -200,9 +201,13 @@ async function ensureIndexes(
     ON ${engineTable} (stream_name, priority DESC, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
+  // message_fetch must match the dequeue ORDER BY (priority DESC, id)
+  // exactly — placing visible_at between them forces the claim query to
+  // fetch and sort the entire pending backlog instead of stopping at
+  // LIMIT. visible_at and stale-reservation checks are scan filters.
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_engine_streams_message_fetch
-    ON ${engineTable} (stream_name, priority DESC, visible_at, id)
+    ON ${engineTable} (stream_name, priority DESC, id)
     WHERE expired_at IS NULL;
   `);
   await client.query(`
@@ -212,7 +217,7 @@ async function ensureIndexes(
   `);
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
-    ON ${workerTable} (stream_name, priority DESC, visible_at, id)
+    ON ${workerTable} (stream_name, priority DESC, id)
     WHERE expired_at IS NULL;
   `);
 
@@ -225,6 +230,20 @@ async function ensureIndexes(
     ON ${engineTable} (jid, created_at)
     WHERE jid != '';
   `);
+}
+
+/**
+ * Re-deploy the SECURITY DEFINER stored procedures on existing
+ * databases so query changes (e.g., worker_dequeue) reach deployments
+ * created before the change. CREATE OR REPLACE preserves grants.
+ */
+async function ensureProcedures(
+  client: any,
+  schemaName: string,
+): Promise<void> {
+  for (const sql of getCreateProceduresSQL(schemaName)) {
+    await client.query(sql);
+  }
 }
 
 async function createTables(
@@ -273,7 +292,7 @@ async function createTables(
 
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_engine_streams_message_fetch
-    ON ${engineTable} (stream_name, priority DESC, visible_at, id)
+    ON ${engineTable} (stream_name, priority DESC, id)
     WHERE expired_at IS NULL;
   `);
 
@@ -352,7 +371,7 @@ async function createTables(
 
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
-    ON ${workerTable} (stream_name, priority DESC, visible_at, id)
+    ON ${workerTable} (stream_name, priority DESC, id)
     WHERE expired_at IS NULL;
   `);
 

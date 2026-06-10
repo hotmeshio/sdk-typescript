@@ -297,10 +297,14 @@ export async function fetchMessages(
       const batchSize = options?.batchSize || 1;
       const reservationTimeout = options?.reservationTimeout || (HMSH_RESERVATION_TIMEOUT_S + 5);
 
+      // The outer WHERE repeats stream_name so the planner can prune to a
+      // single hash partition and use the (stream_name, id) primary key;
+      // with id alone it must consider every partition.
       const res = await client.query(
         `UPDATE ${tableName}
          SET reserved_at = NOW(), reserved_by = $3
-         WHERE id IN (
+         WHERE stream_name = $1
+           AND id IN (
            SELECT id FROM ${tableName}
            WHERE stream_name = $1
              AND (reserved_at IS NULL OR reserved_at < NOW() - INTERVAL '${reservationTimeout} seconds')

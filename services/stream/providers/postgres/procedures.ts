@@ -57,7 +57,8 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
       RETURN QUERY
       UPDATE ${workerTable} ws
       SET reserved_at = NOW(), reserved_by = p_consumer_id
-      WHERE ws.id IN (
+      WHERE ws.stream_name = p_stream_name
+        AND ws.id IN (
         SELECT ws2.id FROM ${workerTable} ws2
         WHERE ws2.stream_name = p_stream_name
           AND (ws2.reserved_at IS NULL OR ws2.reserved_at < NOW() - (p_reservation_timeout_sec || ' seconds')::INTERVAL)
