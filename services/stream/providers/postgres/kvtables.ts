@@ -182,7 +182,12 @@ async function ensureIndexes(
   const engineTable = `${schemaName}.engine_streams`;
   const workerTable = `${schemaName}.worker_streams`;
 
-  // Drop legacy indexes that don't include the priority column
+  // Drop legacy indexes that don't include the priority column, plus
+  // redundant ones: idx_*_expired_at duplicates the partial
+  // idx_*_processed_volume for the retention purge, and
+  // idx_*_stream_name_expired_at duplicates the leading column and
+  // predicate of idx_*_message_fetch. Every index here is maintained on
+  // each message's INSERT plus two non-HOT UPDATEs (reserve, ack).
   for (const idx of [
     'idx_engine_streams_dequeue',
     'idx_engine_streams_stale_reservations',
@@ -192,6 +197,10 @@ async function ensureIndexes(
     'idx_engine_streams_message_fetch',
     'idx_worker_streams_active_messages',
     'idx_worker_streams_message_fetch',
+    'idx_engine_streams_expired_at',
+    'idx_engine_stream_name_expired_at',
+    'idx_worker_streams_expired_at',
+    'idx_worker_stream_name_expired_at',
   ]) {
     await client.query(`DROP INDEX IF EXISTS ${schemaName}.${idx}`);
   }
@@ -324,17 +333,6 @@ async function createTables(
   `);
 
   await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_engine_streams_expired_at
-    ON ${engineTable} (expired_at);
-  `);
-
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_engine_stream_name_expired_at
-    ON ${engineTable} (stream_name)
-    WHERE expired_at IS NULL;
-  `);
-
-  await client.query(`
     CREATE INDEX IF NOT EXISTS idx_engine_streams_processed_volume
     ON ${engineTable} (expired_at, stream_name)
     WHERE expired_at IS NOT NULL;
@@ -399,17 +397,6 @@ async function createTables(
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
     ON ${workerTable} (stream_name, priority DESC, id)
-    WHERE expired_at IS NULL;
-  `);
-
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_worker_streams_expired_at
-    ON ${workerTable} (expired_at);
-  `);
-
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_worker_stream_name_expired_at
-    ON ${workerTable} (stream_name)
     WHERE expired_at IS NULL;
   `);
 
