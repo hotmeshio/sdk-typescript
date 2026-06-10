@@ -286,10 +286,12 @@ export async function fetchMessages(
   let backoff = initialBackoff;
   let retries = 0;
 
-  // Include workflow_name in RETURNING for worker streams
+  // Include workflow_name in RETURNING for worker streams. Columns are
+  // qualified with the update target's alias because the claim UPDATE
+  // joins a CTE that also exposes an id column.
   const returningClause = isEngine
-    ? 'id, message, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, retry_attempt'
-    : 'id, message, workflow_name, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, retry_attempt';
+    ? 't.id, t.message, t.max_retry_attempts, t.backoff_coefficient, t.maximum_interval_seconds, t.retry_attempt'
+    : 't.id, t.message, t.workflow_name, t.max_retry_attempts, t.backoff_coefficient, t.maximum_interval_seconds, t.retry_attempt';
 
   try {
     while (retries < maxRetries) {
@@ -297,14 +299,14 @@ export async function fetchMessages(
       const batchSize = options?.batchSize || 1;
       const reservationTimeout = options?.reservationTimeout || (HMSH_RESERVATION_TIMEOUT_S + 5);
 
-      // The outer WHERE repeats stream_name so the planner can prune to a
-      // single hash partition and use the (stream_name, id) primary key;
-      // with id alone it must consider every partition.
+      // The locking SELECT must live in a MATERIALIZED CTE: as a plain IN
+      // subquery the planner may re-execute it per outer row (rows updated
+      // earlier in the same command are skipped as lock candidates), which
+      // reserves MORE rows than LIMIT. The UPDATE repeats stream_name so
+      // the planner prunes to a single hash partition and joins on the
+      // (stream_name, id) primary key.
       const res = await client.query(
-        `UPDATE ${tableName}
-         SET reserved_at = NOW(), reserved_by = $3
-         WHERE stream_name = $1
-           AND id IN (
+        `WITH candidates AS MATERIALIZED (
            SELECT id FROM ${tableName}
            WHERE stream_name = $1
              AND (reserved_at IS NULL OR reserved_at < NOW() - INTERVAL '${reservationTimeout} seconds')
@@ -314,6 +316,10 @@ export async function fetchMessages(
            LIMIT $2
            FOR UPDATE SKIP LOCKED
          )
+         UPDATE ${tableName} t
+         SET reserved_at = NOW(), reserved_by = $3
+         FROM candidates
+         WHERE t.stream_name = $1 AND t.id = candidates.id
          RETURNING ${returningClause}`,
         [streamName, batchSize, consumerName],
       );

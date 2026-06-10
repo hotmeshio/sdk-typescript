@@ -54,11 +54,12 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
     SET search_path = ${schemaName}, pg_temp
     AS $$
     ${STREAM_ACCESS_CHECK}
+      -- The locking SELECT must live in a MATERIALIZED CTE: as a plain IN
+      -- subquery the planner may re-execute it per outer row, reserving
+      -- MORE rows than p_batch_size. stream_name on the UPDATE prunes to
+      -- a single hash partition and joins on the primary key.
       RETURN QUERY
-      UPDATE ${workerTable} ws
-      SET reserved_at = NOW(), reserved_by = p_consumer_id
-      WHERE ws.stream_name = p_stream_name
-        AND ws.id IN (
+      WITH candidates AS MATERIALIZED (
         SELECT ws2.id FROM ${workerTable} ws2
         WHERE ws2.stream_name = p_stream_name
           AND (ws2.reserved_at IS NULL OR ws2.reserved_at < NOW() - (p_reservation_timeout_sec || ' seconds')::INTERVAL)
@@ -68,6 +69,11 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
         LIMIT p_batch_size
         FOR UPDATE SKIP LOCKED
       )
+      UPDATE ${workerTable} ws
+      SET reserved_at = NOW(), reserved_by = p_consumer_id
+      FROM candidates
+      WHERE ws.stream_name = p_stream_name
+        AND ws.id = candidates.id
       RETURNING ws.id, ws.message, ws.workflow_name, ws.max_retry_attempts,
                 ws.backoff_coefficient, ws.maximum_interval_seconds, ws.retry_attempt;
     END;
