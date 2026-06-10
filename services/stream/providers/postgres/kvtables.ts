@@ -53,9 +53,10 @@ export async function deploySchema(
           await client.query('COMMIT');
         }
 
-        // Always run index and procedure migrations under the lock
+        // Always run index, procedure, and trigger migrations under the lock
         await ensureIndexes(client, schemaName);
         await ensureProcedures(client, schemaName);
+        await ensureStatementLevelTriggers(client, schemaName);
       } finally {
         await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
       }
@@ -243,6 +244,32 @@ async function ensureProcedures(
 ): Promise<void> {
   for (const sql of getCreateProceduresSQL(schemaName)) {
     await client.query(sql);
+  }
+}
+
+/**
+ * Migrate pre-existing row-level notification triggers to the
+ * statement-level form. Recreating a trigger takes an ACCESS EXCLUSIVE
+ * lock on the table, so only do it when the installed trigger is still
+ * row-level (tgtype bit 0 set); subsequent boots are a no-op.
+ */
+async function ensureStatementLevelTriggers(
+  client: any,
+  schemaName: string,
+): Promise<void> {
+  const result = await client.query(
+    `SELECT count(*) AS row_level
+     FROM pg_trigger t
+     JOIN pg_class c ON c.oid = t.tgrelid
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = $1
+       AND c.relname IN ('engine_streams', 'worker_streams')
+       AND t.tgname IN ('notify_engine_stream_insert', 'notify_worker_stream_insert')
+       AND (t.tgtype & 1) = 1`,
+    [schemaName],
+  );
+  if (parseInt(result.rows[0].row_level, 10) > 0) {
+    await createNotificationTriggers(client, schemaName);
   }
 }
 
@@ -448,28 +475,35 @@ async function createNotificationTriggers(
   const workerTable = `${schemaName}.worker_streams`;
 
   // ---- ENGINE notification trigger ----
+  // Statement-level with a transition table: one pg_notify per distinct
+  // stream_name per INSERT statement. Row-level triggers fire pg_notify
+  // per message, which both multiplies trigger overhead and serializes
+  // commits on the global notification queue lock at high insert rates.
   await client.query(`
     CREATE OR REPLACE FUNCTION ${schemaName}.notify_new_engine_stream_message()
     RETURNS TRIGGER AS $$
     DECLARE
+      rec RECORD;
       channel_name TEXT;
       payload JSON;
     BEGIN
-      IF NEW.visible_at <= NOW() THEN
-        channel_name := 'eng_' || NEW.stream_name;
+      FOR rec IN
+        SELECT DISTINCT stream_name FROM new_rows WHERE visible_at <= NOW()
+      LOOP
+        channel_name := 'eng_' || rec.stream_name;
         IF length(channel_name) > 63 THEN
           channel_name := left(channel_name, 63);
         END IF;
 
         payload := json_build_object(
-          'stream_name', NEW.stream_name,
+          'stream_name', rec.stream_name,
           'table_type', 'engine'
         );
 
         PERFORM pg_notify(channel_name, payload::text);
-      END IF;
+      END LOOP;
 
-      RETURN NEW;
+      RETURN NULL;
     END;
     $$ LANGUAGE plpgsql;
   `);
@@ -478,7 +512,8 @@ async function createNotificationTriggers(
     DROP TRIGGER IF EXISTS notify_engine_stream_insert ON ${engineTable};
     CREATE TRIGGER notify_engine_stream_insert
       AFTER INSERT ON ${engineTable}
-      FOR EACH ROW
+      REFERENCING NEW TABLE AS new_rows
+      FOR EACH STATEMENT
       EXECUTE FUNCTION ${schemaName}.notify_new_engine_stream_message();
   `);
 
@@ -487,24 +522,27 @@ async function createNotificationTriggers(
     CREATE OR REPLACE FUNCTION ${schemaName}.notify_new_worker_stream_message()
     RETURNS TRIGGER AS $$
     DECLARE
+      rec RECORD;
       channel_name TEXT;
       payload JSON;
     BEGIN
-      IF NEW.visible_at <= NOW() THEN
-        channel_name := 'wrk_' || NEW.stream_name;
+      FOR rec IN
+        SELECT DISTINCT stream_name FROM new_rows WHERE visible_at <= NOW()
+      LOOP
+        channel_name := 'wrk_' || rec.stream_name;
         IF length(channel_name) > 63 THEN
           channel_name := left(channel_name, 63);
         END IF;
 
         payload := json_build_object(
-          'stream_name', NEW.stream_name,
+          'stream_name', rec.stream_name,
           'table_type', 'worker'
         );
 
         PERFORM pg_notify(channel_name, payload::text);
-      END IF;
+      END LOOP;
 
-      RETURN NEW;
+      RETURN NULL;
     END;
     $$ LANGUAGE plpgsql;
   `);
@@ -513,7 +551,8 @@ async function createNotificationTriggers(
     DROP TRIGGER IF EXISTS notify_worker_stream_insert ON ${workerTable};
     CREATE TRIGGER notify_worker_stream_insert
       AFTER INSERT ON ${workerTable}
-      FOR EACH ROW
+      REFERENCING NEW TABLE AS new_rows
+      FOR EACH STATEMENT
       EXECUTE FUNCTION ${schemaName}.notify_new_worker_stream_message();
   `);
 
