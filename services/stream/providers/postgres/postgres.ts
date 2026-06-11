@@ -127,19 +127,39 @@ class PostgresStreamService extends StreamService<
     );
   }
 
+  /**
+   * Notification-driven fetch with coalescing. NOTIFYs that arrive while
+   * a fetch is in flight set fetchPending instead of issuing concurrent
+   * claim queries (a burst of N inserts otherwise triggers N claims per
+   * consumer, most returning empty). The drain loop re-fetches while the
+   * batch came back full or a NOTIFY arrived mid-fetch.
+   */
   private async fetchAndDeliverMessages(
     consumer: NotificationConsumer,
   ): Promise<void> {
+    if (consumer.fetchInFlight) {
+      consumer.fetchPending = true;
+      return;
+    }
+    consumer.fetchInFlight = true;
+    const batchSize = 10;
     try {
-      const messages = await this.fetchMessages(
-        consumer.streamName,
-        consumer.groupName,
-        consumer.consumerName,
-        { batchSize: 10, reservationTimeout: this.reservationTimeout, enableBackoff: false, maxRetries: 1 },
-      );
+      let drain = true;
+      while (drain && consumer.isListening !== false) {
+        consumer.fetchPending = false;
+        const messages = await this.fetchMessages(
+          consumer.streamName,
+          consumer.groupName,
+          consumer.consumerName,
+          { batchSize, reservationTimeout: this.reservationTimeout, enableBackoff: false, maxRetries: 1 },
+        );
 
-      if (messages.length > 0) {
-        consumer.callback(messages);
+        if (messages.length > 0) {
+          consumer.callback(messages);
+        }
+        // Boolean() rather than === true: fetchPending is mutated by the
+        // notification handler across the await, which TS narrowing misses
+        drain = messages.length === batchSize || Boolean(consumer.fetchPending);
       }
     } catch (error) {
       this.logger.error('postgres-stream-fetch-deliver-error', {
@@ -147,6 +167,8 @@ class PostgresStreamService extends StreamService<
         groupName: consumer.groupName,
         error,
       });
+    } finally {
+      consumer.fetchInFlight = false;
     }
   }
 

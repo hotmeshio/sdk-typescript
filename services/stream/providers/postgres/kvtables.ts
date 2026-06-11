@@ -53,8 +53,10 @@ export async function deploySchema(
           await client.query('COMMIT');
         }
 
-        // Always run index migrations under the lock
+        // Always run index, procedure, and trigger migrations under the lock
         await ensureIndexes(client, schemaName);
+        await ensureProcedures(client, schemaName);
+        await ensureStatementLevelTriggers(client, schemaName);
       } finally {
         await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
       }
@@ -180,7 +182,12 @@ async function ensureIndexes(
   const engineTable = `${schemaName}.engine_streams`;
   const workerTable = `${schemaName}.worker_streams`;
 
-  // Drop legacy indexes that don't include the priority column
+  // Drop legacy indexes that don't include the priority column, plus
+  // redundant ones: idx_*_expired_at duplicates the partial
+  // idx_*_processed_volume for the retention purge, and
+  // idx_*_stream_name_expired_at duplicates the leading column and
+  // predicate of idx_*_message_fetch. Every index here is maintained on
+  // each message's INSERT plus two non-HOT UPDATEs (reserve, ack).
   for (const idx of [
     'idx_engine_streams_dequeue',
     'idx_engine_streams_stale_reservations',
@@ -190,6 +197,10 @@ async function ensureIndexes(
     'idx_engine_streams_message_fetch',
     'idx_worker_streams_active_messages',
     'idx_worker_streams_message_fetch',
+    'idx_engine_streams_expired_at',
+    'idx_engine_stream_name_expired_at',
+    'idx_worker_streams_expired_at',
+    'idx_worker_stream_name_expired_at',
   ]) {
     await client.query(`DROP INDEX IF EXISTS ${schemaName}.${idx}`);
   }
@@ -200,9 +211,13 @@ async function ensureIndexes(
     ON ${engineTable} (stream_name, priority DESC, visible_at, id)
     WHERE reserved_at IS NULL AND expired_at IS NULL;
   `);
+  // message_fetch must match the dequeue ORDER BY (priority DESC, id)
+  // exactly — placing visible_at between them forces the claim query to
+  // fetch and sort the entire pending backlog instead of stopping at
+  // LIMIT. visible_at and stale-reservation checks are scan filters.
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_engine_streams_message_fetch
-    ON ${engineTable} (stream_name, priority DESC, visible_at, id)
+    ON ${engineTable} (stream_name, priority DESC, id)
     WHERE expired_at IS NULL;
   `);
   await client.query(`
@@ -212,7 +227,7 @@ async function ensureIndexes(
   `);
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
-    ON ${workerTable} (stream_name, priority DESC, visible_at, id)
+    ON ${workerTable} (stream_name, priority DESC, id)
     WHERE expired_at IS NULL;
   `);
 
@@ -225,6 +240,46 @@ async function ensureIndexes(
     ON ${engineTable} (jid, created_at)
     WHERE jid != '';
   `);
+}
+
+/**
+ * Re-deploy the SECURITY DEFINER stored procedures on existing
+ * databases so query changes (e.g., worker_dequeue) reach deployments
+ * created before the change. CREATE OR REPLACE preserves grants.
+ */
+async function ensureProcedures(
+  client: any,
+  schemaName: string,
+): Promise<void> {
+  for (const sql of getCreateProceduresSQL(schemaName)) {
+    await client.query(sql);
+  }
+}
+
+/**
+ * Migrate pre-existing row-level notification triggers to the
+ * statement-level form. Recreating a trigger takes an ACCESS EXCLUSIVE
+ * lock on the table, so only do it when the installed trigger is still
+ * row-level (tgtype bit 0 set); subsequent boots are a no-op.
+ */
+async function ensureStatementLevelTriggers(
+  client: any,
+  schemaName: string,
+): Promise<void> {
+  const result = await client.query(
+    `SELECT count(*) AS row_level
+     FROM pg_trigger t
+     JOIN pg_class c ON c.oid = t.tgrelid
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = $1
+       AND c.relname IN ('engine_streams', 'worker_streams')
+       AND t.tgname IN ('notify_engine_stream_insert', 'notify_worker_stream_insert')
+       AND (t.tgtype & 1) = 1`,
+    [schemaName],
+  );
+  if (parseInt(result.rows[0].row_level, 10) > 0) {
+    await createNotificationTriggers(client, schemaName);
+  }
 }
 
 async function createTables(
@@ -273,18 +328,7 @@ async function createTables(
 
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_engine_streams_message_fetch
-    ON ${engineTable} (stream_name, priority DESC, visible_at, id)
-    WHERE expired_at IS NULL;
-  `);
-
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_engine_streams_expired_at
-    ON ${engineTable} (expired_at);
-  `);
-
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_engine_stream_name_expired_at
-    ON ${engineTable} (stream_name)
+    ON ${engineTable} (stream_name, priority DESC, id)
     WHERE expired_at IS NULL;
   `);
 
@@ -352,18 +396,7 @@ async function createTables(
 
   await client.query(`
     CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
-    ON ${workerTable} (stream_name, priority DESC, visible_at, id)
-    WHERE expired_at IS NULL;
-  `);
-
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_worker_streams_expired_at
-    ON ${workerTable} (expired_at);
-  `);
-
-  await client.query(`
-    CREATE INDEX IF NOT EXISTS idx_worker_stream_name_expired_at
-    ON ${workerTable} (stream_name)
+    ON ${workerTable} (stream_name, priority DESC, id)
     WHERE expired_at IS NULL;
   `);
 
@@ -429,28 +462,35 @@ async function createNotificationTriggers(
   const workerTable = `${schemaName}.worker_streams`;
 
   // ---- ENGINE notification trigger ----
+  // Statement-level with a transition table: one pg_notify per distinct
+  // stream_name per INSERT statement. Row-level triggers fire pg_notify
+  // per message, which both multiplies trigger overhead and serializes
+  // commits on the global notification queue lock at high insert rates.
   await client.query(`
     CREATE OR REPLACE FUNCTION ${schemaName}.notify_new_engine_stream_message()
     RETURNS TRIGGER AS $$
     DECLARE
+      rec RECORD;
       channel_name TEXT;
       payload JSON;
     BEGIN
-      IF NEW.visible_at <= NOW() THEN
-        channel_name := 'eng_' || NEW.stream_name;
+      FOR rec IN
+        SELECT DISTINCT stream_name FROM new_rows WHERE visible_at <= NOW()
+      LOOP
+        channel_name := 'eng_' || rec.stream_name;
         IF length(channel_name) > 63 THEN
           channel_name := left(channel_name, 63);
         END IF;
 
         payload := json_build_object(
-          'stream_name', NEW.stream_name,
+          'stream_name', rec.stream_name,
           'table_type', 'engine'
         );
 
         PERFORM pg_notify(channel_name, payload::text);
-      END IF;
+      END LOOP;
 
-      RETURN NEW;
+      RETURN NULL;
     END;
     $$ LANGUAGE plpgsql;
   `);
@@ -459,7 +499,8 @@ async function createNotificationTriggers(
     DROP TRIGGER IF EXISTS notify_engine_stream_insert ON ${engineTable};
     CREATE TRIGGER notify_engine_stream_insert
       AFTER INSERT ON ${engineTable}
-      FOR EACH ROW
+      REFERENCING NEW TABLE AS new_rows
+      FOR EACH STATEMENT
       EXECUTE FUNCTION ${schemaName}.notify_new_engine_stream_message();
   `);
 
@@ -468,24 +509,27 @@ async function createNotificationTriggers(
     CREATE OR REPLACE FUNCTION ${schemaName}.notify_new_worker_stream_message()
     RETURNS TRIGGER AS $$
     DECLARE
+      rec RECORD;
       channel_name TEXT;
       payload JSON;
     BEGIN
-      IF NEW.visible_at <= NOW() THEN
-        channel_name := 'wrk_' || NEW.stream_name;
+      FOR rec IN
+        SELECT DISTINCT stream_name FROM new_rows WHERE visible_at <= NOW()
+      LOOP
+        channel_name := 'wrk_' || rec.stream_name;
         IF length(channel_name) > 63 THEN
           channel_name := left(channel_name, 63);
         END IF;
 
         payload := json_build_object(
-          'stream_name', NEW.stream_name,
+          'stream_name', rec.stream_name,
           'table_type', 'worker'
         );
 
         PERFORM pg_notify(channel_name, payload::text);
-      END IF;
+      END LOOP;
 
-      RETURN NEW;
+      RETURN NULL;
     END;
     $$ LANGUAGE plpgsql;
   `);
@@ -494,7 +538,8 @@ async function createNotificationTriggers(
     DROP TRIGGER IF EXISTS notify_worker_stream_insert ON ${workerTable};
     CREATE TRIGGER notify_worker_stream_insert
       AFTER INSERT ON ${workerTable}
-      FOR EACH ROW
+      REFERENCING NEW TABLE AS new_rows
+      FOR EACH STATEMENT
       EXECUTE FUNCTION ${schemaName}.notify_new_worker_stream_message();
   `);
 

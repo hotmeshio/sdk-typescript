@@ -351,4 +351,8 @@ export interface NotificationConsumer {
   lastFallbackCheck: number;
   /** Service instance that owns this consumer (for fetchAndDeliverMessages dispatch) */
   serviceInstance?: any;
+  /** True while a notification-driven fetch is in flight (coalesces concurrent NOTIFYs) */
+  fetchInFlight?: boolean;
+  /** Set when a NOTIFY arrives mid-fetch; triggers one follow-up fetch */
+  fetchPending?: boolean;
 }
