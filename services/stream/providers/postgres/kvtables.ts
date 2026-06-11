@@ -261,6 +261,13 @@ async function ensureProcedures(
  * statement-level form. Recreating a trigger takes an ACCESS EXCLUSIVE
  * lock on the table, so only do it when the installed trigger is still
  * row-level (tgtype bit 0 set); subsequent boots are a no-op.
+ *
+ * The function replacement and trigger swap MUST commit atomically:
+ * between them, the still-installed row-level trigger would invoke the
+ * statement-level function body, whose transition-table reference
+ * (new_rows) errors under FOR EACH ROW — failing every concurrent
+ * INSERT until the swap lands (or indefinitely, if the migrating
+ * process dies between the two statements).
  */
 async function ensureStatementLevelTriggers(
   client: any,
@@ -278,7 +285,14 @@ async function ensureStatementLevelTriggers(
     [schemaName],
   );
   if (parseInt(result.rows[0].row_level, 10) > 0) {
-    await createNotificationTriggers(client, schemaName);
+    await client.query('BEGIN');
+    try {
+      await createNotificationTriggers(client, schemaName);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
   }
 }
 
