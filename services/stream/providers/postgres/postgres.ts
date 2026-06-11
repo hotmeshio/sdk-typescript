@@ -157,7 +157,9 @@ class PostgresStreamService extends StreamService<
         if (messages.length > 0) {
           consumer.callback(messages);
         }
-        drain = messages.length === batchSize || consumer.fetchPending === true;
+        // Boolean() rather than === true: fetchPending is mutated by the
+        // notification handler across the await, which TS narrowing misses
+        drain = messages.length === batchSize || Boolean(consumer.fetchPending);
       }
     } catch (error) {
       this.logger.error('postgres-stream-fetch-deliver-error', {
