@@ -67,38 +67,51 @@ describe('DURABLE | signal-queue | Postgres', () => {
       expect(match.status).toBe('pending');
       expect(match.envelope?.formSchema).toBeDefined();
 
-      //claim by metadata key
-      const claimed = await client.signalQueue.claimByMetadata({
+      //claim by metadata key — must succeed
+      const claimResult = await client.signalQueue.claimByMetadata({
         key: 'orderId',
         value: orderId,
         assignee: 'pharmacist-jane',
         durationMinutes: 10,
       });
-      expect(claimed).toBeDefined();
-      expect(claimed.status).toBe('claimed');
-      expect(claimed.assignedTo).toBe('pharmacist-jane');
+      expect(claimResult.ok).toBe(true);
+      if (!claimResult.ok) throw new Error('unreachable');
+      expect(claimResult.entry.status).toBe('claimed');
+      expect(claimResult.entry.assignedTo).toBe('pharmacist-jane');
 
-      //concurrent claim attempt must return null
+      //concurrent claim attempt must return conflict
       const concurrent = await client.signalQueue.claimByMetadata({
         key: 'orderId',
         value: orderId,
       });
-      expect(concurrent).toBeNull();
+      expect(concurrent.ok).toBe(false);
+      if (concurrent.ok) throw new Error('unreachable');
+      expect(concurrent.reason).toBe('conflict');
 
       //resolve — delivers signal to paused workflow
-      await client.signalQueue.resolve({
-        id: claimed.id,
+      const resolveResult = await client.signalQueue.resolve({
+        id: claimResult.entry.id,
         resolverPayload: { approved: true, notes: 'Looks good' },
       });
+      expect(resolveResult.ok).toBe(true);
 
       //workflow resumes and returns the resolver payload
       const result = await handle.result();
       expect(result).toMatchObject({ approved: true, notes: 'Looks good' });
 
       //signal queue record should now be resolved
-      const record = await client.signalQueue.get(claimed.id);
+      const record = await client.signalQueue.get(claimResult.entry.id);
       expect(record.status).toBe('resolved');
       expect(record.resolverPayload).toMatchObject({ approved: true });
+
+      //re-resolve must return already-resolved
+      const dupResolve = await client.signalQueue.resolve({
+        id: claimResult.entry.id,
+        resolverPayload: { approved: true },
+      });
+      expect(dupResolve.ok).toBe(false);
+      if (dupResolve.ok) throw new Error('unreachable');
+      expect(dupResolve.reason).toBe('already-resolved');
     }, 30_000);
 
     it('resolveByMetadata resumes workflow', async () => {
@@ -114,14 +127,24 @@ describe('DURABLE | signal-queue | Postgres', () => {
 
       await sleepFor(3_000);
 
-      await client.signalQueue.resolveByMetadata({
+      const resolveResult = await client.signalQueue.resolveByMetadata({
         key: 'orderId',
         value: orderId,
         resolverPayload: { approved: false, reason: 'Out of stock' },
       });
+      expect(resolveResult.ok).toBe(true);
 
       const result = await handle.result();
       expect(result).toMatchObject({ approved: false });
+
+      //second resolveByMetadata must return not-found (already resolved)
+      const dupResolve = await client.signalQueue.resolveByMetadata({
+        key: 'orderId',
+        value: orderId,
+      });
+      expect(dupResolve.ok).toBe(false);
+      if (dupResolve.ok) throw new Error('unreachable');
+      expect(dupResolve.reason).toBe('not-found');
     }, 20_000);
 
     it('expiry sweeper re-queues expired claims', async () => {
@@ -137,27 +160,43 @@ describe('DURABLE | signal-queue | Postgres', () => {
 
       await sleepFor(3_000);
 
-      const claimed = await client.signalQueue.claimByMetadata({
+      const claimResult = await client.signalQueue.claimByMetadata({
         key: 'orderId',
         value: orderId,
         durationMinutes: 0,
       });
-      expect(claimed).toBeDefined();
-      expect(claimed.status).toBe('claimed');
+      expect(claimResult.ok).toBe(true);
+      if (!claimResult.ok) throw new Error('unreachable');
+      expect(claimResult.entry.status).toBe('claimed');
+
+      //release a non-existent id must return not-found
+      const badRelease = await client.signalQueue.release({
+        id: '00000000-0000-0000-0000-000000000000',
+      });
+      expect(badRelease.ok).toBe(false);
+      if (badRelease.ok) throw new Error('unreachable');
+      expect(badRelease.reason).toBe('not-found');
 
       //manually force expiry by calling releaseExpired
       const released = await client.signalQueue.releaseExpired();
       expect(released).toBeGreaterThanOrEqual(1);
 
       //record should be pending again
-      const record = await client.signalQueue.get(claimed.id);
+      const record = await client.signalQueue.get(claimResult.entry.id);
       expect(record.status).toBe('pending');
 
+      //release on pending record must return wrong-status
+      const wrongStatus = await client.signalQueue.release({ id: claimResult.entry.id });
+      expect(wrongStatus.ok).toBe(false);
+      if (wrongStatus.ok) throw new Error('unreachable');
+      expect(wrongStatus.reason).toBe('wrong-status');
+
       //clean up — resolve it so the workflow completes
-      await client.signalQueue.resolve({
-        id: claimed.id,
+      const cleanup = await client.signalQueue.resolve({
+        id: claimResult.entry.id,
         resolverPayload: { cleaned: true },
       });
+      expect(cleanup.ok).toBe(true);
       await handle.result();
     }, 20_000);
 
@@ -185,10 +224,11 @@ describe('DURABLE | signal-queue | Postgres', () => {
       expect(match).toBeDefined();
 
       //resolve before timeout
-      await client.signalQueue.resolve({
+      const resolveResult = await client.signalQueue.resolve({
         id: match.id,
         resolverPayload: { approved: true },
       });
+      expect(resolveResult.ok).toBe(true);
 
       const result = await handle.result();
       expect(result).toMatchObject({ approved: true });

@@ -492,10 +492,12 @@ export class ClientService {
       namespace?: string;
       assignee?: string;
       durationMinutes?: number;
-    }) => {
+    }): Promise<import('../../types/signal').ClaimSignalResult> => {
       const hotMesh = await this.getHotMeshClient(null, params.namespace);
       const store = hotMesh.engine.store as any;
-      if (typeof store.claimSignal !== 'function') return null;
+      if (typeof store.claimSignal !== 'function') {
+        return { ok: false, reason: 'not-found' };
+      }
       const ns = params.namespace ?? APP_ID;
       return store.claimSignal({
         namespace: ns,
@@ -512,10 +514,12 @@ export class ClientService {
       namespace?: string;
       assignee?: string;
       durationMinutes?: number;
-    }) => {
+    }): Promise<import('../../types/signal').ClaimSignalResult> => {
       const hotMesh = await this.getHotMeshClient(null, params.namespace);
       const store = hotMesh.engine.store as any;
-      if (typeof store.claimSignalByMetadata !== 'function') return null;
+      if (typeof store.claimSignalByMetadata !== 'function') {
+        return { ok: false, reason: 'not-found' };
+      }
       const ns = params.namespace ?? APP_ID;
       return store.claimSignalByMetadata({
         namespace: ns,
@@ -530,10 +534,12 @@ export class ClientService {
     release: async (params: {
       id: string;
       namespace?: string;
-    }): Promise<boolean> => {
+    }): Promise<import('../../types/signal').ReleaseSignalResult> => {
       const hotMesh = await this.getHotMeshClient(null, params.namespace);
       const store = hotMesh.engine.store as any;
-      if (typeof store.releaseSignal !== 'function') return false;
+      if (typeof store.releaseSignal !== 'function') {
+        return { ok: false, reason: 'not-found' };
+      }
       const ns = params.namespace ?? APP_ID;
       return store.releaseSignal({
         namespace: ns,
@@ -546,23 +552,29 @@ export class ClientService {
       id: string;
       namespace?: string;
       resolverPayload?: Record<string, unknown>;
-    }): Promise<void> => {
+    }): Promise<import('../../types/signal').ResolveSignalResult> => {
       const hotMesh = await this.getHotMeshClient(null, params.namespace);
       const store = hotMesh.engine.store as any;
-      if (typeof store.resolveSignal !== 'function') return;
+      if (typeof store.resolveSignal !== 'function') {
+        return { ok: false, reason: 'not-found' };
+      }
       const ns = params.namespace ?? APP_ID;
-      const result = await store.resolveSignal({
+      const storeResult = await store.resolveSignal({
         namespace: ns,
         appId: store.appId,
         id: params.id,
         resolverPayload: params.resolverPayload,
       });
-      if (result?.signalKey) {
+      if (!storeResult.ok) return storeResult;
+      try {
         await this.workflow.signal(
-          result.signalKey,
+          storeResult.signalKey,
           params.resolverPayload ?? {},
           params.namespace,
         );
+        return { ok: true };
+      } catch {
+        return { ok: false, reason: 'signal-failed', signalKey: storeResult.signalKey };
       }
     },
 
@@ -571,24 +583,30 @@ export class ClientService {
       value: unknown;
       namespace?: string;
       resolverPayload?: Record<string, unknown>;
-    }): Promise<void> => {
+    }): Promise<import('../../types/signal').ResolveSignalResult> => {
       const hotMesh = await this.getHotMeshClient(null, params.namespace);
       const store = hotMesh.engine.store as any;
-      if (typeof store.resolveSignalByMetadata !== 'function') return;
+      if (typeof store.resolveSignalByMetadata !== 'function') {
+        return { ok: false, reason: 'not-found' };
+      }
       const ns = params.namespace ?? APP_ID;
-      const result = await store.resolveSignalByMetadata({
+      const storeResult = await store.resolveSignalByMetadata({
         namespace: ns,
         appId: store.appId,
         key: params.key,
         value: params.value,
         resolverPayload: params.resolverPayload,
       });
-      if (result?.signalKey) {
+      if (!storeResult.ok) return storeResult;
+      try {
         await this.workflow.signal(
-          result.signalKey,
+          storeResult.signalKey,
           params.resolverPayload ?? {},
           params.namespace,
         );
+        return { ok: true };
+      } catch {
+        return { ok: false, reason: 'signal-failed', signalKey: storeResult.signalKey };
       }
     },
 

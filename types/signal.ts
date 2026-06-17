@@ -103,3 +103,40 @@ export interface ListSignalsParams {
   limit?: number;
   offset?: number;
 }
+
+/**
+ * Result of a claim operation (by ID or by metadata).
+ *
+ * - ok: true  → signal was claimed; entry contains the full record
+ * - ok: false, reason: 'not-found'  → no signal exists for the given id/metadata
+ * - ok: false, reason: 'conflict'   → signal exists but was already claimed concurrently
+ */
+export type ClaimSignalResult =
+  | { ok: true; entry: SignalQueueEntry }
+  | { ok: false; reason: 'not-found' | 'conflict' };
+
+/**
+ * Result of a resolve operation (by ID or by metadata).
+ *
+ * - ok: true  → signal marked resolved and workflow signal delivered
+ * - ok: false, reason: 'not-found'       → no pending/claimed signal found
+ * - ok: false, reason: 'already-resolved' → signal exists but was already resolved (id-based only)
+ * - ok: false, reason: 'signal-failed'    → DB record updated but workflow signal delivery failed;
+ *                                            signalKey is provided so callers can retry delivery
+ */
+export type ResolveSignalResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-found' }
+  | { ok: false; reason: 'already-resolved' }
+  | { ok: false; reason: 'signal-failed'; signalKey: string };
+
+/**
+ * Result of a release operation.
+ *
+ * - ok: true  → signal returned to pending
+ * - ok: false, reason: 'not-found'    → no signal exists for this id
+ * - ok: false, reason: 'wrong-status' → signal exists but is not in 'claimed' status
+ */
+export type ReleaseSignalResult =
+  | { ok: true }
+  | { ok: false; reason: 'not-found' | 'wrong-status' };

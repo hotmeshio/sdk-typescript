@@ -314,10 +314,13 @@ export { TransitionMatch, TransitionRule, Transitions } from './transition';
 export {
   ClaimSignalByMetadataParams,
   ClaimSignalParams,
+  ClaimSignalResult,
   ConditionQueueConfig,
   EnqueueSignalParams,
   ListSignalsParams,
+  ReleaseSignalResult,
   ResolveSignalByMetadataParams,
   ResolveSignalParams,
+  ResolveSignalResult,
   SignalQueueEntry,
 } from './signal';

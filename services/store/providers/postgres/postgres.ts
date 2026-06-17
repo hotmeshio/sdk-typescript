@@ -1921,24 +1921,41 @@ class PostgresStoreService extends StoreService<
     id: string;
     assignee?: string;
     durationMinutes?: number;
-  }) {
+  }): Promise<
+    | { ok: true; entry: ReturnType<typeof this.rowToSignalEntry> }
+    | { ok: false; reason: 'not-found' | 'conflict' }
+  > {
     const tbl = this.signalQueueTable();
     const minutes = params.durationMinutes ?? 30;
     const result = await this.pgClient.query(
-      `UPDATE ${tbl}
-       SET status = 'claimed',
-           claimed_at = NOW(),
-           claim_expires_at = NOW() + INTERVAL '${minutes} minutes',
-           assigned_to = COALESCE($3, assigned_to),
-           updated_at = NOW()
-       WHERE namespace = $1 AND app_id = $2
-         AND id = $4
-         AND status = 'pending'
-       RETURNING *`,
+      `WITH found AS (
+         SELECT id, status FROM ${tbl}
+         WHERE namespace = $1 AND app_id = $2 AND id = $4
+       ),
+       claimed AS (
+         UPDATE ${tbl}
+         SET status = 'claimed',
+             claimed_at = NOW(),
+             claim_expires_at = NOW() + INTERVAL '${minutes} minutes',
+             assigned_to = COALESCE($3, assigned_to),
+             updated_at = NOW()
+         WHERE namespace = $1 AND app_id = $2
+           AND id = $4
+           AND status = 'pending'
+         RETURNING *
+       )
+       SELECT c.*, f.id AS f_id
+       FROM found f
+       LEFT JOIN claimed c ON c.id = f.id`,
       [params.namespace, params.appId, params.assignee ?? null, params.id],
     );
-    if (result.rows.length === 0) return null;
-    return this.rowToSignalEntry(result.rows[0]);
+    if (result.rows.length === 0 || !result.rows[0].f_id) {
+      return { ok: false, reason: 'not-found' };
+    }
+    if (!result.rows[0].id) {
+      return { ok: false, reason: 'conflict' };
+    }
+    return { ok: true, entry: this.rowToSignalEntry(result.rows[0]) };
   }
 
   async claimSignalByMetadata(params: {
@@ -1948,46 +1965,82 @@ class PostgresStoreService extends StoreService<
     value: unknown;
     assignee?: string;
     durationMinutes?: number;
-  }) {
+  }): Promise<
+    | { ok: true; entry: ReturnType<typeof this.rowToSignalEntry> }
+    | { ok: false; reason: 'not-found' | 'conflict' }
+  > {
     const tbl = this.signalQueueTable();
     const minutes = params.durationMinutes ?? 30;
     const containsJson = JSON.stringify({ [params.key]: params.value });
     const result = await this.pgClient.query(
-      `UPDATE ${tbl}
-       SET status = 'claimed',
-           claimed_at = NOW(),
-           claim_expires_at = NOW() + INTERVAL '${minutes} minutes',
-           assigned_to = COALESCE($3, assigned_to),
-           updated_at = NOW()
-       WHERE namespace = $1 AND app_id = $2
-         AND status = 'pending'
-         AND metadata @> $4::jsonb
-       RETURNING *`,
+      `WITH found AS (
+         SELECT id, status FROM ${tbl}
+         WHERE namespace = $1 AND app_id = $2
+           AND metadata @> $4::jsonb
+         ORDER BY priority ASC, created_at ASC
+         LIMIT 1
+       ),
+       claimed AS (
+         UPDATE ${tbl}
+         SET status = 'claimed',
+             claimed_at = NOW(),
+             claim_expires_at = NOW() + INTERVAL '${minutes} minutes',
+             assigned_to = COALESCE($3, assigned_to),
+             updated_at = NOW()
+         WHERE namespace = $1 AND app_id = $2
+           AND id = (SELECT id FROM found)
+           AND status = 'pending'
+         RETURNING *
+       )
+       SELECT c.*, f.id AS f_id
+       FROM found f
+       LEFT JOIN claimed c ON c.id = f.id`,
       [params.namespace, params.appId, params.assignee ?? null, containsJson],
     );
-    if (result.rows.length === 0) return null;
-    return this.rowToSignalEntry(result.rows[0]);
+    if (result.rows.length === 0 || !result.rows[0].f_id) {
+      return { ok: false, reason: 'not-found' };
+    }
+    if (!result.rows[0].id) {
+      return { ok: false, reason: 'conflict' };
+    }
+    return { ok: true, entry: this.rowToSignalEntry(result.rows[0]) };
   }
 
   async releaseSignal(params: {
     namespace: string;
     appId: string;
     id: string;
-  }): Promise<boolean> {
+  }): Promise<{ ok: true } | { ok: false; reason: 'not-found' | 'wrong-status' }> {
     const tbl = this.signalQueueTable();
     const result = await this.pgClient.query(
-      `UPDATE ${tbl}
-       SET status = 'pending',
-           claimed_at = NULL,
-           claim_expires_at = NULL,
-           assigned_to = NULL,
-           updated_at = NOW()
-       WHERE namespace = $1 AND app_id = $2
-         AND id = $3
-         AND status = 'claimed'`,
+      `WITH found AS (
+         SELECT id, status FROM ${tbl}
+         WHERE namespace = $1 AND app_id = $2 AND id = $3
+       ),
+       released AS (
+         UPDATE ${tbl}
+         SET status = 'pending',
+             claimed_at = NULL,
+             claim_expires_at = NULL,
+             assigned_to = NULL,
+             updated_at = NOW()
+         WHERE namespace = $1 AND app_id = $2
+           AND id = $3
+           AND status = 'claimed'
+         RETURNING id
+       )
+       SELECT r.id AS r_id, f.id AS f_id
+       FROM found f
+       LEFT JOIN released r ON r.id = f.id`,
       [params.namespace, params.appId, params.id],
     );
-    return (result.rowCount ?? 0) > 0;
+    if (result.rows.length === 0 || !result.rows[0].f_id) {
+      return { ok: false, reason: 'not-found' };
+    }
+    if (!result.rows[0].r_id) {
+      return { ok: false, reason: 'wrong-status' };
+    }
+    return { ok: true };
   }
 
   async resolveSignal(params: {
@@ -1995,18 +2048,30 @@ class PostgresStoreService extends StoreService<
     appId: string;
     id: string;
     resolverPayload?: Record<string, unknown>;
-  }): Promise<{ signalKey: string; topic: string } | null> {
+  }): Promise<
+    | { ok: true; signalKey: string; topic: string }
+    | { ok: false; reason: 'not-found' | 'already-resolved' }
+  > {
     const tbl = this.signalQueueTable();
     const result = await this.pgClient.query(
-      `UPDATE ${tbl}
-       SET status = 'resolved',
-           resolved_at = NOW(),
-           resolver_payload = $3::jsonb,
-           updated_at = NOW()
-       WHERE namespace = $1 AND app_id = $2
-         AND id = $4
-         AND status IN ('pending', 'claimed')
-       RETURNING signal_key, topic`,
+      `WITH found AS (
+         SELECT id, status, signal_key, topic FROM ${tbl}
+         WHERE namespace = $1 AND app_id = $2 AND id = $4
+       ),
+       resolved AS (
+         UPDATE ${tbl}
+         SET status = 'resolved',
+             resolved_at = NOW(),
+             resolver_payload = $3::jsonb,
+             updated_at = NOW()
+         WHERE namespace = $1 AND app_id = $2
+           AND id = $4
+           AND status IN ('pending', 'claimed')
+         RETURNING id, signal_key, topic
+       )
+       SELECT r.id AS r_id, r.signal_key, r.topic, f.id AS f_id
+       FROM found f
+       LEFT JOIN resolved r ON r.id = f.id`,
       [
         params.namespace,
         params.appId,
@@ -2014,8 +2079,14 @@ class PostgresStoreService extends StoreService<
         params.id,
       ],
     );
-    if (result.rows.length === 0) return null;
+    if (result.rows.length === 0 || !result.rows[0].f_id) {
+      return { ok: false, reason: 'not-found' };
+    }
+    if (!result.rows[0].r_id) {
+      return { ok: false, reason: 'already-resolved' };
+    }
     return {
+      ok: true,
       signalKey: result.rows[0].signal_key as string,
       topic: result.rows[0].topic as string,
     };
@@ -2027,19 +2098,34 @@ class PostgresStoreService extends StoreService<
     key: string;
     value: unknown;
     resolverPayload?: Record<string, unknown>;
-  }): Promise<{ signalKey: string; topic: string } | null> {
+  }): Promise<
+    | { ok: true; signalKey: string; topic: string }
+    | { ok: false; reason: 'not-found' }
+  > {
     const tbl = this.signalQueueTable();
     const containsJson = JSON.stringify({ [params.key]: params.value });
     const result = await this.pgClient.query(
-      `UPDATE ${tbl}
-       SET status = 'resolved',
-           resolved_at = NOW(),
-           resolver_payload = $3::jsonb,
-           updated_at = NOW()
-       WHERE namespace = $1 AND app_id = $2
-         AND status IN ('pending', 'claimed')
-         AND metadata @> $4::jsonb
-       RETURNING signal_key, topic`,
+      `WITH found AS (
+         SELECT id, signal_key, topic FROM ${tbl}
+         WHERE namespace = $1 AND app_id = $2
+           AND status IN ('pending', 'claimed')
+           AND metadata @> $4::jsonb
+         LIMIT 1
+       ),
+       resolved AS (
+         UPDATE ${tbl}
+         SET status = 'resolved',
+             resolved_at = NOW(),
+             resolver_payload = $3::jsonb,
+             updated_at = NOW()
+         WHERE namespace = $1 AND app_id = $2
+           AND id = (SELECT id FROM found)
+           AND status IN ('pending', 'claimed')
+         RETURNING id, signal_key, topic
+       )
+       SELECT r.id AS r_id, r.signal_key, r.topic, f.id AS f_id
+       FROM found f
+       LEFT JOIN resolved r ON r.id = f.id`,
       [
         params.namespace,
         params.appId,
@@ -2047,8 +2133,11 @@ class PostgresStoreService extends StoreService<
         containsJson,
       ],
     );
-    if (result.rows.length === 0) return null;
+    if (result.rows.length === 0 || !result.rows[0].f_id) {
+      return { ok: false, reason: 'not-found' };
+    }
     return {
+      ok: true,
       signalKey: result.rows[0].signal_key as string,
       topic: result.rows[0].topic as string,
     };
