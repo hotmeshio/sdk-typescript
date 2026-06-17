@@ -369,3 +369,10 @@ class DurableClass {
 
 export { DurableClass as Durable };
 export type { ContextType };
+export type { ConditionQueueConfig } from './workflow/condition';
+export type {
+  ClaimSignalResult,
+  ReleaseSignalResult,
+  ResolveSignalResult,
+  SignalQueueEntry,
+} from '../../types/signal';

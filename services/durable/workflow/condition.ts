@@ -8,6 +8,9 @@ import {
 } from './common';
 import { checkCancellation } from './cancellationScope';
 import { didRun } from './didRun';
+import type { ConditionQueueConfig } from '../../../types/signal';
+
+export type { ConditionQueueConfig };
 
 /**
  * Pauses the workflow until a signal with the given `signalId` is received.
@@ -72,13 +75,21 @@ import { didRun } from './didRun';
  *
  * @template T - The type of data expected in the signal payload.
  * @param {string} signalId - A unique signal identifier shared by the sender and receiver.
- * @param {string} [timeout] - Optional duration (e.g., '30s', '5m', '1h'). Returns `false` on timeout.
+ * @param {string | ConditionQueueConfig} [timeoutOrConfig] - Optional timeout string (e.g. '30s') OR queue config object.
+ * @param {ConditionQueueConfig} [queueConfig] - Optional queue config when timeout is also provided.
  * @returns {Promise<T | false>} The signal data, or `false` if the timeout expired first.
  */
 export async function condition<T>(
   signalId: string,
-  timeout?: string,
+  timeoutOrConfig?: string | ConditionQueueConfig,
+  queueConfig?: ConditionQueueConfig,
 ): Promise<T | false> {
+  const timeout =
+    typeof timeoutOrConfig === 'string' ? timeoutOrConfig : undefined;
+  const resolvedQueueConfig: ConditionQueueConfig | undefined =
+    typeof timeoutOrConfig === 'object' && timeoutOrConfig !== null
+      ? timeoutOrConfig
+      : queueConfig;
   const [didRunAlready, execIndex, result] = await didRun('wait');
   checkCancellation();
   if (didRunAlready) {
@@ -140,6 +151,7 @@ export async function condition<T>(
     type: 'DurableWaitForError',
     code: HMSH_CODE_DURABLE_WAIT,
     ...(timeout ? { duration: s(timeout) } : {}),
+    ...(resolvedQueueConfig ? { queueConfig: resolvedQueueConfig } : {}),
   };
   interruptionRegistry.push(interruptionMessage);
 
