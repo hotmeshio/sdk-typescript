@@ -222,6 +222,68 @@ export const KVTables = (context: PostgresStoreService) => ({
       `);
     }
 
+    // v0.21.0: signal queue table for first-class HITL escalation primitives
+    const sigTable = `${schemaName}.hotmesh_signals`;
+    const { rows: sigRows } = await client.query(
+      `SELECT to_regclass('${sigTable}') AS tbl`,
+    );
+    if (!sigRows[0].tbl) {
+      await client.query(`
+        CREATE TABLE IF NOT EXISTS ${sigTable} (
+          id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          namespace       TEXT NOT NULL,
+          app_id          TEXT NOT NULL,
+          signal_key      TEXT NOT NULL,
+          workflow_id     TEXT NOT NULL,
+          job_id          TEXT,
+          topic           TEXT,
+          status          TEXT NOT NULL DEFAULT 'pending',
+          role            TEXT,
+          type            TEXT,
+          subtype         TEXT,
+          priority        INT  NOT NULL DEFAULT 5,
+          description     TEXT,
+          task_queue      TEXT,
+          workflow_type   TEXT,
+          assigned_to     TEXT,
+          claimed_at      TIMESTAMPTZ,
+          claim_expires_at TIMESTAMPTZ,
+          resolved_at     TIMESTAMPTZ,
+          resolver_payload JSONB,
+          envelope        JSONB,
+          metadata        JSONB,
+          expires_at      TIMESTAMPTZ,
+          created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(namespace, app_id, signal_key)
+        );
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_hmsig_namespace_status
+          ON ${sigTable}(namespace, app_id, status);
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_hmsig_signal_key
+          ON ${sigTable}(namespace, app_id, signal_key);
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_hmsig_role_status
+          ON ${sigTable}(namespace, app_id, role, status);
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_hmsig_task_queue
+          ON ${sigTable}(namespace, app_id, task_queue, status);
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_hmsig_metadata_gin
+          ON ${sigTable} USING GIN(metadata);
+      `);
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_hmsig_claim_expiry
+          ON ${sigTable}(claim_expires_at) WHERE status = 'claimed';
+      `);
+    }
+
   },
 
   async createTables(
@@ -569,6 +631,65 @@ export const KVTables = (context: PostgresStoreService) => ({
             `);
             break;
 
+          case 'signal_queue': {
+            const tbl = fullTableName;
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS ${tbl} (
+                id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                namespace       TEXT NOT NULL,
+                app_id          TEXT NOT NULL,
+                signal_key      TEXT NOT NULL,
+                workflow_id     TEXT NOT NULL,
+                job_id          TEXT,
+                topic           TEXT,
+                status          TEXT NOT NULL DEFAULT 'pending',
+                role            TEXT,
+                type            TEXT,
+                subtype         TEXT,
+                priority        INT  NOT NULL DEFAULT 5,
+                description     TEXT,
+                task_queue      TEXT,
+                workflow_type   TEXT,
+                assigned_to     TEXT,
+                claimed_at      TIMESTAMPTZ,
+                claim_expires_at TIMESTAMPTZ,
+                resolved_at     TIMESTAMPTZ,
+                resolver_payload JSONB,
+                envelope        JSONB,
+                metadata        JSONB,
+                expires_at      TIMESTAMPTZ,
+                created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE(namespace, app_id, signal_key)
+              );
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsig_namespace_status
+                ON ${tbl}(namespace, app_id, status);
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsig_signal_key
+                ON ${tbl}(namespace, app_id, signal_key);
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsig_role_status
+                ON ${tbl}(namespace, app_id, role, status);
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsig_task_queue
+                ON ${tbl}(namespace, app_id, task_queue, status);
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsig_metadata_gin
+                ON ${tbl} USING GIN(metadata);
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsig_claim_expiry
+                ON ${tbl}(claim_expires_at) WHERE status = 'claimed';
+            `);
+            break;
+          }
+
           default:
             context.logger.warn(`Unknown table type for ${tableDef.name}`);
             break;
@@ -698,6 +819,11 @@ export const KVTables = (context: PostgresStoreService) => ({
         schema: schemaName,
         name: 'signal_registry',
         type: 'string',
+      },
+      {
+        schema: schemaName,
+        name: 'hotmesh_signals',
+        type: 'signal_queue',
       },
     ];
 

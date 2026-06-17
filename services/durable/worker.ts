@@ -1039,6 +1039,32 @@ export class WorkerService {
           const workflowInput = data.data as unknown as WorkflowDataType;
           const execIndex = counter.counter;
           const { workflowId, workflowDimension, originJobId } = workflowInput;
+          const payload = interruptionRegistry[0];
+
+          //if condition() was called with queueConfig, create a signal queue record
+          if (payload.queueConfig) {
+            const store = this.workflowRunner.engine.store as any;
+            if (typeof store.enqueueSignal === 'function') {
+              const ns = config.namespace ?? APP_ID;
+              try {
+                await store.enqueueSignal({
+                  namespace: ns,
+                  appId: store.appId,
+                  signalKey: payload.signalId,
+                  workflowId,
+                  topic: `${ns}.wfs.wait`,
+                  taskQueue: config.taskQueue ?? payload.queueConfig.taskQueue,
+                  ...payload.queueConfig,
+                });
+              } catch (enqueueErr) {
+                this.workflowRunner.engine.logger.warn('signal-queue-enqueue-err', {
+                  signalId: payload.signalId,
+                  error: enqueueErr,
+                });
+              }
+            }
+          }
+
           return withPatchMarkers({
             status: StreamStatus.SUCCESS,
             code: HMSH_CODE_DURABLE_WAIT,

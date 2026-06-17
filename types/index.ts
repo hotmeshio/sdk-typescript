@@ -311,3 +311,13 @@ export {
 } from './telemetry';
 export { WorkListTaskType } from './task';
 export { TransitionMatch, TransitionRule, Transitions } from './transition';
+export {
+  ClaimSignalByMetadataParams,
+  ClaimSignalParams,
+  ConditionQueueConfig,
+  EnqueueSignalParams,
+  ListSignalsParams,
+  ResolveSignalByMetadataParams,
+  ResolveSignalParams,
+  SignalQueueEntry,
+} from './signal';

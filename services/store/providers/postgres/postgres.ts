@@ -1826,6 +1826,295 @@ class PostgresStoreService extends StoreService<
     });
   }
 
+  // ─── Signal Queue Methods ─────────────────────────────────────────────────
+
+  private signalQueueTable(): string {
+    return `${this.kvsql().safeName(this.appId)}.hotmesh_signals`;
+  }
+
+  private rowToSignalEntry(row: Record<string, unknown>) {
+    return {
+      id: row.id as string,
+      namespace: row.namespace as string,
+      appId: row.app_id as string,
+      signalKey: row.signal_key as string,
+      workflowId: row.workflow_id as string,
+      jobId: row.job_id as string | undefined,
+      topic: row.topic as string | undefined,
+      status: row.status as 'pending' | 'claimed' | 'resolved' | 'expired' | 'released',
+      role: row.role as string | undefined,
+      type: row.type as string | undefined,
+      subtype: row.subtype as string | undefined,
+      priority: row.priority as number,
+      description: row.description as string | undefined,
+      taskQueue: row.task_queue as string | undefined,
+      workflowType: row.workflow_type as string | undefined,
+      assignedTo: row.assigned_to as string | undefined,
+      claimedAt: row.claimed_at ? new Date(row.claimed_at as string) : undefined,
+      claimExpiresAt: row.claim_expires_at ? new Date(row.claim_expires_at as string) : undefined,
+      resolvedAt: row.resolved_at ? new Date(row.resolved_at as string) : undefined,
+      resolverPayload: row.resolver_payload as Record<string, unknown> | undefined,
+      envelope: row.envelope as Record<string, unknown> | undefined,
+      metadata: row.metadata as Record<string, unknown> | undefined,
+      expiresAt: row.expires_at ? new Date(row.expires_at as string) : undefined,
+      createdAt: new Date(row.created_at as string),
+      updatedAt: new Date(row.updated_at as string),
+    };
+  }
+
+  async enqueueSignal(params: {
+    namespace: string;
+    appId: string;
+    signalKey: string;
+    workflowId: string;
+    jobId?: string;
+    topic?: string;
+    role?: string;
+    type?: string;
+    subtype?: string;
+    priority?: number;
+    description?: string;
+    taskQueue?: string;
+    workflowType?: string;
+    assignedTo?: string;
+    metadata?: Record<string, unknown>;
+    envelope?: Record<string, unknown>;
+    expiresAt?: Date;
+  }): Promise<{ id: string } | null> {
+    const tbl = this.signalQueueTable();
+    const result = await this.pgClient.query(
+      `INSERT INTO ${tbl}
+         (namespace, app_id, signal_key, workflow_id, job_id, topic,
+          role, type, subtype, priority, description,
+          task_queue, workflow_type, assigned_to,
+          metadata, envelope, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       ON CONFLICT (namespace, app_id, signal_key) DO NOTHING
+       RETURNING id`,
+      [
+        params.namespace,
+        params.appId,
+        params.signalKey,
+        params.workflowId,
+        params.jobId ?? null,
+        params.topic ?? null,
+        params.role ?? null,
+        params.type ?? null,
+        params.subtype ?? null,
+        params.priority ?? 5,
+        params.description ?? null,
+        params.taskQueue ?? null,
+        params.workflowType ?? null,
+        params.assignedTo ?? null,
+        params.metadata ? JSON.stringify(params.metadata) : null,
+        params.envelope ? JSON.stringify(params.envelope) : null,
+        params.expiresAt ?? null,
+      ],
+    );
+    if (result.rows.length === 0) return null;
+    return { id: result.rows[0].id as string };
+  }
+
+  async claimSignal(params: {
+    namespace: string;
+    appId: string;
+    id: string;
+    assignee?: string;
+    durationMinutes?: number;
+  }) {
+    const tbl = this.signalQueueTable();
+    const minutes = params.durationMinutes ?? 30;
+    const result = await this.pgClient.query(
+      `UPDATE ${tbl}
+       SET status = 'claimed',
+           claimed_at = NOW(),
+           claim_expires_at = NOW() + INTERVAL '${minutes} minutes',
+           assigned_to = COALESCE($3, assigned_to),
+           updated_at = NOW()
+       WHERE namespace = $1 AND app_id = $2
+         AND id = $4
+         AND status = 'pending'
+       RETURNING *`,
+      [params.namespace, params.appId, params.assignee ?? null, params.id],
+    );
+    if (result.rows.length === 0) return null;
+    return this.rowToSignalEntry(result.rows[0]);
+  }
+
+  async claimSignalByMetadata(params: {
+    namespace: string;
+    appId: string;
+    key: string;
+    value: unknown;
+    assignee?: string;
+    durationMinutes?: number;
+  }) {
+    const tbl = this.signalQueueTable();
+    const minutes = params.durationMinutes ?? 30;
+    const containsJson = JSON.stringify({ [params.key]: params.value });
+    const result = await this.pgClient.query(
+      `UPDATE ${tbl}
+       SET status = 'claimed',
+           claimed_at = NOW(),
+           claim_expires_at = NOW() + INTERVAL '${minutes} minutes',
+           assigned_to = COALESCE($3, assigned_to),
+           updated_at = NOW()
+       WHERE namespace = $1 AND app_id = $2
+         AND status = 'pending'
+         AND metadata @> $4::jsonb
+       RETURNING *`,
+      [params.namespace, params.appId, params.assignee ?? null, containsJson],
+    );
+    if (result.rows.length === 0) return null;
+    return this.rowToSignalEntry(result.rows[0]);
+  }
+
+  async releaseSignal(params: {
+    namespace: string;
+    appId: string;
+    id: string;
+  }): Promise<boolean> {
+    const tbl = this.signalQueueTable();
+    const result = await this.pgClient.query(
+      `UPDATE ${tbl}
+       SET status = 'pending',
+           claimed_at = NULL,
+           claim_expires_at = NULL,
+           assigned_to = NULL,
+           updated_at = NOW()
+       WHERE namespace = $1 AND app_id = $2
+         AND id = $3
+         AND status = 'claimed'`,
+      [params.namespace, params.appId, params.id],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async resolveSignal(params: {
+    namespace: string;
+    appId: string;
+    id: string;
+    resolverPayload?: Record<string, unknown>;
+  }): Promise<{ signalKey: string; topic: string } | null> {
+    const tbl = this.signalQueueTable();
+    const result = await this.pgClient.query(
+      `UPDATE ${tbl}
+       SET status = 'resolved',
+           resolved_at = NOW(),
+           resolver_payload = $3::jsonb,
+           updated_at = NOW()
+       WHERE namespace = $1 AND app_id = $2
+         AND id = $4
+         AND status IN ('pending', 'claimed')
+       RETURNING signal_key, topic`,
+      [
+        params.namespace,
+        params.appId,
+        params.resolverPayload ? JSON.stringify(params.resolverPayload) : null,
+        params.id,
+      ],
+    );
+    if (result.rows.length === 0) return null;
+    return {
+      signalKey: result.rows[0].signal_key as string,
+      topic: result.rows[0].topic as string,
+    };
+  }
+
+  async resolveSignalByMetadata(params: {
+    namespace: string;
+    appId: string;
+    key: string;
+    value: unknown;
+    resolverPayload?: Record<string, unknown>;
+  }): Promise<{ signalKey: string; topic: string } | null> {
+    const tbl = this.signalQueueTable();
+    const containsJson = JSON.stringify({ [params.key]: params.value });
+    const result = await this.pgClient.query(
+      `UPDATE ${tbl}
+       SET status = 'resolved',
+           resolved_at = NOW(),
+           resolver_payload = $3::jsonb,
+           updated_at = NOW()
+       WHERE namespace = $1 AND app_id = $2
+         AND status IN ('pending', 'claimed')
+         AND metadata @> $4::jsonb
+       RETURNING signal_key, topic`,
+      [
+        params.namespace,
+        params.appId,
+        params.resolverPayload ? JSON.stringify(params.resolverPayload) : null,
+        containsJson,
+      ],
+    );
+    if (result.rows.length === 0) return null;
+    return {
+      signalKey: result.rows[0].signal_key as string,
+      topic: result.rows[0].topic as string,
+    };
+  }
+
+  async releaseExpiredSignals(params: {
+    namespace: string;
+    appId: string;
+  }): Promise<number> {
+    const tbl = this.signalQueueTable();
+    const result = await this.pgClient.query(
+      `UPDATE ${tbl}
+       SET status = 'pending',
+           claimed_at = NULL,
+           claim_expires_at = NULL,
+           updated_at = NOW()
+       WHERE namespace = $1 AND app_id = $2
+         AND status = 'claimed'
+         AND claim_expires_at < NOW()`,
+      [params.namespace, params.appId],
+    );
+    return result.rowCount ?? 0;
+  }
+
+  async listSignals(params: {
+    namespace: string;
+    appId: string;
+    status?: string;
+    role?: string;
+    taskQueue?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const tbl = this.signalQueueTable();
+    const conditions: string[] = ['namespace = $1', 'app_id = $2'];
+    const values: unknown[] = [params.namespace, params.appId];
+    let idx = 3;
+    if (params.status) { conditions.push(`status = $${idx++}`); values.push(params.status); }
+    if (params.role) { conditions.push(`role = $${idx++}`); values.push(params.role); }
+    if (params.taskQueue) { conditions.push(`task_queue = $${idx++}`); values.push(params.taskQueue); }
+    const where = conditions.join(' AND ');
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+    const result = await this.pgClient.query(
+      `SELECT * FROM ${tbl} WHERE ${where} ORDER BY priority ASC, created_at ASC LIMIT $${idx++} OFFSET $${idx}`,
+      [...values, limit, offset],
+    );
+    return result.rows.map(r => this.rowToSignalEntry(r));
+  }
+
+  async getSignal(params: {
+    namespace: string;
+    appId: string;
+    id: string;
+  }) {
+    const tbl = this.signalQueueTable();
+    const result = await this.pgClient.query(
+      `SELECT * FROM ${tbl} WHERE namespace = $1 AND app_id = $2 AND id = $3`,
+      [params.namespace, params.appId, params.id],
+    );
+    if (result.rows.length === 0) return null;
+    return this.rowToSignalEntry(result.rows[0]);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   /**
    * Parse a HotMesh-encoded value string.
    * Values may be prefixed with `/s` (JSON), `/d` (number), `/t` or `/f` (boolean), `/n` (null).

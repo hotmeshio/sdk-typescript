@@ -430,6 +430,178 @@ export class ClientService {
   };
 
   /**
+   * Signal queue API for managing paused-workflow task records.
+   * Operations: list, get, claim, claimByMetadata, release, resolve,
+   * resolveByMetadata, releaseExpired.
+   *
+   * Requires a Postgres store provider. Methods are no-ops (return null/false)
+   * when called against a non-Postgres store.
+   *
+   * @example
+   * ```typescript
+   * // Claim a pending task by metadata key
+   * const task = await client.signalQueue.claimByMetadata({
+   *   key: 'orderId', value: 'RX-123',
+   *   assignee: 'pharmacist-jane',
+   *   durationMinutes: 30,
+   * });
+   *
+   * if (task) {
+   *   await client.signalQueue.resolve({
+   *     id: task.id,
+   *     resolverPayload: { approved: true },
+   *   });
+   *   // → paused workflow resumes with { approved: true }
+   * }
+   * ```
+   */
+  signalQueue = {
+    list: async (params: {
+      namespace?: string;
+      taskQueue?: string;
+      status?: 'pending' | 'claimed' | 'resolved' | 'expired' | 'released';
+      role?: string;
+      limit?: number;
+      offset?: number;
+    } = {}) => {
+      const hotMesh = await this.getHotMeshClient(null, params.namespace);
+      const store = hotMesh.engine.store as any;
+      if (typeof store.listSignals !== 'function') return [];
+      const ns = params.namespace ?? APP_ID;
+      return store.listSignals({
+        namespace: ns,
+        appId: store.appId,
+        status: params.status,
+        role: params.role,
+        taskQueue: params.taskQueue,
+        limit: params.limit,
+        offset: params.offset,
+      });
+    },
+
+    get: async (id: string, namespace?: string) => {
+      const hotMesh = await this.getHotMeshClient(null, namespace);
+      const store = hotMesh.engine.store as any;
+      if (typeof store.getSignal !== 'function') return null;
+      const ns = namespace ?? APP_ID;
+      return store.getSignal({ namespace: ns, appId: store.appId, id });
+    },
+
+    claim: async (params: {
+      id: string;
+      namespace?: string;
+      assignee?: string;
+      durationMinutes?: number;
+    }) => {
+      const hotMesh = await this.getHotMeshClient(null, params.namespace);
+      const store = hotMesh.engine.store as any;
+      if (typeof store.claimSignal !== 'function') return null;
+      const ns = params.namespace ?? APP_ID;
+      return store.claimSignal({
+        namespace: ns,
+        appId: store.appId,
+        id: params.id,
+        assignee: params.assignee,
+        durationMinutes: params.durationMinutes,
+      });
+    },
+
+    claimByMetadata: async (params: {
+      key: string;
+      value: unknown;
+      namespace?: string;
+      assignee?: string;
+      durationMinutes?: number;
+    }) => {
+      const hotMesh = await this.getHotMeshClient(null, params.namespace);
+      const store = hotMesh.engine.store as any;
+      if (typeof store.claimSignalByMetadata !== 'function') return null;
+      const ns = params.namespace ?? APP_ID;
+      return store.claimSignalByMetadata({
+        namespace: ns,
+        appId: store.appId,
+        key: params.key,
+        value: params.value,
+        assignee: params.assignee,
+        durationMinutes: params.durationMinutes,
+      });
+    },
+
+    release: async (params: {
+      id: string;
+      namespace?: string;
+    }): Promise<boolean> => {
+      const hotMesh = await this.getHotMeshClient(null, params.namespace);
+      const store = hotMesh.engine.store as any;
+      if (typeof store.releaseSignal !== 'function') return false;
+      const ns = params.namespace ?? APP_ID;
+      return store.releaseSignal({
+        namespace: ns,
+        appId: store.appId,
+        id: params.id,
+      });
+    },
+
+    resolve: async (params: {
+      id: string;
+      namespace?: string;
+      resolverPayload?: Record<string, unknown>;
+    }): Promise<void> => {
+      const hotMesh = await this.getHotMeshClient(null, params.namespace);
+      const store = hotMesh.engine.store as any;
+      if (typeof store.resolveSignal !== 'function') return;
+      const ns = params.namespace ?? APP_ID;
+      const result = await store.resolveSignal({
+        namespace: ns,
+        appId: store.appId,
+        id: params.id,
+        resolverPayload: params.resolverPayload,
+      });
+      if (result?.signalKey) {
+        await this.workflow.signal(
+          result.signalKey,
+          params.resolverPayload ?? {},
+          params.namespace,
+        );
+      }
+    },
+
+    resolveByMetadata: async (params: {
+      key: string;
+      value: unknown;
+      namespace?: string;
+      resolverPayload?: Record<string, unknown>;
+    }): Promise<void> => {
+      const hotMesh = await this.getHotMeshClient(null, params.namespace);
+      const store = hotMesh.engine.store as any;
+      if (typeof store.resolveSignalByMetadata !== 'function') return;
+      const ns = params.namespace ?? APP_ID;
+      const result = await store.resolveSignalByMetadata({
+        namespace: ns,
+        appId: store.appId,
+        key: params.key,
+        value: params.value,
+        resolverPayload: params.resolverPayload,
+      });
+      if (result?.signalKey) {
+        await this.workflow.signal(
+          result.signalKey,
+          params.resolverPayload ?? {},
+          params.namespace,
+        );
+      }
+    },
+
+    releaseExpired: async (namespace?: string): Promise<number> => {
+      const hotMesh = await this.getHotMeshClient(null, namespace);
+      const store = hotMesh.engine.store as any;
+      if (typeof store.releaseExpiredSignals !== 'function') return 0;
+      const ns = namespace ?? APP_ID;
+      return store.releaseExpiredSignals({ namespace: ns, appId: store.appId });
+    },
+  };
+
+  /**
    * Any router can be used to deploy and activate the HotMesh
    * distributed executable to the active quorum EXCEPT for
    * those routers in `readonly` mode.
