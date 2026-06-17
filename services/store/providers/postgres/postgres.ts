@@ -51,6 +51,7 @@ import {
 } from '../../../../modules/enums';
 import { WorkListTaskType } from '../../../../types/task';
 import { ThrottleOptions } from '../../../../types/quorum';
+import { SignalQueueEntry } from '../../../../types/signal';
 import { Cache } from '../../cache';
 import { StoreService } from '../..';
 import { PostgresClientType } from '../../../../types';
@@ -1922,7 +1923,7 @@ class PostgresStoreService extends StoreService<
     assignee?: string;
     durationMinutes?: number;
   }): Promise<
-    | { ok: true; entry: ReturnType<typeof this.rowToSignalEntry> }
+    | { ok: true; entry: SignalQueueEntry }
     | { ok: false; reason: 'not-found' | 'conflict' }
   > {
     const tbl = this.signalQueueTable();
@@ -1966,7 +1967,7 @@ class PostgresStoreService extends StoreService<
     assignee?: string;
     durationMinutes?: number;
   }): Promise<
-    | { ok: true; entry: ReturnType<typeof this.rowToSignalEntry> }
+    | { ok: true; entry: SignalQueueEntry }
     | { ok: false; reason: 'not-found' | 'conflict' }
   > {
     const tbl = this.signalQueueTable();
