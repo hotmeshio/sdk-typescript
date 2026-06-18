@@ -200,6 +200,39 @@ describe('DURABLE | signal-queue | Postgres', () => {
       await handle.result();
     }, 20_000);
 
+    it('getBySignalKey returns entry by signal key (indexed lookup)', async () => {
+      const orderId = `order-${guid()}`;
+      const signalId = `approve-order-${orderId}`;
+      const client = new Client({ connection });
+
+      const handle = await client.workflow.start({
+        args: [orderId],
+        taskQueue: 'signal-queue-test',
+        workflowName: 'queuedApproval',
+        workflowId: guid(),
+      });
+
+      await sleepFor(3_000);
+
+      //direct indexed lookup — must find the entry without list + filter
+      const entry = await client.signalQueue.getBySignalKey(signalId);
+      expect(entry).toBeDefined();
+      expect(entry.signalKey).toBe(signalId);
+      expect(entry.status).toBe('pending');
+
+      //unknown key must return null
+      const missing = await client.signalQueue.getBySignalKey('no-such-key');
+      expect(missing).toBeNull();
+
+      //clean up
+      const resolveResult = await client.signalQueue.resolve({
+        id: entry.id,
+        resolverPayload: { approved: true },
+      });
+      expect(resolveResult.ok).toBe(true);
+      await handle.result();
+    }, 20_000);
+
     it('condition() with timeout + queueConfig still enqueues', async () => {
       const orderId = `order-${guid()}`;
       const client = new Client({ connection });

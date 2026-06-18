@@ -2203,6 +2203,20 @@ class PostgresStoreService extends StoreService<
     return this.rowToSignalEntry(result.rows[0]);
   }
 
+  async getSignalBySignalKey(params: {
+    namespace: string;
+    appId: string;
+    signalKey: string;
+  }) {
+    const tbl = this.signalQueueTable();
+    const result = await this.pgClient.query(
+      `SELECT * FROM ${tbl} WHERE namespace = $1 AND app_id = $2 AND signal_key = $3 LIMIT 1`,
+      [params.namespace, params.appId, params.signalKey],
+    );
+    if (result.rows.length === 0) return null;
+    return this.rowToSignalEntry(result.rows[0]);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
