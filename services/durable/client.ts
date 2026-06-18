@@ -487,6 +487,14 @@ export class ClientService {
       return store.getSignal({ namespace: ns, appId: store.appId, id });
     },
 
+    getBySignalKey: async (signalKey: string, namespace?: string) => {
+      const hotMesh = await this.getHotMeshClient(null, namespace);
+      const store = hotMesh.engine.store as any;
+      if (typeof store.getSignalBySignalKey !== 'function') return null;
+      const ns = namespace ?? APP_ID;
+      return store.getSignalBySignalKey({ namespace: ns, appId: store.appId, signalKey });
+    },
+
     claim: async (params: {
       id: string;
       namespace?: string;
