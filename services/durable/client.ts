@@ -18,6 +18,24 @@ import {
 import { JobState } from '../../types/job';
 import { KeyType } from '../../modules/key';
 import { StreamStatus, StringAnyType } from '../../types';
+import {
+  EscalationEntry,
+  ClaimEscalationResult,
+  ClaimByMetadataResult,
+  ReleaseEscalationResult,
+  ResolveEscalationResult,
+  CancelEscalationResult,
+  ListEscalationsParams,
+  CreateEscalationParams,
+  UpdateEscalationParams,
+  AppendMilestonesParams,
+  ClaimEscalationParams,
+  ClaimByMetadataParams,
+  ReleaseEscalationParams,
+  ResolveEscalationParams,
+  ResolveByMetadataParams,
+  EscalateToRoleParams,
+} from '../../types/hmsh_escalations';
 
 import { Search } from './search';
 import { Entity } from './entity';
@@ -430,204 +448,6 @@ export class ClientService {
   };
 
   /**
-   * Signal queue API for managing paused-workflow task records.
-   * Operations: list, get, claim, claimByMetadata, release, resolve,
-   * resolveByMetadata, releaseExpired.
-   *
-   * Requires a Postgres store provider. Methods are no-ops (return null/false)
-   * when called against a non-Postgres store.
-   *
-   * @example
-   * ```typescript
-   * // Claim a pending task by metadata key
-   * const task = await client.signalQueue.claimByMetadata({
-   *   key: 'orderId', value: 'RX-123',
-   *   assignee: 'pharmacist-jane',
-   *   durationMinutes: 30,
-   * });
-   *
-   * if (task) {
-   *   await client.signalQueue.resolve({
-   *     id: task.id,
-   *     resolverPayload: { approved: true },
-   *   });
-   *   // → paused workflow resumes with { approved: true }
-   * }
-   * ```
-   */
-  signalQueue = {
-    list: async (params: {
-      namespace?: string;
-      taskQueue?: string;
-      status?: 'pending' | 'claimed' | 'resolved' | 'expired' | 'released';
-      role?: string;
-      limit?: number;
-      offset?: number;
-    } = {}) => {
-      const hotMesh = await this.getHotMeshClient(null, params.namespace);
-      const store = hotMesh.engine.store as any;
-      if (typeof store.listSignals !== 'function') return [];
-      const ns = params.namespace ?? APP_ID;
-      return store.listSignals({
-        namespace: ns,
-        appId: store.appId,
-        status: params.status,
-        role: params.role,
-        taskQueue: params.taskQueue,
-        limit: params.limit,
-        offset: params.offset,
-      });
-    },
-
-    get: async (id: string, namespace?: string) => {
-      const hotMesh = await this.getHotMeshClient(null, namespace);
-      const store = hotMesh.engine.store as any;
-      if (typeof store.getSignal !== 'function') return null;
-      const ns = namespace ?? APP_ID;
-      return store.getSignal({ namespace: ns, appId: store.appId, id });
-    },
-
-    getBySignalKey: async (signalKey: string, namespace?: string) => {
-      const hotMesh = await this.getHotMeshClient(null, namespace);
-      const store = hotMesh.engine.store as any;
-      if (typeof store.getSignalBySignalKey !== 'function') return null;
-      const ns = namespace ?? APP_ID;
-      return store.getSignalBySignalKey({ namespace: ns, appId: store.appId, signalKey });
-    },
-
-    claim: async (params: {
-      id: string;
-      namespace?: string;
-      assignee?: string;
-      durationMinutes?: number;
-    }): Promise<import('../../types/signal').ClaimSignalResult> => {
-      const hotMesh = await this.getHotMeshClient(null, params.namespace);
-      const store = hotMesh.engine.store as any;
-      if (typeof store.claimSignal !== 'function') {
-        return { ok: false, reason: 'not-found' };
-      }
-      const ns = params.namespace ?? APP_ID;
-      return store.claimSignal({
-        namespace: ns,
-        appId: store.appId,
-        id: params.id,
-        assignee: params.assignee,
-        durationMinutes: params.durationMinutes,
-      });
-    },
-
-    claimByMetadata: async (params: {
-      key: string;
-      value: unknown;
-      namespace?: string;
-      assignee?: string;
-      durationMinutes?: number;
-    }): Promise<import('../../types/signal').ClaimSignalResult> => {
-      const hotMesh = await this.getHotMeshClient(null, params.namespace);
-      const store = hotMesh.engine.store as any;
-      if (typeof store.claimSignalByMetadata !== 'function') {
-        return { ok: false, reason: 'not-found' };
-      }
-      const ns = params.namespace ?? APP_ID;
-      return store.claimSignalByMetadata({
-        namespace: ns,
-        appId: store.appId,
-        key: params.key,
-        value: params.value,
-        assignee: params.assignee,
-        durationMinutes: params.durationMinutes,
-      });
-    },
-
-    release: async (params: {
-      id: string;
-      namespace?: string;
-    }): Promise<import('../../types/signal').ReleaseSignalResult> => {
-      const hotMesh = await this.getHotMeshClient(null, params.namespace);
-      const store = hotMesh.engine.store as any;
-      if (typeof store.releaseSignal !== 'function') {
-        return { ok: false, reason: 'not-found' };
-      }
-      const ns = params.namespace ?? APP_ID;
-      return store.releaseSignal({
-        namespace: ns,
-        appId: store.appId,
-        id: params.id,
-      });
-    },
-
-    resolve: async (params: {
-      id: string;
-      namespace?: string;
-      resolverPayload?: Record<string, unknown>;
-    }): Promise<import('../../types/signal').ResolveSignalResult> => {
-      const hotMesh = await this.getHotMeshClient(null, params.namespace);
-      const store = hotMesh.engine.store as any;
-      if (typeof store.resolveSignal !== 'function') {
-        return { ok: false, reason: 'not-found' };
-      }
-      const ns = params.namespace ?? APP_ID;
-      const storeResult = await store.resolveSignal({
-        namespace: ns,
-        appId: store.appId,
-        id: params.id,
-        resolverPayload: params.resolverPayload,
-      });
-      if (!storeResult.ok) return storeResult;
-      try {
-        await this.workflow.signal(
-          storeResult.signalKey,
-          params.resolverPayload ?? {},
-          params.namespace,
-        );
-        return { ok: true };
-      } catch {
-        return { ok: false, reason: 'signal-failed', signalKey: storeResult.signalKey };
-      }
-    },
-
-    resolveByMetadata: async (params: {
-      key: string;
-      value: unknown;
-      namespace?: string;
-      resolverPayload?: Record<string, unknown>;
-    }): Promise<import('../../types/signal').ResolveSignalResult> => {
-      const hotMesh = await this.getHotMeshClient(null, params.namespace);
-      const store = hotMesh.engine.store as any;
-      if (typeof store.resolveSignalByMetadata !== 'function') {
-        return { ok: false, reason: 'not-found' };
-      }
-      const ns = params.namespace ?? APP_ID;
-      const storeResult = await store.resolveSignalByMetadata({
-        namespace: ns,
-        appId: store.appId,
-        key: params.key,
-        value: params.value,
-        resolverPayload: params.resolverPayload,
-      });
-      if (!storeResult.ok) return storeResult;
-      try {
-        await this.workflow.signal(
-          storeResult.signalKey,
-          params.resolverPayload ?? {},
-          params.namespace,
-        );
-        return { ok: true };
-      } catch {
-        return { ok: false, reason: 'signal-failed', signalKey: storeResult.signalKey };
-      }
-    },
-
-    releaseExpired: async (namespace?: string): Promise<number> => {
-      const hotMesh = await this.getHotMeshClient(null, namespace);
-      const store = hotMesh.engine.store as any;
-      if (typeof store.releaseExpiredSignals !== 'function') return 0;
-      const ns = namespace ?? APP_ID;
-      return store.releaseExpiredSignals({ namespace: ns, appId: store.appId });
-    },
-  };
-
-  /**
    * Any router can be used to deploy and activate the HotMesh
    * distributed executable to the active quorum EXCEPT for
    * those routers in `readonly` mode.
@@ -694,6 +514,367 @@ export class ClientService {
       }
     }
   }
+
+  /**
+   * Escalation queue operations over `public.hmsh_escalations` — a global
+   * table that surfaces workflow signal pauses as role-based, claimable,
+   * searchable queue items.
+   *
+   * When a YAML `hook` activity suspends with an `escalation:` block, or
+   * `Durable.workflow.condition(signalId, config)` fires, **one row is
+   * written atomically** with the workflow checkpoint — no enrichment step,
+   * no secondary round-trip. Every connected app shares the same table;
+   * rows are namespaced by `namespace` + `app_id`.
+   *
+   * **Status lifecycle:**
+   * ```
+   * pending → claimed → resolved
+   *         ↘ cancelled      (any non-terminal state)
+   *         ↗ pending        (via release or releaseExpired)
+   * ```
+   *
+   * **Typical human-in-the-loop flow:**
+   * ```typescript
+   * // 1. Workflow pauses and writes the escalation row automatically
+   * const decision = await Durable.workflow.condition('manager-approval', {
+   *   role: 'manager',
+   *   type: 'order-approval',
+   *   priority: 2,
+   *   metadata: { orderId },
+   * });
+   *
+   * // 2. Dashboard lists pending approvals for this role
+   * const [item] = await client.escalations.list({ role: 'manager', status: 'pending' });
+   *
+   * // 3. Reviewer claims it (sets assigned_to + expiry)
+   * await client.escalations.claim({ id: item.id, assignee: 'alice@company.com' });
+   *
+   * // 4. Resolve atomically marks it resolved AND delivers the signal
+   * await client.escalations.resolve({
+   *   id: item.id,
+   *   resolverPayload: { approved: true },
+   * });
+   * // workflow resumes with { approved: true }
+   * ```
+   */
+  escalations = {
+    /**
+     * Returns all escalation rows matching the given filters.
+     *
+     * @example
+     * ```typescript
+     * // All pending approvals for the manager role
+     * const items = await client.escalations.list({ role: 'manager', status: 'pending' });
+     *
+     * // By workflow ID
+     * const items = await client.escalations.list({ workflowId: 'order-123' });
+     * ```
+     */
+    list: async (params?: ListEscalationsParams): Promise<EscalationEntry[]> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params?.namespace);
+      return (hotMeshClient.engine.store as any).listEscalations(params ?? {});
+    },
+
+    /**
+     * Returns a single escalation row by its UUID primary key.
+     * Returns `null` if not found.
+     */
+    get: async (id: string, namespace?: string): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, namespace);
+      return (hotMeshClient.engine.store as any).getEscalation(id, namespace);
+    },
+
+    /**
+     * Looks up an escalation row by its `signal_key` — the value that was
+     * passed to `condition()` or stored in the hook activity's collation rule.
+     * This is the same key used to deliver the signal via `hotMesh.signal()`.
+     *
+     * @example
+     * ```typescript
+     * const item = await client.escalations.getBySignalKey('manager-approval');
+     * ```
+     */
+    getBySignalKey: async (signalKey: string, namespace?: string): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, namespace);
+      return (hotMeshClient.engine.store as any).getEscalationBySignalKey(signalKey, namespace);
+    },
+
+    /**
+     * Creates a standalone escalation row that is **not** backed by a signal.
+     * `signal_key` is `null`. Useful for external task tracking that doesn't
+     * need to resume a workflow (e.g., audit tasks, out-of-band approvals).
+     *
+     * @example
+     * ```typescript
+     * const entry = await client.escalations.create({
+     *   role: 'support',
+     *   type: 'data-correction',
+     *   description: 'Fix the customer address',
+     *   metadata: { customerId: 'cust-42' },
+     * });
+     * ```
+     */
+    create: async (params: CreateEscalationParams): Promise<EscalationEntry> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).createEscalation(params);
+    },
+
+    /**
+     * Patches an existing escalation row. All fields are optional — only
+     * provided fields are written. `metadata` is **merged**, not replaced.
+     *
+     * Signal routing fields (`signalKey`, `topic`, `workflowId`, …) can be
+     * enriched after the row is created — useful when the row is created
+     * before the workflow starts and routing context is not yet known.
+     *
+     * @example
+     * ```typescript
+     * await client.escalations.update({
+     *   id: item.id,
+     *   description: 'Updated description',
+     *   metadata: { extraKey: 'value' },  // merged into existing metadata
+     * });
+     * ```
+     */
+    update: async (params: UpdateEscalationParams): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).updateEscalation(params);
+    },
+
+    /**
+     * Appends one or more milestone entries to the escalation's
+     * `milestones` audit trail array. Milestones are append-only; they
+     * record events like state transitions, reviewer notes, or external
+     * system callbacks.
+     *
+     * @example
+     * ```typescript
+     * await client.escalations.appendMilestones({
+     *   id: item.id,
+     *   milestones: [{ at: new Date().toISOString(), by: 'alice', note: 'Reviewed' }],
+     * });
+     * ```
+     */
+    appendMilestones: async (params: AppendMilestonesParams): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).appendEscalationMilestones(params);
+    },
+
+    /**
+     * Atomically claims an escalation row by UUID. Sets `assigned_to`,
+     * `claimed_at`, and `claim_expires_at`. Returns `conflict` if another
+     * actor already holds the claim.
+     *
+     * @example
+     * ```typescript
+     * const result = await client.escalations.claim({
+     *   id: item.id,
+     *   assignee: 'alice@company.com',
+     *   durationMinutes: 30,
+     * });
+     * if (!result.ok) console.warn('Already claimed by someone else');
+     * ```
+     */
+    claim: async (params: ClaimEscalationParams): Promise<ClaimEscalationResult> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).claimEscalation(params);
+    },
+
+    /**
+     * Atomically claims the highest-priority pending escalation whose
+     * `metadata` contains the given key/value pair. Uses
+     * `FOR UPDATE SKIP LOCKED` so concurrent callers never double-claim.
+     *
+     * Returns `candidatesExist` to distinguish two cases:
+     * - `not-found, candidatesExist: 0` — no rows matched the metadata filter
+     * - `conflict, candidatesExist: N` — matching rows exist but all are claimed
+     *
+     * @example
+     * ```typescript
+     * const result = await client.escalations.claimByMetadata({
+     *   key: 'region',
+     *   value: 'west',
+     *   assignee: 'bob@company.com',
+     *   roles: ['manager'],
+     * });
+     * if (result.ok) console.log('Claimed:', result.entry.id);
+     * ```
+     */
+    claimByMetadata: async (params: ClaimByMetadataParams): Promise<ClaimByMetadataResult> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).claimEscalationByMetadata(params);
+    },
+
+    /**
+     * Releases a claimed escalation, returning it to `pending` status and
+     * clearing `assigned_to` and `claim_expires_at`. The row is immediately
+     * available for other actors to claim.
+     *
+     * @example
+     * ```typescript
+     * await client.escalations.release({ id: item.id });
+     * ```
+     */
+    release: async (params: ReleaseEscalationParams): Promise<ReleaseEscalationResult> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).releaseEscalation(params);
+    },
+
+    /**
+     * Reassigns the escalation to a different role, clearing any current
+     * claim and returning status to `pending`. Use when an escalation must
+     * be handled by a different team or tier.
+     *
+     * @example
+     * ```typescript
+     * await client.escalations.escalateToRole({ id: item.id, role: 'senior-manager' });
+     * ```
+     */
+    escalateToRole: async (params: EscalateToRoleParams): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).escalateEscalationToRole(params);
+    },
+
+    /**
+     * Terminates the escalation without delivering a signal. Rows in
+     * `pending` or `claimed` state move to `cancelled`. Terminal rows
+     * (`resolved`, `cancelled`) return `already-terminal`.
+     *
+     * @example
+     * ```typescript
+     * await client.escalations.cancel(item.id);
+     * ```
+     */
+    cancel: async (id: string, namespace?: string): Promise<CancelEscalationResult> => {
+      const hotMeshClient = await this.getHotMeshClient(null, namespace);
+      return (hotMeshClient.engine.store as any).cancelEscalation(id, namespace);
+    },
+
+    /**
+     * Atomically marks the escalation `resolved` **and** delivers the
+     * signal to the waiting workflow — one round-trip, no separate
+     * `signal()` call required. If `signal_key` is null (standalone
+     * escalation), only the row is updated.
+     *
+     * @example
+     * ```typescript
+     * const result = await client.escalations.resolve({
+     *   id: item.id,
+     *   resolverPayload: { approved: true, note: 'LGTM' },
+     * });
+     * if (!result.ok) console.error(result.reason); // 'not-found' | 'already-resolved' | 'signal-failed'
+     * // workflow resumes with { approved: true, note: 'LGTM' }
+     * ```
+     */
+    resolve: async (
+      params: ResolveEscalationParams,
+      namespace?: string,
+    ): Promise<ResolveEscalationResult> => {
+      const ns = (params.namespace ?? namespace) ?? APP_ID;
+      const hotMeshClient = await this.getHotMeshClient(null, ns);
+      const store = hotMeshClient.engine.store as any;
+
+      // UUID primary-key lookup — no namespace filter needed; use existing.namespace for the UPDATE.
+      const existing = await store.getEscalation(params.id);
+      if (!existing) return { ok: false, reason: 'not-found' };
+      if (existing.status === 'resolved') return { ok: false, reason: 'already-resolved' };
+      if (existing.status === 'cancelled') return { ok: false, reason: 'already-cancelled' };
+
+      // Build a single atomic transaction: signal stream INSERTs + escalation UPDATE in one BEGIN/COMMIT.
+      // engine.signal() with a transaction queues an INSERT into the stream table without executing;
+      // queueResolveEscalation() queues the status UPDATE; txn.exec() commits all in one round-trip.
+      const txn = store.transact();
+
+      if (existing.signal_key && existing.topic) {
+        const signalPayload = { id: existing.signal_key, data: params.resolverPayload ?? {} };
+        try {
+          const sc = await this.getHotMeshClient(`${ns}.wfs.signal`, ns);
+          await sc.engine.signal(`${ns}.wfs.signal`, signalPayload, StreamStatus.SUCCESS, 200, txn);
+        } catch { /* no collator hook rule — skip */ }
+        try {
+          const wc = await this.getHotMeshClient(`${ns}.wfs.wait`, ns);
+          await wc.engine.signal(`${ns}.wfs.wait`, signalPayload, StreamStatus.SUCCESS, 200, txn);
+        } catch { /* no waiter hook rule — skip */ }
+      }
+
+      store.queueResolveEscalation(
+        { id: params.id, namespace: existing.namespace ?? ns, resolverPayload: params.resolverPayload },
+        txn,
+      );
+
+      await txn.exec();
+      return { ok: true };
+    },
+
+    /**
+     * Resolves the highest-priority matching escalation by metadata filter,
+     * then delivers its signal. Identical semantics to `resolve()` but
+     * selects the target row by metadata key/value instead of UUID.
+     *
+     * @example
+     * ```typescript
+     * await client.escalations.resolveByMetadata({
+     *   key: 'orderId',
+     *   value: 'order-123',
+     *   resolverPayload: { approved: true },
+     * });
+     * ```
+     */
+    resolveByMetadata: async (
+      params: ResolveByMetadataParams,
+      namespace?: string,
+    ): Promise<ResolveEscalationResult> => {
+      const ns = (params.namespace ?? namespace) ?? APP_ID;
+      const hotMeshClient = await this.getHotMeshClient(null, ns);
+      const store = hotMeshClient.engine.store as any;
+
+      // Metadata lookup: filter by namespace to scope correctly, but use existing.namespace for the UPDATE.
+      const existing = await store.findEscalationByMetadata(params.key, params.value, params.roles ?? null);
+      if (!existing) return { ok: false, reason: 'not-found' };
+      if (existing.status === 'resolved') return { ok: false, reason: 'already-resolved' };
+      if (existing.status === 'cancelled') return { ok: false, reason: 'already-cancelled' };
+
+      // Same atomic pattern as resolve(): signal INSERTs + UPDATE in one transaction.
+      const txn = store.transact();
+
+      if (existing.signal_key && existing.topic) {
+        const signalPayload = { id: existing.signal_key, data: params.resolverPayload ?? {} };
+        try {
+          const sc = await this.getHotMeshClient(`${ns}.wfs.signal`, ns);
+          await sc.engine.signal(`${ns}.wfs.signal`, signalPayload, StreamStatus.SUCCESS, 200, txn);
+        } catch { /* no collator hook rule — skip */ }
+        try {
+          const wc = await this.getHotMeshClient(`${ns}.wfs.wait`, ns);
+          await wc.engine.signal(`${ns}.wfs.wait`, signalPayload, StreamStatus.SUCCESS, 200, txn);
+        } catch { /* no waiter hook rule — skip */ }
+      }
+
+      store.queueResolveEscalation(
+        { id: existing.id, namespace: existing.namespace ?? ns, resolverPayload: params.resolverPayload },
+        txn,
+      );
+
+      await txn.exec();
+      return { ok: true };
+    },
+
+    /**
+     * Releases all claimed escalations whose `claim_expires_at` has lapsed,
+     * returning them to `pending` so they can be claimed again. Returns the
+     * number of rows released. Call periodically from a maintenance job or
+     * cron to prevent stale claims from blocking the queue.
+     *
+     * @example
+     * ```typescript
+     * const released = await client.escalations.releaseExpired();
+     * console.log(`Released ${released} expired claims`);
+     * ```
+     */
+    releaseExpired: async (namespace?: string): Promise<number> => {
+      const hotMeshClient = await this.getHotMeshClient(null, namespace);
+      return (hotMeshClient.engine.store as any).releaseExpiredEscalations(namespace);
+    },
+  };
 
   /**
    * @private

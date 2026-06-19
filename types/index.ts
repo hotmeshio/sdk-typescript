@@ -312,15 +312,21 @@ export {
 export { WorkListTaskType } from './task';
 export { TransitionMatch, TransitionRule, Transitions } from './transition';
 export {
-  ClaimSignalByMetadataParams,
-  ClaimSignalParams,
-  ClaimSignalResult,
   ConditionQueueConfig,
-  EnqueueSignalParams,
-  ListSignalsParams,
-  ReleaseSignalResult,
-  ResolveSignalByMetadataParams,
-  ResolveSignalParams,
-  ResolveSignalResult,
-  SignalQueueEntry,
-} from './signal';
+  EscalationEntry,
+  ClaimEscalationResult,
+  ClaimByMetadataResult,
+  ReleaseEscalationResult,
+  ResolveEscalationResult,
+  CancelEscalationResult,
+  ListEscalationsParams,
+  CreateEscalationParams,
+  UpdateEscalationParams,
+  AppendMilestonesParams,
+  ClaimEscalationParams,
+  ClaimByMetadataParams,
+  ReleaseEscalationParams,
+  ResolveEscalationParams,
+  ResolveByMetadataParams,
+  EscalateToRoleParams,
+} from './hmsh_escalations';

@@ -51,7 +51,6 @@ import {
 } from '../../../../modules/enums';
 import { WorkListTaskType } from '../../../../types/task';
 import { ThrottleOptions } from '../../../../types/quorum';
-import { SignalQueueEntry } from '../../../../types/signal';
 import { Cache } from '../../cache';
 import { StoreService } from '../..';
 import { PostgresClientType } from '../../../../types';
@@ -841,6 +840,8 @@ class PostgresStoreService extends StoreService<
     status?: number,
     entity?: string,
     transaction?: ProviderTransaction,
+    originId?: string,
+    parentId?: string,
   ): Promise<boolean> {
     const hashKey = this.mintKey(KeyType.JOB_STATE, { appId, jobId });
     const result = await this.kvsql().hsetnx(
@@ -849,6 +850,8 @@ class PostgresStoreService extends StoreService<
       status?.toString() ?? '1',
       transaction,
       entity,
+      originId,
+      parentId,
     );
     if (transaction) return result as unknown as boolean;
     return this.isSuccessful(result);
@@ -1827,398 +1830,6 @@ class PostgresStoreService extends StoreService<
     });
   }
 
-  // ─── Signal Queue Methods ─────────────────────────────────────────────────
-
-  private signalQueueTable(): string {
-    return `${this.kvsql().safeName(this.appId)}.hotmesh_signals`;
-  }
-
-  private rowToSignalEntry(row: Record<string, unknown>) {
-    return {
-      id: row.id as string,
-      namespace: row.namespace as string,
-      appId: row.app_id as string,
-      signalKey: row.signal_key as string,
-      workflowId: row.workflow_id as string,
-      jobId: row.job_id as string | undefined,
-      topic: row.topic as string | undefined,
-      status: row.status as 'pending' | 'claimed' | 'resolved' | 'expired' | 'released',
-      role: row.role as string | undefined,
-      type: row.type as string | undefined,
-      subtype: row.subtype as string | undefined,
-      priority: row.priority as number,
-      description: row.description as string | undefined,
-      taskQueue: row.task_queue as string | undefined,
-      workflowType: row.workflow_type as string | undefined,
-      assignedTo: row.assigned_to as string | undefined,
-      claimedAt: row.claimed_at ? new Date(row.claimed_at as string) : undefined,
-      claimExpiresAt: row.claim_expires_at ? new Date(row.claim_expires_at as string) : undefined,
-      resolvedAt: row.resolved_at ? new Date(row.resolved_at as string) : undefined,
-      resolverPayload: row.resolver_payload as Record<string, unknown> | undefined,
-      envelope: row.envelope as Record<string, unknown> | undefined,
-      metadata: row.metadata as Record<string, unknown> | undefined,
-      expiresAt: row.expires_at ? new Date(row.expires_at as string) : undefined,
-      createdAt: new Date(row.created_at as string),
-      updatedAt: new Date(row.updated_at as string),
-    };
-  }
-
-  async enqueueSignal(params: {
-    namespace: string;
-    appId: string;
-    signalKey: string;
-    workflowId: string;
-    jobId?: string;
-    topic?: string;
-    role?: string;
-    type?: string;
-    subtype?: string;
-    priority?: number;
-    description?: string;
-    taskQueue?: string;
-    workflowType?: string;
-    assignedTo?: string;
-    metadata?: Record<string, unknown>;
-    envelope?: Record<string, unknown>;
-    expiresAt?: Date;
-  }): Promise<{ id: string } | null> {
-    const tbl = this.signalQueueTable();
-    const result = await this.pgClient.query(
-      `INSERT INTO ${tbl}
-         (namespace, app_id, signal_key, workflow_id, job_id, topic,
-          role, type, subtype, priority, description,
-          task_queue, workflow_type, assigned_to,
-          metadata, envelope, expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-       ON CONFLICT (namespace, app_id, signal_key) DO NOTHING
-       RETURNING id`,
-      [
-        params.namespace,
-        params.appId,
-        params.signalKey,
-        params.workflowId,
-        params.jobId ?? null,
-        params.topic ?? null,
-        params.role ?? null,
-        params.type ?? null,
-        params.subtype ?? null,
-        params.priority ?? 5,
-        params.description ?? null,
-        params.taskQueue ?? null,
-        params.workflowType ?? null,
-        params.assignedTo ?? null,
-        params.metadata ? JSON.stringify(params.metadata) : null,
-        params.envelope ? JSON.stringify(params.envelope) : null,
-        params.expiresAt ?? null,
-      ],
-    );
-    if (result.rows.length === 0) return null;
-    return { id: result.rows[0].id as string };
-  }
-
-  async claimSignal(params: {
-    namespace: string;
-    appId: string;
-    id: string;
-    assignee?: string;
-    durationMinutes?: number;
-  }): Promise<
-    | { ok: true; entry: SignalQueueEntry }
-    | { ok: false; reason: 'not-found' | 'conflict' }
-  > {
-    const tbl = this.signalQueueTable();
-    const minutes = params.durationMinutes ?? 30;
-    const result = await this.pgClient.query(
-      `WITH found AS (
-         SELECT id, status FROM ${tbl}
-         WHERE namespace = $1 AND app_id = $2 AND id = $4
-       ),
-       claimed AS (
-         UPDATE ${tbl}
-         SET status = 'claimed',
-             claimed_at = NOW(),
-             claim_expires_at = NOW() + INTERVAL '${minutes} minutes',
-             assigned_to = COALESCE($3, assigned_to),
-             updated_at = NOW()
-         WHERE namespace = $1 AND app_id = $2
-           AND id = $4
-           AND status = 'pending'
-         RETURNING *
-       )
-       SELECT c.*, f.id AS f_id
-       FROM found f
-       LEFT JOIN claimed c ON c.id = f.id`,
-      [params.namespace, params.appId, params.assignee ?? null, params.id],
-    );
-    if (result.rows.length === 0 || !result.rows[0].f_id) {
-      return { ok: false, reason: 'not-found' };
-    }
-    if (!result.rows[0].id) {
-      return { ok: false, reason: 'conflict' };
-    }
-    return { ok: true, entry: this.rowToSignalEntry(result.rows[0]) };
-  }
-
-  async claimSignalByMetadata(params: {
-    namespace: string;
-    appId: string;
-    key: string;
-    value: unknown;
-    assignee?: string;
-    durationMinutes?: number;
-  }): Promise<
-    | { ok: true; entry: SignalQueueEntry }
-    | { ok: false; reason: 'not-found' | 'conflict' }
-  > {
-    const tbl = this.signalQueueTable();
-    const minutes = params.durationMinutes ?? 30;
-    const containsJson = JSON.stringify({ [params.key]: params.value });
-    const result = await this.pgClient.query(
-      `WITH found AS (
-         SELECT id, status FROM ${tbl}
-         WHERE namespace = $1 AND app_id = $2
-           AND metadata @> $4::jsonb
-         ORDER BY priority ASC, created_at ASC
-         LIMIT 1
-       ),
-       claimed AS (
-         UPDATE ${tbl}
-         SET status = 'claimed',
-             claimed_at = NOW(),
-             claim_expires_at = NOW() + INTERVAL '${minutes} minutes',
-             assigned_to = COALESCE($3, assigned_to),
-             updated_at = NOW()
-         WHERE namespace = $1 AND app_id = $2
-           AND id = (SELECT id FROM found)
-           AND status = 'pending'
-         RETURNING *
-       )
-       SELECT c.*, f.id AS f_id
-       FROM found f
-       LEFT JOIN claimed c ON c.id = f.id`,
-      [params.namespace, params.appId, params.assignee ?? null, containsJson],
-    );
-    if (result.rows.length === 0 || !result.rows[0].f_id) {
-      return { ok: false, reason: 'not-found' };
-    }
-    if (!result.rows[0].id) {
-      return { ok: false, reason: 'conflict' };
-    }
-    return { ok: true, entry: this.rowToSignalEntry(result.rows[0]) };
-  }
-
-  async releaseSignal(params: {
-    namespace: string;
-    appId: string;
-    id: string;
-  }): Promise<{ ok: true } | { ok: false; reason: 'not-found' | 'wrong-status' }> {
-    const tbl = this.signalQueueTable();
-    const result = await this.pgClient.query(
-      `WITH found AS (
-         SELECT id, status FROM ${tbl}
-         WHERE namespace = $1 AND app_id = $2 AND id = $3
-       ),
-       released AS (
-         UPDATE ${tbl}
-         SET status = 'pending',
-             claimed_at = NULL,
-             claim_expires_at = NULL,
-             assigned_to = NULL,
-             updated_at = NOW()
-         WHERE namespace = $1 AND app_id = $2
-           AND id = $3
-           AND status = 'claimed'
-         RETURNING id
-       )
-       SELECT r.id AS r_id, f.id AS f_id
-       FROM found f
-       LEFT JOIN released r ON r.id = f.id`,
-      [params.namespace, params.appId, params.id],
-    );
-    if (result.rows.length === 0 || !result.rows[0].f_id) {
-      return { ok: false, reason: 'not-found' };
-    }
-    if (!result.rows[0].r_id) {
-      return { ok: false, reason: 'wrong-status' };
-    }
-    return { ok: true };
-  }
-
-  async resolveSignal(params: {
-    namespace: string;
-    appId: string;
-    id: string;
-    resolverPayload?: Record<string, unknown>;
-  }): Promise<
-    | { ok: true; signalKey: string; topic: string }
-    | { ok: false; reason: 'not-found' | 'already-resolved' }
-  > {
-    const tbl = this.signalQueueTable();
-    const result = await this.pgClient.query(
-      `WITH found AS (
-         SELECT id, status, signal_key, topic FROM ${tbl}
-         WHERE namespace = $1 AND app_id = $2 AND id = $4
-       ),
-       resolved AS (
-         UPDATE ${tbl}
-         SET status = 'resolved',
-             resolved_at = NOW(),
-             resolver_payload = $3::jsonb,
-             updated_at = NOW()
-         WHERE namespace = $1 AND app_id = $2
-           AND id = $4
-           AND status IN ('pending', 'claimed')
-         RETURNING id, signal_key, topic
-       )
-       SELECT r.id AS r_id, r.signal_key, r.topic, f.id AS f_id
-       FROM found f
-       LEFT JOIN resolved r ON r.id = f.id`,
-      [
-        params.namespace,
-        params.appId,
-        params.resolverPayload ? JSON.stringify(params.resolverPayload) : null,
-        params.id,
-      ],
-    );
-    if (result.rows.length === 0 || !result.rows[0].f_id) {
-      return { ok: false, reason: 'not-found' };
-    }
-    if (!result.rows[0].r_id) {
-      return { ok: false, reason: 'already-resolved' };
-    }
-    return {
-      ok: true,
-      signalKey: result.rows[0].signal_key as string,
-      topic: result.rows[0].topic as string,
-    };
-  }
-
-  async resolveSignalByMetadata(params: {
-    namespace: string;
-    appId: string;
-    key: string;
-    value: unknown;
-    resolverPayload?: Record<string, unknown>;
-  }): Promise<
-    | { ok: true; signalKey: string; topic: string }
-    | { ok: false; reason: 'not-found' }
-  > {
-    const tbl = this.signalQueueTable();
-    const containsJson = JSON.stringify({ [params.key]: params.value });
-    const result = await this.pgClient.query(
-      `WITH found AS (
-         SELECT id, signal_key, topic FROM ${tbl}
-         WHERE namespace = $1 AND app_id = $2
-           AND status IN ('pending', 'claimed')
-           AND metadata @> $4::jsonb
-         LIMIT 1
-       ),
-       resolved AS (
-         UPDATE ${tbl}
-         SET status = 'resolved',
-             resolved_at = NOW(),
-             resolver_payload = $3::jsonb,
-             updated_at = NOW()
-         WHERE namespace = $1 AND app_id = $2
-           AND id = (SELECT id FROM found)
-           AND status IN ('pending', 'claimed')
-         RETURNING id, signal_key, topic
-       )
-       SELECT r.id AS r_id, r.signal_key, r.topic, f.id AS f_id
-       FROM found f
-       LEFT JOIN resolved r ON r.id = f.id`,
-      [
-        params.namespace,
-        params.appId,
-        params.resolverPayload ? JSON.stringify(params.resolverPayload) : null,
-        containsJson,
-      ],
-    );
-    if (result.rows.length === 0 || !result.rows[0].f_id) {
-      return { ok: false, reason: 'not-found' };
-    }
-    return {
-      ok: true,
-      signalKey: result.rows[0].signal_key as string,
-      topic: result.rows[0].topic as string,
-    };
-  }
-
-  async releaseExpiredSignals(params: {
-    namespace: string;
-    appId: string;
-  }): Promise<number> {
-    const tbl = this.signalQueueTable();
-    const result = await this.pgClient.query(
-      `UPDATE ${tbl}
-       SET status = 'pending',
-           claimed_at = NULL,
-           claim_expires_at = NULL,
-           updated_at = NOW()
-       WHERE namespace = $1 AND app_id = $2
-         AND status = 'claimed'
-         AND claim_expires_at < NOW()`,
-      [params.namespace, params.appId],
-    );
-    return result.rowCount ?? 0;
-  }
-
-  async listSignals(params: {
-    namespace: string;
-    appId: string;
-    status?: string;
-    role?: string;
-    taskQueue?: string;
-    limit?: number;
-    offset?: number;
-  }) {
-    const tbl = this.signalQueueTable();
-    const conditions: string[] = ['namespace = $1', 'app_id = $2'];
-    const values: unknown[] = [params.namespace, params.appId];
-    let idx = 3;
-    if (params.status) { conditions.push(`status = $${idx++}`); values.push(params.status); }
-    if (params.role) { conditions.push(`role = $${idx++}`); values.push(params.role); }
-    if (params.taskQueue) { conditions.push(`task_queue = $${idx++}`); values.push(params.taskQueue); }
-    const where = conditions.join(' AND ');
-    const limit = params.limit ?? 50;
-    const offset = params.offset ?? 0;
-    const result = await this.pgClient.query(
-      `SELECT * FROM ${tbl} WHERE ${where} ORDER BY priority ASC, created_at ASC LIMIT $${idx++} OFFSET $${idx}`,
-      [...values, limit, offset],
-    );
-    return result.rows.map(r => this.rowToSignalEntry(r));
-  }
-
-  async getSignal(params: {
-    namespace: string;
-    appId: string;
-    id: string;
-  }) {
-    const tbl = this.signalQueueTable();
-    const result = await this.pgClient.query(
-      `SELECT * FROM ${tbl} WHERE namespace = $1 AND app_id = $2 AND id = $3`,
-      [params.namespace, params.appId, params.id],
-    );
-    if (result.rows.length === 0) return null;
-    return this.rowToSignalEntry(result.rows[0]);
-  }
-
-  async getSignalBySignalKey(params: {
-    namespace: string;
-    appId: string;
-    signalKey: string;
-  }) {
-    const tbl = this.signalQueueTable();
-    const result = await this.pgClient.query(
-      `SELECT * FROM ${tbl} WHERE namespace = $1 AND app_id = $2 AND signal_key = $3 LIMIT 1`,
-      [params.namespace, params.appId, params.signalKey],
-    );
-    if (result.rows.length === 0) return null;
-    return this.rowToSignalEntry(result.rows[0]);
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-
   /**
    * Parse a HotMesh-encoded value string.
    * Values may be prefixed with `/s` (JSON), `/d` (number), `/t` or `/f` (boolean), `/n` (null).
@@ -2237,6 +1848,475 @@ class PostgresStoreService extends StoreService<
       case '/s': return JSON.parse(rest);
       default: return raw;
     }
+  }
+
+  // ─── hmsh_escalations ────────────────────────────────────────────────────────
+
+  private _escalationInsertSql = `
+    INSERT INTO public.hmsh_escalations
+      (namespace, app_id, signal_key, topic, workflow_id, task_queue, workflow_type,
+       type, subtype, entity, description, role, priority,
+       origin_id, parent_id, initiated_by, created_by, trace_id, span_id,
+       escalation_payload, metadata, envelope, expires_at)
+    VALUES
+      ($1, $2, $3, $4, $5, $6, $7,
+       $8, $9, $10, $11, $12, $13,
+       $14, $15, $16, $17, $18, $19,
+       $20, $21, $22, $23)
+    ON CONFLICT (namespace, app_id, signal_key) WHERE signal_key IS NOT NULL DO NOTHING`;
+
+  private _escalationInsertParams(
+    params: import('../../../../types/hmsh_escalations').CreateEscalationParams,
+  ): unknown[] {
+    const {
+      namespace, appId, signalKey, topic, workflowId, taskQueue, workflowType,
+      type, subtype, entity, description, role, priority,
+      originId, parentId, initiatedBy, createdBy, traceId, spanId,
+      escalationPayload, metadata, envelope, expiresAt,
+    } = params;
+    return [
+      namespace ?? 'hmsh',
+      appId ?? 'hmsh',
+      signalKey ?? null,
+      topic ?? null,
+      workflowId ?? null,
+      taskQueue ?? null,
+      workflowType ?? null,
+      type ?? null,
+      subtype ?? null,
+      entity ?? null,
+      description ?? null,
+      role ?? null,
+      priority ?? 5,
+      originId ?? null,
+      parentId ?? null,
+      initiatedBy ?? null,
+      createdBy ?? null,
+      traceId ?? null,
+      spanId ?? null,
+      escalationPayload ? JSON.stringify(escalationPayload) : null,
+      metadata ? JSON.stringify(metadata) : null,
+      envelope ? JSON.stringify(envelope) : null,
+      expiresAt ?? null,
+    ];
+  }
+
+  async createEscalation(params: import('../../../../types/hmsh_escalations').CreateEscalationParams): Promise<import('../../../../types/hmsh_escalations').EscalationEntry> {
+    const result = await this.pgClient.query(
+      this._escalationInsertSql + ' RETURNING *',
+      this._escalationInsertParams(params),
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Enqueues the escalation INSERT into an existing Leg1 transaction so the row
+   * is written atomically with the job state checkpoint. On conflict
+   * (ON CONFLICT DO NOTHING) the command is a no-op, making it safe for
+   * idempotent re-runs after a crash.
+   */
+  addEscalationToTransaction(
+    params: import('../../../../types/hmsh_escalations').CreateEscalationParams,
+    transaction: import('../../../../types/provider').ProviderTransaction,
+  ): void {
+    (transaction as any).addCommand(
+      this._escalationInsertSql,
+      this._escalationInsertParams(params),
+      'void',
+    );
+  }
+
+  async getEscalation(id: string, namespace?: string): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+    const result = await this.pgClient.query(
+      `SELECT * FROM public.hmsh_escalations WHERE id = $1${namespace ? ' AND namespace = $2' : ''}`,
+      namespace ? [id, namespace] : [id],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async getEscalationBySignalKey(signalKey: string, namespace?: string): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+    const result = await this.pgClient.query(
+      `SELECT * FROM public.hmsh_escalations WHERE signal_key = $1${namespace ? ' AND namespace = $2' : ''}`,
+      namespace ? [signalKey, namespace] : [signalKey],
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async listEscalations(params: import('../../../../types/hmsh_escalations').ListEscalationsParams = {}): Promise<import('../../../../types/hmsh_escalations').EscalationEntry[]> {
+    const { namespace, role, type, subtype, entity, status, assignedTo, workflowId, originId, limit = 50, offset = 0 } = params;
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (namespace)  { conditions.push(`namespace = $${idx++}`);   values.push(namespace); }
+    if (role)       { conditions.push(`role = $${idx++}`);        values.push(role); }
+    if (type)       { conditions.push(`type = $${idx++}`);        values.push(type); }
+    if (subtype)    { conditions.push(`subtype = $${idx++}`);     values.push(subtype); }
+    if (entity)     { conditions.push(`entity = $${idx++}`);      values.push(entity); }
+    if (status)     { conditions.push(`status = $${idx++}`);      values.push(status); }
+    if (assignedTo) { conditions.push(`assigned_to = $${idx++}`); values.push(assignedTo); }
+    if (workflowId) { conditions.push(`workflow_id = $${idx++}`); values.push(workflowId); }
+    if (originId)   { conditions.push(`origin_id = $${idx++}`);   values.push(originId); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    values.push(limit, offset);
+    const result = await this.pgClient.query(
+      `SELECT * FROM public.hmsh_escalations ${where} ORDER BY priority ASC, created_at ASC LIMIT $${idx++} OFFSET $${idx}`,
+      values,
+    );
+    return result.rows;
+  }
+
+  async claimEscalation(params: import('../../../../types/hmsh_escalations').ClaimEscalationParams): Promise<import('../../../../types/hmsh_escalations').ClaimEscalationResult> {
+    const { id, namespace, assignee = '', durationMinutes = 1 } = params;
+    // all_rows: reads the row without locking, so we can distinguish 'not-found' vs 'conflict'
+    // target: attempts the lock; SKIP LOCKED means a locked row is skipped without error
+    // claimed: performs the UPDATE only if target succeeded
+    // The final SELECT always returns exactly 1 row via the dummy left-join — no second round-trip.
+    const result = await this.pgClient.query(`
+      WITH all_rows AS MATERIALIZED (
+        SELECT id FROM public.hmsh_escalations
+        WHERE id = $1 ${namespace ? 'AND namespace = $4' : ''}
+      ),
+      target AS MATERIALIZED (
+        SELECT id FROM public.hmsh_escalations
+        WHERE id = $1
+          ${namespace ? 'AND namespace = $4' : ''}
+          AND status = 'pending'
+          AND (assigned_to IS NULL OR claim_expires_at <= NOW() OR assigned_to = $2)
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      ),
+      claimed AS (
+        UPDATE public.hmsh_escalations
+        SET status           = 'claimed',
+            assigned_to      = $2,
+            claimed_at       = NOW(),
+            claim_expires_at = NOW() + ($3 * INTERVAL '1 minute'),
+            updated_at       = NOW()
+        FROM target WHERE public.hmsh_escalations.id = target.id
+        RETURNING public.hmsh_escalations.*
+      )
+      SELECT c.*, (SELECT EXISTS(SELECT 1 FROM all_rows)) AS row_exists
+      FROM (VALUES(1)) AS dummy(v)
+      LEFT JOIN claimed c ON true
+    `, namespace ? [id, assignee, durationMinutes, namespace] : [id, assignee, durationMinutes]);
+    const row = result.rows[0];
+    if (row?.id) return { ok: true, entry: row };
+    if (row?.row_exists) return { ok: false, reason: 'conflict' };
+    return { ok: false, reason: 'not-found' };
+  }
+
+  async claimEscalationByMetadata(params: import('../../../../types/hmsh_escalations').ClaimByMetadataParams): Promise<import('../../../../types/hmsh_escalations').ClaimByMetadataResult> {
+    const { key, value, namespace, assignee = '', durationMinutes = 1, roles } = params;
+    const filter = JSON.stringify({ [key]: value });
+    // all_candidates: counts ALL matching rows (any status) to distinguish 'not-found' vs 'conflict'
+    // target: attempts the lock on the highest-priority pending row; SKIP LOCKED skips already-claimed ones
+    // claimed: performs the UPDATE atomically from target
+    // The dummy left-join ensures exactly 1 row is always returned so candidatesExist is always visible.
+    const result = await this.pgClient.query(`
+      WITH all_candidates AS MATERIALIZED (
+        SELECT id FROM public.hmsh_escalations
+        WHERE ${namespace ? 'namespace = $5 AND' : ''}
+              metadata @> $1::jsonb
+          AND ($4::text[] IS NULL OR role = ANY($4::text[]))
+      ),
+      target AS MATERIALIZED (
+        SELECT id FROM public.hmsh_escalations
+        WHERE ${namespace ? 'namespace = $5 AND' : ''}
+              metadata @> $1::jsonb
+          AND ($4::text[] IS NULL OR role = ANY($4::text[]))
+          AND status = 'pending'
+          AND (assigned_to IS NULL OR claim_expires_at <= NOW() OR assigned_to = $2)
+        ORDER BY priority ASC, created_at ASC
+        LIMIT 1
+        FOR UPDATE SKIP LOCKED
+      ),
+      claimed AS (
+        UPDATE public.hmsh_escalations
+        SET status           = 'claimed',
+            assigned_to      = $2,
+            claimed_at       = NOW(),
+            claim_expires_at = NOW() + ($3 * INTERVAL '1 minute'),
+            updated_at       = NOW()
+        FROM target WHERE public.hmsh_escalations.id = target.id
+        RETURNING public.hmsh_escalations.*
+      )
+      SELECT c.*, (SELECT COUNT(*)::int FROM all_candidates) AS candidates_exist
+      FROM (VALUES(1)) AS dummy(v)
+      LEFT JOIN claimed c ON true
+    `, namespace
+      ? [filter, assignee, durationMinutes, roles ?? null, namespace]
+      : [filter, assignee, durationMinutes, roles ?? null]);
+    const row = result.rows[0];
+    const candidatesExist: number = row?.candidates_exist ?? 0;
+    if (row?.id) return { ok: true, entry: row, candidatesExist };
+    return {
+      ok: false,
+      reason: candidatesExist > 0 ? 'conflict' : 'not-found',
+      candidatesExist,
+    };
+  }
+
+  async releaseEscalation(params: import('../../../../types/hmsh_escalations').ReleaseEscalationParams): Promise<import('../../../../types/hmsh_escalations').ReleaseEscalationResult> {
+    const { id, namespace, assignee } = params;
+    // Single CTE: SELECT FOR UPDATE locks the row, UPDATE releases it iff assignee matches.
+    // Left-join exposes target_id even when the UPDATE did not fire (wrong-assignee case).
+    // No second round-trip — assignee check and UPDATE are one atomic statement.
+    const result = await this.pgClient.query(`
+      WITH target AS MATERIALIZED (
+        SELECT id, assigned_to FROM public.hmsh_escalations
+        WHERE id = $1 ${namespace ? 'AND namespace = $3' : ''}
+          AND status = 'claimed'
+        FOR UPDATE
+      ),
+      released AS (
+        UPDATE public.hmsh_escalations
+        SET status = 'pending', assigned_to = NULL, assigned_until = NULL,
+            claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
+        FROM target
+        WHERE public.hmsh_escalations.id = target.id
+          AND ($2::text IS NULL OR target.assigned_to = $2)
+        RETURNING public.hmsh_escalations.id
+      )
+      SELECT t.id AS target_id, t.assigned_to AS current_assignee, r.id AS released_id
+      FROM target t
+      LEFT JOIN released r ON r.id = t.id
+    `, namespace ? [id, assignee ?? null, namespace] : [id, assignee ?? null]);
+    const row = result.rows[0];
+    if (!row) return { ok: false, reason: 'not-found' };
+    if (!row.released_id) return { ok: false, reason: 'wrong-assignee' };
+    return { ok: true };
+  }
+
+  async resolveEscalation(params: import('../../../../types/hmsh_escalations').ResolveEscalationParams): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string; topic?: string }> {
+    const { id, namespace, resolverPayload } = params;
+    const result = await this.pgClient.query(`
+      WITH target AS MATERIALIZED (
+        SELECT id, signal_key, topic, status FROM public.hmsh_escalations
+        WHERE id = $1 ${namespace ? 'AND namespace = $3' : ''}
+        LIMIT 1 FOR UPDATE
+      ),
+      resolved AS (
+        UPDATE public.hmsh_escalations
+        SET status           = 'resolved',
+            resolved_at      = NOW(),
+            resolver_payload = $2,
+            updated_at       = NOW()
+        FROM target
+        WHERE public.hmsh_escalations.id = target.id
+          AND target.status IN ('pending', 'claimed')
+        RETURNING public.hmsh_escalations.id
+      )
+      SELECT t.signal_key, t.topic, t.status AS prior_status,
+        CASE
+          WHEN r.id IS NOT NULL THEN 'resolved'
+          WHEN t.id IS NULL     THEN 'not-found'
+          WHEN t.status = 'cancelled' THEN 'already-cancelled'
+          ELSE 'already-resolved'
+        END AS outcome
+      FROM (SELECT * FROM target) t
+      FULL OUTER JOIN (SELECT id FROM resolved) r ON r.id = t.id
+    `, namespace
+      ? [id, resolverPayload ? JSON.stringify(resolverPayload) : null, namespace]
+      : [id, resolverPayload ? JSON.stringify(resolverPayload) : null]);
+    if (!result.rows[0] || result.rows[0].outcome === 'not-found') return { ok: false, reason: 'not-found' };
+    if (result.rows[0].outcome === 'already-cancelled') return { ok: false, reason: 'already-cancelled' };
+    if (result.rows[0].outcome === 'already-resolved') return { ok: false, reason: 'already-resolved' };
+    return { ok: true, signalKey: result.rows[0].signal_key, topic: result.rows[0].topic };
+  }
+
+  async resolveEscalationByMetadata(params: import('../../../../types/hmsh_escalations').ResolveByMetadataParams): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string; topic?: string }> {
+    const { key, value, namespace, resolverPayload, roles } = params;
+    const filter = JSON.stringify({ [key]: value });
+    const result = await this.pgClient.query(`
+      WITH target AS MATERIALIZED (
+        SELECT id, signal_key, topic, status FROM public.hmsh_escalations
+        WHERE ${namespace ? 'namespace = $4 AND' : ''}
+              metadata @> $1::jsonb
+          AND ($3::text[] IS NULL OR role = ANY($3::text[]))
+        ORDER BY priority ASC, created_at ASC
+        LIMIT 1 FOR UPDATE
+      ),
+      resolved AS (
+        UPDATE public.hmsh_escalations
+        SET status           = 'resolved',
+            resolved_at      = NOW(),
+            resolver_payload = $2,
+            updated_at       = NOW()
+        FROM target
+        WHERE public.hmsh_escalations.id = target.id
+          AND target.status IN ('pending', 'claimed')
+        RETURNING public.hmsh_escalations.id
+      )
+      SELECT t.signal_key, t.topic, t.status AS prior_status,
+        CASE
+          WHEN r.id IS NOT NULL THEN 'resolved'
+          WHEN t.id IS NULL     THEN 'not-found'
+          WHEN t.status = 'cancelled' THEN 'already-cancelled'
+          ELSE 'already-resolved'
+        END AS outcome
+      FROM (SELECT * FROM target) t
+      FULL OUTER JOIN (SELECT id FROM resolved) r ON r.id = t.id
+    `, namespace
+      ? [filter, resolverPayload ? JSON.stringify(resolverPayload) : null, roles ?? null, namespace]
+      : [filter, resolverPayload ? JSON.stringify(resolverPayload) : null, roles ?? null]);
+    if (!result.rows[0] || result.rows[0].outcome === 'not-found') return { ok: false, reason: 'not-found' };
+    if (result.rows[0].outcome === 'already-cancelled') return { ok: false, reason: 'already-cancelled' };
+    if (result.rows[0].outcome === 'already-resolved') return { ok: false, reason: 'already-resolved' };
+    return { ok: true, signalKey: result.rows[0].signal_key, topic: result.rows[0].topic };
+  }
+
+  /**
+   * Queues the escalation UPDATE into an existing transaction without executing it.
+   * Used by client.ts resolve() to commit the status change atomically with signal delivery.
+   */
+  queueResolveEscalation(
+    params: { id: string; namespace?: string; resolverPayload?: Record<string, unknown> },
+    transaction: { addCommand: (sql: string, params: any[], returnType: string) => any },
+  ): void {
+    const { id, namespace, resolverPayload } = params;
+    const sql = namespace
+      ? `UPDATE public.hmsh_escalations
+         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2, updated_at = NOW()
+         WHERE id = $1 AND namespace = $3 AND status IN ('pending', 'claimed')`
+      : `UPDATE public.hmsh_escalations
+         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2, updated_at = NOW()
+         WHERE id = $1 AND status IN ('pending', 'claimed')`;
+    const sqlParams = namespace
+      ? [id, resolverPayload ? JSON.stringify(resolverPayload) : null, namespace]
+      : [id, resolverPayload ? JSON.stringify(resolverPayload) : null];
+    transaction.addCommand(sql, sqlParams, 'number');
+  }
+
+  /**
+   * Finds the highest-priority pending or claimed escalation matching the given metadata filter.
+   * Used by client.ts resolveByMetadata() to get routing info before building the atomic transaction.
+   */
+  async findEscalationByMetadata(
+    key: string,
+    value: string,
+    roles: string[] | null,
+    namespace?: string,
+  ): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+    const filter = JSON.stringify({ [key]: value });
+    const result = await this.pgClient.query(`
+      SELECT * FROM public.hmsh_escalations
+      WHERE ${namespace ? 'namespace = $3 AND' : ''}
+            metadata @> $1::jsonb
+        AND ($2::text[] IS NULL OR role = ANY($2::text[]))
+        AND status IN ('pending', 'claimed')
+      ORDER BY priority ASC, created_at ASC
+      LIMIT 1
+    `, namespace ? [filter, roles, namespace] : [filter, roles]);
+    return result.rows[0] ?? null;
+  }
+
+  async cancelEscalation(id: string, namespace?: string): Promise<import('../../../../types/hmsh_escalations').CancelEscalationResult> {
+    const result = await this.pgClient.query(`
+      WITH target AS MATERIALIZED (
+        SELECT id, status FROM public.hmsh_escalations
+        WHERE id = $1 ${namespace ? 'AND namespace = $2' : ''}
+        LIMIT 1 FOR UPDATE
+      ),
+      cancelled AS (
+        UPDATE public.hmsh_escalations
+        SET status = 'cancelled', updated_at = NOW()
+        FROM target
+        WHERE public.hmsh_escalations.id = target.id
+          AND target.status IN ('pending', 'claimed')
+        RETURNING public.hmsh_escalations.id
+      )
+      SELECT t.id, t.status AS prior_status,
+        CASE
+          WHEN c.id IS NOT NULL THEN 'cancelled'
+          WHEN t.id IS NULL     THEN 'not-found'
+          ELSE 'already-terminal'
+        END AS outcome
+      FROM (SELECT * FROM target) t
+      FULL OUTER JOIN (SELECT id FROM cancelled) c ON c.id = t.id
+    `, namespace ? [id, namespace] : [id]);
+    if (!result.rows[0] || result.rows[0].outcome === 'not-found') return { ok: false, reason: 'not-found' };
+    if (result.rows[0].outcome === 'already-terminal') return { ok: false, reason: 'already-terminal' };
+    return { ok: true };
+  }
+
+  async escalateEscalationToRole(params: import('../../../../types/hmsh_escalations').EscalateToRoleParams): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+    const { id, targetRole, namespace } = params;
+    const result = await this.pgClient.query(`
+      UPDATE public.hmsh_escalations
+      SET role             = $2,
+          status           = 'pending',
+          assigned_to      = NULL,
+          assigned_until   = NULL,
+          claimed_at       = NULL,
+          claim_expires_at = NULL,
+          updated_at       = NOW()
+      WHERE id = $1 ${namespace ? 'AND namespace = $3' : ''}
+        AND status IN ('pending', 'claimed')
+      RETURNING *
+    `, namespace ? [id, targetRole, namespace] : [id, targetRole]);
+    return result.rows[0] ?? null;
+  }
+
+  async updateEscalation(params: import('../../../../types/hmsh_escalations').UpdateEscalationParams): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+    const { id, namespace, description, priority, role, metadata, envelope,
+            signalKey, topic, workflowId, taskQueue, workflowType, expiresAt } = params;
+    const sets: string[] = [];
+    const values: unknown[] = [id];
+    let idx = 2;
+
+    if (description !== undefined) { sets.push(`description = $${idx++}`);  values.push(description); }
+    if (priority    !== undefined) { sets.push(`priority = $${idx++}`);     values.push(priority); }
+    if (role        !== undefined) { sets.push(`role = $${idx++}`);         values.push(role); }
+    if (envelope    !== undefined) { sets.push(`envelope = $${idx++}`);     values.push(JSON.stringify(envelope)); }
+    if (signalKey   !== undefined) { sets.push(`signal_key = $${idx++}`);   values.push(signalKey); }
+    if (topic       !== undefined) { sets.push(`topic = $${idx++}`);        values.push(topic); }
+    if (workflowId  !== undefined) { sets.push(`workflow_id = $${idx++}`);  values.push(workflowId); }
+    if (taskQueue   !== undefined) { sets.push(`task_queue = $${idx++}`);   values.push(taskQueue); }
+    if (workflowType !== undefined){ sets.push(`workflow_type = $${idx++}`);values.push(workflowType); }
+    if (expiresAt   !== undefined) { sets.push(`expires_at = $${idx++}`);   values.push(expiresAt); }
+    // Metadata is merged (not replaced) — caller patches individual keys
+    if (metadata !== undefined) {
+      sets.push(`metadata = COALESCE(metadata, '{}'::jsonb) || $${idx++}::jsonb`);
+      values.push(JSON.stringify(metadata));
+    }
+    if (!sets.length) return this.getEscalation(id, namespace);
+    sets.push(`updated_at = NOW()`);
+
+    const nsClause = namespace ? ` AND namespace = $${idx++}` : '';
+    if (namespace) values.push(namespace);
+
+    const result = await this.pgClient.query(
+      `UPDATE public.hmsh_escalations SET ${sets.join(', ')} WHERE id = $1${nsClause} RETURNING *`,
+      values,
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async appendEscalationMilestones(params: import('../../../../types/hmsh_escalations').AppendMilestonesParams): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+    const { id, namespace, milestones } = params;
+    const stamped = milestones.map(m => ({ ...m, created_at: new Date().toISOString() }));
+    const result = await this.pgClient.query(`
+      UPDATE public.hmsh_escalations
+      SET milestones = milestones || $2::jsonb,
+          updated_at = NOW()
+      WHERE id = $1 ${namespace ? 'AND namespace = $3' : ''}
+      RETURNING *
+    `, namespace ? [id, JSON.stringify(stamped), namespace] : [id, JSON.stringify(stamped)]);
+    return result.rows[0] ?? null;
+  }
+
+  async releaseExpiredEscalations(namespace?: string): Promise<number> {
+    const result = await this.pgClient.query(`
+      UPDATE public.hmsh_escalations
+      SET status = 'pending', assigned_to = NULL, assigned_until = NULL,
+          claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
+      WHERE status = 'claimed'
+        AND claim_expires_at <= NOW()
+        ${namespace ? 'AND namespace = $1' : ''}
+    `, namespace ? [namespace] : []);
+    return result.rowCount ?? 0;
   }
 }
 

@@ -103,6 +103,8 @@ abstract class StoreService<
     status?: number,
     entity?: string,
     transaction?: ProviderTransaction,
+    originId?: string,
+    parentId?: string,
   ): Promise<boolean>;
   abstract setState(
     state: StringAnyType,

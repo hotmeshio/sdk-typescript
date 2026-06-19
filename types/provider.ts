@@ -118,6 +118,8 @@ export interface HSetOptions {
   nx?: boolean;
   ex?: number; // Expiry time in seconds
   entity?: string;
+  originId?: string;
+  parentId?: string;
 }
 
 export interface ZAddOptions {

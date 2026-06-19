@@ -109,12 +109,18 @@ class Trigger extends Activity {
 
       //═══ Step 1: Inception (atomic job creation + GUID seed) ═══
       const txn1 = this.store.transact();
+      // Resolve lineage from the incoming message so that origin_id and parent_id
+      // are written atomically with the job record — no separate update needed.
+      const originId = Pipe.resolve('{$self.input.data.originJobId}', this.context) as string | undefined;
+      const parentId = Pipe.resolve('{$self.input.data.parentWorkflowId}', this.context) as string | undefined;
       await this.store.setStateNX(
         this.context.metadata.jid,
         appId,
         initialStatus,
         options?.entity || resolvedEntity,
         txn1,
+        originId || undefined,
+        parentId || undefined,
       );
       await this.store.collateSynthetic(
         this.context.metadata.jid,

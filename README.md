@@ -14,7 +14,7 @@ npm install @hotmeshio/hotmesh
 - **Crash-safe execution** — Every step is a committed row. If the process dies, it picks up where it left off.
 - **Distributed state machines** — Build stateful applications where every component can [fail and recover](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md).
 - **AI and training pipelines** — Multi-step AI workloads where each stage is expensive and must not be repeated on failure. A crashed pipeline resumes from the last committed step, not from the beginning.
-- **Human-in-the-loop queues** — Suspend workflows until an operator claims and resolves the task. Pending suspensions become discoverable, claimable rows in Postgres. Concurrent workers receive exact reason codes (`conflict`, `already-resolved`, `signal-failed`) instead of opaque nulls.
+- **Human-in-the-loop workflows** — Workflow pauses that require external input are searchable, claimable rows in your database. Build approval queues, review flows, and AI handoffs without a separate task service.
 
 ## How it works in 30 seconds
 
@@ -167,35 +167,24 @@ const result = await Durable.workflow.executeChild({
 **Signals** — pause a workflow until an external event arrives.
 
 ```typescript
-// Basic: pause until any caller sends the matching signal
 const approval = await Durable.workflow.condition<{ approved: boolean }>('manager-approval');
 if (!approval.approved) return 'rejected';
 ```
 
-Pass a `ConditionQueueConfig` as the second argument to also create a claimable task record in Postgres (see [Signal queue](#signal-queue-postgres-only) below):
+**Human-in-the-loop** — When a workflow pauses waiting for input, it can write a searchable, claimable row to the database. External systems — dashboards, AI agents, APIs — query by role and metadata, claim ownership, and resolve to resume the workflow. The pause lives in `public.hmsh_escalations` alongside the rest of your workflow state.
 
 ```typescript
-// With queue config: atomically suspend the workflow AND enqueue a claimable task record
-const approval = await Durable.workflow.condition<{ approved: boolean }>('manager-approval', {
-  role: 'manager',
-  description: `Approve order ${orderId}`,
-  metadata: { orderId, region: 'us-west' }, // GIN-indexed; used for claimByMetadata queries
-  envelope: { formSchema: [...] },           // unindexed display context; safe for large blobs
-});
-// approval is false if a timeout was set and no signal arrived
-if (approval === false) return 'timed-out';
-if (!approval.approved) return 'rejected';
-```
-
-The optional first string argument is a timeout; the queue config can appear as the second or third argument:
-
-```typescript
-// With timeout AND queue config
-const approval = await Durable.workflow.condition<{ approved: boolean }>(
-  'manager-approval',
-  '72 hours',                  // workflow times out if nobody acts
-  { role: 'manager', metadata: { orderId } },
+// workflow: pause and write a claimable row
+const decision = await Durable.workflow.condition<{ approved: boolean }>(
+  'approval',
+  { role: 'manager', type: 'order-review', metadata: { orderId } },
 );
+
+// elsewhere: find pending approvals, claim one, resolve it
+const [pending] = await client.escalations.list({ role: 'manager', status: 'pending' });
+await client.escalations.claim({ id: pending.id, assignee: 'alice@company.com' });
+await client.escalations.resolve({ id: pending.id, resolverPayload: { approved: true } });
+// the workflow resumes with { approved: true }
 ```
 
 ## Retries and error handling
@@ -270,112 +259,6 @@ const exported = await handle.export({          // selective export
   allow: ['data', 'state', 'status', 'timeline']
 });
 ```
-
-## Signal queue (Postgres only)
-
-When `condition()` is called with a `ConditionQueueConfig`, HotMesh atomically writes a row to `hotmesh_signals` inside the same Postgres transaction that suspends the workflow. The result is a durable, queryable task queue backed by the same database — no separate service, no double-write, no gap between "task created" and "workflow suspended".
-
-**Workflow side** — declare what kind of task this suspension represents:
-
-```typescript
-// workflows/approval.ts
-export async function orderApproval(orderId: string) {
-  const signalId = `approve-${orderId}`;
-
-  const result = await Durable.workflow.condition<{ approved: boolean; notes: string }>(
-    signalId,
-    {
-      role: 'pharmacist',
-      type: 'approval',
-      priority: 3,
-      description: `Review order ${orderId}`,
-      taskQueue: 'rx-approvals',
-      workflowType: 'orderApproval',
-      metadata: { orderId },               // GIN-indexed; query with claimByMetadata
-      envelope: {                          // not indexed; pass form schemas, display context
-        formSchema: [{ name: 'notes', type: 'textarea', required: true }],
-      },
-    },
-  );
-
-  if (result === false) return { status: 'timed-out' };
-  return result;
-}
-```
-
-**Resolver side** — claim and resolve from any process (API handler, worker, dashboard):
-
-```typescript
-// resolver.ts
-import { Durable } from '@hotmeshio/hotmesh';
-
-const client = new Durable.Client({ connection });
-
-// List all pending tasks for a role
-const pending = await client.signalQueue.list({ role: 'pharmacist', status: 'pending' });
-
-// Claim by metadata — atomic; concurrent workers get 'conflict', not a silent null
-const claim = await client.signalQueue.claimByMetadata({
-  key: 'orderId',
-  value: orderId,
-  assignee: 'jane@example.com',
-  durationMinutes: 30,
-});
-
-if (!claim.ok) {
-  // claim.reason: 'not-found' (nothing queued) | 'conflict' (another worker beat you)
-  return;
-}
-
-// Resolve — marks the DB record resolved AND delivers the signal to the paused workflow
-const resolution = await client.signalQueue.resolve({
-  id: claim.entry.id,
-  resolverPayload: { approved: true, notes: 'LGTM' },
-});
-
-if (!resolution.ok) {
-  if (resolution.reason === 'signal-failed') {
-    // DB updated but workflow signal not delivered — retry with resolution.signalKey
-  }
-}
-```
-
-**All `signalQueue` methods:**
-
-| Method | Description |
-|---|---|
-| `list(params)` | List signals filtered by `role`, `status`, `taskQueue` |
-| `get(id)` | Fetch a single signal record by UUID |
-| `claim({ id, assignee?, durationMinutes? })` | Claim by record ID |
-| `claimByMetadata({ key, value, assignee?, durationMinutes? })` | Claim by GIN-indexed metadata field |
-| `release({ id })` | Return a claimed signal to `pending` |
-| `releaseExpired()` | Sweep all past-expiry claims back to `pending` |
-| `resolve({ id, resolverPayload? })` | Resolve by ID and deliver signal to the workflow |
-| `resolveByMetadata({ key, value, resolverPayload? })` | Resolve by metadata field and deliver signal |
-
-**Result types** — all mutating methods return a discriminated union so callers can handle every outcome without guessing what `null` meant:
-
-```typescript
-// Claim
-type ClaimSignalResult =
-  | { ok: true; entry: SignalQueueEntry }
-  | { ok: false; reason: 'not-found' | 'conflict' };
-
-// Release
-type ReleaseSignalResult =
-  | { ok: true }
-  | { ok: false; reason: 'not-found' | 'wrong-status' };
-
-// Resolve
-type ResolveSignalResult =
-  | { ok: true }
-  | { ok: false; reason: 'not-found' | 'already-resolved' }
-  | { ok: false; reason: 'signal-failed'; signalKey: string };
-```
-
-`signal-failed` means the database record was updated but `workflow.signal()` threw (network blip, workflow already complete). The `signalKey` is returned so callers can retry signal delivery independently without re-resolving the record.
-
-> **Postgres only.** The `signalQueue.*` methods require the Postgres provider. Workflows using `condition()` without a queue config are unaffected on any provider.
 
 ## Observability
 

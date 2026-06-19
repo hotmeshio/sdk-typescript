@@ -1,0 +1,62 @@
+app:
+  id: hook-escalation
+  version: '1'
+  graphs:
+    - subscribes: hook-escalation.test
+      publishes: hook-escalation.tested
+      expire: 300
+
+      input:
+        schema:
+          type: object
+          properties:
+            orderId:
+              type: string
+            region:
+              type: string
+
+      output:
+        schema:
+          type: object
+          properties:
+            approved:
+              type: boolean
+            approvedBy:
+              type: string
+
+      activities:
+        t1:
+          type: trigger
+
+        a1:
+          type: hook
+          # escalation block: writes one row to public.hmsh_escalations at suspension.
+          # signal_key = job ID; topic = hook topic used to resume.
+          # metadata and envelope support @pipe expressions resolved against live job context.
+          escalation:
+            role: approver
+            type: order-approval
+            subtype: regional
+            priority: 2
+            description: Approve order for dispatch
+            metadata:
+              orderId: '{t1.output.data.orderId}'
+              region: '{t1.output.data.region}'
+            envelope:
+              instructions: 'Review and approve or reject the order'
+          job:
+            maps:
+              approved: '{a1.hook.data.approved}'
+              approvedBy: '{a1.hook.data.approvedBy}'
+
+      transitions:
+        t1:
+          - to: a1
+
+      hooks:
+        hook-escalation.approve:
+          - to: a1
+            conditions:
+              match:
+                - expected: '{$job.metadata.jid}'
+                  actual: '{$self.hook.data.id}'

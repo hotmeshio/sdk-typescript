@@ -8,9 +8,7 @@ import {
 } from './common';
 import { checkCancellation } from './cancellationScope';
 import { didRun } from './didRun';
-import type { ConditionQueueConfig } from '../../../types/signal';
-
-export type { ConditionQueueConfig };
+import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
 
 /**
  * Pauses the workflow until a signal with the given `signalId` is received.
@@ -19,77 +17,105 @@ export type { ConditionQueueConfig };
  *
  * `condition` is the **receive** side of the signal coordination pair.
  * The **send** side is `signal()`, which can be called from another
- * workflow, a hook function, or externally via `Durable.Client.workflow.signal()`.
+ * workflow, a hook function, or externally via `client.workflow.signal()`.
  *
  * On replay, `condition` returns the previously stored signal payload
- * immediately (no actual suspension occurs).
+ * immediately — no actual suspension occurs.
  *
- * ## Examples
+ * ## Basic usage
  *
  * ```typescript
  * import { Durable } from '@hotmeshio/hotmesh';
  *
- * // Human-in-the-loop approval pattern
  * export async function approvalWorkflow(orderId: string): Promise<boolean> {
  *   const { submitForReview } = Durable.workflow.proxyActivities<typeof activities>();
- *
  *   await submitForReview(orderId);
  *
- *   // Pause indefinitely until a human approves or rejects
+ *   // Pause until a human approves or rejects
  *   const decision = await Durable.workflow.condition<{ approved: boolean }>('approval');
- *
  *   return decision.approved;
  * }
  *
- * // Later, from outside the workflow (e.g., an API handler):
+ * // From an API handler or another workflow:
  * await client.workflow.signal('approval', { approved: true });
  * ```
  *
+ * ## With timeout
+ *
+ * Pass a duration string as the second argument to set a deadline.
+ * `condition` returns `false` if the timeout fires before a signal arrives.
+ *
  * ```typescript
- * // Fan-in: wait for multiple signals in parallel
- * export async function gatherWorkflow(): Promise<[string, number]> {
- *   const [name, score] = await Promise.all([
- *     Durable.workflow.condition<string>('name-signal'),
- *     Durable.workflow.condition<number>('score-signal'),
- *   ]);
- *   return [name, score];
- * }
+ * const decision = await Durable.workflow.condition<{ approved: boolean }>(
+ *   'approval',
+ *   '72h',              // give reviewers 72 hours; returns false on timeout
+ * );
+ * if (decision === false) return 'auto-rejected-timeout';
+ * return decision.approved ? 'approved' : 'rejected';
  * ```
  *
+ * ## With escalation queue config
+ *
+ * Pass a {@link ConditionQueueConfig} as the second argument to surface the
+ * pause as a claimable row in `public.hmsh_escalations`. The INSERT is
+ * committed atomically with the workflow checkpoint — one write, no
+ * enrichment step, no secondary round-trip.
+ *
  * ```typescript
- * // Paired with hook: spawn work and wait for the result
- * export async function orchestrator(input: string): Promise<string> {
- *   const signalId = `result-${Durable.workflow.random()}`;
+ * const decision = await Durable.workflow.condition<{ approved: boolean }>(
+ *   'manager-approval',
+ *   {
+ *     role: 'manager',
+ *     type: 'order-approval',
+ *     subtype: 'regional',
+ *     priority: 2,
+ *     description: 'Approve or reject the regional order',
+ *     metadata: { orderId, region },
+ *     envelope: { instructions: 'Review the attached order' },
+ *   },
+ * );
  *
- *   // Spawn a hook that will signal back when done
- *   await Durable.workflow.hook({
- *     taskQueue: 'processors',
- *     workflowName: 'processItem',
- *     args: [input, signalId],
- *   });
+ * // Elsewhere: list, claim, then resolve (resumes the workflow)
+ * const [item] = await client.escalations.list({ role: 'manager', status: 'pending' });
+ * await client.escalations.claim({ id: item.id, assignee: 'alice@company.com' });
+ * await client.escalations.resolve({ id: item.id, resolverPayload: { approved: true } });
+ * ```
  *
- *   // Wait for the hook to signal completion
- *   return await Durable.workflow.condition<string>(signalId);
- * }
+ * ## Fan-in: wait for multiple signals in parallel
+ *
+ * ```typescript
+ * const [name, score] = await Promise.all([
+ *   Durable.workflow.condition<string>('name-signal'),
+ *   Durable.workflow.condition<number>('score-signal'),
+ * ]);
+ * ```
+ *
+ * ## Paired with hook: spawn work, wait for its signal
+ *
+ * ```typescript
+ * const signalId = `result-${Durable.workflow.random()}`;
+ * await Durable.workflow.hook({
+ *   taskQueue: 'processors',
+ *   workflowName: 'processItem',
+ *   args: [input, signalId],
+ * });
+ * return await Durable.workflow.condition<string>(signalId);
  * ```
  *
  * @template T - The type of data expected in the signal payload.
- * @param {string} signalId - A unique signal identifier shared by the sender and receiver.
- * @param {string | ConditionQueueConfig} [timeoutOrConfig] - Optional timeout string (e.g. '30s') OR queue config object.
- * @param {ConditionQueueConfig} [queueConfig] - Optional queue config when timeout is also provided.
- * @returns {Promise<T | false>} The signal data, or `false` if the timeout expired first.
+ * @param signalId - A unique signal identifier shared by the sender and receiver.
+ * @param timeoutOrConfig - Optional timeout string (e.g. `'30s'`, `'24h'`) OR a
+ *   {@link ConditionQueueConfig} that writes one row to `public.hmsh_escalations`
+ *   atomically at suspension time. Cannot specify both; use the config object's
+ *   `expiresAt` field for deadline enforcement when an escalation is involved.
+ * @returns The signal payload, or `false` if a timeout string was given and it expired.
  */
 export async function condition<T>(
   signalId: string,
   timeoutOrConfig?: string | ConditionQueueConfig,
-  queueConfig?: ConditionQueueConfig,
 ): Promise<T | false> {
-  const timeout =
-    typeof timeoutOrConfig === 'string' ? timeoutOrConfig : undefined;
-  const resolvedQueueConfig: ConditionQueueConfig | undefined =
-    typeof timeoutOrConfig === 'object' && timeoutOrConfig !== null
-      ? timeoutOrConfig
-      : queueConfig;
+  const timeout = typeof timeoutOrConfig === 'string' ? timeoutOrConfig : undefined;
+  const queueConfig = timeoutOrConfig && typeof timeoutOrConfig === 'object' ? timeoutOrConfig : undefined;
   const [didRunAlready, execIndex, result] = await didRun('wait');
   checkCancellation();
   if (didRunAlready) {
@@ -151,7 +177,7 @@ export async function condition<T>(
     type: 'DurableWaitForError',
     code: HMSH_CODE_DURABLE_WAIT,
     ...(timeout ? { duration: s(timeout) } : {}),
-    ...(resolvedQueueConfig ? { queueConfig: resolvedQueueConfig } : {}),
+    ...(queueConfig ? { queueConfig } : {}),
   };
   interruptionRegistry.push(interruptionMessage);
 

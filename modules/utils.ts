@@ -274,6 +274,9 @@ export function getValueByPath(obj: { [key: string]: any }, path: string): any {
   const pathParts = path.split('/');
   let currentValue = obj;
   for (const part of pathParts) {
+    if (currentValue == null || typeof currentValue !== 'object') {
+      return undefined;
+    }
     if (currentValue[part] !== undefined) {
       currentValue = currentValue[part];
     } else {
