@@ -1969,8 +1969,16 @@ class PostgresStoreService extends StoreService<
 
   async claimEscalation(params: import('../../../../types/hmsh_escalations').ClaimEscalationParams): Promise<import('../../../../types/hmsh_escalations').ClaimEscalationResult> {
     const { id, namespace, assignee = '', durationMinutes = 1 } = params;
+    // all_rows: reads the row without locking, so we can distinguish 'not-found' vs 'conflict'
+    // target: attempts the lock; SKIP LOCKED means a locked row is skipped without error
+    // claimed: performs the UPDATE only if target succeeded
+    // The final SELECT always returns exactly 1 row via the dummy left-join — no second round-trip.
     const result = await this.pgClient.query(`
-      WITH target AS MATERIALIZED (
+      WITH all_rows AS MATERIALIZED (
+        SELECT id FROM public.hmsh_escalations
+        WHERE id = $1 ${namespace ? 'AND namespace = $4' : ''}
+      ),
+      target AS MATERIALIZED (
         SELECT id FROM public.hmsh_escalations
         WHERE id = $1
           ${namespace ? 'AND namespace = $4' : ''}
@@ -1989,43 +1997,37 @@ class PostgresStoreService extends StoreService<
         FROM target WHERE public.hmsh_escalations.id = target.id
         RETURNING public.hmsh_escalations.*
       )
-      SELECT * FROM claimed
+      SELECT c.*, (SELECT EXISTS(SELECT 1 FROM all_rows)) AS row_exists
+      FROM (VALUES(1)) AS dummy(v)
+      LEFT JOIN claimed c ON true
     `, namespace ? [id, assignee, durationMinutes, namespace] : [id, assignee, durationMinutes]);
-    if (result.rows[0]) return { ok: true, entry: result.rows[0] };
-    // Distinguish: does the row exist at all, or is it locked/in wrong state?
-    const check = await this.pgClient.query(
-      `SELECT id FROM public.hmsh_escalations WHERE id = $1${namespace ? ' AND namespace = $2' : ''}`,
-      namespace ? [id, namespace] : [id],
-    );
-    return check.rows[0]
-      ? { ok: false, reason: 'conflict' }
-      : { ok: false, reason: 'not-found' };
+    const row = result.rows[0];
+    if (row?.id) return { ok: true, entry: row };
+    if (row?.row_exists) return { ok: false, reason: 'conflict' };
+    return { ok: false, reason: 'not-found' };
   }
 
   async claimEscalationByMetadata(params: import('../../../../types/hmsh_escalations').ClaimByMetadataParams): Promise<import('../../../../types/hmsh_escalations').ClaimByMetadataResult> {
     const { key, value, namespace, assignee = '', durationMinutes = 1, roles } = params;
     const filter = JSON.stringify({ [key]: value });
-    // Count all matching candidates (regardless of status/lock) so caller can distinguish
-    // "nothing matches" from "matches exist but all are locked or already claimed".
-    // Parameter indices shift depending on whether namespace is present.
-    const countNsClause = namespace ? 'namespace = $2 AND ' : '';
-    const rolesIdx = namespace ? 3 : 2;
-    const countResult = await this.pgClient.query(
-      `SELECT COUNT(*)::int AS cnt FROM public.hmsh_escalations
-       WHERE ${countNsClause}metadata @> $1::jsonb
-         AND ($${rolesIdx}::text[] IS NULL OR role = ANY($${rolesIdx}::text[]))`,
-      namespace ? [filter, namespace, roles ?? null] : [filter, roles ?? null],
-    );
-    const candidatesExist: number = countResult.rows[0]?.cnt ?? 0;
-
+    // all_candidates: counts ALL matching rows (any status) to distinguish 'not-found' vs 'conflict'
+    // target: attempts the lock on the highest-priority pending row; SKIP LOCKED skips already-claimed ones
+    // claimed: performs the UPDATE atomically from target
+    // The dummy left-join ensures exactly 1 row is always returned so candidatesExist is always visible.
     const result = await this.pgClient.query(`
-      WITH target AS MATERIALIZED (
+      WITH all_candidates AS MATERIALIZED (
         SELECT id FROM public.hmsh_escalations
         WHERE ${namespace ? 'namespace = $5 AND' : ''}
               metadata @> $1::jsonb
+          AND ($4::text[] IS NULL OR role = ANY($4::text[]))
+      ),
+      target AS MATERIALIZED (
+        SELECT id FROM public.hmsh_escalations
+        WHERE ${namespace ? 'namespace = $5 AND' : ''}
+              metadata @> $1::jsonb
+          AND ($4::text[] IS NULL OR role = ANY($4::text[]))
           AND status = 'pending'
           AND (assigned_to IS NULL OR claim_expires_at <= NOW() OR assigned_to = $2)
-          AND ($4::text[] IS NULL OR role = ANY($4::text[]))
         ORDER BY priority ASC, created_at ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
@@ -2040,11 +2042,15 @@ class PostgresStoreService extends StoreService<
         FROM target WHERE public.hmsh_escalations.id = target.id
         RETURNING public.hmsh_escalations.*
       )
-      SELECT * FROM claimed
+      SELECT c.*, (SELECT COUNT(*)::int FROM all_candidates) AS candidates_exist
+      FROM (VALUES(1)) AS dummy(v)
+      LEFT JOIN claimed c ON true
     `, namespace
       ? [filter, assignee, durationMinutes, roles ?? null, namespace]
       : [filter, assignee, durationMinutes, roles ?? null]);
-    if (result.rows[0]) return { ok: true, entry: result.rows[0], candidatesExist };
+    const row = result.rows[0];
+    const candidatesExist: number = row?.candidates_exist ?? 0;
+    if (row?.id) return { ok: true, entry: row, candidatesExist };
     return {
       ok: false,
       reason: candidatesExist > 0 ? 'conflict' : 'not-found',
@@ -2054,24 +2060,32 @@ class PostgresStoreService extends StoreService<
 
   async releaseEscalation(params: import('../../../../types/hmsh_escalations').ReleaseEscalationParams): Promise<import('../../../../types/hmsh_escalations').ReleaseEscalationResult> {
     const { id, namespace, assignee } = params;
-    // If assignee is provided, validate ownership before releasing.
-    if (assignee) {
-      const check = await this.pgClient.query(
-        `SELECT assigned_to FROM public.hmsh_escalations WHERE id = $1${namespace ? ' AND namespace = $2' : ''} AND status = 'claimed'`,
-        namespace ? [id, namespace] : [id],
-      );
-      if (!check.rows[0]) return { ok: false, reason: 'not-found' };
-      if (check.rows[0].assigned_to !== assignee) return { ok: false, reason: 'wrong-assignee' };
-    }
+    // Single CTE: SELECT FOR UPDATE locks the row, UPDATE releases it iff assignee matches.
+    // Left-join exposes target_id even when the UPDATE did not fire (wrong-assignee case).
+    // No second round-trip — assignee check and UPDATE are one atomic statement.
     const result = await this.pgClient.query(`
-      UPDATE public.hmsh_escalations
-      SET status = 'pending', assigned_to = NULL, assigned_until = NULL,
-          claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
-      WHERE id = $1 ${namespace ? 'AND namespace = $2' : ''}
-        AND status = 'claimed'
-      RETURNING id
-    `, namespace ? [id, namespace] : [id]);
-    if (!result.rows[0]) return { ok: false, reason: 'not-found' };
+      WITH target AS MATERIALIZED (
+        SELECT id, assigned_to FROM public.hmsh_escalations
+        WHERE id = $1 ${namespace ? 'AND namespace = $3' : ''}
+          AND status = 'claimed'
+        FOR UPDATE
+      ),
+      released AS (
+        UPDATE public.hmsh_escalations
+        SET status = 'pending', assigned_to = NULL, assigned_until = NULL,
+            claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
+        FROM target
+        WHERE public.hmsh_escalations.id = target.id
+          AND ($2::text IS NULL OR target.assigned_to = $2)
+        RETURNING public.hmsh_escalations.id
+      )
+      SELECT t.id AS target_id, t.assigned_to AS current_assignee, r.id AS released_id
+      FROM target t
+      LEFT JOIN released r ON r.id = t.id
+    `, namespace ? [id, assignee ?? null, namespace] : [id, assignee ?? null]);
+    const row = result.rows[0];
+    if (!row) return { ok: false, reason: 'not-found' };
+    if (!row.released_id) return { ok: false, reason: 'wrong-assignee' };
     return { ok: true };
   }
 
@@ -2151,6 +2165,51 @@ class PostgresStoreService extends StoreService<
     if (result.rows[0].outcome === 'already-cancelled') return { ok: false, reason: 'already-cancelled' };
     if (result.rows[0].outcome === 'already-resolved') return { ok: false, reason: 'already-resolved' };
     return { ok: true, signalKey: result.rows[0].signal_key, topic: result.rows[0].topic };
+  }
+
+  /**
+   * Queues the escalation UPDATE into an existing transaction without executing it.
+   * Used by client.ts resolve() to commit the status change atomically with signal delivery.
+   */
+  queueResolveEscalation(
+    params: { id: string; namespace?: string; resolverPayload?: Record<string, unknown> },
+    transaction: { addCommand: (sql: string, params: any[], returnType: string) => any },
+  ): void {
+    const { id, namespace, resolverPayload } = params;
+    const sql = namespace
+      ? `UPDATE public.hmsh_escalations
+         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2, updated_at = NOW()
+         WHERE id = $1 AND namespace = $3 AND status IN ('pending', 'claimed')`
+      : `UPDATE public.hmsh_escalations
+         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2, updated_at = NOW()
+         WHERE id = $1 AND status IN ('pending', 'claimed')`;
+    const sqlParams = namespace
+      ? [id, resolverPayload ? JSON.stringify(resolverPayload) : null, namespace]
+      : [id, resolverPayload ? JSON.stringify(resolverPayload) : null];
+    transaction.addCommand(sql, sqlParams, 'number');
+  }
+
+  /**
+   * Finds the highest-priority pending or claimed escalation matching the given metadata filter.
+   * Used by client.ts resolveByMetadata() to get routing info before building the atomic transaction.
+   */
+  async findEscalationByMetadata(
+    key: string,
+    value: string,
+    roles: string[] | null,
+    namespace?: string,
+  ): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+    const filter = JSON.stringify({ [key]: value });
+    const result = await this.pgClient.query(`
+      SELECT * FROM public.hmsh_escalations
+      WHERE ${namespace ? 'namespace = $3 AND' : ''}
+            metadata @> $1::jsonb
+        AND ($2::text[] IS NULL OR role = ANY($2::text[]))
+        AND status IN ('pending', 'claimed')
+      ORDER BY priority ASC, created_at ASC
+      LIMIT 1
+    `, namespace ? [filter, roles, namespace] : [filter, roles]);
+    return result.rows[0] ?? null;
   }
 
   async cancelEscalation(id: string, namespace?: string): Promise<import('../../../../types/hmsh_escalations').CancelEscalationResult> {

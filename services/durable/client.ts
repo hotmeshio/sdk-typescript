@@ -770,18 +770,39 @@ export class ClientService {
       params: ResolveEscalationParams,
       namespace?: string,
     ): Promise<ResolveEscalationResult> => {
-      const ns = params.namespace ?? namespace;
+      const ns = (params.namespace ?? namespace) ?? APP_ID;
       const hotMeshClient = await this.getHotMeshClient(null, ns);
-      const storeResult: ResolveEscalationResult & { signalKey?: string; topic?: string } =
-        await (hotMeshClient.engine.store as any).resolveEscalation(params);
-      if (!storeResult.ok) return storeResult;
-      if (storeResult.signalKey && storeResult.topic) {
+      const store = hotMeshClient.engine.store as any;
+
+      // UUID primary-key lookup — no namespace filter needed; use existing.namespace for the UPDATE.
+      const existing = await store.getEscalation(params.id);
+      if (!existing) return { ok: false, reason: 'not-found' };
+      if (existing.status === 'resolved') return { ok: false, reason: 'already-resolved' };
+      if (existing.status === 'cancelled') return { ok: false, reason: 'already-cancelled' };
+
+      // Build a single atomic transaction: signal stream INSERTs + escalation UPDATE in one BEGIN/COMMIT.
+      // engine.signal() with a transaction queues an INSERT into the stream table without executing;
+      // queueResolveEscalation() queues the status UPDATE; txn.exec() commits all in one round-trip.
+      const txn = store.transact();
+
+      if (existing.signal_key && existing.topic) {
+        const signalPayload = { id: existing.signal_key, data: params.resolverPayload ?? {} };
         try {
-          await this.workflow.signal(storeResult.signalKey, params.resolverPayload ?? {}, ns);
-        } catch {
-          return { ok: false, reason: 'signal-failed' };
-        }
+          const sc = await this.getHotMeshClient(`${ns}.wfs.signal`, ns);
+          await sc.engine.signal(`${ns}.wfs.signal`, signalPayload, StreamStatus.SUCCESS, 200, txn);
+        } catch { /* no collator hook rule — skip */ }
+        try {
+          const wc = await this.getHotMeshClient(`${ns}.wfs.wait`, ns);
+          await wc.engine.signal(`${ns}.wfs.wait`, signalPayload, StreamStatus.SUCCESS, 200, txn);
+        } catch { /* no waiter hook rule — skip */ }
       }
+
+      store.queueResolveEscalation(
+        { id: params.id, namespace: existing.namespace ?? ns, resolverPayload: params.resolverPayload },
+        txn,
+      );
+
+      await txn.exec();
       return { ok: true };
     },
 
@@ -803,18 +824,37 @@ export class ClientService {
       params: ResolveByMetadataParams,
       namespace?: string,
     ): Promise<ResolveEscalationResult> => {
-      const ns = params.namespace ?? namespace;
+      const ns = (params.namespace ?? namespace) ?? APP_ID;
       const hotMeshClient = await this.getHotMeshClient(null, ns);
-      const storeResult: ResolveEscalationResult & { signalKey?: string; topic?: string } =
-        await (hotMeshClient.engine.store as any).resolveEscalationByMetadata(params);
-      if (!storeResult.ok) return storeResult;
-      if (storeResult.signalKey && storeResult.topic) {
+      const store = hotMeshClient.engine.store as any;
+
+      // Metadata lookup: filter by namespace to scope correctly, but use existing.namespace for the UPDATE.
+      const existing = await store.findEscalationByMetadata(params.key, params.value, params.roles ?? null);
+      if (!existing) return { ok: false, reason: 'not-found' };
+      if (existing.status === 'resolved') return { ok: false, reason: 'already-resolved' };
+      if (existing.status === 'cancelled') return { ok: false, reason: 'already-cancelled' };
+
+      // Same atomic pattern as resolve(): signal INSERTs + UPDATE in one transaction.
+      const txn = store.transact();
+
+      if (existing.signal_key && existing.topic) {
+        const signalPayload = { id: existing.signal_key, data: params.resolverPayload ?? {} };
         try {
-          await this.workflow.signal(storeResult.signalKey, params.resolverPayload ?? {}, ns);
-        } catch {
-          return { ok: false, reason: 'signal-failed' };
-        }
+          const sc = await this.getHotMeshClient(`${ns}.wfs.signal`, ns);
+          await sc.engine.signal(`${ns}.wfs.signal`, signalPayload, StreamStatus.SUCCESS, 200, txn);
+        } catch { /* no collator hook rule — skip */ }
+        try {
+          const wc = await this.getHotMeshClient(`${ns}.wfs.wait`, ns);
+          await wc.engine.signal(`${ns}.wfs.wait`, signalPayload, StreamStatus.SUCCESS, 200, txn);
+        } catch { /* no waiter hook rule — skip */ }
       }
+
+      store.queueResolveEscalation(
+        { id: existing.id, namespace: existing.namespace ?? ns, resolverPayload: params.resolverPayload },
+        txn,
+      );
+
+      await txn.exec();
       return { ok: true };
     },
 
