@@ -512,11 +512,38 @@ class HotMesh {
   }
 
   /**
-   * Sends a signal to a paused workflow, delivering data and resuming
-   * execution. Pairs with `condition()` in the Durable workflow API.
+   * Sends a signal to a paused workflow, resuming its execution with the
+   * provided data. This is the low-level primitive used by both the Durable
+   * `client.workflow.signal()` wrapper and `client.escalations.resolve()`.
    *
-   * @param topic - The signal topic.
-   * @param data - Signal payload.
+   * The signal is matched to the waiting activity by the `id` field inside
+   * `data` — it must equal the value used in the hook rule's
+   * `conditions.match[0].expected` expression (typically the job ID).
+   *
+   * **YAML DAG hook example** — signal a workflow paused at a webhook:
+   *
+   * ```typescript
+   * // The hook activity is waiting on topic 'order.approval'
+   * // The hook rule expects: actual '{$self.hook.data.id}' === '{t1.output.data.id}'
+   * await hotMesh.signal('order.approval', { id: jobId, approved: true });
+   * ```
+   *
+   * **Durable workflow** — use `client.workflow.signal()` instead, which
+   * resolves the topic internally:
+   *
+   * ```typescript
+   * await client.workflow.signal('manager-approval', { approved: true });
+   * ```
+   *
+   * **With escalation** — use `client.escalations.resolve()` to atomically
+   * deliver the signal and mark the escalation row resolved:
+   *
+   * ```typescript
+   * await client.escalations.resolve({ id: escalationId, resolverPayload: { approved: true } });
+   * ```
+   *
+   * @param topic - The signal topic (must match a deployed hook rule).
+   * @param data - Signal payload. Must contain `id` matching the hook rule's expected value.
    */
   async signal(
     topic: string,

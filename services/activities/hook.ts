@@ -19,54 +19,79 @@ import { guid, sleepFor } from '../../modules/utils';
 import { Activity } from './activity';
 
 /**
- * A versatile pause/resume activity that supports three distinct patterns:
- * **time hook** (sleep), **web hook** (external signal), and **passthrough**
- * (immediate transition with optional data mapping).
+ * The most flexible activity type in the HotMesh YAML DAG. Depending on
+ * its configuration it operates as one of four distinct flavors:
  *
- * The hook activity is the most flexible activity type. Depending on its
- * YAML configuration, it operates in one of the following modes:
+ * | Flavor | Key field | Behavior |
+ * |---|---|---|
+ * | **Time** | `sleep` | Pauses for a duration, then resumes |
+ * | **Signal** | `hook.topic` | Pauses until an external signal arrives |
+ * | **Cycle** | `cycle: true` | Passthrough that also accepts re-entry from a `cycle` activity |
+ * | **Passthrough** | _(none)_ | Maps data and transitions immediately |
  *
- * ## Time Hook (Sleep)
+ * ---
  *
- * Pauses the flow for a specified duration in seconds. The `sleep` value
- * can be a literal number or a `@pipe` expression for dynamic delays
- * (e.g., exponential backoff).
+ * ## Flavor 1 — Time Hook (sleep)
+ *
+ * Pauses the flow for `sleep` seconds. The value can be a literal number
+ * or a `@pipe` expression (e.g., for exponential backoff).
  *
  * ```yaml
- * app:
- *   id: myapp
- *   version: '1'
- *   graphs:
- *     - subscribes: job.start
- *       expire: 300
+ * activities:
+ *   t1:
+ *     type: trigger
  *
- *       activities:
- *         t1:
- *           type: trigger
+ *   wait_30s:
+ *     type: hook
+ *     sleep: 30                            # pause for 30 seconds
+ *     job:
+ *       maps:
+ *         paused_at: '{$self.output.metadata.ac}'
  *
- *         delay:
- *           type: hook
- *           sleep: 60                        # pause for 60 seconds
- *           job:
- *             maps:
- *               paused_at: '{$self.output.metadata.ac}'
+ *   next_step:
+ *     type: hook
  *
- *         resume:
- *           type: hook
- *
- *       transitions:
- *         t1:
- *           - to: delay
- *         delay:
- *           - to: resume
+ * transitions:
+ *   t1:
+ *     - to: wait_30s
+ *   wait_30s:
+ *     - to: next_step
  * ```
  *
- * ## Web Hook (External Signal)
+ * Dynamic delay with `@pipe` (exponential backoff on retry):
  *
- * Registers a webhook listener on a named topic. The flow pauses until
- * an external signal is sent to the hook's topic. The signal data becomes
- * available as `$self.hook.data`. The `hooks` section at the graph level
- * routes incoming signals to the waiting activity.
+ * ```yaml
+ * wait_retry:
+ *   type: hook
+ *   sleep:
+ *     '@pipe':
+ *       - ['{$self.output.data.attempt}', 2]
+ *       - ['{@math.pow}']           # 1, 2, 4, 8, 16 …
+ * ```
+ *
+ * ---
+ *
+ * ## Flavor 2 — Signal Hook (webhook)
+ *
+ * Registers a listener on a named topic. The flow pauses until an
+ * external caller delivers a signal. Signal data is available as
+ * `$self.hook.data`. The graph-level `hooks` section routes incoming
+ * signals to the waiting activity via a `conditions.match` rule.
+ *
+ * **Send the signal** from any process:
+ *
+ * ```typescript
+ * await hotMesh.signal('order.approval', { id: jobId, approved: true });
+ * ```
+ *
+ * **Claim and delete** a pending signal via the collator key:
+ *
+ * ```typescript
+ * // Ack/delete — deliver a signal and clear the hook registration
+ * await hotMesh.signal('order.approval', { id: jobId, approved: false });
+ * ```
+ *
+ * **YAML configuration:**
  *
  * ```yaml
  * app:
@@ -100,20 +125,78 @@ import { Activity } from './activity';
  *           - to: done
  *
  *       hooks:
- *         order.approval:                    # external topic that delivers the signal
+ *         order.approval:                  # topic delivering the signal
  *           - to: wait_for_approval
  *             conditions:
  *               match:
- *                 - expected: '{t1.output.data.id}'
- *                   actual: '{$self.hook.data.id}'
+ *                 - expected: '{t1.output.data.id}'   # job ID
+ *                   actual: '{$self.hook.data.id}'    # signal payload ID
  * ```
  *
- * ## Passthrough (No Hook)
+ * ### Signal Hook with Escalation
  *
- * When neither `sleep` nor `hook` is configured, the hook activity acts
- * as a passthrough: it maps data and immediately transitions to children.
- * This is useful for data transformation, convergence points, or as a
- * cycle pivot (with `cycle: true`).
+ * Adding an `escalation:` block causes the hook activity to write one row
+ * to `public.hmsh_escalations` atomically inside its Leg 1 transaction —
+ * the same database commit that checkpoints job state. The row is
+ * immediately queryable and claimable by any external system.
+ *
+ * All field values support `@pipe` expressions so they can reference job
+ * data computed by earlier activities (e.g., `'{t1.output.data.region}'`).
+ *
+ * ```yaml
+ * wait_for_approval:
+ *   type: hook
+ *   hook:
+ *     type: object
+ *     properties:
+ *       approved: { type: boolean }
+ *   escalation:
+ *     role: manager                            # RBAC role that should act
+ *     type: order-approval
+ *     subtype: regional
+ *     priority: 2                              # lower = higher priority
+ *     description: Approve or reject the order
+ *     entity: '{t1.output.data.entityType}'
+ *     metadata:
+ *       orderId: '{t1.output.data.orderId}'
+ *       region: '{t1.output.data.region}'
+ *     envelope:
+ *       instructions: Review the attached order and approve or reject
+ *     expiresAt: '{t1.output.data.dueDate}'
+ *   job:
+ *     maps:
+ *       approved: '{$self.hook.data.approved}'
+ * ```
+ *
+ * **Claim and resolve the escalation** (resumes the waiting workflow):
+ *
+ * ```typescript
+ * // Find pending approvals for the manager role
+ * const [item] = await client.escalations.list({ role: 'manager', status: 'pending' });
+ *
+ * // Claim it (sets assigned_to + claim_expires_at)
+ * const claim = await client.escalations.claim({
+ *   id: item.id,
+ *   assignee: 'alice@company.com',
+ *   durationMinutes: 30,
+ * });
+ *
+ * // Resolve atomically delivers the signal and resumes the workflow
+ * await client.escalations.resolve({
+ *   id: item.id,
+ *   resolverPayload: { approved: true },
+ * });
+ * ```
+ *
+ * ---
+ *
+ * ## Flavor 3 — Cycle Pivot
+ *
+ * A passthrough hook with `cycle: true` acts as the named re-entry point
+ * for a `cycle` activity. On first entry it behaves identically to a
+ * passthrough (maps data, transitions forward). When a `cycle` activity
+ * downstream names it as its `ancestor`, the engine routes execution back
+ * to it, allowing a controlled loop without spawning a new job.
  *
  * ```yaml
  * app:
@@ -121,6 +204,7 @@ import { Activity } from './activity';
  *   version: '1'
  *   graphs:
  *     - subscribes: job.start
+ *       expire: 120
  *
  *       activities:
  *         t1:
@@ -128,34 +212,69 @@ import { Activity } from './activity';
  *
  *         pivot:
  *           type: hook
- *           cycle: true                      # enables re-entry from a cycle activity
- *           output:
- *             maps:
- *               retryCount: 0
- *           job:
- *             maps:
- *               counter: '{$self.output.data.retryCount}'
+ *           cycle: true                    # marks this as a loop re-entry point
  *
  *         do_work:
  *           type: worker
- *           topic: work.do
+ *           topic: work.process
+ *           output:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 counter: { type: number }
+ *           job:
+ *             maps:
+ *               counter: '{$self.output.data.counter}'
+ *
+ *         loop_back:
+ *           type: cycle
+ *           ancestor: pivot               # jumps back to `pivot` when condition holds
  *
  *       transitions:
  *         t1:
  *           - to: pivot
  *         pivot:
  *           - to: do_work
+ *         do_work:
+ *           - to: loop_back
+ *             conditions:
+ *               match:
+ *                 - expected: true
+ *                   actual:
+ *                     '@pipe':
+ *                       - ['{do_work.output.data.counter}', 5]
+ *                       - ['{@conditional.less_than}']
  * ```
+ *
+ * ---
+ *
+ * ## Flavor 4 — Passthrough
+ *
+ * When none of `sleep`, `hook`, or `cycle` is set, the hook activity
+ * immediately maps data and transitions to its children. Useful as a
+ * data transformation node or fan-in convergence point.
+ *
+ * ```yaml
+ * merge:
+ *   type: hook
+ *   output:
+ *     maps:
+ *       total: '{a1.output.data.subtotal}'   # copy field into activity output
+ *   job:
+ *     maps:
+ *       total: '{$self.output.data.total}'   # promote to job-level data
+ * ```
+ *
+ * ---
  *
  * ## Execution Model
  *
- * - **With `sleep` or `hook`**: Category A (duplex). Leg 1 registers the
- *   hook and saves state. Leg 2 fires when the timer expires or the
- *   external signal arrives (via `processTimeHookEvent` or
- *   `processWebHookEvent`).
- * - **Without `sleep` or `hook`**: Category B (passthrough). Uses the
- *   crash-safe `executeLeg1StepProtocol` to map data and transition
- *   to adjacent activities.
+ * - **Time and Signal flavors** — Category A (duplex). Leg 1 registers the
+ *   hook (timer or webhook), saves state, and commits. Leg 2 fires when the
+ *   timer fires or the external signal arrives.
+ * - **Cycle and Passthrough flavors** — Category B. Uses the crash-safe
+ *   `executeLeg1StepProtocol` (GUID ledger backed) to map data and
+ *   immediately transition to adjacent activities.
  *
  * @see {@link HookActivity} for the TypeScript interface
  */
