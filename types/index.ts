@@ -311,3 +311,22 @@ export {
 } from './telemetry';
 export { WorkListTaskType } from './task';
 export { TransitionMatch, TransitionRule, Transitions } from './transition';
+export {
+  ConditionQueueConfig,
+  EscalationEntry,
+  ClaimEscalationResult,
+  ClaimByMetadataResult,
+  ReleaseEscalationResult,
+  ResolveEscalationResult,
+  CancelEscalationResult,
+  ListEscalationsParams,
+  CreateEscalationParams,
+  UpdateEscalationParams,
+  AppendMilestonesParams,
+  ClaimEscalationParams,
+  ClaimByMetadataParams,
+  ReleaseEscalationParams,
+  ResolveEscalationParams,
+  ResolveByMetadataParams,
+  EscalateToRoleParams,
+} from './hmsh_escalations';

@@ -22,12 +22,14 @@ export function createBasicOperations(context: HashContext['context']) {
       value: string,
       multi?: ProviderTransaction,
       entity?: string,
+      originId?: string,
+      parentId?: string,
     ): Promise<number> {
       const { sql, params } = _hset(
         context,
         key,
         { [field]: value },
-        { nx: true, entity },
+        { nx: true, entity, originId, parentId },
       );
       if (multi) {
         (multi as Multi).addCommand(sql, params, 'number');
@@ -361,24 +363,24 @@ export function _hset(
     if (options?.nx) {
       // Use WHERE NOT EXISTS to enforce nx
       sql = `
-        INSERT INTO ${targetTable} (id, key, status, entity)
-        SELECT gen_random_uuid(), $1, $2, $3
+        INSERT INTO ${targetTable} (id, key, status, entity, origin_id, parent_id)
+        SELECT gen_random_uuid(), $1, $2, $3, $4, $5
         WHERE NOT EXISTS (
           SELECT 1 FROM ${targetTable}
           WHERE key = $1 AND is_live
         )
         RETURNING 1 as count
       `;
-      params.push(key, fields[':'], options?.entity ?? null);
+      params.push(key, fields[':'], options?.entity ?? null, options?.originId ?? null, options?.parentId ?? null);
     } else {
       // Update existing job or insert new one
       sql = `
-        INSERT INTO ${targetTable} (id, key, status, entity)
-        VALUES (gen_random_uuid(), $1, $2, $3)
+        INSERT INTO ${targetTable} (id, key, status, entity, origin_id, parent_id)
+        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5)
         ON CONFLICT (key) WHERE is_live DO UPDATE SET status = EXCLUDED.status
         RETURNING 1 as count
       `;
-      params.push(key, fields[':'], options?.entity ?? null);
+      params.push(key, fields[':'], options?.entity ?? null, options?.originId ?? null, options?.parentId ?? null);
     }
   } else if (isJobsTableResult) {
     const schemaName = context.safeName(context.appId);

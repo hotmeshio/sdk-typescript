@@ -26,6 +26,8 @@ interface BaseActivity {
   settings?: Record<string, any>;
   job?: Record<string, any>;
   hook?: Record<string, any>;
+  /** When present on a hook activity, writes a row to public.hmsh_escalations at suspension time. Values may use @pipe expressions resolved against the current job context. */
+  escalation?: Record<string, any>;
   telemetry?: Record<string, any>;
   emit?: boolean; //if true, the activity will emit a message to the `publishes` topic immediately before transitioning to adjacent activities
   sleep?: number; //@pipe /in seconds

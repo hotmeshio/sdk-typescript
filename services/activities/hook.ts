@@ -245,6 +245,12 @@ class Hook extends Activity {
     await this.setState(transaction);
     await CollatorService.notarizeLeg1Completion(this, transaction);
     await this.setStatus(0, transaction);
+
+    //enqueue escalation INSERT inside the Leg1 transaction so it is
+    //written atomically with the job state checkpoint — one committed
+    //unit, crash-safe, no separate recovery path needed.
+    await this.addEscalationToTransaction(transaction);
+
     await transaction.exec();
     telemetry.mapActivityAttributes();
 
@@ -259,6 +265,74 @@ class Hook extends Activity {
     if (pending) {
       await this.redeliverPendingSignal(pending);
     }
+  }
+
+  private async addEscalationToTransaction(transaction: import('../../types/provider').ProviderTransaction): Promise<void> {
+    if (!this.config.escalation || !this.config.hook?.topic) return;
+    const store = this.store as any;
+    if (typeof store.addEscalationToTransaction !== 'function') return;
+
+    const escalationConfig = this.config.escalation as Record<string, unknown>;
+    const jid = this.context.metadata.jid;
+    const appId = this.engine.appId;
+    const namespace = (this.engine as any).namespace ?? appId;
+    const resolveField = (v: unknown) =>
+      typeof v === 'string' ? Pipe.resolve(v, this.context) : v;
+
+    // Resolve metadata/envelope: a string value is a pipe expression that resolves
+    // to an object (factory path); an object value has per-key pipe expressions
+    // (YAML DAG path).
+    const resolveObj = (v: unknown): unknown => {
+      if (typeof v === 'string') return Pipe.resolve(v, this.context);
+      if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
+      const out: Record<string, unknown> = {};
+      for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+        out[k] = typeof val === 'string' ? Pipe.resolve(val, this.context) : val;
+      }
+      return out;
+    };
+
+    const params = {
+      type: resolveField(escalationConfig.type),
+      subtype: resolveField(escalationConfig.subtype),
+      entity: resolveField(escalationConfig.entity),
+      description: resolveField(escalationConfig.description),
+      role: resolveField(escalationConfig.role),
+      priority: resolveField(escalationConfig.priority),
+      originId: resolveField(escalationConfig.originId),
+      parentId: resolveField(escalationConfig.parentId),
+      initiatedBy: resolveField(escalationConfig.initiatedBy),
+      traceId: resolveField(escalationConfig.traceId),
+      spanId: resolveField(escalationConfig.spanId),
+      metadata: resolveObj(escalationConfig.metadata),
+      envelope: resolveObj(escalationConfig.envelope),
+      expiresAt: resolveField(escalationConfig.expiresAt),
+      taskQueue: resolveField(escalationConfig.taskQueue),
+      workflowType: resolveField(escalationConfig.workflowType),
+    };
+
+    // Skip the INSERT when no escalation fields resolved — this happens when
+    // the factory waiter runs for a condition() call that had no queueConfig.
+    if (
+      params.role == null && params.type == null &&
+      params.priority == null && params.metadata == null
+    ) return;
+
+    // Derive signal_key from the hook rule's expected condition — the same
+    // value registerWebHook stores as the signal lookup key.
+    const hookRule = await this.getHookRule(this.config.hook.topic);
+    const signalKey = hookRule?.conditions?.match?.[0]?.expected
+      ? Pipe.resolve(hookRule.conditions.match[0].expected as string, this.context)
+      : jid;
+
+    store.addEscalationToTransaction({
+      namespace,
+      appId,
+      signalKey,
+      topic: this.config.hook.topic,
+      workflowId: jid,
+      ...params,
+    }, transaction);
   }
 
   /**

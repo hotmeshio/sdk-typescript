@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.20.1",
+  "version": "0.22.0",
   "description": "Durable Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -50,6 +50,7 @@
     "test:durable:signal": "vitest run tests/durable/signal/postgres.test.ts",
     "test:durable:readonly": "docker compose --profile readonly up -d --build && docker compose exec hotmesh-readonly npx vitest run --config tests/durable/readonly/vitest.config.mts",
     "test:durable:unknown": "vitest run tests/durable/unknown/postgres.test.ts",
+    "test:durable:esclations": "HMSH_LOGLEVEL=info vitest run tests/durable/escalations",
     "test:durable:exporter": "HMSH_LOGLEVEL=info vitest run tests/durable/exporter",
     "test:durable:exporter:debug": "EXPORT_DEBUG=1 HMSH_LOGLEVEL=error vitest run tests/durable/basic/postgres.test.ts",
     "test:durable:codec": "vitest run tests/durable/codec/postgres.test.ts",

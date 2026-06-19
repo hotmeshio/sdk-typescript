@@ -266,6 +266,87 @@ export const KVTables = (context: PostgresStoreService) => ({
                 PRIMARY KEY (app_id, version)
               );
             `);
+            await client.query(`
+              CREATE TABLE IF NOT EXISTS public.hmsh_escalations (
+                id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                namespace        TEXT NOT NULL,
+                app_id           TEXT NOT NULL,
+                signal_key       TEXT,
+                topic            TEXT,
+                workflow_id      TEXT,
+                task_queue       TEXT,
+                workflow_type    TEXT,
+                type             TEXT,
+                subtype          TEXT,
+                entity           TEXT,
+                description      TEXT,
+                role             TEXT,
+                status           TEXT NOT NULL DEFAULT 'pending',
+                priority         INT  NOT NULL DEFAULT 5,
+                assigned_to      TEXT,
+                assigned_until   TIMESTAMPTZ,
+                claimed_at       TIMESTAMPTZ,
+                claim_expires_at TIMESTAMPTZ,
+                resolved_at      TIMESTAMPTZ,
+                escalation_payload JSONB,
+                resolver_payload   JSONB,
+                envelope           JSONB,
+                metadata           JSONB,
+                origin_id          TEXT,
+                parent_id          TEXT,
+                initiated_by       TEXT,
+                created_by         TEXT,
+                milestones         JSONB NOT NULL DEFAULT '[]',
+                trace_id           TEXT,
+                span_id            TEXT,
+                expires_at         TIMESTAMPTZ,
+                created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+              );
+            `);
+            await client.query(`
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_hmsh_esc_signal_key
+                ON public.hmsh_escalations(namespace, app_id, signal_key)
+                WHERE signal_key IS NOT NULL;
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_available
+                ON public.hmsh_escalations(namespace, app_id, role, priority ASC, created_at ASC)
+                WHERE status = 'pending';
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_available_expiry
+                ON public.hmsh_escalations(namespace, app_id, role, assigned_until, created_at DESC);
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_assigned
+                ON public.hmsh_escalations(assigned_to, assigned_until, created_at DESC)
+                WHERE status = 'claimed' AND assigned_to IS NOT NULL;
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_claim_expiry
+                ON public.hmsh_escalations(claim_expires_at)
+                WHERE status = 'claimed';
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_entity
+                ON public.hmsh_escalations(namespace, app_id, entity, created_at DESC)
+                WHERE entity IS NOT NULL;
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_workflow
+                ON public.hmsh_escalations(workflow_id)
+                WHERE workflow_id IS NOT NULL;
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_origin
+                ON public.hmsh_escalations(origin_id)
+                WHERE origin_id IS NOT NULL;
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_metadata
+                ON public.hmsh_escalations USING GIN(metadata jsonb_path_ops);
+            `);
             break;
 
           case 'relational_connection':
@@ -331,6 +412,8 @@ export const KVTables = (context: PostgresStoreService) => ({
                 id UUID DEFAULT gen_random_uuid(),
                 key TEXT NOT NULL,
                 entity TEXT,
+                origin_id TEXT,
+                parent_id TEXT,
                 status INTEGER NOT NULL,
                 context JSONB DEFAULT '{}',
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),

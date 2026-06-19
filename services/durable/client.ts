@@ -18,6 +18,24 @@ import {
 import { JobState } from '../../types/job';
 import { KeyType } from '../../modules/key';
 import { StreamStatus, StringAnyType } from '../../types';
+import {
+  EscalationEntry,
+  ClaimEscalationResult,
+  ClaimByMetadataResult,
+  ReleaseEscalationResult,
+  ResolveEscalationResult,
+  CancelEscalationResult,
+  ListEscalationsParams,
+  CreateEscalationParams,
+  UpdateEscalationParams,
+  AppendMilestonesParams,
+  ClaimEscalationParams,
+  ClaimByMetadataParams,
+  ReleaseEscalationParams,
+  ResolveEscalationParams,
+  ResolveByMetadataParams,
+  EscalateToRoleParams,
+} from '../../types/hmsh_escalations';
 
 import { Search } from './search';
 import { Entity } from './entity';
@@ -496,6 +514,146 @@ export class ClientService {
       }
     }
   }
+
+  /**
+   * Escalation queue operations. `public.hmsh_escalations` is a global table
+   * shared across all appIds that surfaces workflow signal pauses as a
+   * role-based, claimable, searchable queue.
+   *
+   * When a YAML hook activity suspends with an `escalation:` block, or a
+   * Durable `condition(signalId, config)` fires, one row is written atomically
+   * with full routing context. External systems (dashboards, AI agents, APIs)
+   * query by role/type/metadata, claim ownership, and call `resolve()` to
+   * atomically mark the row resolved and deliver the signal — resuming the
+   * waiting workflow in a single round-trip.
+   *
+   * **Status lifecycle:** `pending` → `claimed` → `resolved` | `cancelled`.
+   * Expired claims are returned to `pending` via `releaseExpired()`.
+   */
+  escalations = {
+    list: async (params?: ListEscalationsParams): Promise<EscalationEntry[]> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params?.namespace);
+      return (hotMeshClient.engine.store as any).listEscalations(params ?? {});
+    },
+
+    get: async (id: string, namespace?: string): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, namespace);
+      return (hotMeshClient.engine.store as any).getEscalation(id, namespace);
+    },
+
+    getBySignalKey: async (signalKey: string, namespace?: string): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, namespace);
+      return (hotMeshClient.engine.store as any).getEscalationBySignalKey(signalKey, namespace);
+    },
+
+    create: async (params: CreateEscalationParams): Promise<EscalationEntry> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).createEscalation(params);
+    },
+
+    /**
+     * Patches an existing escalation row. All fields are optional — only
+     * provided fields are written. `metadata` is merged (not replaced).
+     * Signal routing fields (`signalKey`, `topic`, `workflowId`, …) support
+     * the two-step enrichment pattern: create the row first, then enrich
+     * routing context once the workflow has started.
+     */
+    update: async (params: UpdateEscalationParams): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).updateEscalation(params);
+    },
+
+    /** Appends milestone entries to the escalation's audit trail array. */
+    appendMilestones: async (params: AppendMilestonesParams): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).appendEscalationMilestones(params);
+    },
+
+    claim: async (params: ClaimEscalationParams): Promise<ClaimEscalationResult> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).claimEscalation(params);
+    },
+
+    /**
+     * Atomically claims the highest-priority escalation matching a metadata
+     * key/value pair. Returns `candidatesExist` so callers can distinguish
+     * "nothing matched the filter" (`not-found`, `candidatesExist: 0`) from
+     * "matched rows exist but all are currently claimed" (`conflict`,
+     * `candidatesExist: N`).
+     */
+    claimByMetadata: async (params: ClaimByMetadataParams): Promise<ClaimByMetadataResult> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).claimEscalationByMetadata(params);
+    },
+
+    release: async (params: ReleaseEscalationParams): Promise<ReleaseEscalationResult> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).releaseEscalation(params);
+    },
+
+    /**
+     * Reassigns the escalation to a different role, clearing any current
+     * claim and returning status to `pending`. Used when an escalation must
+     * be handled by a different team or tier.
+     */
+    escalateToRole: async (params: EscalateToRoleParams): Promise<EscalationEntry | null> => {
+      const hotMeshClient = await this.getHotMeshClient(null, params.namespace);
+      return (hotMeshClient.engine.store as any).escalateEscalationToRole(params);
+    },
+
+    /**
+     * Terminates the escalation without delivering a signal. Rows in
+     * `pending` or `claimed` state are moved to `cancelled`. Terminal rows
+     * (`resolved`, `cancelled`) return `already-terminal`.
+     */
+    cancel: async (id: string, namespace?: string): Promise<CancelEscalationResult> => {
+      const hotMeshClient = await this.getHotMeshClient(null, namespace);
+      return (hotMeshClient.engine.store as any).cancelEscalation(id, namespace);
+    },
+
+    resolve: async (
+      params: ResolveEscalationParams,
+      namespace?: string,
+    ): Promise<ResolveEscalationResult> => {
+      const ns = params.namespace ?? namespace;
+      const hotMeshClient = await this.getHotMeshClient(null, ns);
+      const storeResult: ResolveEscalationResult & { signalKey?: string; topic?: string } =
+        await (hotMeshClient.engine.store as any).resolveEscalation(params);
+      if (!storeResult.ok) return storeResult;
+      if (storeResult.signalKey && storeResult.topic) {
+        try {
+          await this.workflow.signal(storeResult.signalKey, params.resolverPayload ?? {}, ns);
+        } catch {
+          return { ok: false, reason: 'signal-failed' };
+        }
+      }
+      return { ok: true };
+    },
+
+    resolveByMetadata: async (
+      params: ResolveByMetadataParams,
+      namespace?: string,
+    ): Promise<ResolveEscalationResult> => {
+      const ns = params.namespace ?? namespace;
+      const hotMeshClient = await this.getHotMeshClient(null, ns);
+      const storeResult: ResolveEscalationResult & { signalKey?: string; topic?: string } =
+        await (hotMeshClient.engine.store as any).resolveEscalationByMetadata(params);
+      if (!storeResult.ok) return storeResult;
+      if (storeResult.signalKey && storeResult.topic) {
+        try {
+          await this.workflow.signal(storeResult.signalKey, params.resolverPayload ?? {}, ns);
+        } catch {
+          return { ok: false, reason: 'signal-failed' };
+        }
+      }
+      return { ok: true };
+    },
+
+    releaseExpired: async (namespace?: string): Promise<number> => {
+      const hotMeshClient = await this.getHotMeshClient(null, namespace);
+      return (hotMeshClient.engine.store as any).releaseExpiredEscalations(namespace);
+    },
+  };
 
   /**
    * @private

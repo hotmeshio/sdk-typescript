@@ -1039,21 +1039,23 @@ export class WorkerService {
           const workflowInput = data.data as unknown as WorkflowDataType;
           const execIndex = counter.counter;
           const { workflowId, workflowDimension, originJobId } = workflowInput;
+          const pendingInterruption = interruptionRegistry[0];
           return withPatchMarkers({
             status: StreamStatus.SUCCESS,
             code: HMSH_CODE_DURABLE_WAIT,
             metadata: { ...data.metadata },
             data: {
               code: HMSH_CODE_DURABLE_WAIT,
-              signalId: interruptionRegistry[0].signalId,
+              signalId: pendingInterruption.signalId,
               index: execIndex,
               workflowDimension:
-                interruptionRegistry[0].workflowDimension ||
+                pendingInterruption.workflowDimension ||
                 workflowDimension ||
                 '',
-              duration: interruptionRegistry[0].duration,
+              duration: pendingInterruption.duration,
               workflowId,
               originJobId: originJobId || workflowId,
+              queueConfig: pendingInterruption.queueConfig ?? null,
             },
           } as StreamDataResponse);
         } else if (interruptionRegistry.length > 1) {

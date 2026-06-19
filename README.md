@@ -14,6 +14,7 @@ npm install @hotmeshio/hotmesh
 - **Crash-safe execution** — Every step is a committed row. If the process dies, it picks up where it left off.
 - **Distributed state machines** — Build stateful applications where every component can [fail and recover](https://github.com/hotmeshio/sdk-typescript/blob/main/services/collator/README.md).
 - **AI and training pipelines** — Multi-step AI workloads where each stage is expensive and must not be repeated on failure. A crashed pipeline resumes from the last committed step, not from the beginning.
+- **Human-in-the-loop workflows** — Workflow pauses that require external input are searchable, claimable rows in your database. Build approval queues, review flows, and AI handoffs without a separate task service.
 
 ## How it works in 30 seconds
 
@@ -168,6 +169,22 @@ const result = await Durable.workflow.executeChild({
 ```typescript
 const approval = await Durable.workflow.condition<{ approved: boolean }>('manager-approval');
 if (!approval.approved) return 'rejected';
+```
+
+**Human-in-the-loop** — When a workflow pauses waiting for input, it can write a searchable, claimable row to the database. External systems — dashboards, AI agents, APIs — query by role and metadata, claim ownership, and resolve to resume the workflow. The pause lives in `public.hmsh_escalations` alongside the rest of your workflow state.
+
+```typescript
+// workflow: pause and write a claimable row
+const decision = await Durable.workflow.condition<{ approved: boolean }>(
+  'approval',
+  { role: 'manager', type: 'order-review', metadata: { orderId } },
+);
+
+// elsewhere: find pending approvals, claim one, resolve it
+const [pending] = await client.escalations.list({ role: 'manager', status: 'pending' });
+await client.escalations.claim({ id: pending.id, assignee: 'alice@company.com' });
+await client.escalations.resolve({ id: pending.id, resolverPayload: { approved: true } });
+// the workflow resumes with { approved: true }
 ```
 
 ## Retries and error handling

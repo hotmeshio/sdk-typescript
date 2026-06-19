@@ -332,6 +332,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     type: string
                   originJobId:
                     type: string
+                  queueConfig:
+                    type: object
+                    description: optional escalation queue config passed to condition()
           job:
             maps:
               response: '{$self.output.data.response}'
@@ -366,6 +369,23 @@ const getWorkflowYAML = (app: string, version: string): string => {
         waiter:
           title: Waits for a matching signal or optional timeout (single condition)
           type: hook
+          escalation:
+            type: '{worker.output.data.queueConfig.type}'
+            subtype: '{worker.output.data.queueConfig.subtype}'
+            entity: '{worker.output.data.queueConfig.entity}'
+            description: '{worker.output.data.queueConfig.description}'
+            role: '{worker.output.data.queueConfig.role}'
+            priority: '{worker.output.data.queueConfig.priority}'
+            metadata: '{worker.output.data.queueConfig.metadata}'
+            envelope: '{worker.output.data.queueConfig.envelope}'
+            originId: '{worker.output.data.queueConfig.originId}'
+            parentId: '{worker.output.data.queueConfig.parentId}'
+            initiatedBy: '{worker.output.data.queueConfig.initiatedBy}'
+            traceId: '{worker.output.data.queueConfig.traceId}'
+            spanId: '{worker.output.data.queueConfig.spanId}'
+            expiresAt: '{worker.output.data.queueConfig.expiresAt}'
+            taskQueue: '{trigger.output.data.taskQueue}'
+            workflowType: '{trigger.output.data.workflowName}'
           sleep: '{worker.output.data.duration}'
           hook:
             type: object
@@ -1133,6 +1153,9 @@ const getWorkflowYAML = (app: string, version: string): string => {
                     type: string
                   originJobId:
                     type: string
+                  queueConfig:
+                    type: object
+                    description: optional escalation queue config passed to condition()
 
         signaler_sleeper:
           title: Pauses a single thread within the worker for a set amount of seconds while the main flow thread and all other subthreads remain active
@@ -1161,6 +1184,23 @@ const getWorkflowYAML = (app: string, version: string): string => {
         signaler_waiter:
           title: Waits for a matching signal or optional timeout (single condition in signal-in path)
           type: hook
+          escalation:
+            type: '{signaler_worker.output.data.queueConfig.type}'
+            subtype: '{signaler_worker.output.data.queueConfig.subtype}'
+            entity: '{signaler_worker.output.data.queueConfig.entity}'
+            description: '{signaler_worker.output.data.queueConfig.description}'
+            role: '{signaler_worker.output.data.queueConfig.role}'
+            priority: '{signaler_worker.output.data.queueConfig.priority}'
+            metadata: '{signaler_worker.output.data.queueConfig.metadata}'
+            envelope: '{signaler_worker.output.data.queueConfig.envelope}'
+            originId: '{signaler_worker.output.data.queueConfig.originId}'
+            parentId: '{signaler_worker.output.data.queueConfig.parentId}'
+            initiatedBy: '{signaler_worker.output.data.queueConfig.initiatedBy}'
+            traceId: '{signaler_worker.output.data.queueConfig.traceId}'
+            spanId: '{signaler_worker.output.data.queueConfig.spanId}'
+            expiresAt: '{signaler_worker.output.data.queueConfig.expiresAt}'
+            taskQueue: '{trigger.output.data.taskQueue}'
+            workflowType: '{trigger.output.data.workflowName}'
           sleep: '{signaler_worker.output.data.duration}'
           hook:
             type: object
