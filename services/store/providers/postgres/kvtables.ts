@@ -222,6 +222,166 @@ export const KVTables = (context: PostgresStoreService) => ({
       `);
     }
 
+    // v0.22.0: origin_id, parent_id on per-app jobs table (workflow lineage).
+    // ADD COLUMN IF NOT EXISTS on a nullable column with no DEFAULT is catalog-only
+    // in PG11+ — no table rewrite, brief AccessExclusiveLock only.
+    await client.query(`
+      ALTER TABLE ${jobsTable} ADD COLUMN IF NOT EXISTS origin_id TEXT;
+    `);
+    await client.query(`
+      ALTER TABLE ${jobsTable} ADD COLUMN IF NOT EXISTS parent_id TEXT;
+    `);
+    // Partial indexes — only cover the opt-in rows so build is near-instant.
+    const { rows: originIdxRows } = await client.query(
+      `SELECT 1 FROM pg_indexes WHERE indexname = $1 AND schemaname = $2 LIMIT 1`,
+      [`idx_${schemaName}_jobs_origin`, schemaName],
+    );
+    if (originIdxRows.length === 0) {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_${schemaName}_jobs_origin
+          ON ${jobsTable}(origin_id) WHERE origin_id IS NOT NULL;
+      `);
+    }
+    const { rows: parentIdxRows } = await client.query(
+      `SELECT 1 FROM pg_indexes WHERE indexname = $1 AND schemaname = $2 LIMIT 1`,
+      [`idx_${schemaName}_jobs_parent`, schemaName],
+    );
+    if (parentIdxRows.length === 0) {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_${schemaName}_jobs_parent
+          ON ${jobsTable}(parent_id) WHERE parent_id IS NOT NULL;
+      `);
+    }
+
+    // ─── v0.22.0+: public.hmsh_escalations global table migrations ───────────
+    // Use the fixed advisory XACT lock so concurrent deployments of DIFFERENT
+    // appIds (each holding their own per-appId session lock) don't race on the
+    // shared public table DDL. Transaction-level lock auto-releases on commit/rollback.
+    await client.query('BEGIN');
+    await client.query(
+      'SELECT pg_advisory_xact_lock($1)',
+      [0x484D5348], // 'HMSH' — same constant used in createTables()
+    );
+
+    // v0.22.0: create hmsh_escalations if missing (upgrade from pre-0.22.x).
+    // Column list matches createTables() exactly; task_id is NOT here because
+    // the ADD COLUMN below is the canonical way to add it to both fresh and
+    // existing tables in a single idempotent statement.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS public.hmsh_escalations (
+        id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        namespace        TEXT NOT NULL,
+        app_id           TEXT NOT NULL,
+        signal_key       TEXT,
+        topic            TEXT,
+        workflow_id      TEXT,
+        task_queue       TEXT,
+        workflow_type    TEXT,
+        type             TEXT,
+        subtype          TEXT,
+        entity           TEXT,
+        description      TEXT,
+        role             TEXT,
+        status           TEXT NOT NULL DEFAULT 'pending',
+        priority         INT  NOT NULL DEFAULT 5,
+        assigned_to      TEXT,
+        assigned_until   TIMESTAMPTZ,
+        claimed_at       TIMESTAMPTZ,
+        claim_expires_at TIMESTAMPTZ,
+        resolved_at      TIMESTAMPTZ,
+        escalation_payload JSONB,
+        resolver_payload   JSONB,
+        envelope           JSONB,
+        metadata           JSONB,
+        origin_id          TEXT,
+        parent_id          TEXT,
+        initiated_by       TEXT,
+        created_by         TEXT,
+        milestones         JSONB NOT NULL DEFAULT '[]',
+        trace_id           TEXT,
+        span_id            TEXT,
+        expires_at         TIMESTAMPTZ,
+        created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    // v0.22.3: task_id column — catalog-only ADD COLUMN (nullable TEXT, no DEFAULT,
+    // no table rewrite). IF NOT EXISTS makes this idempotent across all upgrade paths.
+    await client.query(`
+      ALTER TABLE public.hmsh_escalations ADD COLUMN IF NOT EXISTS task_id TEXT;
+    `);
+
+    // Ensure signal_key unique index exists.
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_hmsh_esc_signal_key
+        ON public.hmsh_escalations(namespace, app_id, signal_key)
+        WHERE signal_key IS NOT NULL;
+    `);
+
+    // v0.22.0: idx_hmsh_esc_available — predicate must be status='pending'.
+    // Fresh 0.22.0 installs may have this with the correct predicate already;
+    // ensure it exists.
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_available
+        ON public.hmsh_escalations(namespace, app_id, role, priority ASC, created_at ASC)
+        WHERE status = 'pending';
+    `);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_available_expiry
+        ON public.hmsh_escalations(namespace, app_id, role, assigned_until, created_at DESC);
+    `);
+
+    // v0.22.2: idx_hmsh_esc_assigned predicate changed from status='claimed' to
+    // status='pending' to match the implicit claim model. If the old predicate
+    // is present, drop and recreate so claimEscalation / list queries use it.
+    const { rows: assignedDefRows } = await client.query(`
+      SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_hmsh_esc_assigned' LIMIT 1
+    `);
+    if (
+      assignedDefRows.length > 0 &&
+      assignedDefRows[0].indexdef.includes("status = 'claimed'")
+    ) {
+      await client.query(`DROP INDEX IF EXISTS idx_hmsh_esc_assigned;`);
+    }
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_assigned
+        ON public.hmsh_escalations(assigned_to, assigned_until, created_at DESC)
+        WHERE status = 'pending' AND assigned_to IS NOT NULL;
+    `);
+
+    // v0.22.2: claim_expiry sweeper index is obsolete (releaseExpiredEscalations
+    // is a no-op in the implicit-claim model — availability is query-time computed).
+    await client.query(`DROP INDEX IF EXISTS idx_hmsh_esc_claim_expiry;`);
+
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_entity
+        ON public.hmsh_escalations(namespace, app_id, entity, created_at DESC)
+        WHERE entity IS NOT NULL;
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_workflow
+        ON public.hmsh_escalations(workflow_id)
+        WHERE workflow_id IS NOT NULL;
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_origin
+        ON public.hmsh_escalations(origin_id)
+        WHERE origin_id IS NOT NULL;
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_metadata
+        ON public.hmsh_escalations USING GIN(metadata jsonb_path_ops);
+    `);
+    // v0.22.3: task_id partial index.
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_task
+        ON public.hmsh_escalations(task_id)
+        WHERE task_id IS NOT NULL;
+    `);
+
+    await client.query('COMMIT');
   },
 
   async createTables(
