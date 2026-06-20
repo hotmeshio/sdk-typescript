@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.22.2",
+  "version": "0.22.3",
   "description": "Durable Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -86,7 +86,6 @@
     "test:trigger": "vitest run tests/unit/services/activities/trigger.test.ts",
     "test:virtual": "vitest run tests/virtual",
     "test:unit": "vitest run tests/unit",
-
     "prove": "docker compose exec hotmesh npx vitest run tests/durable 2>&1 | tee /tmp/hmsh-durable.txt && grep -E 'FAIL|Tests |Files ' /tmp/hmsh-durable.txt | tail -5",
     "prove:escalations": "docker compose exec hotmesh npx vitest run tests/durable/escalations/postgres.test.ts 2>&1 | tee /tmp/hmsh-escalations.txt && grep -E 'FAIL|Tests |Files ' /tmp/hmsh-escalations.txt | tail -5",
     "prove:functional": "docker compose exec hotmesh npx vitest run tests/functional 2>&1 | tee /tmp/hmsh-functional.txt && grep -E 'FAIL|Tests |Files ' /tmp/hmsh-functional.txt | tail -5",

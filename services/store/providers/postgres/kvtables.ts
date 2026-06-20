@@ -318,16 +318,15 @@ export const KVTables = (context: PostgresStoreService) => ({
               CREATE INDEX IF NOT EXISTS idx_hmsh_esc_available_expiry
                 ON public.hmsh_escalations(namespace, app_id, role, assigned_until, created_at DESC);
             `);
+            // idx_hmsh_esc_assigned: implicit-claim model uses status='pending', not 'claimed'
+            await client.query(`DROP INDEX IF EXISTS idx_hmsh_esc_assigned;`);
             await client.query(`
               CREATE INDEX IF NOT EXISTS idx_hmsh_esc_assigned
                 ON public.hmsh_escalations(assigned_to, assigned_until, created_at DESC)
-                WHERE status = 'claimed' AND assigned_to IS NOT NULL;
+                WHERE status = 'pending' AND assigned_to IS NOT NULL;
             `);
-            await client.query(`
-              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_claim_expiry
-                ON public.hmsh_escalations(claim_expires_at)
-                WHERE status = 'claimed';
-            `);
+            // idx_hmsh_esc_claim_expiry: no longer used (releaseExpiredEscalations is a no-op)
+            await client.query(`DROP INDEX IF EXISTS idx_hmsh_esc_claim_expiry;`);
             await client.query(`
               CREATE INDEX IF NOT EXISTS idx_hmsh_esc_entity
                 ON public.hmsh_escalations(namespace, app_id, entity, created_at DESC)
@@ -346,6 +345,15 @@ export const KVTables = (context: PostgresStoreService) => ({
             await client.query(`
               CREATE INDEX IF NOT EXISTS idx_hmsh_esc_metadata
                 ON public.hmsh_escalations USING GIN(metadata jsonb_path_ops);
+            `);
+            // task_id: nullable passthrough column for downstream compat (no FK)
+            await client.query(`
+              ALTER TABLE public.hmsh_escalations ADD COLUMN IF NOT EXISTS task_id TEXT;
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_task
+                ON public.hmsh_escalations(task_id)
+                WHERE task_id IS NOT NULL;
             `);
             break;
 

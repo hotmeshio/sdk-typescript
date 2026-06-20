@@ -55,6 +55,8 @@ export interface EscalationEntry {
   trace_id: string | null;
   span_id: string | null;
   expires_at: Date | null;
+  /** Nullable passthrough column — populated when downstream needs task-level context. */
+  task_id: string | null;
   created_at: Date;
   updated_at: Date;
   /** Computed by list(): true when the row is claimable (no active assignee or expired claim). */
@@ -68,7 +70,7 @@ export interface EscalationEntry {
  * surface an error to the user.
  */
 export type ClaimEscalationResult =
-  | { ok: true; entry: EscalationEntry }
+  | { ok: true; entry: EscalationEntry; isExtension: boolean }
   | { ok: false; reason: 'not-found' | 'conflict' };
 
 /**
@@ -81,11 +83,11 @@ export type ClaimByMetadataResult =
   | { ok: false; reason: 'not-found' | 'conflict'; candidatesExist: number };
 
 export type ResolveEscalationResult =
-  | { ok: true }
+  | { ok: true; entry: EscalationEntry }
   | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' };
 
 export type ReleaseEscalationResult =
-  | { ok: true }
+  | { ok: true; entry: EscalationEntry }
   | { ok: false; reason: 'not-found' | 'wrong-assignee' };
 
 export type CancelEscalationResult =
@@ -106,10 +108,43 @@ export interface ListEscalationsParams {
   originId?: string;
   /** When true, returns only rows without an active claim. When false, returns only actively claimed rows. */
   available?: boolean;
+  /** Exact priority match. */
+  priority?: number;
+  /** JSONB containment filter — rows whose `metadata` contains all provided keys/values. */
+  metadata?: Record<string, unknown>;
+  /** Filter by a set of UUIDs. */
+  ids?: string[];
+  /** Filter by `task_id` column. */
+  taskId?: string;
   sortBy?: 'created_at' | 'priority' | 'updated_at';
   sortOrder?: 'asc' | 'desc';
+  /**
+   * Multi-column sort. When provided, supersedes `sortBy`/`sortOrder`.
+   * Columns are applied left to right.
+   */
+  orderBy?: Array<{
+    column: 'priority' | 'created_at' | 'updated_at' | 'resolved_at' | 'role' | 'type';
+    direction: 'asc' | 'desc';
+  }>;
   limit?: number;
   offset?: number;
+}
+
+export interface StatsEscalationsParams {
+  namespace?: string;
+  /** RBAC scope — when an empty array is provided, all counts are zero. */
+  roles?: string[];
+  /** Counting window for created/resolved. Default: '24h'. */
+  period?: '1h' | '24h' | '7d' | '30d';
+}
+
+export interface EscalationStats {
+  pending: number;
+  claimed: number;
+  created: number;
+  resolved: number;
+  by_role: Array<{ role: string; pending: number; claimed: number }>;
+  by_type: Array<{ type: string; pending: number; claimed: number; resolved: number }>;
 }
 
 export interface CreateEscalationParams {
@@ -132,6 +167,7 @@ export interface CreateEscalationParams {
   createdBy?: string;
   traceId?: string;
   spanId?: string;
+  taskId?: string;
   escalationPayload?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   envelope?: Record<string, unknown>;
@@ -150,6 +186,7 @@ export interface UpdateEscalationParams {
   description?: string;
   priority?: number;
   role?: string;
+  taskId?: string;
   /** Merged into existing metadata (keys overwritten, others preserved) */
   metadata?: Record<string, unknown>;
   /** Replaces existing envelope */
@@ -183,6 +220,8 @@ export interface ClaimByMetadataParams {
   assignee?: string;
   durationMinutes?: number;
   roles?: string[];
+  /** Merged (not replaced) into the claimed row's metadata in the same atomic UPDATE. */
+  metadata?: Record<string, unknown>;
 }
 
 export interface ReleaseEscalationParams {
@@ -210,6 +249,31 @@ export interface EscalateToRoleParams {
   id: string;
   targetRole: string;
   namespace?: string;
+}
+
+export interface ClaimManyParams {
+  ids: string[];
+  namespace?: string;
+  assignee: string;
+  durationMinutes?: number;
+}
+
+export interface EscalateManyToRoleParams {
+  ids: string[];
+  namespace?: string;
+  targetRole: string;
+}
+
+export interface UpdateManyPriorityParams {
+  ids: string[];
+  namespace?: string;
+  priority: number;
+}
+
+export interface ResolveManyParams {
+  ids: string[];
+  namespace?: string;
+  resolverPayload?: Record<string, unknown>;
 }
 
 /**
