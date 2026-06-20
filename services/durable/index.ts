@@ -1,6 +1,6 @@
 import { HotMesh } from '../hotmesh';
 import { ContextType, WorkflowInboundCallsInterceptor, WorkflowOutboundCallsInterceptor, ActivityInboundCallsInterceptor } from '../../types/durable';
-import { guid } from '../../modules/utils';
+import { guid, uuid } from '../../modules/utils';
 
 import { ClientService } from './client';
 import { ConnectionService } from './connection';
@@ -317,6 +317,13 @@ class DurableClass {
    * Generate a unique identifier for workflow IDs
    */
   static guid = guid;
+
+  /**
+   * Generate a standard RFC 4122 v4 UUID — use for DB primary keys and
+   * any context that requires a hyphenated UUID format rather than the
+   * compact HotMesh guid format.
+   */
+  static uuid = uuid;
 
   /**
    * Provision a scoped Postgres role for a worker. The role can only

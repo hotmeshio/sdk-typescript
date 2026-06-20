@@ -329,4 +329,5 @@ export {
   ResolveEscalationParams,
   ResolveByMetadataParams,
   EscalateToRoleParams,
+  MigrateEscalationParams,
 } from './hmsh_escalations';
