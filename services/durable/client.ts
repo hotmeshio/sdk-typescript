@@ -28,6 +28,11 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
 /**
  * Workflow client. Starts workflows, sends signals, and reads results.
  *
+ * Pass `config.events` to receive system-event notifications from all
+ * escalation operations performed through this client. Events fire
+ * post-commit, from this process only — no fanout to other containers.
+ * See `EventsConfig` and `SystemEvent` in `types/system_events` for the full ontology.
+ *
  * @example
  * ```typescript
  * import { Durable } from '@hotmeshio/hotmesh';
@@ -37,6 +42,13 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
  *   connection: {
  *     class: Postgres,
  *     options: { connectionString: 'postgresql://usr:pwd@localhost:5432/db' },
+ *   },
+ *   // optional — wire lifecycle events
+ *   events: {
+ *     publish: (event) => {
+ *       // event.type follows system.escalation.{id}.{verb}
+ *       myEventBus.emit(event.type, event.data);
+ *     },
  *   },
  * });
  *
@@ -87,9 +99,9 @@ export class ClientService {
    */
   constructor(config: ClientConfig) {
     this.connection = config.connection;
-    // Inject our getHotMeshClient so the escalation client shares the same engine pool.
     this.escalations = new EscalationClientService({
       getHotMeshClient: this.getHotMeshClient.bind(this),
+      events: config.events,
     });
   }
 

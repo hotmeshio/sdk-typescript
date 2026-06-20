@@ -1,4 +1,5 @@
-import { guid } from '../../modules/utils';
+import { formatISODate, guid } from '../../modules/utils';
+import { SystemEvent } from '../../types/system_events';
 import { ConnectorService } from '../connector/factory';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
@@ -165,6 +166,8 @@ class HotMesh {
    */
   workers: WorkerService[] = [];
   logger: ILogger;
+  /** @private — retained from init config for stop() lifecycle event */
+  private _eventsPublish?: (event: SystemEvent) => void | Promise<void>;
 
   static disconnecting = false;
 
@@ -193,6 +196,13 @@ class HotMesh {
    * The engine manages workflow state in Postgres. Workers are callback
    * functions that consume messages from Postgres streams — they can
    * run on the same process or on entirely separate servers.
+   *
+   * Pass `config.events` to receive lifecycle events from this engine:
+   * - `system.engine.{appId}.started` — fires when init completes.
+   * - `system.engine.{appId}.deployed` — fires after schema deploy.
+   * - `system.engine.{appId}.stopped` — fires when `stop()` is called.
+   * - `system.escalation.{id}.created` — fires from the hook Leg1 path
+   *   (YAML `escalation:` block) when the escalation row commits.
    *
    * @param config - Engine connection, worker definitions, app ID, and options.
    * @returns A running HotMesh instance joined to the quorum.
@@ -227,6 +237,27 @@ class HotMesh {
     }
 
     await Init.doWork(instance, config, instance.logger);
+
+    // Thread events.publish to the store (used by the hook Leg1 path and deploy).
+    if (config.events?.publish && instance.engine?.store) {
+      (instance.engine.store as any).eventsPublish = config.events.publish;
+    }
+
+    // Retain for stop() lifecycle event.
+    if (config.events?.publish) {
+      instance._eventsPublish = config.events.publish;
+      const ts = new Date().toISOString();
+      const event: SystemEvent = {
+        event_id: `${config.appId}:started:${ts}`,
+        type: `system.engine.${config.appId}.started`,
+        ts,
+        namespace: instance.namespace,
+        app_id: config.appId,
+        data: { appId: config.appId, guid: instance.guid },
+      };
+      void Promise.resolve(config.events.publish(event)).catch(() => { /* best-effort */ });
+    }
+
     return instance;
   }
 
@@ -587,6 +618,18 @@ class HotMesh {
     this.workers?.forEach((worker: WorkerService) => {
       worker.stop();
     });
+    if (this._eventsPublish) {
+      const ts = new Date().toISOString();
+      const event: SystemEvent = {
+        event_id: `${this.appId}:stopped:${ts}`,
+        type: `system.engine.${this.appId}.stopped`,
+        ts,
+        namespace: this.namespace,
+        app_id: this.appId,
+        data: { appId: this.appId, guid: this.guid },
+      };
+      void Promise.resolve(this._eventsPublish(event)).catch(() => { /* best-effort */ });
+    }
   }
 
   /**

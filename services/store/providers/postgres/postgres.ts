@@ -66,6 +66,8 @@ class PostgresStoreService extends StoreService<
   pgClient: PostgresClientType;
   kvTables: ReturnType<typeof KVTables>;
   isScout = false;
+  /** Set by HotMesh.init() when `events.publish` is configured. Used by hook.ts Leg1 path. */
+  eventsPublish?: (event: import('../../../../types/system_events').SystemEvent) => void | Promise<void>;
 
   transact(): ProviderTransaction {
     return this.storeClient.transact();
@@ -1921,9 +1923,9 @@ class PostgresStoreService extends StoreService<
     transaction: import('../../../../types/provider').ProviderTransaction,
   ): void {
     (transaction as any).addCommand(
-      this._escalationInsertSql,
+      this._escalationInsertSql + ' RETURNING *',
       this._escalationInsertParams(params),
-      'void',
+      'object',
     );
   }
 
@@ -2319,20 +2321,22 @@ class PostgresStoreService extends StoreService<
         FROM target
         WHERE public.hmsh_escalations.id = target.id
           AND target.status = 'pending'
-        RETURNING public.hmsh_escalations.id
+        RETURNING public.hmsh_escalations.*
       )
       SELECT t.id, t.status AS prior_status,
         CASE
           WHEN c.id IS NOT NULL THEN 'cancelled'
           WHEN t.id IS NULL     THEN 'not-found'
           ELSE 'already-terminal'
-        END AS outcome
+        END AS outcome,
+        row_to_json(c.*) AS entry_json
       FROM (SELECT * FROM target) t
-      FULL OUTER JOIN (SELECT id FROM cancelled) c ON c.id = t.id
+      FULL OUTER JOIN (SELECT * FROM cancelled) c ON c.id = t.id
     `, namespace ? [id, namespace] : [id]);
     if (!result.rows[0] || result.rows[0].outcome === 'not-found') return { ok: false, reason: 'not-found' };
     if (result.rows[0].outcome === 'already-terminal') return { ok: false, reason: 'already-terminal' };
-    return { ok: true };
+    const entry = result.rows[0].entry_json as import('../../../../types/hmsh_escalations').EscalationEntry;
+    return { ok: true, entry };
   }
 
   async escalateEscalationToRole(params: import('../../../../types/hmsh_escalations').EscalateToRoleParams): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
@@ -2404,7 +2408,7 @@ class PostgresStoreService extends StoreService<
 
   async claimManyEscalations(
     params: import('../../../../types/hmsh_escalations').ClaimManyParams,
-  ): Promise<{ claimed: number; skipped: number }> {
+  ): Promise<{ entries: import('../../../../types/hmsh_escalations').EscalationEntry[]; skipped: number }> {
     const { ids, namespace, assignee, durationMinutes = 1 } = params;
     const result = await this.pgClient.query(
       `UPDATE public.hmsh_escalations
@@ -2416,11 +2420,12 @@ class PostgresStoreService extends StoreService<
        WHERE id = ANY($3::uuid[])
          ${namespace ? 'AND namespace = $4' : ''}
          AND status = 'pending'
-         AND (assigned_to IS NULL OR assigned_until IS NULL OR assigned_until <= NOW() OR assigned_to = $1)`,
+         AND (assigned_to IS NULL OR assigned_until IS NULL OR assigned_until <= NOW() OR assigned_to = $1)
+       RETURNING *`,
       namespace ? [assignee, durationMinutes, ids, namespace] : [assignee, durationMinutes, ids],
     );
-    const claimed = result.rowCount ?? 0;
-    return { claimed, skipped: ids.length - claimed };
+    const entries = result.rows as import('../../../../types/hmsh_escalations').EscalationEntry[];
+    return { entries, skipped: ids.length - entries.length };
   }
 
   async escalateManyEscalationsToRole(

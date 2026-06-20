@@ -347,6 +347,23 @@ type HotMeshConfig = {
   taskQueue?: string;
   engine?: HotMeshEngine;
   workers?: HotMeshWorker[];
+  /**
+   * Optional system-event sink. When provided, the engine calls
+   * `events.publish` post-commit for each durable transition it performs
+   * (escalation lifecycle, engine start/stop, deploy). Fire-and-forget.
+   *
+   * @example
+   * ```typescript
+   * const hotMesh = await HotMesh.init({
+   *   appId: 'myapp',
+   *   engine: { connection: { class: Postgres, options: { ... } } },
+   *   events: {
+   *     publish: (e) => nats.publish(e.type, JSON.stringify(e)),
+   *   },
+   * });
+   * ```
+   */
+  events?: import('./system_events').EventsConfig;
 };
 
 type HotMeshGraph = {

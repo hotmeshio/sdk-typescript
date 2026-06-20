@@ -150,6 +150,12 @@ export class WorkerService {
    * @private
    */
   activityRunner: HotMesh;
+  /** @private — retained from create() config for stop() lifecycle event */
+  _eventsPublish?: (event: import('../../types/system_events').SystemEvent) => void | Promise<void>;
+  /** @private */
+  _eventsTaskQueue?: string;
+  /** @private */
+  _eventsAppId?: string;
 
   /**
    * @private
@@ -605,6 +611,23 @@ export class WorkerService {
     );
     Search.configureSearchIndex(worker.workflowRunner, config.search);
     await WorkerService.activateWorkflow(worker.workflowRunner);
+
+    // Fire system.worker.{taskQueue}.started post-init (best-effort).
+    if (config.events?.publish) {
+      worker._eventsPublish = config.events.publish;
+      worker._eventsTaskQueue = taskQueue;
+      worker._eventsAppId = targetNamespace;
+      const ts = new Date().toISOString();
+      void Promise.resolve(config.events.publish({
+        event_id: `${taskQueue}:started:${ts}`,
+        type: `system.worker.${taskQueue}.started`,
+        ts,
+        namespace: targetNamespace,
+        app_id: targetNamespace,
+        data: { taskQueue, appId: targetNamespace },
+      })).catch(() => { /* best-effort */ });
+    }
+
     return worker;
   }
 
@@ -636,6 +659,25 @@ export class WorkerService {
    */
   async run() {
     this.workflowRunner.engine.logger.info('durable-worker-running');
+  }
+
+  /**
+   * Stops the worker's HotMesh instances and fires `system.worker.{taskQueue}.stopped`.
+   */
+  stop() {
+    this.workflowRunner?.stop();
+    this.activityRunner?.stop();
+    if (this._eventsPublish && this._eventsTaskQueue) {
+      const ts = new Date().toISOString();
+      void Promise.resolve(this._eventsPublish({
+        event_id: `${this._eventsTaskQueue}:stopped:${ts}`,
+        type: `system.worker.${this._eventsTaskQueue}.stopped`,
+        ts,
+        namespace: this._eventsAppId ?? '',
+        app_id: this._eventsAppId ?? '',
+        data: { taskQueue: this._eventsTaskQueue, appId: this._eventsAppId },
+      })).catch(() => { /* best-effort */ });
+    }
   }
 
   /**

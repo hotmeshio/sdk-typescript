@@ -1,8 +1,9 @@
 import {
   HMSH_LOGLEVEL,
 } from '../../modules/enums';
-import { hashOptions } from '../../modules/utils';
+import { formatISODate, hashOptions } from '../../modules/utils';
 import { HotMesh } from '../hotmesh';
+import { EventsConfig, SystemEvent, EscalationVerb } from '../../types/system_events';
 import { Connection } from '../../types/durable';
 import { StreamStatus } from '../../types';
 import {
@@ -42,6 +43,12 @@ export interface EscalationClientConfig {
    * When provided, the client reuses the caller's engine pool — no extra connections.
    */
   getHotMeshClient?: GetHotMeshFn;
+  /**
+   * Optional system-event sink. When set, this client calls `events.publish`
+   * post-commit for every escalation lifecycle transition it performs.
+   * Fire-and-forget; a publish error never fails the committed operation.
+   */
+  events?: EventsConfig;
 }
 
 /**
@@ -81,18 +88,55 @@ export interface EscalationClientConfig {
  */
 export class EscalationClientService {
   private readonly _engine: GetHotMeshFn;
+  private readonly _events?: EventsConfig;
 
   static instances = new Map<string, HotMesh | Promise<HotMesh>>();
 
   constructor(config: EscalationClientConfig = {}) {
     if (config.getHotMeshClient) {
-      // Reuse a caller-supplied engine factory (e.g. Durable.Client) — no extra connections.
       this._engine = config.getHotMeshClient;
     } else if (config.connection) {
       this._engine = this._makeEngineFactory(config.connection);
     } else {
       throw new Error('EscalationClient requires either `connection` or `getHotMeshClient`');
     }
+    this._events = config.events;
+  }
+
+  /**
+   * Fires the configured `events.publish` hook post-commit.
+   * Detached (not awaited); a publish error never fails the caller.
+   * @private
+   */
+  private _emit(verb: EscalationVerb, entry: EscalationEntry): void {
+    if (!this._events?.publish) return;
+    const ts = new Date().toISOString();
+    const updatedAt = entry.updated_at
+      ? formatISODate(entry.updated_at)
+      : ts;
+    const event: SystemEvent = {
+      event_id: `${entry.id}:${verb}:${updatedAt}`,
+      type: `system.escalation.${entry.id}.${verb}`,
+      ts,
+      namespace: entry.namespace ?? '',
+      app_id: entry.app_id ?? '',
+      workflow_id: entry.workflow_id ?? undefined,
+      topic: entry.topic ?? undefined,
+      origin_id: entry.origin_id ?? undefined,
+      parent_id: entry.parent_id ?? undefined,
+      trace_id: entry.trace_id ?? undefined,
+      span_id: entry.span_id ?? undefined,
+      data: entry as unknown as Record<string, unknown>,
+    };
+    void Promise.resolve(this._events.publish(event)).catch(() => { /* best-effort */ });
+  }
+
+  /**
+   * Fires per-row events for bulk operations. Skipped rows are not emitted.
+   * @private
+   */
+  private _emitMany(verb: EscalationVerb, entries: EscalationEntry[]): void {
+    for (const entry of entries) this._emit(verb, entry);
   }
 
   private _makeEngineFactory(connection: Connection): GetHotMeshFn {
@@ -194,7 +238,9 @@ export class EscalationClientService {
    */
   async create(params: CreateEscalationParams): Promise<EscalationEntry> {
     const hm = await this._engine(null, params.namespace);
-    return (hm.engine.store as any).createEscalation(params);
+    const entry = await (hm.engine.store as any).createEscalation(params);
+    if (entry) this._emit('created', entry);
+    return entry;
   }
 
   /**
@@ -219,7 +265,9 @@ export class EscalationClientService {
    */
   async claim(params: ClaimEscalationParams): Promise<ClaimEscalationResult> {
     const hm = await this._engine(null, params.namespace);
-    return (hm.engine.store as any).claimEscalation(params);
+    const result = await (hm.engine.store as any).claimEscalation(params);
+    if (result.ok === true) this._emit('claimed', result.entry);
+    return result;
   }
 
   /**
@@ -230,13 +278,17 @@ export class EscalationClientService {
    */
   async claimByMetadata(params: ClaimByMetadataParams): Promise<ClaimByMetadataResult> {
     const hm = await this._engine(null, params.namespace);
-    return (hm.engine.store as any).claimEscalationByMetadata(params);
+    const result = await (hm.engine.store as any).claimEscalationByMetadata(params);
+    if (result.ok === true) this._emit('claimed', result.entry);
+    return result;
   }
 
   /** Releases a claimed escalation, returning it to available status. */
   async release(params: ReleaseEscalationParams): Promise<ReleaseEscalationResult> {
     const hm = await this._engine(null, params.namespace);
-    return (hm.engine.store as any).releaseEscalation(params);
+    const result = await (hm.engine.store as any).releaseEscalation(params);
+    if (result.ok === true) this._emit('released', result.entry);
+    return result;
   }
 
   /**
@@ -245,7 +297,9 @@ export class EscalationClientService {
    */
   async escalateToRole(params: EscalateToRoleParams): Promise<EscalationEntry | null> {
     const hm = await this._engine(null, params.namespace);
-    return (hm.engine.store as any).escalateEscalationToRole(params);
+    const entry = await (hm.engine.store as any).escalateEscalationToRole(params);
+    if (entry) this._emit('reassigned', entry);
+    return entry;
   }
 
   /**
@@ -254,7 +308,9 @@ export class EscalationClientService {
    */
   async cancel(id: string, namespace?: string): Promise<CancelEscalationResult> {
     const hm = await this._engine(null, namespace);
-    return (hm.engine.store as any).cancelEscalation(id, namespace);
+    const result = await (hm.engine.store as any).cancelEscalation(id, namespace);
+    if (result.ok === true) this._emit('cancelled', result.entry);
+    return result;
   }
 
   /**
@@ -282,6 +338,7 @@ export class EscalationClientService {
         data: params.resolverPayload ?? {},
       });
     }
+    this._emit('resolved', dbResult.entry);
     return { ok: true, entry: dbResult.entry };
   }
 
@@ -306,6 +363,7 @@ export class EscalationClientService {
         data: params.resolverPayload ?? {},
       });
     }
+    this._emit('resolved', dbResult.entry);
     return { ok: true, entry: dbResult.entry };
   }
 
@@ -340,7 +398,9 @@ export class EscalationClientService {
    */
   async claimMany(params: ClaimManyParams): Promise<{ claimed: number; skipped: number }> {
     const hm = await this._engine(null, params.namespace);
-    return (hm.engine.store as any).claimManyEscalations(params);
+    const { entries, skipped } = await (hm.engine.store as any).claimManyEscalations(params);
+    this._emitMany('claimed', entries);
+    return { claimed: entries.length, skipped };
   }
 
   /**
@@ -367,7 +427,9 @@ export class EscalationClientService {
    */
   async resolveMany(params: ResolveManyParams): Promise<EscalationEntry[]> {
     const hm = await this._engine(null, params.namespace);
-    return (hm.engine.store as any).resolveManyEscalations(params);
+    const entries = await (hm.engine.store as any).resolveManyEscalations(params);
+    this._emitMany('resolved', entries);
+    return entries;
   }
 
   // ─── Aggregates ─────────────────────────────────────────────────────────────
