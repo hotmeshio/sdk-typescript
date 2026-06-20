@@ -31,7 +31,7 @@ import { APP_ID, APP_VERSION, getWorkflowYAML } from './schemas/factory';
  * Pass `config.events` to receive system-event notifications from all
  * escalation operations performed through this client. Events fire
  * post-commit, from this process only — no fanout to other containers.
- * See {@link EventsConfig} and {@link SystemEvent} for the full ontology.
+ * See `EventsConfig` and `SystemEvent` in `types/system_events` for the full ontology.
  *
  * @example
  * ```typescript
