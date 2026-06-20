@@ -35,6 +35,7 @@ import {
   ResolveEscalationParams,
   ResolveByMetadataParams,
   EscalateToRoleParams,
+  MigrateEscalationParams,
 } from '../../types/hmsh_escalations';
 
 import { Search } from './search';
@@ -774,35 +775,25 @@ export class ClientService {
       const hotMeshClient = await this.getHotMeshClient(null, ns);
       const store = hotMeshClient.engine.store as any;
 
-      // UUID primary-key lookup — no namespace filter needed; use existing.namespace for the UPDATE.
-      const existing = await store.getEscalation(params.id);
-      if (!existing) return { ok: false, reason: 'not-found' };
-      if (existing.status === 'resolved') return { ok: false, reason: 'already-resolved' };
-      if (existing.status === 'cancelled') return { ok: false, reason: 'already-cancelled' };
+      // store.resolveEscalation() uses FOR UPDATE inside its CTE, serializing concurrent
+      // callers at the DB level. The second caller blocks on the row lock, reads
+      // 'already-resolved' after the first commits, and returns — no signal is queued.
+      // This eliminates the double-signal race that the previous KVTransaction approach
+      // had: two concurrent callers could both pass the unlocked getEscalation() read,
+      // both queue signal INSERTs, and both commit them — even though only one UPDATE won.
+      const dbResult = await store.resolveEscalation({
+        id: params.id,
+        resolverPayload: params.resolverPayload,
+        // namespace intentionally omitted — UUID lookup; passing ns would miss rows
+        // stored under namespace 'hmsh' (the engine default) when ns = APP_ID = 'durable'.
+      });
+      if (!dbResult.ok) return dbResult;
 
-      // Build a single atomic transaction: signal stream INSERTs + escalation UPDATE in one BEGIN/COMMIT.
-      // engine.signal() with a transaction queues an INSERT into the stream table without executing;
-      // queueResolveEscalation() queues the status UPDATE; txn.exec() commits all in one round-trip.
-      const txn = store.transact();
-
-      if (existing.signal_key && existing.topic) {
-        const signalPayload = { id: existing.signal_key, data: params.resolverPayload ?? {} };
-        try {
-          const sc = await this.getHotMeshClient(`${ns}.wfs.signal`, ns);
-          await sc.engine.signal(`${ns}.wfs.signal`, signalPayload, StreamStatus.SUCCESS, 200, txn);
-        } catch { /* no collator hook rule — skip */ }
-        try {
-          const wc = await this.getHotMeshClient(`${ns}.wfs.wait`, ns);
-          await wc.engine.signal(`${ns}.wfs.wait`, signalPayload, StreamStatus.SUCCESS, 200, txn);
-        } catch { /* no waiter hook rule — skip */ }
+      if (dbResult.signalKey) {
+        const signalPayload = { id: dbResult.signalKey, data: params.resolverPayload ?? {} };
+        const delivered = await this._deliverEscalationSignal(ns, dbResult.topic, signalPayload);
+        if (!delivered) return { ok: false, reason: 'signal-failed' };
       }
-
-      store.queueResolveEscalation(
-        { id: params.id, namespace: existing.namespace ?? ns, resolverPayload: params.resolverPayload },
-        txn,
-      );
-
-      await txn.exec();
       return { ok: true };
     },
 
@@ -828,34 +819,51 @@ export class ClientService {
       const hotMeshClient = await this.getHotMeshClient(null, ns);
       const store = hotMeshClient.engine.store as any;
 
-      // Metadata lookup: filter by namespace to scope correctly, but use existing.namespace for the UPDATE.
-      const existing = await store.findEscalationByMetadata(params.key, params.value, params.roles ?? null);
-      if (!existing) return { ok: false, reason: 'not-found' };
-      if (existing.status === 'resolved') return { ok: false, reason: 'already-resolved' };
-      if (existing.status === 'cancelled') return { ok: false, reason: 'already-cancelled' };
+      // Same FOR UPDATE CTE serialization as resolve(). Metadata filter selects
+      // the highest-priority matching row; the lock prevents concurrent callers
+      // from both resolving it.
+      const dbResult = await store.resolveEscalationByMetadata({
+        key: params.key,
+        value: params.value,
+        resolverPayload: params.resolverPayload,
+        roles: params.roles,
+      });
+      if (!dbResult.ok) return dbResult;
 
-      // Same atomic pattern as resolve(): signal INSERTs + UPDATE in one transaction.
-      const txn = store.transact();
-
-      if (existing.signal_key && existing.topic) {
-        const signalPayload = { id: existing.signal_key, data: params.resolverPayload ?? {} };
-        try {
-          const sc = await this.getHotMeshClient(`${ns}.wfs.signal`, ns);
-          await sc.engine.signal(`${ns}.wfs.signal`, signalPayload, StreamStatus.SUCCESS, 200, txn);
-        } catch { /* no collator hook rule — skip */ }
-        try {
-          const wc = await this.getHotMeshClient(`${ns}.wfs.wait`, ns);
-          await wc.engine.signal(`${ns}.wfs.wait`, signalPayload, StreamStatus.SUCCESS, 200, txn);
-        } catch { /* no waiter hook rule — skip */ }
+      if (dbResult.signalKey) {
+        const signalPayload = { id: dbResult.signalKey, data: params.resolverPayload ?? {} };
+        const delivered = await this._deliverEscalationSignal(ns, dbResult.topic, signalPayload);
+        if (!delivered) return { ok: false, reason: 'signal-failed' };
       }
-
-      store.queueResolveEscalation(
-        { id: existing.id, namespace: existing.namespace ?? ns, resolverPayload: params.resolverPayload },
-        txn,
-      );
-
-      await txn.exec();
       return { ok: true };
+    },
+
+    /**
+     * Full-fidelity migration: inserts an escalation row preserving the original
+     * UUID and all lifecycle state. Returns the inserted row, or `null` if the
+     * UUID already exists (idempotent — safe to call multiple times with the same
+     * `params.id`). Use this to migrate rows from a legacy escalation table to
+     * `hmsh_escalations` without losing original IDs or state.
+     *
+     * @example
+     * ```typescript
+     * const entry = await client.escalations.migrate({
+     *   id: 'original-uuid',
+     *   status: 'resolved',
+     *   resolvedAt: new Date('2025-01-01'),
+     *   type: 'order-approval',
+     *   role: 'approver',
+     * });
+     * // null on subsequent calls with the same id — idempotent
+     * ```
+     */
+    migrate: async (
+      params: MigrateEscalationParams,
+      namespace?: string,
+    ): Promise<EscalationEntry | null> => {
+      const ns = (params.namespace ?? namespace) ?? APP_ID;
+      const hotMeshClient = await this.getHotMeshClient(null, ns);
+      return (hotMeshClient.engine.store as any).createEscalationForMigration(params);
     },
 
     /**
@@ -875,6 +883,49 @@ export class ClientService {
       return (hotMeshClient.engine.store as any).releaseExpiredEscalations(namespace);
     },
   };
+
+  /**
+   * Delivers a signal to the registered escalation topic.
+   *
+   * When the topic is known (stored at condition() time), we deliver only to that
+   * topic. This avoids writing a stale pending entry to the alternate stream, which
+   * would interfere with concurrent consumers in other workflows or tests.
+   *
+   * When topic is null (legacy/standalone rows with no registered topic), we try
+   * both wfs.signal and wfs.wait unconditionally — engine.signal() on the wrong
+   * topic stores pending without throwing, so a sequential fallback would skip
+   * the second topic and leave single-condition workflows permanently suspended.
+   *
+   * @private
+   */
+  private async _deliverEscalationSignal(
+    ns: string,
+    topic: string | null | undefined,
+    signalPayload: { id: string; data: Record<string, unknown> },
+  ): Promise<boolean> {
+    if (topic) {
+      // Registered topic known — deliver precisely, no stream pollution.
+      try {
+        const tc = await this.getHotMeshClient(topic, ns);
+        await tc.engine.signal(topic, signalPayload, StreamStatus.SUCCESS, 200);
+        return true;
+      } catch { /* topic not currently registered — fall through */ }
+    }
+
+    // Topic unknown or primary delivery failed — try both topics unconditionally.
+    let delivered = false;
+    try {
+      const sc = await this.getHotMeshClient(`${ns}.wfs.signal`, ns);
+      await sc.engine.signal(`${ns}.wfs.signal`, signalPayload, StreamStatus.SUCCESS, 200);
+      delivered = true;
+    } catch { /* no collator hook rule for this workflow */ }
+    try {
+      const wc = await this.getHotMeshClient(`${ns}.wfs.wait`, ns);
+      await wc.engine.signal(`${ns}.wfs.wait`, signalPayload, StreamStatus.SUCCESS, 200);
+      delivered = true;
+    } catch { /* no waiter hook rule for this workflow */ }
+    return delivered;
+  }
 
   /**
    * @private

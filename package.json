@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "description": "Durable Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -50,7 +50,7 @@
     "test:durable:signal": "vitest run tests/durable/signal/postgres.test.ts",
     "test:durable:readonly": "docker compose --profile readonly up -d --build && docker compose exec hotmesh-readonly npx vitest run --config tests/durable/readonly/vitest.config.mts",
     "test:durable:unknown": "vitest run tests/durable/unknown/postgres.test.ts",
-    "test:durable:esclations": "HMSH_LOGLEVEL=info vitest run tests/durable/escalations",
+    "test:durable:escalations": "HMSH_LOGLEVEL=info vitest run tests/durable/escalations",
     "test:durable:exporter": "HMSH_LOGLEVEL=info vitest run tests/durable/exporter",
     "test:durable:exporter:debug": "EXPORT_DEBUG=1 HMSH_LOGLEVEL=error vitest run tests/durable/basic/postgres.test.ts",
     "test:durable:codec": "vitest run tests/durable/codec/postgres.test.ts",
@@ -85,7 +85,13 @@
     "test:sub:nats": "vitest run tests/functional/sub/providers/nats/nats.test.ts",
     "test:trigger": "vitest run tests/unit/services/activities/trigger.test.ts",
     "test:virtual": "vitest run tests/virtual",
-    "test:unit": "vitest run tests/unit"
+    "test:unit": "vitest run tests/unit",
+
+    "prove": "docker compose exec hotmesh npx vitest run tests/durable 2>&1 | tee /tmp/hmsh-durable.txt && grep -E 'FAIL|Tests |Files ' /tmp/hmsh-durable.txt | tail -5",
+    "prove:escalations": "docker compose exec hotmesh npx vitest run tests/durable/escalations/postgres.test.ts 2>&1 | tee /tmp/hmsh-escalations.txt && grep -E 'FAIL|Tests |Files ' /tmp/hmsh-escalations.txt | tail -5",
+    "prove:functional": "docker compose exec hotmesh npx vitest run tests/functional 2>&1 | tee /tmp/hmsh-functional.txt && grep -E 'FAIL|Tests |Files ' /tmp/hmsh-functional.txt | tail -5",
+    "prove:all": "docker compose exec hotmesh npx vitest run tests/ 2>&1 | tee /tmp/hmsh-all.txt && grep -E 'FAIL|Tests |Files ' /tmp/hmsh-all.txt | tail -5",
+    "prove:file": "f() { docker compose exec hotmesh npx vitest run \"$@\" 2>&1 | tee /tmp/hmsh-file.txt && grep -E 'FAIL|Tests |Files ' /tmp/hmsh-file.txt | tail -5; }; f"
   },
   "keywords": [
     "Invisible Infrastructure",

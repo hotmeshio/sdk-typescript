@@ -1,5 +1,5 @@
 import os from 'os';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import { parseExpression } from 'cron-parser';
 import { nanoid } from 'nanoid';
@@ -58,6 +58,11 @@ export function deterministicRandom(seed: number): number {
 
 export function guid(size: number = HMSH_GUID_SIZE): string {
   return `H` + nanoid(size);
+}
+
+/** Returns a standard RFC 4122 v4 UUID (e.g. for use as a DB primary key). */
+export function uuid(): string {
+  return randomUUID();
 }
 
 export async function sleepFor(ms: number): Promise<void> {

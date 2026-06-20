@@ -1926,6 +1926,79 @@ class PostgresStoreService extends StoreService<
     );
   }
 
+  /**
+   * Full-fidelity INSERT for data migration. Preserves the original `id` (UUID),
+   * lifecycle state, and timestamps from the source table. Uses
+   * `ON CONFLICT (id) DO NOTHING` so re-running a migration batch is safe —
+   * rows that already exist are skipped and `null` is returned for them.
+   */
+  async createEscalationForMigration(
+    params: import('../../../../types/hmsh_escalations').MigrateEscalationParams,
+  ): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+    const {
+      id,
+      namespace, appId, signalKey, topic, workflowId, taskQueue, workflowType,
+      type, subtype, entity, description, role, priority,
+      originId, parentId, initiatedBy, createdBy, traceId, spanId,
+      escalationPayload, metadata, envelope, expiresAt,
+      status, assignedTo, claimExpiresAt, claimedAt, resolvedAt,
+      resolverPayload, milestones, createdAt, updatedAt,
+    } = params;
+    const result = await this.pgClient.query(`
+      INSERT INTO public.hmsh_escalations
+        (id, namespace, app_id, signal_key, topic, workflow_id, task_queue, workflow_type,
+         type, subtype, entity, description, role, priority,
+         origin_id, parent_id, initiated_by, created_by, trace_id, span_id,
+         escalation_payload, metadata, envelope, expires_at,
+         status, assigned_to, claim_expires_at, claimed_at, resolved_at,
+         resolver_payload, milestones, created_at, updated_at)
+      VALUES
+        ($1,  $2,  $3,  $4,  $5,  $6,  $7,  $8,
+         $9,  $10, $11, $12, $13, $14,
+         $15, $16, $17, $18, $19, $20,
+         $21, $22, $23, $24,
+         $25, $26, $27, $28, $29,
+         $30, $31, $32, $33)
+      ON CONFLICT (id) DO NOTHING
+      RETURNING *
+    `, [
+      id,
+      namespace ?? 'hmsh',
+      appId ?? 'hmsh',
+      signalKey ?? null,
+      topic ?? null,
+      workflowId ?? null,
+      taskQueue ?? null,
+      workflowType ?? null,
+      type ?? null,
+      subtype ?? null,
+      entity ?? null,
+      description ?? null,
+      role ?? null,
+      priority ?? 5,
+      originId ?? null,
+      parentId ?? null,
+      initiatedBy ?? null,
+      createdBy ?? null,
+      traceId ?? null,
+      spanId ?? null,
+      escalationPayload ? JSON.stringify(escalationPayload) : null,
+      metadata ? JSON.stringify(metadata) : null,
+      envelope ? JSON.stringify(envelope) : null,
+      expiresAt ?? null,
+      status ?? 'pending',
+      assignedTo ?? null,
+      claimExpiresAt ?? null,
+      claimedAt ?? null,
+      resolvedAt ?? null,
+      resolverPayload ? JSON.stringify(resolverPayload) : null,
+      milestones ? JSON.stringify(milestones) : '[]',
+      createdAt ?? new Date(),
+      updatedAt ?? new Date(),
+    ]);
+    return result.rows[0] ?? null;
+  }
+
   async getEscalation(id: string, namespace?: string): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
     const result = await this.pgClient.query(
       `SELECT * FROM public.hmsh_escalations WHERE id = $1${namespace ? ' AND namespace = $2' : ''}`,

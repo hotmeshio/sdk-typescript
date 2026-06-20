@@ -203,3 +203,28 @@ export interface EscalateToRoleParams {
   targetRole: string;
   namespace?: string;
 }
+
+/**
+ * Full-fidelity migration params. Extends `CreateEscalationParams` with:
+ * - `id` (required) — preserves the original UUID; no auto-generation
+ * - lifecycle state fields (`status`, `assignedTo`, `claimExpiresAt`, …) — carry over
+ *   the exact state of the migrated row so in-flight escalations land correctly
+ * - `createdAt` / `updatedAt` — preserve original timestamps
+ *
+ * The underlying INSERT uses `ON CONFLICT (id) DO NOTHING`, so calling
+ * `migrate()` multiple times with the same ID is safe — subsequent calls
+ * return `null` without touching the existing row.
+ */
+export interface MigrateEscalationParams extends CreateEscalationParams {
+  /** Required — preserve the original UUID from the source table. */
+  id: string;
+  status?: 'pending' | 'claimed' | 'resolved' | 'cancelled' | 'expired';
+  assignedTo?: string;
+  claimExpiresAt?: Date;
+  claimedAt?: Date;
+  resolvedAt?: Date;
+  resolverPayload?: Record<string, unknown>;
+  milestones?: Array<{ name: string; value: unknown; [key: string]: unknown }>;
+  createdAt?: Date;
+  updatedAt?: Date;
+}

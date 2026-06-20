@@ -11,7 +11,7 @@ import { Client as Postgres } from 'pg';
 
 import { Durable } from '../../../services/durable';
 import { WorkflowHandleService } from '../../../services/durable/handle';
-import { guid, sleepFor } from '../../../modules/utils';
+import { guid, sleepFor, uuid } from '../../../modules/utils';
 import { ProviderNativeClient } from '../../../types/provider';
 import { dropTables, postgres_options } from '../../$setup/postgres';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
@@ -281,6 +281,98 @@ describe('DURABLE | escalations | Postgres', () => {
       expect(esc.signal_key).toBeNull();
       expect(esc.type).toBe('support');
       expect(esc.status).toBe('pending');
+    }, 5_000);
+  });
+
+  describe('concurrent resolve (TOCTOU safety)', () => {
+    /**
+     * Two callers fire resolve() simultaneously on the same row.
+     * store.resolveEscalation() uses FOR UPDATE inside its CTE, serializing
+     * concurrent callers at the DB level. The second caller blocks on the
+     * row lock, reads 'already-resolved' after the first commits, and
+     * returns { ok: false, reason: 'already-resolved' } — exactly one
+     * signal is delivered, never two.
+     */
+    it('should resolve exactly once when two callers race', async () => {
+      const esc = await client.escalations.create({
+        type: 'support',
+        role: 'agent',
+        description: 'Concurrent resolve test',
+        metadata: { ticketId: `T-concurrent-${guid()}` },
+      });
+
+      // Fire both resolves simultaneously — no await between them.
+      const [r1, r2] = await Promise.all([
+        client.escalations.resolve({ id: esc.id, resolverPayload: { winner: 1 } }),
+        client.escalations.resolve({ id: esc.id, resolverPayload: { winner: 2 } }),
+      ]);
+
+      const successes = [r1, r2].filter((r) => r.ok).length;
+      const alreadyResolved = [r1, r2].filter((r) => !r.ok && (r as any).reason === 'already-resolved').length;
+
+      // Exactly one caller wins; the other sees already-resolved.
+      expect(successes).toBe(1);
+      expect(alreadyResolved).toBe(1);
+
+      // Row is definitively resolved — not stuck in pending.
+      const final = await client.escalations.get(esc.id);
+      expect(final?.status).toBe('resolved');
+    }, 10_000);
+  });
+
+  describe('migration (full-fidelity UUID + state preservation)', () => {
+    it('should insert a row preserving the original UUID and all lifecycle state', async () => {
+      // Migration requires standard UUIDs — the id column is PostgreSQL UUID type.
+      const originalId = uuid();
+      const createdAt = new Date('2024-06-01T10:00:00Z');
+      const resolvedAt = new Date('2024-06-01T11:30:00Z');
+
+      const entry = await client.escalations.migrate({
+        id: originalId,
+        status: 'resolved',
+        type: 'order-approval',
+        role: 'approver',
+        description: 'Migrated from lt_escalations',
+        priority: 3,
+        resolvedAt,
+        resolverPayload: { approved: true },
+        createdAt,
+        metadata: { legacy: true, orderId: 'ORD-001' },
+      });
+
+      expect(entry).not.toBeNull();
+      expect(entry!.id).toBe(originalId);
+      expect(entry!.status).toBe('resolved');
+      expect(entry!.type).toBe('order-approval');
+      expect(entry!.role).toBe('approver');
+      expect(entry!.priority).toBe(3);
+      expect(entry!.resolver_payload).toMatchObject({ approved: true });
+      // Timestamps are preserved — not overwritten with NOW()
+      expect(new Date(entry!.created_at).toISOString()).toBe(createdAt.toISOString());
+      expect(new Date(entry!.resolved_at!).toISOString()).toBe(resolvedAt.toISOString());
+    }, 5_000);
+
+    it('should return null on a second call with the same id (idempotent)', async () => {
+      const originalId = uuid();
+      await client.escalations.migrate({
+        id: originalId,
+        type: 'support',
+        role: 'agent',
+      });
+
+      // Second call — same id — must not throw, must return null.
+      const duplicate = await client.escalations.migrate({
+        id: originalId,
+        type: 'support',
+        role: 'agent',
+        description: 'This should not overwrite the original',
+      });
+
+      expect(duplicate).toBeNull();
+
+      // Original row is untouched — description still null from first insert.
+      const row = await client.escalations.get(originalId);
+      expect(row?.description).toBeNull();
     }, 5_000);
   });
 });
