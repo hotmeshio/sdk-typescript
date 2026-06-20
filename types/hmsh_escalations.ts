@@ -35,7 +35,8 @@ export interface EscalationEntry {
   entity: string | null;
   description: string | null;
   role: string | null;
-  status: 'pending' | 'claimed' | 'resolved' | 'cancelled' | 'expired';
+  /** Lifecycle status. Claims are implicit: status='pending' + assigned_to IS NOT NULL + assigned_until > NOW(). */
+  status: 'pending' | 'resolved' | 'cancelled' | 'expired';
   priority: number;
   assigned_to: string | null;
   assigned_until: Date | null;
@@ -56,6 +57,8 @@ export interface EscalationEntry {
   expires_at: Date | null;
   created_at: Date;
   updated_at: Date;
+  /** Computed by list(): true when the row is claimable (no active assignee or expired claim). */
+  available?: boolean;
 }
 
 /**
@@ -69,18 +72,17 @@ export type ClaimEscalationResult =
   | { ok: false; reason: 'not-found' | 'conflict' };
 
 /**
- * Result of `claimByMetadata()`. Includes `candidatesExist` — the total
- * count of rows matching the metadata filter regardless of claimability — so
- * callers can distinguish "nothing matching at all" from "found candidates but
- * all are locked or in-progress".
+ * Result of `claimByMetadata()`. Includes `candidatesExist` and `isExtension`:
+ * - `candidatesExist` — total count of rows matching the filter regardless of claimability
+ * - `isExtension` — true when the same assignee re-claims a row they already hold (extends the expiry)
  */
 export type ClaimByMetadataResult =
-  | { ok: true; entry: EscalationEntry; candidatesExist: number }
+  | { ok: true; entry: EscalationEntry; candidatesExist: number; isExtension: boolean }
   | { ok: false; reason: 'not-found' | 'conflict'; candidatesExist: number };
 
 export type ResolveEscalationResult =
   | { ok: true }
-  | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' | 'signal-failed' };
+  | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' };
 
 export type ReleaseEscalationResult =
   | { ok: true }
@@ -93,6 +95,8 @@ export type CancelEscalationResult =
 export interface ListEscalationsParams {
   namespace?: string;
   role?: string;
+  /** Filter by one or more roles (OR semantics; takes precedence over `role` when both set). */
+  roles?: string[];
   type?: string;
   subtype?: string;
   entity?: string;
@@ -100,6 +104,10 @@ export interface ListEscalationsParams {
   assignedTo?: string;
   workflowId?: string;
   originId?: string;
+  /** When true, returns only rows without an active claim. When false, returns only actively claimed rows. */
+  available?: boolean;
+  sortBy?: 'created_at' | 'priority' | 'updated_at';
+  sortOrder?: 'asc' | 'desc';
   limit?: number;
   offset?: number;
 }

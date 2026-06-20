@@ -2016,36 +2016,76 @@ class PostgresStoreService extends StoreService<
   }
 
   async listEscalations(params: import('../../../../types/hmsh_escalations').ListEscalationsParams = {}): Promise<import('../../../../types/hmsh_escalations').EscalationEntry[]> {
-    const { namespace, role, type, subtype, entity, status, assignedTo, workflowId, originId, limit = 50, offset = 0 } = params;
+    const { namespace, role, roles, type, subtype, entity, status, assignedTo, workflowId, originId,
+            available, sortBy, sortOrder, limit = 50, offset = 0 } = params;
     const conditions: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
 
-    if (namespace)  { conditions.push(`namespace = $${idx++}`);   values.push(namespace); }
-    if (role)       { conditions.push(`role = $${idx++}`);        values.push(role); }
-    if (type)       { conditions.push(`type = $${idx++}`);        values.push(type); }
-    if (subtype)    { conditions.push(`subtype = $${idx++}`);     values.push(subtype); }
-    if (entity)     { conditions.push(`entity = $${idx++}`);      values.push(entity); }
-    if (status)     { conditions.push(`status = $${idx++}`);      values.push(status); }
-    if (assignedTo) { conditions.push(`assigned_to = $${idx++}`); values.push(assignedTo); }
-    if (workflowId) { conditions.push(`workflow_id = $${idx++}`); values.push(workflowId); }
-    if (originId)   { conditions.push(`origin_id = $${idx++}`);   values.push(originId); }
+    if (namespace)  { conditions.push(`namespace = $${idx++}`);                   values.push(namespace); }
+    // roles[] takes precedence over role when both provided
+    if (roles?.length) { conditions.push(`role = ANY($${idx++}::text[])`);        values.push(roles); }
+    else if (role)     { conditions.push(`role = $${idx++}`);                     values.push(role); }
+    if (type)       { conditions.push(`type = $${idx++}`);                        values.push(type); }
+    if (subtype)    { conditions.push(`subtype = $${idx++}`);                     values.push(subtype); }
+    if (entity)     { conditions.push(`entity = $${idx++}`);                      values.push(entity); }
+    if (status)     { conditions.push(`status = $${idx++}`);                      values.push(status); }
+    if (assignedTo) { conditions.push(`assigned_to = $${idx++}`);                 values.push(assignedTo); }
+    if (workflowId) { conditions.push(`workflow_id = $${idx++}`);                 values.push(workflowId); }
+    if (originId)   { conditions.push(`origin_id = $${idx++}`);                   values.push(originId); }
+    if (available === true)  { conditions.push(`(assigned_to IS NULL OR (assigned_until IS NOT NULL AND assigned_until <= NOW()))`); }
+    if (available === false) { conditions.push(`(assigned_to IS NOT NULL AND (assigned_until IS NULL OR assigned_until > NOW()))`); }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const col   = sortBy === 'updated_at' ? 'updated_at' : sortBy === 'created_at' ? 'created_at' : 'priority';
+    const dir   = sortOrder === 'desc' ? 'DESC' : 'ASC';
+    // Secondary sort is always created_at DESC for deterministic page ordering
+    const orderBy = col === 'priority'
+      ? `ORDER BY priority ${dir}, created_at DESC`
+      : `ORDER BY ${col} ${dir}`;
     values.push(limit, offset);
     const result = await this.pgClient.query(
-      `SELECT * FROM public.hmsh_escalations ${where} ORDER BY priority ASC, created_at ASC LIMIT $${idx++} OFFSET $${idx}`,
+      `SELECT *,
+         (assigned_to IS NULL OR (assigned_until IS NOT NULL AND assigned_until <= NOW())) AS available
+       FROM public.hmsh_escalations ${where} ${orderBy} LIMIT $${idx++} OFFSET $${idx}`,
       values,
     );
     return result.rows;
   }
 
+  async countEscalations(params: import('../../../../types/hmsh_escalations').ListEscalationsParams = {}): Promise<number> {
+    const { namespace, role, roles, type, subtype, entity, status, assignedTo, workflowId, originId, available } = params;
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (namespace)  { conditions.push(`namespace = $${idx++}`);                   values.push(namespace); }
+    if (roles?.length) { conditions.push(`role = ANY($${idx++}::text[])`);        values.push(roles); }
+    else if (role)     { conditions.push(`role = $${idx++}`);                     values.push(role); }
+    if (type)       { conditions.push(`type = $${idx++}`);                        values.push(type); }
+    if (subtype)    { conditions.push(`subtype = $${idx++}`);                     values.push(subtype); }
+    if (entity)     { conditions.push(`entity = $${idx++}`);                      values.push(entity); }
+    if (status)     { conditions.push(`status = $${idx++}`);                      values.push(status); }
+    if (assignedTo) { conditions.push(`assigned_to = $${idx++}`);                 values.push(assignedTo); }
+    if (workflowId) { conditions.push(`workflow_id = $${idx++}`);                 values.push(workflowId); }
+    if (originId)   { conditions.push(`origin_id = $${idx++}`);                   values.push(originId); }
+    if (available === true)  { conditions.push(`(assigned_to IS NULL OR (assigned_until IS NOT NULL AND assigned_until <= NOW()))`); }
+    if (available === false) { conditions.push(`(assigned_to IS NOT NULL AND (assigned_until IS NULL OR assigned_until > NOW()))`); }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = await this.pgClient.query(
+      `SELECT COUNT(*)::int AS total FROM public.hmsh_escalations ${where}`,
+      values,
+    );
+    return result.rows[0]?.total ?? 0;
+  }
+
   async claimEscalation(params: import('../../../../types/hmsh_escalations').ClaimEscalationParams): Promise<import('../../../../types/hmsh_escalations').ClaimEscalationResult> {
     const { id, namespace, assignee = '', durationMinutes = 1 } = params;
-    // all_rows: reads the row without locking, so we can distinguish 'not-found' vs 'conflict'
-    // target: attempts the lock; SKIP LOCKED means a locked row is skipped without error
-    // claimed: performs the UPDATE only if target succeeded
-    // The final SELECT always returns exactly 1 row via the dummy left-join — no second round-trip.
+    // Claims are implicit: status stays 'pending'; availability = assigned_to IS NULL OR assigned_until <= NOW().
+    // all_rows: unlocked read to distinguish 'not-found' vs 'conflict'.
+    // target: locks the row only when it is available (no active claim or same assignee re-claiming).
+    // claimed: writes both assigned_until and claim_expires_at (same value) for service-layer compat.
     const result = await this.pgClient.query(`
       WITH all_rows AS MATERIALIZED (
         SELECT id FROM public.hmsh_escalations
@@ -2056,16 +2096,16 @@ class PostgresStoreService extends StoreService<
         WHERE id = $1
           ${namespace ? 'AND namespace = $4' : ''}
           AND status = 'pending'
-          AND (assigned_to IS NULL OR claim_expires_at <= NOW() OR assigned_to = $2)
+          AND (assigned_to IS NULL OR assigned_until IS NULL OR assigned_until <= NOW() OR assigned_to = $2)
         LIMIT 1
         FOR UPDATE SKIP LOCKED
       ),
       claimed AS (
         UPDATE public.hmsh_escalations
-        SET status           = 'claimed',
-            assigned_to      = $2,
+        SET assigned_to      = $2,
             claimed_at       = NOW(),
             claim_expires_at = NOW() + ($3 * INTERVAL '1 minute'),
+            assigned_until   = NOW() + ($3 * INTERVAL '1 minute'),
             updated_at       = NOW()
         FROM target WHERE public.hmsh_escalations.id = target.id
         RETURNING public.hmsh_escalations.*
@@ -2083,10 +2123,8 @@ class PostgresStoreService extends StoreService<
   async claimEscalationByMetadata(params: import('../../../../types/hmsh_escalations').ClaimByMetadataParams): Promise<import('../../../../types/hmsh_escalations').ClaimByMetadataResult> {
     const { key, value, namespace, assignee = '', durationMinutes = 1, roles } = params;
     const filter = JSON.stringify({ [key]: value });
-    // all_candidates: counts ALL matching rows (any status) to distinguish 'not-found' vs 'conflict'
-    // target: attempts the lock on the highest-priority pending row; SKIP LOCKED skips already-claimed ones
-    // claimed: performs the UPDATE atomically from target
-    // The dummy left-join ensures exactly 1 row is always returned so candidatesExist is always visible.
+    // target captures prior_assigned_to to detect re-claim (isExtension).
+    // Implicit claim model: status stays 'pending'; availability = assigned_until IS NULL OR assigned_until <= NOW().
     const result = await this.pgClient.query(`
       WITH all_candidates AS MATERIALIZED (
         SELECT id FROM public.hmsh_escalations
@@ -2095,25 +2133,25 @@ class PostgresStoreService extends StoreService<
           AND ($4::text[] IS NULL OR role = ANY($4::text[]))
       ),
       target AS MATERIALIZED (
-        SELECT id FROM public.hmsh_escalations
+        SELECT id, assigned_to AS prior_assigned_to FROM public.hmsh_escalations
         WHERE ${namespace ? 'namespace = $5 AND' : ''}
               metadata @> $1::jsonb
           AND ($4::text[] IS NULL OR role = ANY($4::text[]))
           AND status = 'pending'
-          AND (assigned_to IS NULL OR claim_expires_at <= NOW() OR assigned_to = $2)
+          AND (assigned_to IS NULL OR assigned_until IS NULL OR assigned_until <= NOW() OR assigned_to = $2)
         ORDER BY priority ASC, created_at ASC
         LIMIT 1
         FOR UPDATE SKIP LOCKED
       ),
       claimed AS (
         UPDATE public.hmsh_escalations
-        SET status           = 'claimed',
-            assigned_to      = $2,
+        SET assigned_to      = $2,
             claimed_at       = NOW(),
             claim_expires_at = NOW() + ($3 * INTERVAL '1 minute'),
+            assigned_until   = NOW() + ($3 * INTERVAL '1 minute'),
             updated_at       = NOW()
         FROM target WHERE public.hmsh_escalations.id = target.id
-        RETURNING public.hmsh_escalations.*
+        RETURNING public.hmsh_escalations.*, target.prior_assigned_to
       )
       SELECT c.*, (SELECT COUNT(*)::int FROM all_candidates) AS candidates_exist
       FROM (VALUES(1)) AS dummy(v)
@@ -2123,7 +2161,10 @@ class PostgresStoreService extends StoreService<
       : [filter, assignee, durationMinutes, roles ?? null]);
     const row = result.rows[0];
     const candidatesExist: number = row?.candidates_exist ?? 0;
-    if (row?.id) return { ok: true, entry: row, candidatesExist };
+    if (row?.id) {
+      const isExtension: boolean = row.prior_assigned_to === assignee;
+      return { ok: true, entry: row, candidatesExist, isExtension };
+    }
     return {
       ok: false,
       reason: candidatesExist > 0 ? 'conflict' : 'not-found',
@@ -2140,7 +2181,7 @@ class PostgresStoreService extends StoreService<
       WITH target AS MATERIALIZED (
         SELECT id, assigned_to FROM public.hmsh_escalations
         WHERE id = $1 ${namespace ? 'AND namespace = $3' : ''}
-          AND status = 'claimed'
+          AND status = 'pending' AND assigned_to IS NOT NULL
         FOR UPDATE
       ),
       released AS (
@@ -2162,8 +2203,12 @@ class PostgresStoreService extends StoreService<
     return { ok: true };
   }
 
-  async resolveEscalation(params: import('../../../../types/hmsh_escalations').ResolveEscalationParams): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string; topic?: string }> {
+  async resolveEscalation(
+    params: import('../../../../types/hmsh_escalations').ResolveEscalationParams,
+  ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null }> {
     const { id, namespace, resolverPayload } = params;
+    const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
+
     const result = await this.pgClient.query(`
       WITH target AS MATERIALIZED (
         SELECT id, signal_key, topic, status FROM public.hmsh_escalations
@@ -2178,7 +2223,7 @@ class PostgresStoreService extends StoreService<
             updated_at       = NOW()
         FROM target
         WHERE public.hmsh_escalations.id = target.id
-          AND target.status IN ('pending', 'claimed')
+          AND target.status = 'pending'
         RETURNING public.hmsh_escalations.id
       )
       SELECT t.signal_key, t.topic, t.status AS prior_status,
@@ -2191,17 +2236,21 @@ class PostgresStoreService extends StoreService<
       FROM (SELECT * FROM target) t
       FULL OUTER JOIN (SELECT id FROM resolved) r ON r.id = t.id
     `, namespace
-      ? [id, resolverPayload ? JSON.stringify(resolverPayload) : null, namespace]
-      : [id, resolverPayload ? JSON.stringify(resolverPayload) : null]);
+      ? [id, payloadJson, namespace]
+      : [id, payloadJson]);
     if (!result.rows[0] || result.rows[0].outcome === 'not-found') return { ok: false, reason: 'not-found' };
     if (result.rows[0].outcome === 'already-cancelled') return { ok: false, reason: 'already-cancelled' };
     if (result.rows[0].outcome === 'already-resolved') return { ok: false, reason: 'already-resolved' };
     return { ok: true, signalKey: result.rows[0].signal_key, topic: result.rows[0].topic };
   }
 
-  async resolveEscalationByMetadata(params: import('../../../../types/hmsh_escalations').ResolveByMetadataParams): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string; topic?: string }> {
+  async resolveEscalationByMetadata(
+    params: import('../../../../types/hmsh_escalations').ResolveByMetadataParams,
+  ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null }> {
     const { key, value, namespace, resolverPayload, roles } = params;
     const filter = JSON.stringify({ [key]: value });
+    const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
+
     const result = await this.pgClient.query(`
       WITH target AS MATERIALIZED (
         SELECT id, signal_key, topic, status FROM public.hmsh_escalations
@@ -2219,7 +2268,7 @@ class PostgresStoreService extends StoreService<
             updated_at       = NOW()
         FROM target
         WHERE public.hmsh_escalations.id = target.id
-          AND target.status IN ('pending', 'claimed')
+          AND target.status = 'pending'
         RETURNING public.hmsh_escalations.id
       )
       SELECT t.signal_key, t.topic, t.status AS prior_status,
@@ -2232,8 +2281,8 @@ class PostgresStoreService extends StoreService<
       FROM (SELECT * FROM target) t
       FULL OUTER JOIN (SELECT id FROM resolved) r ON r.id = t.id
     `, namespace
-      ? [filter, resolverPayload ? JSON.stringify(resolverPayload) : null, roles ?? null, namespace]
-      : [filter, resolverPayload ? JSON.stringify(resolverPayload) : null, roles ?? null]);
+      ? [filter, payloadJson, roles ?? null, namespace]
+      : [filter, payloadJson, roles ?? null]);
     if (!result.rows[0] || result.rows[0].outcome === 'not-found') return { ok: false, reason: 'not-found' };
     if (result.rows[0].outcome === 'already-cancelled') return { ok: false, reason: 'already-cancelled' };
     if (result.rows[0].outcome === 'already-resolved') return { ok: false, reason: 'already-resolved' };
@@ -2297,7 +2346,7 @@ class PostgresStoreService extends StoreService<
         SET status = 'cancelled', updated_at = NOW()
         FROM target
         WHERE public.hmsh_escalations.id = target.id
-          AND target.status IN ('pending', 'claimed')
+          AND target.status = 'pending'
         RETURNING public.hmsh_escalations.id
       )
       SELECT t.id, t.status AS prior_status,
@@ -2326,7 +2375,7 @@ class PostgresStoreService extends StoreService<
           claim_expires_at = NULL,
           updated_at       = NOW()
       WHERE id = $1 ${namespace ? 'AND namespace = $3' : ''}
-        AND status IN ('pending', 'claimed')
+        AND status = 'pending'
       RETURNING *
     `, namespace ? [id, targetRole, namespace] : [id, targetRole]);
     return result.rows[0] ?? null;
@@ -2380,16 +2429,10 @@ class PostgresStoreService extends StoreService<
     return result.rows[0] ?? null;
   }
 
-  async releaseExpiredEscalations(namespace?: string): Promise<number> {
-    const result = await this.pgClient.query(`
-      UPDATE public.hmsh_escalations
-      SET status = 'pending', assigned_to = NULL, assigned_until = NULL,
-          claimed_at = NULL, claim_expires_at = NULL, updated_at = NOW()
-      WHERE status = 'claimed'
-        AND claim_expires_at <= NOW()
-        ${namespace ? 'AND namespace = $1' : ''}
-    `, namespace ? [namespace] : []);
-    return result.rowCount ?? 0;
+  async releaseExpiredEscalations(_namespace?: string): Promise<number> {
+    // No-op in the implicit claim model: availability is computed at query time from
+    // assigned_until, so no background sweep is needed to release expired claims.
+    return 0;
   }
 }
 
