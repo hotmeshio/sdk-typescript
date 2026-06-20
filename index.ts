@@ -18,6 +18,7 @@ import * as KeyStore from './modules/key';
 import { ConnectorService as Connector } from './services/connector/factory';
 import { PostgresConnection as ConnectorPostgres } from './services/connector/providers/postgres';
 import { NatsConnection as ConnectorNATS } from './services/connector/providers/nats';
+import { Escalations } from './services/escalations';
 
 export {
   //Provider Connectors
@@ -30,6 +31,7 @@ export {
   HotMeshConfig,
   Virtual,
   Durable,
+  Escalations,
   DBA,
 
   //Durable Submodules

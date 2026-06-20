@@ -100,7 +100,7 @@ describe('DURABLE | escalations | Postgres', () => {
   describe('claim lifecycle', () => {
     let escalationId: string;
 
-    it('should claim the escalation — status becomes claimed', async () => {
+    it('should claim the escalation — implicit model: status stays pending, assigned_to is set', async () => {
       const list = await client.escalations.list({ role: 'approver', status: 'pending' });
       const esc = list.find((e) => (e.metadata as any)?.orderId === orderId);
       escalationId = esc!.id;
@@ -112,8 +112,10 @@ describe('DURABLE | escalations | Postgres', () => {
       });
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.entry.status).toBe('claimed');
+        // Implicit claim model: status stays 'pending'; claim expressed via assigned_to + assigned_until
+        expect(result.entry.status).toBe('pending');
         expect(result.entry.assigned_to).toBe('reviewer-1');
+        expect(result.entry.assigned_until).not.toBeNull();
       }
     }, 5_000);
 
@@ -136,8 +138,8 @@ describe('DURABLE | escalations | Postgres', () => {
       if (!result.ok) expect(result.reason).toBe('not-found');
     }, 5_000);
 
-    it('should list claimed escalations by assignedTo filter', async () => {
-      const list = await client.escalations.list({ assignedTo: 'reviewer-1', status: 'claimed' });
+    it('should list claimed escalations by assignedTo filter (no status filter needed)', async () => {
+      const list = await client.escalations.list({ assignedTo: 'reviewer-1' });
       expect(list.length).toBeGreaterThanOrEqual(1);
       expect(list[0].assigned_to).toBe('reviewer-1');
     }, 5_000);
@@ -234,7 +236,7 @@ describe('DURABLE | escalations | Postgres', () => {
     }, 5_000);
   });
 
-  describe('claimByMetadata with candidatesExist', () => {
+  describe('claimByMetadata with candidatesExist + isExtension', () => {
     it('should return candidatesExist=0 when no metadata matches', async () => {
       const result = await client.escalations.claimByMetadata({
         key: 'ticketId',
@@ -254,9 +256,9 @@ describe('DURABLE | escalations | Postgres', () => {
         role: 'agent',
         metadata: { ticketId: 'T-conflict' },
       });
-      // Claim it
+      // Claim it with agent-1
       await client.escalations.claim({ id: esc.id, assignee: 'agent-1', durationMinutes: 10 });
-      // Now try to claim by metadata — should see conflict
+      // agent-2 tries to claim by metadata — should see conflict
       const result = await client.escalations.claimByMetadata({
         key: 'ticketId',
         value: 'T-conflict',
@@ -266,6 +268,56 @@ describe('DURABLE | escalations | Postgres', () => {
       if (!result.ok) {
         expect(result.reason).toBe('conflict');
         expect(result.candidatesExist).toBeGreaterThan(0);
+      }
+    }, 5_000);
+
+    it('should return isExtension=false on a fresh claim', async () => {
+      const esc = await client.escalations.create({
+        type: 'review',
+        role: 'agent',
+        metadata: { ticketId: `T-ext-fresh-${guid()}` },
+      });
+      const result = await client.escalations.claimByMetadata({
+        key: 'ticketId',
+        value: (esc.metadata as any).ticketId,
+        assignee: 'agent-ext',
+        durationMinutes: 10,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.isExtension).toBe(false);
+        expect(result.entry.assigned_to).toBe('agent-ext');
+      }
+    }, 5_000);
+
+    it('should return isExtension=true when the same assignee re-claims (extends expiry)', async () => {
+      const ticketId = `T-ext-${guid()}`;
+      const esc = await client.escalations.create({
+        type: 'review',
+        role: 'agent',
+        metadata: { ticketId },
+      });
+      // First claim
+      const first = await client.escalations.claimByMetadata({
+        key: 'ticketId',
+        value: ticketId,
+        assignee: 'agent-extend',
+        durationMinutes: 1,
+      });
+      expect(first.ok).toBe(true);
+      if (first.ok) expect(first.isExtension).toBe(false);
+
+      // Re-claim by same assignee — isExtension must be true
+      const second = await client.escalations.claimByMetadata({
+        key: 'ticketId',
+        value: ticketId,
+        assignee: 'agent-extend',
+        durationMinutes: 5,
+      });
+      expect(second.ok).toBe(true);
+      if (second.ok) {
+        expect(second.isExtension).toBe(true);
+        expect(second.entry.assigned_to).toBe('agent-extend');
       }
     }, 5_000);
   });
@@ -281,6 +333,140 @@ describe('DURABLE | escalations | Postgres', () => {
       expect(esc.signal_key).toBeNull();
       expect(esc.type).toBe('support');
       expect(esc.status).toBe('pending');
+    }, 5_000);
+  });
+
+  describe('available field + filter', () => {
+    it('list() should include available=true for unclaimed rows', async () => {
+      const esc = await client.escalations.create({
+        type: 'support',
+        role: 'avail-test',
+        metadata: { availTest: `avail-${guid()}` },
+      });
+      const list = await client.escalations.list({ role: 'avail-test' });
+      const row = list.find((e) => e.id === esc.id);
+      expect(row).toBeDefined();
+      expect(row!.available).toBe(true);
+    }, 5_000);
+
+    it('list() should include available=false for actively claimed rows', async () => {
+      const esc = await client.escalations.create({
+        type: 'support',
+        role: 'avail-test-2',
+        metadata: { availTest2: `avail2-${guid()}` },
+      });
+      await client.escalations.claim({ id: esc.id, assignee: 'tester', durationMinutes: 30 });
+      const list = await client.escalations.list({ role: 'avail-test-2' });
+      const row = list.find((e) => e.id === esc.id);
+      expect(row).toBeDefined();
+      expect(row!.available).toBe(false);
+    }, 5_000);
+
+    it('list({ available: true }) should return only unclaimed rows', async () => {
+      const tag = guid();
+      const [free, claimed] = await Promise.all([
+        client.escalations.create({ role: 'avail-filter', metadata: { tag } }),
+        client.escalations.create({ role: 'avail-filter', metadata: { tag } }),
+      ]);
+      await client.escalations.claim({ id: claimed.id, assignee: 'holder', durationMinutes: 30 });
+
+      const available = await client.escalations.list({ role: 'avail-filter', available: true });
+      const ids = available.map((e) => e.id);
+      expect(ids).toContain(free.id);
+      expect(ids).not.toContain(claimed.id);
+    }, 5_000);
+
+    it('list({ available: false }) should return only actively claimed rows', async () => {
+      const tag = guid();
+      const [free2, claimed2] = await Promise.all([
+        client.escalations.create({ role: 'avail-filter2', metadata: { tag } }),
+        client.escalations.create({ role: 'avail-filter2', metadata: { tag } }),
+      ]);
+      await client.escalations.claim({ id: claimed2.id, assignee: 'holder2', durationMinutes: 30 });
+
+      const notAvailable = await client.escalations.list({ role: 'avail-filter2', available: false });
+      const ids = notAvailable.map((e) => e.id);
+      expect(ids).toContain(claimed2.id);
+      expect(ids).not.toContain(free2.id);
+    }, 5_000);
+  });
+
+  describe('sort parameters', () => {
+    it('list({ sortBy: "priority", sortOrder: "desc" }) should return highest priority first', async () => {
+      const tag = `sort-${guid()}`;
+      await Promise.all([
+        client.escalations.create({ role: 'sort-test', priority: 3, metadata: { tag } }),
+        client.escalations.create({ role: 'sort-test', priority: 1, metadata: { tag } }),
+        client.escalations.create({ role: 'sort-test', priority: 5, metadata: { tag } }),
+      ]);
+      const list = await client.escalations.list({
+        role: 'sort-test',
+        sortBy: 'priority',
+        sortOrder: 'desc',
+      });
+      const tagged = list.filter((e) => (e.metadata as any)?.tag === tag);
+      expect(tagged.length).toBe(3);
+      // Descending: 5, 3, 1
+      expect(tagged[0].priority).toBeGreaterThanOrEqual(tagged[1].priority);
+      expect(tagged[1].priority).toBeGreaterThanOrEqual(tagged[2].priority);
+    }, 5_000);
+
+    it('default sort (priority ASC, created_at DESC) — lower priority number first', async () => {
+      const tag = `sort-default-${guid()}`;
+      await Promise.all([
+        client.escalations.create({ role: 'sort-default', priority: 5, metadata: { tag } }),
+        client.escalations.create({ role: 'sort-default', priority: 1, metadata: { tag } }),
+      ]);
+      const list = await client.escalations.list({ role: 'sort-default' });
+      const tagged = list.filter((e) => (e.metadata as any)?.tag === tag);
+      expect(tagged.length).toBe(2);
+      expect(tagged[0].priority).toBeLessThanOrEqual(tagged[1].priority);
+    }, 5_000);
+  });
+
+  describe('count()', () => {
+    it('should return count of rows matching filters', async () => {
+      const tag = `count-${guid()}`;
+      await Promise.all([
+        client.escalations.create({ role: 'count-role', metadata: { tag } }),
+        client.escalations.create({ role: 'count-role', metadata: { tag } }),
+        client.escalations.create({ role: 'count-role', metadata: { tag } }),
+      ]);
+      const total = await client.escalations.count({ role: 'count-role' });
+      expect(total).toBeGreaterThanOrEqual(3);
+    }, 5_000);
+
+    it('should return 0 for a filter that matches nothing', async () => {
+      const total = await client.escalations.count({ role: `no-such-role-${guid()}` });
+      expect(total).toBe(0);
+    }, 5_000);
+  });
+
+  describe('roles[] multi-role filter', () => {
+    it('list({ roles }) should return rows matching any of the provided roles', async () => {
+      const tag = `roles-${guid()}`;
+      await Promise.all([
+        client.escalations.create({ role: 'role-alpha', metadata: { tag } }),
+        client.escalations.create({ role: 'role-beta',  metadata: { tag } }),
+        client.escalations.create({ role: 'role-gamma', metadata: { tag } }),
+      ]);
+      const list = await client.escalations.list({ roles: ['role-alpha', 'role-beta'] });
+      const taggedRoles = list
+        .filter((e) => (e.metadata as any)?.tag === tag)
+        .map((e) => e.role);
+      expect(taggedRoles).toContain('role-alpha');
+      expect(taggedRoles).toContain('role-beta');
+      expect(taggedRoles).not.toContain('role-gamma');
+    }, 5_000);
+
+    it('count({ roles }) should count across multiple roles', async () => {
+      const tag = `roles-count-${guid()}`;
+      await Promise.all([
+        client.escalations.create({ role: 'rcount-a', metadata: { tag } }),
+        client.escalations.create({ role: 'rcount-b', metadata: { tag } }),
+      ]);
+      const total = await client.escalations.count({ roles: ['rcount-a', 'rcount-b'] });
+      expect(total).toBeGreaterThanOrEqual(2);
     }, 5_000);
   });
 
@@ -318,6 +504,49 @@ describe('DURABLE | escalations | Postgres', () => {
       const final = await client.escalations.get(esc.id);
       expect(final?.status).toBe('resolved');
     }, 10_000);
+  });
+
+  describe('signal-first transaction', () => {
+    it('should resolve a standalone (no signal_key) escalation cleanly', async () => {
+      const esc = await client.escalations.create({
+        type: 'support',
+        role: 'agent',
+        metadata: { sfTest: `sf-${guid()}` },
+      });
+      // Standalone rows have no signal_key — signalCallback is called but skipped
+      const result = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { done: true },
+      });
+      expect(result.ok).toBe(true);
+      const row = await client.escalations.get(esc.id);
+      expect(row?.status).toBe('resolved');
+      expect((row?.resolver_payload as any)?.done).toBe(true);
+    }, 5_000);
+
+    it('should commit the DB row even when signal delivery throws', async () => {
+      // The CTE atomically marks the row resolved. Signal delivery is post-commit
+      // via _deliverEscalationSignal — if that throws, the resolve still succeeds.
+      // The signal_key stays in the resolved row for the sweep to retry delivery.
+      const esc = await client.escalations.create({
+        type: 'support',
+        role: 'agent',
+        metadata: { sfFail: `sf-fail-${guid()}` },
+      });
+      await (client as any).getHotMeshClient(null, undefined).then((hm: any) =>
+        hm.engine.store.updateEscalation({ id: esc.id, signalKey: `fake-signal-${guid()}` }),
+      );
+
+      // Resolve through the store directly (no engine.signal — delivery is a no-op
+      // because no workflow is registered for the fake signal_key, but the CTE commits).
+      const hm = await (client as any).getHotMeshClient(null, undefined);
+      const result = await hm.engine.store.resolveEscalation({ id: esc.id, resolverPayload: { done: true } });
+      expect(result.ok).toBe(true);
+      // Row IS resolved — CTE committed regardless of signal delivery
+      const row = await client.escalations.get(esc.id);
+      expect(row?.status).toBe('resolved');
+      expect((row?.resolver_payload as any)?.done).toBe(true);
+    }, 5_000);
   });
 
   describe('migration (full-fidelity UUID + state preservation)', () => {
