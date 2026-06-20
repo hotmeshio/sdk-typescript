@@ -91,7 +91,7 @@ export type ReleaseEscalationResult =
   | { ok: false; reason: 'not-found' | 'wrong-assignee' };
 
 export type CancelEscalationResult =
-  | { ok: true }
+  | { ok: true; entry: EscalationEntry }
   | { ok: false; reason: 'not-found' | 'already-terminal' };
 
 export interface ListEscalationsParams {

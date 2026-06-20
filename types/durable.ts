@@ -474,6 +474,12 @@ type Connection = ProviderConfig | ProvidersConfig;
 
 type ClientConfig = {
   connection: Connection;
+  /**
+   * Optional system-event sink. When set, `client.escalations.*` operations
+   * call `events.publish` post-commit from the invoking process. Wires the
+   * same hook as `HotMeshConfig.events` for direct-client callers.
+   */
+  events?: import('./system_events').EventsConfig;
 };
 
 type Registry = {
@@ -527,6 +533,11 @@ type WorkerConfig = {
    * the convenience alias `Durable.provisionWorkerRole()`).
    */
   workerCredentials?: { user: string; password: string };
+  /**
+   * Optional system-event sink. When set, the worker fires `events.publish`
+   * on `system.worker.{taskQueue}.started` and `system.worker.{taskQueue}.stopped`.
+   */
+  events?: import('./system_events').EventsConfig;
 };
 
 type FindWhereQuery = {

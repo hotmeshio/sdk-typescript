@@ -368,9 +368,11 @@ class Hook extends Activity {
     //enqueue escalation INSERT inside the Leg1 transaction so it is
     //written atomically with the job state checkpoint — one committed
     //unit, crash-safe, no separate recovery path needed.
-    await this.addEscalationToTransaction(transaction);
+    const escalationSignalKey = await this.addEscalationToTransaction(transaction);
 
-    await transaction.exec();
+    // exec() returns one result per queued command; the escalation INSERT
+    // (with RETURNING *) is the last command — its row is results[last].
+    const execResults = await transaction.exec();
     telemetry.mapActivityAttributes();
 
     //register the web hook signal AFTER the transaction commits.
@@ -384,12 +386,41 @@ class Hook extends Activity {
     if (pending) {
       await this.redeliverPendingSignal(pending);
     }
+
+    // Post-commit: fire the escalation.created event using the row returned
+    // directly from the RETURNING * clause — no extra SELECT.
+    if (escalationSignalKey) {
+      const store = this.store as any;
+      if (store.eventsPublish) {
+        const row = execResults[execResults.length - 1];
+        if (row?.id) {
+          const ts = new Date().toISOString();
+          const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : ts;
+          void Promise.resolve(store.eventsPublish({
+            event_id: `${row.id}:created:${updatedAt}`,
+            type: `system.escalation.${row.id}.created`,
+            ts,
+            namespace: row.namespace ?? (this.engine as any).namespace ?? this.engine.appId,
+            app_id: row.app_id ?? this.engine.appId,
+            workflow_id: row.workflow_id ?? undefined,
+            topic: row.topic ?? undefined,
+            origin_id: row.origin_id ?? undefined,
+            parent_id: row.parent_id ?? undefined,
+            trace_id: row.trace_id ?? undefined,
+            span_id: row.span_id ?? undefined,
+            data: row,
+          })).catch(() => { /* best-effort */ });
+        }
+      }
+    }
   }
 
-  private async addEscalationToTransaction(transaction: import('../../types/provider').ProviderTransaction): Promise<void> {
-    if (!this.config.escalation || !this.config.hook?.topic) return;
+  private async addEscalationToTransaction(
+    transaction: import('../../types/provider').ProviderTransaction,
+  ): Promise<string | null> {
+    if (!this.config.escalation || !this.config.hook?.topic) return null;
     const store = this.store as any;
-    if (typeof store.addEscalationToTransaction !== 'function') return;
+    if (typeof store.addEscalationToTransaction !== 'function') return null;
 
     const escalationConfig = this.config.escalation as Record<string, unknown>;
     const jid = this.context.metadata.jid;
@@ -435,7 +466,7 @@ class Hook extends Activity {
     if (
       params.role == null && params.type == null &&
       params.priority == null && params.metadata == null
-    ) return;
+    ) return null;
 
     // Derive signal_key from the hook rule's expected condition — the same
     // value registerWebHook stores as the signal lookup key.
@@ -452,6 +483,8 @@ class Hook extends Activity {
       workflowId: jid,
       ...params,
     }, transaction);
+
+    return signalKey as string;
   }
 
   /**

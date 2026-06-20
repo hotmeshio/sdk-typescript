@@ -52,3 +52,4 @@ export {
 };
 
 export * as Types from './types';
+export type { EventsConfig, SystemEvent } from './types/system_events';

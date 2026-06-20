@@ -90,6 +90,19 @@ export const KVTables = (context: PostgresStoreService) => ({
         await client.release();
       }
     }
+
+    // Fire system.engine.{appId}.deployed post-deploy (best-effort).
+    if (context.eventsPublish) {
+      const ts = new Date().toISOString();
+      void Promise.resolve(context.eventsPublish({
+        event_id: `${appName}:deployed:${ts}`,
+        type: `system.engine.${appName}.deployed`,
+        ts,
+        namespace: appName,
+        app_id: appName,
+        data: { appId: appName },
+      })).catch(() => { /* best-effort */ });
+    }
   },
 
   getAdvisoryLockId(appName: string): number {
