@@ -74,6 +74,8 @@
     "services/durable/telemetry.ts",
     "services/durable/workflow/condition.ts",
     "services/durable/connection.ts",
+    "services/escalations/index.ts",
+    "services/escalations/client.ts",
     "types/*.ts",
     "index.ts"
   ],

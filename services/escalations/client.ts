@@ -13,6 +13,8 @@ import {
   ResolveEscalationResult,
   CancelEscalationResult,
   ListEscalationsParams,
+  StatsEscalationsParams,
+  EscalationStats,
   CreateEscalationParams,
   UpdateEscalationParams,
   AppendMilestonesParams,
@@ -23,17 +25,21 @@ import {
   ResolveByMetadataParams,
   EscalateToRoleParams,
   MigrateEscalationParams,
+  ClaimManyParams,
+  EscalateManyToRoleParams,
+  UpdateManyPriorityParams,
+  ResolveManyParams,
 } from '../../types/hmsh_escalations';
 import { APP_ID } from '../durable/schemas/factory';
 
-type GetHotMeshFn = (topic: string | null, namespace?: string) => Promise<HotMesh>;
+export type GetHotMeshFn = (topic: string | null, namespace?: string) => Promise<HotMesh>;
 
 export interface EscalationClientConfig {
   /** Postgres connection options — used when creating a standalone EscalationClient. */
   connection?: Connection;
   /**
    * Inject a pre-existing `getHotMeshClient` function (e.g. from Durable.Client).
-   * When provided, the client reuses the caller's engine pool — no second connection.
+   * When provided, the client reuses the caller's engine pool — no extra connections.
    */
   getHotMeshClient?: GetHotMeshFn;
 }
@@ -75,7 +81,6 @@ export interface EscalationClientConfig {
  */
 export class EscalationClientService {
   private readonly _engine: GetHotMeshFn;
-  private readonly _connection?: Connection;
 
   static instances = new Map<string, HotMesh | Promise<HotMesh>>();
 
@@ -84,7 +89,6 @@ export class EscalationClientService {
       // Reuse a caller-supplied engine factory (e.g. Durable.Client) — no extra connections.
       this._engine = config.getHotMeshClient;
     } else if (config.connection) {
-      this._connection = config.connection;
       this._engine = this._makeEngineFactory(config.connection);
     } else {
       throw new Error('EscalationClient requires either `connection` or `getHotMeshClient`');
@@ -156,7 +160,7 @@ export class EscalationClientService {
   /**
    * Returns all escalation rows matching the given filters. Each row includes
    * a computed `available` field (true = claimable). Supports `sortBy`,
-   * `sortOrder`, and multi-role `roles[]` filter.
+   * `sortOrder`, `orderBy[]`, and multi-role `roles[]` filter.
    */
   async list(params?: ListEscalationsParams): Promise<EscalationEntry[]> {
     const hm = await this._engine(null, params?.namespace);
@@ -211,6 +215,7 @@ export class EscalationClientService {
   /**
    * Atomically claims an escalation by UUID. Implicit model: `status` stays
    * `'pending'`; claim is expressed via `assigned_to` + `assigned_until`.
+   * Returns `isExtension: true` when the same assignee re-claims a row they already hold.
    */
   async claim(params: ClaimEscalationParams): Promise<ClaimEscalationResult> {
     const hm = await this._engine(null, params.namespace);
@@ -219,8 +224,9 @@ export class EscalationClientService {
 
   /**
    * Atomically claims the highest-priority pending escalation whose `metadata`
-   * contains the given key/value. Returns `isExtension: true` when the same
-   * assignee re-claims a row they already hold (extends the expiry).
+   * contains the given key/value. Optionally merges `metadata` into the claimed row
+   * in the same atomic UPDATE. Returns `isExtension: true` when the same assignee
+   * re-claims a row they already hold (extends the expiry).
    */
   async claimByMetadata(params: ClaimByMetadataParams): Promise<ClaimByMetadataResult> {
     const hm = await this._engine(null, params.namespace);
@@ -252,9 +258,12 @@ export class EscalationClientService {
   }
 
   /**
-   * Signal-first resolve: marks the escalation resolved **and** delivers the
-   * signal to the waiting workflow in a single held transaction. If signal
-   * delivery fails, the transaction rolls back — `committed: false`.
+   * Resolves a pending escalation by UUID. Uses an explicit Postgres transaction
+   * with FOR UPDATE + WHERE guard: only one concurrent caller can commit the
+   * status change; the committed resolved row with its `signal_key` is the
+   * durable proof. Signal delivery is best-effort post-commit — the resolved
+   * row is the recovery record for any missed delivery. Returns the updated
+   * row as `entry` on success.
    */
   async resolve(
     params: ResolveEscalationParams,
@@ -262,7 +271,8 @@ export class EscalationClientService {
   ): Promise<ResolveEscalationResult> {
     const ns = (params.namespace ?? namespace) ?? APP_ID;
     const hm = await this._engine(null, ns);
-    const dbResult = await (hm.engine.store as any).resolveEscalation(
+    const store = hm.engine.store as any;
+    const dbResult = await store.resolveEscalation(
       { id: params.id, resolverPayload: params.resolverPayload },
     );
     if (!dbResult.ok) return dbResult;
@@ -272,12 +282,12 @@ export class EscalationClientService {
         data: params.resolverPayload ?? {},
       });
     }
-    return { ok: true };
+    return { ok: true, entry: dbResult.entry };
   }
 
   /**
    * Resolves the highest-priority matching escalation by metadata filter,
-   * then delivers its signal.
+   * then delivers its signal. Same transaction + WHERE guard semantics as `resolve()`.
    */
   async resolveByMetadata(
     params: ResolveByMetadataParams,
@@ -285,7 +295,8 @@ export class EscalationClientService {
   ): Promise<ResolveEscalationResult> {
     const ns = (params.namespace ?? namespace) ?? APP_ID;
     const hm = await this._engine(null, ns);
-    const dbResult = await (hm.engine.store as any).resolveEscalationByMetadata(
+    const store = hm.engine.store as any;
+    const dbResult = await store.resolveEscalationByMetadata(
       { key: params.key, value: params.value, resolverPayload: params.resolverPayload, roles: params.roles },
     );
     if (!dbResult.ok) return dbResult;
@@ -295,7 +306,7 @@ export class EscalationClientService {
         data: params.resolverPayload ?? {},
       });
     }
-    return { ok: true };
+    return { ok: true, entry: dbResult.entry };
   }
 
   /**
@@ -318,6 +329,66 @@ export class EscalationClientService {
   async releaseExpired(namespace?: string): Promise<number> {
     const hm = await this._engine(null, namespace);
     return (hm.engine.store as any).releaseExpiredEscalations(namespace);
+  }
+
+  // ─── Bulk operations ────────────────────────────────────────────────────────
+
+  /**
+   * Bulk-claims up to `ids.length` pending escalations in one statement.
+   * Returns `{ claimed, skipped }` — skipped rows are either already claimed
+   * by another assignee or non-existent. Implicit-claim semantics apply.
+   */
+  async claimMany(params: ClaimManyParams): Promise<{ claimed: number; skipped: number }> {
+    const hm = await this._engine(null, params.namespace);
+    return (hm.engine.store as any).claimManyEscalations(params);
+  }
+
+  /**
+   * Bulk-reassigns pending escalations to a new role, clearing any current claim.
+   * Returns the count of rows updated.
+   */
+  async escalateManyToRole(params: EscalateManyToRoleParams): Promise<number> {
+    const hm = await this._engine(null, params.namespace);
+    return (hm.engine.store as any).escalateManyEscalationsToRole(params);
+  }
+
+  /**
+   * Bulk-updates priority for pending escalations. Returns the count of rows updated.
+   */
+  async updateManyPriority(params: UpdateManyPriorityParams): Promise<number> {
+    const hm = await this._engine(null, params.namespace);
+    return (hm.engine.store as any).updateManyEscalationsPriority(params);
+  }
+
+  /**
+   * Bulk-resolves pending escalations by id-set. No signal delivery — intended
+   * for redirect-to-triage flows where no workflow is waiting. Returns the
+   * resolved rows.
+   */
+  async resolveMany(params: ResolveManyParams): Promise<EscalationEntry[]> {
+    const hm = await this._engine(null, params.namespace);
+    return (hm.engine.store as any).resolveManyEscalations(params);
+  }
+
+  // ─── Aggregates ─────────────────────────────────────────────────────────────
+
+  /**
+   * Returns dashboard-ready escalation counts. `period` controls the window
+   * used for `created` and `resolved` counts (default `'24h'`). When `roles`
+   * is an empty array, all counts are zero (RBAC guard).
+   */
+  async stats(params?: StatsEscalationsParams): Promise<EscalationStats> {
+    const hm = await this._engine(null, params?.namespace);
+    return (hm.engine.store as any).escalationStats(params ?? {});
+  }
+
+  /**
+   * Returns the sorted list of distinct `type` values in the escalations table.
+   * Useful for populating filter dropdowns.
+   */
+  async listDistinctTypes(namespace?: string): Promise<string[]> {
+    const hm = await this._engine(null, namespace);
+    return (hm.engine.store as any).listDistinctEscalationTypes(namespace);
   }
 
   static async shutdown(): Promise<void> {

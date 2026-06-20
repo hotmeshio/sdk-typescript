@@ -125,11 +125,12 @@ describe('FUNCTIONAL | Hook Escalation | Postgres', () => {
 
     it('hmsh_escalations row persists after workflow completes', async () => {
       // Rows are not auto-deleted on signal delivery — they persist for auditing.
-      // The row was claimed earlier so status is 'claimed'; callers must explicitly
-      // resolve() or the row is swept by releaseExpiredEscalations().
+      // The row was claimed (assigned_to set) but status stays 'pending' in the
+      // implicit claim model; callers resolve() to transition to 'resolved'.
       const esc = await store().getEscalationBySignalKey(jobId, NS);
       expect(esc).not.toBeNull();
-      expect(esc.status).toBe('claimed');
+      expect(esc.status).toBe('pending');
+      expect(esc.assigned_to).toBe('human-agent-1');
     }, 5_000);
   });
 
