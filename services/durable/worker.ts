@@ -409,6 +409,7 @@ export class WorkerService {
       appId: targetNamespace,
       engine: { connection: config.connection },
       workers: [workerEntry],
+      events: config.events,
     });
 
     WorkerService.instances.set(targetTopic, hotMeshWorker);
@@ -714,6 +715,7 @@ export class WorkerService {
       appId: targetNamespace,
       engine: { connection: providerConfig },
       workers: [workerEntry],
+      events: config.events,
     });
     WorkerService.instances.set(targetTopic, hotMeshWorker);
     return hotMeshWorker;
@@ -883,6 +885,7 @@ export class WorkerService {
       appId: config.namespace ?? APP_ID,
       engine: { connection: providerConfig },
       workers: [workerEntry],
+      events: config.events,
     });
     WorkerService.instances.set(targetTopic, hotMeshWorker);
     return hotMeshWorker;

@@ -1,5 +1,5 @@
 /**
- * Proves the system-event emission surface introduced in 0.22.4.
+ * Proves the system-event emission surface introduced in 0.22.4/0.22.5.
  *
  * The event hook must fire exactly once per durable transition, post-commit,
  * with the full committed row as `data` and a collision-proof `event_id`.
@@ -11,6 +11,7 @@
  *   C — claimMany / resolveMany: per-row emit, counts match
  *   D — engine start fires system.engine.{appId}.started
  *   E — deploy fires system.engine.{appId}.deployed
+ *   F — Worker.create with events: condition(config) hook Leg1 fires created
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Client as Postgres } from 'pg';
@@ -18,7 +19,7 @@ import { Client as Postgres } from 'pg';
 import { Durable } from '../../../services/durable';
 import { EscalationClientService } from '../../../services/escalations/client';
 import { HotMesh } from '../../../services/hotmesh';
-import { guid } from '../../../modules/utils';
+import { guid, sleepFor } from '../../../modules/utils';
 import { HMSH_LOGLEVEL } from '../../../modules/enums';
 import { dropTables, postgres_options } from '../../$setup/postgres';
 import { PostgresConnection } from '../../../services/connector/providers/postgres';
@@ -155,8 +156,6 @@ describe('DURABLE | system-event emission | Postgres', () => {
     it('event_id format is {id}:{verb}:{updated_at}', () => {
       const evt = collected.find(e => e.type.endsWith('.created'));
       expect(evt).toBeTruthy();
-      const parts = evt!.event_id.split(':');
-      // UUID has 5 parts, total: uuid(5 parts via hyphen) + verb + iso → check starts with escalationId
       expect(evt!.event_id.startsWith(escalationId + ':created:')).toBe(true);
     });
   });
@@ -240,7 +239,7 @@ describe('DURABLE | system-event emission | Postgres', () => {
     const collected: SystemEvent[] = [];
 
     it('HotMesh.init with events fires engine.started', async () => {
-      const appId = `evt-engine-${guid().slice(0, 8)}`;
+      const appId = `evt-engine-${guid().slice(0, 8).replace(/[^A-Za-z0-9]/g, '-')}`;
       const hm = await HotMesh.init({
         appId,
         logLevel: HMSH_LOGLEVEL,
@@ -262,7 +261,7 @@ describe('DURABLE | system-event emission | Postgres', () => {
     const collected: SystemEvent[] = [];
 
     it('deploy fires system.engine.{appId}.deployed', async () => {
-      const appId = `evt-deploy-${guid().slice(0, 8)}`;
+      const appId = `evt-deploy-${guid().slice(0, 8).replace(/[^A-Za-z0-9]/g, '-')}`;
       const hm = await HotMesh.init({
         appId,
         logLevel: HMSH_LOGLEVEL,
@@ -277,6 +276,70 @@ describe('DURABLE | system-event emission | Postgres', () => {
       const deployed = collected.find(e => e.type === `system.engine.${appId}.deployed`);
       expect(deployed).toBeTruthy();
       expect(deployed!.app_id).toBe(appId);
+    }, 20_000);
+  });
+
+  // ─── Scenario F: Worker.create with events threads hook Leg1 ───────────────
+
+  describe('Scenario F — Worker.create events wires hook Leg1 created emit', () => {
+    const collected: SystemEvent[] = [];
+    const taskQueue = `evt-worker-${guid().slice(0, 8).replace(/[^A-Za-z0-9]/g, '-')}`;
+
+    // Minimal workflow that suspends via condition(signalId, config),
+    // writing one hmsh_escalations row in the hook Leg1 transaction.
+    async function conditionWorkflow(orderId: string): Promise<unknown> {
+      const signalId = `cond-${Durable.guid()}`;
+      return Durable.workflow.condition(signalId, {
+        role: 'reviewer',
+        type: 'event-test-approval',
+        priority: 1,
+        metadata: { orderId },
+      });
+    }
+
+    it('Worker.create with events fires system.escalation.{id}.created on condition()', async () => {
+      const orderId = guid();
+      // In a real multi-engine fleet, every process registers the same events hook.
+      // Here both the client and worker share one publisher so exactly one engine
+      // fires the created event regardless of which one wins the dispatch race.
+      const sharedPublish = (e: SystemEvent) => { collected.push(e); };
+
+      // Start the workflow first (queues it). Pass events so this engine also
+      // has eventsPublish set — whichever engine processes the hook will emit.
+      const client = new Durable.Client({
+        connection,
+        events: { publish: sharedPublish },
+      });
+      const handle = await client.workflow.start({
+        args: [orderId],
+        taskQueue,
+        workflowName: 'conditionWorkflow',
+        workflowId: guid(),
+      });
+      expect(handle.workflowId).toBeDefined();
+
+      // Create worker with the same events publisher — this is the fix being proved
+      const worker = await Durable.Worker.create({
+        connection,
+        taskQueue,
+        workflow: conditionWorkflow,
+        events: { publish: sharedPublish },
+      });
+      await worker.run();
+
+      // Allow the workflow to reach condition() and write the escalation row
+      await sleepFor(4000);
+
+      const createdEvt = collected.find(e =>
+        e.type.endsWith('.created') && (e.data as any)?.metadata?.orderId === orderId
+      );
+      expect(createdEvt).toBeTruthy();
+      expect(createdEvt!.type).toMatch(/^system\.escalation\..+\.created$/);
+      expect((createdEvt!.data as any).role).toBe('reviewer');
+      expect((createdEvt!.data as any).type).toBe('event-test-approval');
+      expect((createdEvt!.data as any).signal_key).not.toBeNull();
+      expect((createdEvt!.data as any).workflow_id).toBeDefined();
+      expect(createdEvt!.event_id).toMatch(/^[^:]+:created:/);
     }, 20_000);
   });
 });
