@@ -1,4 +1,10 @@
-const APP_VERSION = '15';
+// Schema content version for the generated durable app YAML below. BUMP THIS
+// whenever `getWorkflowYAML` changes — it is how existing deployments detect a
+// schema upgrade and hot-swap to it (see WorkerService.activateWorkflow and
+// ClientService.deployAndActivate). Changing the YAML without a bump leaves
+// every already-deployed database on the old schema forever. Numeric string —
+// compared with `Number()` for ordering. (v16: condition() escalation hook.)
+const APP_VERSION = '16';
 const APP_ID = 'durable';
 
 /**

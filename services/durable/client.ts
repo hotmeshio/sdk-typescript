@@ -516,7 +516,12 @@ export class ClientService {
         });
         throw error;
       }
-    } else if (isNaN(Number(appVersion)) || appVersion < version) {
+    } else if (
+      isNaN(Number(appVersion)) ||
+      Number(appVersion) < Number(version)
+    ) {
+      // Numeric compare: string `<` mis-orders at digit boundaries (e.g. '9' < '16'
+      // is false as strings). Redeploy + hot-swap when an older schema is deployed.
       try {
         await hotMesh.deploy(getWorkflowYAML(appId, version));
         await hotMesh.activate(version);

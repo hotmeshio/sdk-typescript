@@ -211,8 +211,19 @@ export class WorkerService {
    */
   static async activateWorkflow(hotMesh: HotMesh) {
     const app = await hotMesh.engine.store.getApp(hotMesh.engine.appId);
-    const appVersion = app?.version;
-    if (!appVersion) {
+    const appVersion = app?.version as unknown as string;
+    if (
+      !appVersion ||
+      isNaN(Number(appVersion)) ||
+      Number(appVersion) < Number(APP_VERSION)
+    ) {
+      // Not deployed, or an OLDER schema version is deployed (the SDK was
+      // upgraded). Deploy this SDK's schema and hot-swap to it. HotMesh keeps
+      // the prior version deployed, so in-flight jobs drain on the old schema
+      // while new jobs use APP_VERSION. Without this branch an existing, active
+      // app would never pick up a new schema — atomic-escalation hooks and any
+      // other schema-encoded feature would silently never activate after an
+      // upgrade. Mirrors ClientService.deployAndActivate.
       try {
         await hotMesh.deploy(
           getWorkflowYAML(hotMesh.engine.appId, APP_VERSION),
