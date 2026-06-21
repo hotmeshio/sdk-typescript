@@ -19,6 +19,7 @@ This guide demonstrates how to build sophisticated workflows using HotMesh, prog
 - [The Simplest Sequential Data Flow](#the-simplest-sequential-data-flow)
 - [The Simplest Compositional Executable Flow](#the-simplest-compositional-executable-flow)
 - [The Simplest Conditional Executable Flow](#the-simplest-conditional-executable-flow)
+- [The Simplest Escalation Flow](#the-simplest-escalation-flow)
 
 ## Setup
 ### Install Packages
@@ -868,3 +869,139 @@ const response9c = await hotMesh.pubsub('abc.test', { a : 'hello' });
 console.log(response9c.data.b); // hello world
 console.log(response9c.data.c); // hello world world
 ```
+
+## The Simplest Escalation Flow
+
+When a workflow must pause and wait for an external actor — a human reviewer, an AI agent, a manufacturing cell — add an `escalation:` block to a `hook` activity. At suspension time, HotMesh atomically writes one row to `public.hmsh_escalations` with full routing context: who should act (`role`), what kind of work it is (`type`/`subtype`), how urgent it is (`priority`), and any application-specific keys (`metadata`) needed to display or route it.
+
+The `signal_key` in the row is the job ID. Resuming the workflow is always `hotMesh.signal(hookTopic, { id: jobId, ...resolverData })`.
+
+```yaml
+# abc.10.yaml
+app:
+  id: abc
+  version: '10'
+  graphs:
+    - subscribes: abc.test
+      publishes: abc.tested
+      expire: 300
+
+      input:
+        schema:
+          type: object
+          properties:
+            orderId:
+              type: string
+            region:
+              type: string
+
+      output:
+        schema:
+          type: object
+          properties:
+            approved:
+              type: boolean
+            approvedBy:
+              type: string
+
+      activities:
+        t1:
+          type: trigger
+        a1:
+          type: hook
+          escalation:
+            role: approver
+            type: order-approval
+            subtype: regional
+            priority: 2
+            description: Approve order for dispatch
+            metadata:
+              orderId: '{t1.output.data.orderId}'
+              region: '{t1.output.data.region}'
+            envelope:
+              instructions: 'Review and approve or reject the order'
+          job:
+            maps:
+              approved: '{a1.hook.data.approved}'
+              approvedBy: '{a1.hook.data.approvedBy}'
+
+      transitions:
+        t1:
+          - to: a1
+
+      hooks:
+        abc.approve:
+          - to: a1
+            conditions:
+              match:
+                - expected: '{$job.metadata.jid}'
+                  actual: '{$self.hook.data.id}'
+```
+
+The `metadata` fields support `@pipe` expressions — they are resolved against the live job context at suspension time, so the row carries the actual input values, not template strings.
+
+The `hooks` section declares the signal topic (`abc.approve`) and routes it to activity `a1`. The condition `{$job.metadata.jid} == {$self.hook.data.id}` ensures the signal is only delivered to the correct workflow instance.
+
+Deploy, start the workflow, then query and claim the waiting escalation:
+
+```javascript
+// continued from prior example
+
+await hotMesh.deploy('./abc.10.yaml');
+await hotMesh.activate('10');
+
+// Start the workflow — returns immediately, workflow suspends at the hook
+const jobId = await hotMesh.pub('abc.test', { orderId: 'ORD-123', region: 'us-west' });
+
+// Wait briefly for the hook activity to write its escalation row
+await new Promise(r => setTimeout(r, 1000));
+
+// Query the pending escalation by signal_key (= jobId)
+const store = hotMesh.engine.store;
+const row = await store.getEscalationBySignalKey(jobId, 'hmsh');
+console.log(row.role);     // approver
+console.log(row.type);     // order-approval
+console.log(row.status);   // pending
+console.log(row.metadata); // { orderId: 'ORD-123', region: 'us-west' }
+
+// Claim it — marks it in-progress and sets the assignee
+await store.claimEscalation({
+  id: row.id,
+  namespace: 'hmsh',
+  assignee: 'alice',
+  durationMinutes: 60,
+});
+
+// Subscribe to the completion event before signaling
+let result;
+await hotMesh.sub(`abc.tested.${jobId}`, (_topic, msg) => { result = msg; });
+
+// Deliver the approval — resumes the suspended workflow
+await hotMesh.signal('abc.approve', {
+  id: jobId,          // routes to the correct workflow instance
+  approved: true,
+  approvedBy: 'alice',
+});
+
+// Wait for the workflow to complete
+await new Promise(r => setTimeout(r, 1000));
+await hotMesh.unsub(`abc.tested.${jobId}`);
+
+console.log(result.data.approved);   // true
+console.log(result.data.approvedBy); // alice
+```
+
+Escalation rows persist after signal delivery — they are audit records. Resolve the row to attach the reviewer's decision and advance its status:
+
+```javascript
+await store.resolveEscalation({
+  id: row.id,
+  namespace: 'hmsh',
+  resolverPayload: { verdict: 'approved' },
+});
+
+const resolved = await store.getEscalationBySignalKey(jobId, 'hmsh');
+console.log(resolved.status); // resolved
+```
+
+The escalation table (`public.hmsh_escalations`) is global — all apps share it. Rows from different apps are distinguished by `namespace` and `app_id`. The `Durable.workflow.condition(signalId, queueConfig)` primitive on the Durable layer provides the same suspension behavior without writing YAML, and `Escalations.Client` / `Durable.Client.escalations` expose the full claim-and-resolve API with TypeScript types.

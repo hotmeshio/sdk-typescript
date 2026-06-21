@@ -19,6 +19,7 @@ import { JobState } from '../../types/job';
 import { KeyType } from '../../modules/key';
 import { StreamStatus, StringAnyType } from '../../types';
 import { EscalationClientService } from '../escalations/client';
+import { EventsConfig } from '../../types/system_events';
 
 import { Search } from './search';
 import { Entity } from './entity';
@@ -80,6 +81,10 @@ export class ClientService {
   /**
    * @private
    */
+  events?: EventsConfig;
+  /**
+   * @private
+   */
   static topics: string[] = [];
   /**
    * @private
@@ -99,6 +104,7 @@ export class ClientService {
    */
   constructor(config: ClientConfig) {
     this.connection = config.connection;
+    this.events = config.events;
     this.escalations = new EscalationClientService({
       getHotMeshClient: this.getHotMeshClient.bind(this),
       events: config.events,
@@ -132,6 +138,7 @@ export class ClientService {
         readonly,
         connection: this.connection,
       },
+      events: this.events,
     });
 
     //synchronously cache the promise (before awaiting)
