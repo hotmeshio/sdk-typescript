@@ -8,6 +8,7 @@ import {
 import { JobInterruptOptions, JobOutput } from '../../types/job';
 import { StreamError } from '../../types/stream';
 import { ExporterService } from './exporter';
+import { EscalationClientService } from '../escalations/client';
 
 /**
  * Handle to a running or completed workflow execution. Returned by
@@ -38,14 +39,17 @@ export class WorkflowHandleService {
   hotMesh: HotMesh;
   workflowTopic: string;
   workflowId: string;
+  /** @private */
+  escalationClient?: EscalationClientService;
 
   /**
    * @private
    */
-  constructor(hotMesh: HotMesh, workflowTopic: string, workflowId: string) {
+  constructor(hotMesh: HotMesh, workflowTopic: string, workflowId: string, escalationClient?: EscalationClientService) {
     this.workflowTopic = workflowTopic;
     this.workflowId = workflowId;
     this.hotMesh = hotMesh;
+    this.escalationClient = escalationClient;
     this.exporter = new ExporterService(
       this.hotMesh.appId,
       this.hotMesh.engine.store,
@@ -200,13 +204,27 @@ export class WorkflowHandleService {
    * subscribers are notified, and the job hash is expired. Unlike
    * {@link cancel}, this does **not** give the workflow a chance to
    * run cleanup code.
+   *
+   * Any pending escalations for this workflow are cancelled in the same
+   * Postgres transaction that decrements the job semaphore — one atomic
+   * write, no TOCTOU. A `system.escalation.*.cancelled` event is emitted
+   * locally for each cancelled row via the configured `events.publish`
+   * sink — instance-local only, never broadcast.
    */
   async terminate(options?: JobInterruptOptions): Promise<string> {
-    return await this.hotMesh.interrupt(
+    let cancelledEntries: any[] = [];
+    const result = await this.hotMesh.interrupt(
       `${this.hotMesh.appId}.execute`,
       this.workflowId,
-      options,
+      {
+        ...options,
+        onEscalationsCancelled: (entries) => { cancelledEntries = entries; },
+      },
     );
+    if (this.escalationClient && cancelledEntries.length > 0) {
+      this.escalationClient.emitCancelledBatch(cancelledEntries);
+    }
+    return result;
   }
 
   /**

@@ -167,7 +167,10 @@ type JobInterruptOptions = {
   throw?: boolean;
 
   /**
-   * interrupt child/descendant jobs
+   * Reserved for future use: interrupt child/descendant jobs.
+   * This flag is parsed and threaded through the engine call chain
+   * but is **not yet implemented** — child workflows are not interrupted
+   * when this is set. Do not rely on it.
    * @default false
    */
   descend?: boolean;
@@ -195,6 +198,14 @@ type JobInterruptOptions = {
    * Optional stack trace
    */
   stack?: string;
+
+  /**
+   * Fires synchronously inside `store.interrupt()` after the single
+   * transaction that decrements the job semaphore AND cancels pending
+   * escalations commits. Only used by `WorkflowHandleService.terminate()`
+   * to emit local events without a second transaction or a separate query.
+   */
+  onEscalationsCancelled?: (entries: any[]) => void;
 };
 
 /**

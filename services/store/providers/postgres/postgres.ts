@@ -1371,44 +1371,66 @@ class PostgresStoreService extends StoreService<
     options: JobInterruptOptions = {},
   ): Promise<void> {
     try {
-      //verify job exists
+      //pre-flight: bail early if already inactive (optimization; hincrbyfloat is the real guard)
       const status = await this.getStatus(jobId, this.appId);
       if (status <= 0) {
-        //verify still active; job already completed
         throw new Error(`Job ${jobId} already completed`);
       }
-      //decrement job status (:) by 1bil
+
       const amount = -1_000_000_000;
-      const jobKey = this.mintKey(KeyType.JOB_STATE, {
-        appId: this.appId,
-        jobId,
-      });
-      const result = await this.kvsql().hincrbyfloat(jobKey, ':', amount);
-      if (result <= amount) {
-        //verify active state; job already interrupted
-        throw new Error(`Job ${jobId} already completed`);
-      }
-      //persist the error unless specifically told not to
+      const jobKey = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+
+      //build error symbol BEFORE opening the transaction — symbol lookup is read-only
+      let errSymbol: string | undefined;
+      let err: string | undefined;
       if (options.throw !== false) {
-        const errKey = `metadata/err`; //job errors are stored at the path `metadata/err`
-        const symbolNames = [`$${topic}`]; //the symbol for `metadata/err` is in the backend
+        const errKey = `metadata/err`;
+        const symbolNames = [`$${topic}`];
         const symKeys = await this.getSymbolKeys(symbolNames);
         const symVals = await this.getSymbolValues();
         this.serializer.resetSymbols(symKeys, symVals, {});
-
-        //persists the standard 410 error (job is `gone`)
-        const err = JSON.stringify({
+        err = JSON.stringify({
           code: options.code ?? HMSH_CODE_INTERRUPT,
           message: options.reason ?? `job [${jobId}] interrupted`,
           stack: options.stack ?? '',
           job_id: jobId,
         });
-
         const payload = { [errKey]: amount.toString() };
         const hashData = this.serializer.package(payload, symbolNames);
-        const errSymbol = Object.keys(hashData)[0];
-        await this.kvsql().hset(jobKey, { [errSymbol]: err });
+        errSymbol = Object.keys(hashData)[0];
       }
+
+      //single transaction: status decrement + optional error write + escalation cancel.
+      //WHERE guard on the escalation UPDATE prevents double-cancel;
+      //hincrbyfloat is the atomic idempotency proof checked post-commit.
+      const txn = this.kvsql(this.transact());
+      txn.hincrbyfloat(jobKey, ':', amount);
+      if (errSymbol && err) {
+        txn.hset(jobKey, { [errSymbol]: err });
+      }
+      (txn as any).addCommand(
+        `UPDATE public.hmsh_escalations
+         SET status = 'cancelled', updated_at = NOW()
+         WHERE workflow_id = $1
+           AND app_id = $2
+           AND status = 'pending'
+         RETURNING *`,
+        [jobId, this.appId],
+        'array',
+        (rows: any[]) => rows,
+      );
+      const results = await (txn as any).exec();
+
+      //results[0] = new status after hincrbyfloat — the atomic idempotency guard
+      const newStatus = results[0] as number;
+      if (newStatus <= amount) {
+        throw new Error(`Job ${jobId} already completed`);
+      }
+
+      //fire the callback with any escalation rows cancelled in this same transaction;
+      //no second query, no second transaction
+      const cancelledEntries = (results[results.length - 1] || []) as any[];
+      options.onEscalationsCancelled?.(cancelledEntries);
     } catch (e) {
       if (!options.suppress) {
         throw e;

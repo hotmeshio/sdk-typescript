@@ -61,13 +61,19 @@ describe('DURABLE | escalations | Postgres', () => {
   });
 
   describe('Worker', () => {
-    it('should create a worker and process the workflow (durable schema already exists)', async () => {
-      const worker = await Worker.create({
+    it('should create workers and process the workflow (durable schema already exists)', async () => {
+      const approvalWorker = await Worker.create({
         connection,
         taskQueue: 'escalation-test',
         workflow: workflows.approvalWorkflow,
       });
-      await worker.run();
+      await approvalWorker.run();
+      const cancelWorker = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.cancelAwareWorkflow,
+      });
+      await cancelWorker.run();
       // Wait for the condition() to fire and write the escalation row
       await sleepFor(2000);
     }, 15_000);
@@ -579,6 +585,71 @@ describe('DURABLE | escalations | Postgres', () => {
       const row = await client.escalations.get(esc.id);
       expect(row?.status).toBe('resolved');
     }, 5_000);
+  });
+
+  describe('workflow termination cancels pending escalations', () => {
+    it('interrupting a workflow atomically cancels its pending escalation row', async () => {
+      const terminateHandle = await client.workflow.start({
+        args: [guid(), 'us-west'],
+        taskQueue: 'escalation-test',
+        workflowName: 'approvalWorkflow',
+        workflowId: guid(),
+      });
+
+      // Wait for the condition() suspension to write the escalation row.
+      await sleepFor(2000);
+
+      const before = await client.escalations.list({
+        workflowId: terminateHandle.workflowId,
+        status: 'pending',
+      });
+      expect(before.length).toBe(1);
+
+      // Terminate — this must cancel the escalation row.
+      await terminateHandle.terminate({ suppress: true });
+
+      const after = await client.escalations.list({
+        workflowId: terminateHandle.workflowId,
+        status: 'cancelled',
+      });
+      expect(after.length).toBe(1);
+      expect(after[0].status).toBe('cancelled');
+
+      // Row must no longer appear as pending.
+      const stillPending = await client.escalations.list({
+        workflowId: terminateHandle.workflowId,
+        status: 'pending',
+      });
+      expect(stillPending.length).toBe(0);
+    }, 20_000);
+  });
+
+  describe('cancel() delivers null to waiting condition', () => {
+    it('cancelling an escalation resumes condition() with null', async () => {
+      const cancelHandle = await client.workflow.start({
+        args: [guid()],
+        taskQueue: 'escalation-test',
+        workflowName: 'cancelAwareWorkflow',
+        workflowId: guid(),
+      });
+
+      // Wait for the condition() to suspend and write the escalation row.
+      await sleepFor(2000);
+
+      const pending = await client.escalations.list({
+        workflowId: cancelHandle.workflowId,
+        status: 'pending',
+      });
+      expect(pending.length).toBe(1);
+
+      // Cancel the escalation — this delivers __escalation_cancelled signal.
+      const cancelResult = await client.escalations.cancel(pending[0].id);
+      expect(cancelResult.ok).toBe(true);
+
+      // The workflow should resume and return null from condition().
+      const output = await cancelHandle.result<null>();
+      expect(output).toBeNull();
+    }, 20_000);
   });
 
   describe('migration (full-fidelity UUID + state preservation)', () => {

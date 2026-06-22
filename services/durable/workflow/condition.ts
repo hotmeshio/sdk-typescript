@@ -108,12 +108,13 @@ import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
  *   {@link ConditionQueueConfig} that writes one row to `public.hmsh_escalations`
  *   atomically at suspension time. Cannot specify both; use the config object's
  *   `expiresAt` field for deadline enforcement when an escalation is involved.
- * @returns The signal payload, or `false` if a timeout string was given and it expired.
+ * @returns The signal payload, `false` if a timeout string was given and it expired,
+ *   or `null` if the escalation was cancelled via `client.escalations.cancel()`.
  */
 export async function condition<T>(
   signalId: string,
   timeoutOrConfig?: string | ConditionQueueConfig,
-): Promise<T | false> {
+): Promise<T | false | null> {
   const timeout = typeof timeoutOrConfig === 'string' ? timeoutOrConfig : undefined;
   const queueConfig = timeoutOrConfig && typeof timeoutOrConfig === 'object' ? timeoutOrConfig : undefined;
   const [didRunAlready, execIndex, result] = await didRun('wait');
@@ -143,7 +144,13 @@ export async function condition<T>(
     if (result?.timedOut) {
       return false;
     }
-    return (result as { id: string; data: { data: T } }).data.data as T;
+    const signalData = (result as { id: string; data: { data: T } }).data?.data;
+    // If the escalation was cancelled via cancel(), the signal carries this marker.
+    // Return null so the workflow can distinguish cancellation from a real resolution.
+    if (signalData && typeof signalData === 'object' && (signalData as Record<string, unknown>).__escalation_cancelled === true) {
+      return null;
+    }
+    return signalData as T;
   }
 
   const store = asyncLocalStorage.getStore();
