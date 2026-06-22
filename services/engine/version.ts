@@ -66,10 +66,20 @@ export async function getVID(
       setCacheMode(instance, 'cache', app.version.toString());
     }
     return { id: instance.appId, version: app.version };
-  } else if (!instance.apps && vid) {
-    instance.apps = {};
-    instance.apps[instance.appId] = vid;
-    return vid;
+  } else if (!instance.apps) {
+    // First call — always DB-refresh to avoid locking in a stale version.
+    // The `vid` parameter originates from store.getApp() (which may be
+    // cached from before the last activation).  If a worker missed the
+    // nocache NOTIFY (startup race: LISTEN not yet established when the
+    // NOTIFY fired), it would lock in the pre-activation version for its
+    // entire lifetime, silently loading the old schema on every request.
+    // One extra DB query here, once per engine lifetime, eliminates the
+    // race regardless of NOTIFY delivery.
+    const id = vid?.id ?? instance.appId;
+    const freshApp = await instance.store.getApp(id, true);
+    if (!instance.apps) instance.apps = {};
+    instance.apps[instance.appId] = freshApp;
+    return { id: freshApp.id, version: freshApp.version };
   } else {
     return await fetchAndVerifyVID(instance, {
       id: instance.appId,
