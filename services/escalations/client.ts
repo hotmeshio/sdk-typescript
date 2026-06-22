@@ -303,14 +303,38 @@ export class EscalationClientService {
   }
 
   /**
-   * Cancels a pending escalation without delivering a signal. Terminal rows
-   * return `already-terminal`.
+   * Cancels a pending escalation and delivers a cancellation signal to the
+   * waiting workflow so that `condition()` returns `null`. Terminal rows
+   * return `already-terminal`. Signal delivery is best-effort post-commit —
+   * the committed cancelled row is the durable record; any missed delivery
+   * can be detected via a sweep of rows with `status = 'cancelled'` and a
+   * non-null `signal_key`.
    */
   async cancel(id: string, namespace?: string): Promise<CancelEscalationResult> {
-    const hm = await this._engine(null, namespace);
+    const ns = namespace ?? APP_ID;
+    const hm = await this._engine(null, ns);
     const result = await (hm.engine.store as any).cancelEscalation(id, namespace);
-    if (result.ok === true) this._emit('cancelled', result.entry);
+    if (result.ok === true) {
+      this._emit('cancelled', result.entry);
+      if (result.entry.signal_key) {
+        await this._deliverEscalationSignal(ns, result.entry.topic, {
+          id: result.entry.signal_key,
+          data: { __escalation_cancelled: true },
+        });
+      }
+    }
     return result;
+  }
+
+  /**
+   * Emits local `cancelled` events for a batch of already-cancelled escalation
+   * entries. Called by `WorkflowHandleService.terminate()` after the single
+   * atomic transaction that interrupts the workflow and cancels its escalations
+   * has committed. Fire-and-forget via the configured `events.publish` sink
+   * (e.g. NATS) — instance-local, never broadcast via Postgres LISTEN/NOTIFY.
+   */
+  emitCancelledBatch(entries: EscalationEntry[]): void {
+    this._emitMany('cancelled', entries);
   }
 
   /**

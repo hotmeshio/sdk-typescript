@@ -288,7 +288,7 @@ export class ClientService {
           entity: options?.entity,
         },
       );
-      return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId);
+      return new WorkflowHandleService(hotMeshClient, workflowTopic, jobId, this.escalations);
     },
 
     /**
@@ -423,6 +423,7 @@ export class ClientService {
         hotMeshClient,
         workflowTopic,
         workflowId,
+        this.escalations,
       );
     },
 
