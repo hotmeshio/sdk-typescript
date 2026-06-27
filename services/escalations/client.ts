@@ -344,6 +344,12 @@ export class EscalationClientService {
    * durable proof. Signal delivery is best-effort post-commit — the resolved
    * row is the recovery record for any missed delivery. Returns the updated
    * row as `entry` on success.
+   *
+   * Pass `params.metadata` to merge the resolution outcome ("what actually
+   * happened") into the row's GIN-indexed `metadata` in the same atomic UPDATE,
+   * making it `@>`-queryable alongside the creation metadata ("what was
+   * intended"). This is distinct from `resolverPayload`, which is delivered to
+   * the waiting workflow as `condition()`'s return value and is not GIN-indexed.
    */
   async resolve(
     params: ResolveEscalationParams,
@@ -353,7 +359,7 @@ export class EscalationClientService {
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
     const dbResult = await store.resolveEscalation(
-      { id: params.id, resolverPayload: params.resolverPayload },
+      { id: params.id, resolverPayload: params.resolverPayload, metadata: params.metadata },
     );
     if (!dbResult.ok) return dbResult;
     if (dbResult.signalKey) {
@@ -369,6 +375,10 @@ export class EscalationClientService {
   /**
    * Resolves the highest-priority matching escalation by metadata filter,
    * then delivers its signal. Same transaction + WHERE guard semantics as `resolve()`.
+   *
+   * The `key`/`value` are the *selector* used to find the row; pass
+   * `params.metadata` to additionally merge a resolution patch into that row's
+   * GIN-indexed `metadata` in the same atomic UPDATE. See {@link resolve}.
    */
   async resolveByMetadata(
     params: ResolveByMetadataParams,
@@ -378,7 +388,7 @@ export class EscalationClientService {
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
     const dbResult = await store.resolveEscalationByMetadata(
-      { key: params.key, value: params.value, resolverPayload: params.resolverPayload, roles: params.roles },
+      { key: params.key, value: params.value, resolverPayload: params.resolverPayload, roles: params.roles, metadata: params.metadata },
     );
     if (!dbResult.ok) return dbResult;
     if (dbResult.signalKey) {
@@ -448,6 +458,10 @@ export class EscalationClientService {
    * Bulk-resolves pending escalations by id-set. No signal delivery — intended
    * for redirect-to-triage flows where no workflow is waiting. Returns the
    * resolved rows.
+   *
+   * Pass `params.metadata` to merge a resolution patch into every winning
+   * (still-pending) row's GIN-indexed `metadata` in the single atomic UPDATE.
+   * See {@link resolve}.
    */
   async resolveMany(params: ResolveManyParams): Promise<EscalationEntry[]> {
     const hm = await this._engine(null, params.namespace);

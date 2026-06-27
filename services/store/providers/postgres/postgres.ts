@@ -2260,8 +2260,11 @@ class PostgresStoreService extends StoreService<
   async resolveEscalation(
     params: import('../../../../types/hmsh_escalations').ResolveEscalationParams,
   ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null }> {
-    const { id, namespace, resolverPayload } = params;
+    const { id, namespace, resolverPayload, metadata } = params;
     const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
+    // metaJson is bound at a fixed index; the CASE no-ops when null so resolution
+    // can merge into the GIN-indexed metadata without disturbing the param layout.
+    const metaJson = metadata ? JSON.stringify(metadata) : null;
     // Explicit transaction: FOR UPDATE locks the row; WHERE guard on UPDATE is the TOCTOU
     // barrier — a concurrent caller whose UPDATE matches 0 rows sees 'already-resolved'.
     // On crash before COMMIT neither write lands; on crash after COMMIT both are durable.
@@ -2284,10 +2287,14 @@ class PostgresStoreService extends StoreService<
       }
       const updateResult = await this.pgClient.query(
         `UPDATE public.hmsh_escalations
-         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2, updated_at = NOW()
-         WHERE id = $1 ${namespace ? 'AND namespace = $3' : ''} AND status = 'pending'
+         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2,
+             metadata = CASE WHEN $3::jsonb IS NOT NULL
+                             THEN COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+                             ELSE metadata END,
+             updated_at = NOW()
+         WHERE id = $1 ${namespace ? 'AND namespace = $4' : ''} AND status = 'pending'
          RETURNING *`,
-        namespace ? [id, payloadJson, namespace] : [id, payloadJson],
+        namespace ? [id, payloadJson, metaJson, namespace] : [id, payloadJson, metaJson],
       );
       if (!updateResult.rows[0]) {
         await this.pgClient.query('ROLLBACK');
@@ -2304,9 +2311,10 @@ class PostgresStoreService extends StoreService<
   async resolveEscalationByMetadata(
     params: import('../../../../types/hmsh_escalations').ResolveByMetadataParams,
   ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null }> {
-    const { key, value, namespace, resolverPayload, roles } = params;
+    const { key, value, namespace, resolverPayload, roles, metadata } = params;
     const filter = JSON.stringify({ [key]: value });
     const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
+    const metaJson = metadata ? JSON.stringify(metadata) : null;
     await this.pgClient.query('BEGIN');
     try {
       const lockResult = await this.pgClient.query(
@@ -2330,10 +2338,14 @@ class PostgresStoreService extends StoreService<
       }
       const updateResult = await this.pgClient.query(
         `UPDATE public.hmsh_escalations
-         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2, updated_at = NOW()
+         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2,
+             metadata = CASE WHEN $3::jsonb IS NOT NULL
+                             THEN COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+                             ELSE metadata END,
+             updated_at = NOW()
          WHERE id = $1 AND status = 'pending'
          RETURNING *`,
-        [id, payloadJson],
+        [id, payloadJson, metaJson],
       );
       if (!updateResult.rows[0]) {
         await this.pgClient.query('ROLLBACK');
@@ -2506,19 +2518,23 @@ class PostgresStoreService extends StoreService<
   async resolveManyEscalations(
     params: import('../../../../types/hmsh_escalations').ResolveManyParams,
   ): Promise<import('../../../../types/hmsh_escalations').EscalationEntry[]> {
-    const { ids, namespace, resolverPayload } = params;
+    const { ids, namespace, resolverPayload, metadata } = params;
     const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
+    const metaJson = metadata ? JSON.stringify(metadata) : null;
     const result = await this.pgClient.query(
       `UPDATE public.hmsh_escalations
        SET status           = 'resolved',
            resolved_at      = NOW(),
            resolver_payload = $1,
+           metadata         = CASE WHEN $3::jsonb IS NOT NULL
+                                   THEN COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+                                   ELSE metadata END,
            updated_at       = NOW()
        WHERE id = ANY($2::uuid[])
-         ${namespace ? 'AND namespace = $3' : ''}
+         ${namespace ? 'AND namespace = $4' : ''}
          AND status = 'pending'
        RETURNING *`,
-      namespace ? [payloadJson, ids, namespace] : [payloadJson, ids],
+      namespace ? [payloadJson, ids, metaJson, namespace] : [payloadJson, ids, metaJson],
     );
     return result.rows;
   }
