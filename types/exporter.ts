@@ -342,6 +342,19 @@ export interface WorkflowExecution {
   summary: WorkflowExecutionSummary;
   children?: WorkflowExecution[];
   stream_history?: StreamHistoryEntry[];
+  /**
+   * Upward lineage pointer to the real spawning workflow — never the synthetic
+   * collator `$C` job. `null` marks a root. Only present when the export was
+   * requested with `include_lineage: true`.
+   */
+  parent_workflow_id?: string | null;
+  /**
+   * Root ancestor of this execution; `null` for a root itself (identify roots
+   * via a null `parent_workflow_id`). Every descendant carries the same
+   * `origin_id`, so a subtree is recoverable in one query. Only present when the
+   * export was requested with `include_lineage: true`.
+   */
+  origin_id?: string | null;
 }
 
 /**
@@ -388,6 +401,17 @@ export interface ExecutionExportOptions {
    * @default false
    */
   allow_direct_query?: boolean;
+  /**
+   * When true, populates the export's `parent_workflow_id` and `origin_id` from
+   * the jobs table via a single indexed lookup. `parent_workflow_id` is the real
+   * spawning workflow (never the synthetic collator `$C` job); `origin_id` is the
+   * root ancestor (a null `parent_workflow_id` marks a root). Opt-in so the extra
+   * query is only paid when a UI needs upward lineage. Requires a provider that
+   * implements `getJobLineage` (e.g., Postgres); a no-op otherwise.
+   *
+   * @default false
+   */
+  include_lineage?: boolean;
   /**
    * When true, fetches the full stream message history for this workflow
    * from the worker_streams table and attaches it as `stream_history`.

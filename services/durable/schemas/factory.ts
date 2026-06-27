@@ -3,8 +3,9 @@
 // schema upgrade and hot-swap to it (see WorkerService.activateWorkflow and
 // ClientService.deployAndActivate). Changing the YAML without a bump leaves
 // every already-deployed database on the old schema forever. Numeric string —
-// compared with `Number()` for ordering. (v16: condition() escalation hook.)
-const APP_VERSION = '16';
+// compared with `Number()` for ordering. (v17: collator_waiter escalation block —
+// escalation-bearing condition() inside Promise.all writes its hmsh_escalations row.)
+const APP_VERSION = '17';
 const APP_ID = 'durable';
 
 /**
@@ -1940,6 +1941,49 @@ const getWorkflowYAML = (app: string, version: string): string => {
               - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
               - ['{@array.get}', duration]
               - ['{@object.get}']
+          # Flatten the CURRENT item's escalation config into this activity's own
+          # output so the escalation block below can address it with flat symbols.
+          # mapOutputData runs before the escalation INSERT in Leg1, so these are
+          # resolved in time. For a plain (non-escalation) collated condition these
+          # resolve to undefined and the INSERT is skipped, just like the inline waiter.
+          output:
+            maps:
+              queueConfig:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', queueConfig]
+                  - ['{@object.get}']
+              taskQueue:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', taskQueue]
+                  - ['{@object.get}']
+              workflowName:
+                '@pipe':
+                  - ['{collator_trigger.output.data.items}', '{collator_cycle_hook.output.data.cur_index}']
+                  - ['{@array.get}', workflowName]
+                  - ['{@object.get}']
+          # Identical in principle to the inline waiter escalation block, but sourced
+          # from the collated item. The escalation signal_key is auto-derived from this
+          # activity's reentry hook rule (wfs.signal, matching item.signalId), so resolve()
+          # and signal() — which double-fire wfs.signal + wfs.wait — reach it correctly.
+          escalation:
+            type: '{$self.output.data.queueConfig.type}'
+            subtype: '{$self.output.data.queueConfig.subtype}'
+            entity: '{$self.output.data.queueConfig.entity}'
+            description: '{$self.output.data.queueConfig.description}'
+            role: '{$self.output.data.queueConfig.role}'
+            priority: '{$self.output.data.queueConfig.priority}'
+            metadata: '{$self.output.data.queueConfig.metadata}'
+            envelope: '{$self.output.data.queueConfig.envelope}'
+            originId: '{$self.output.data.queueConfig.originId}'
+            parentId: '{$self.output.data.queueConfig.parentId}'
+            initiatedBy: '{$self.output.data.queueConfig.initiatedBy}'
+            traceId: '{$self.output.data.queueConfig.traceId}'
+            spanId: '{$self.output.data.queueConfig.spanId}'
+            expiresAt: '{$self.output.data.queueConfig.expiresAt}'
+            taskQueue: '{$self.output.data.taskQueue}'
+            workflowType: '{$self.output.data.workflowName}'
           hook:
             type: object
             properties:

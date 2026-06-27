@@ -271,3 +271,167 @@ export async function testLateRegistration(name: string): Promise<{ complex: str
   });
   return await greet(name);
 }
+
+/** A child whose whole body is a single `condition()` — the unit a fan-in harvest spawns. */
+export async function childWaitFor(signalId: string): Promise<any> {
+  return await Durable.workflow.condition(signalId);
+}
+
+/** Feature 18: Promise.all of `executeChild`, each child a single `condition()` resolved by
+ *  an EXTERNAL signal. This is the supported way to collect N independent durable waits in
+ *  parallel — fan them out as child workflows (each one condition) rather than awaiting
+ *  concurrent conditions in a single execution (which races the wait registration). Each
+ *  child is given a fixed workflowId so the test can signal it directly. */
+export async function testParallelConditionChildren(name: string): Promise<{ a: any; b: any }> {
+  const [a, b] = await Promise.all([
+    Durable.workflow.executeChild<any>({
+      workflowName: 'childWaitFor',
+      args: ['child-sig-a'],
+      taskQueue: 'basic-world',
+      workflowId: 'cond-child-a',
+    }),
+    Durable.workflow.executeChild<any>({
+      workflowName: 'childWaitFor',
+      args: ['child-sig-b'],
+      taskQueue: 'basic-world',
+      workflowId: 'cond-child-b',
+    }),
+  ]);
+  return { a, b };
+}
+
+/** Feature 19: Promise.all of two DIRECT `condition()` calls — the canonical fan-in
+ *  documented on `condition()`. Two wait items (code 595) are collated into the reentrant
+ *  collator flow and BOTH must resolve through `collator_waiter` as each external signal
+ *  arrives. This exercises the collator's waiter branch directly — unlike fanning the waits
+ *  out as child workflows, where each child instead runs a lone inline `waiter`. */
+export async function testParallelConditions(sigA: string, sigB: string): Promise<{ a: any; b: any }> {
+  const [a, b] = await Promise.all([
+    Durable.workflow.condition<any>(sigA),
+    Durable.workflow.condition<any>(sigB),
+  ]);
+  return { a, b };
+}
+
+/** Feature 20: Promise.all mixing a `condition()` with a `proxyActivity()`. The collator
+ *  must collect a wait (595) alongside a proxy (591) and return both in original order; the
+ *  parent does not end until the external signal resolves the wait. */
+export async function testConditionPlusProxy(
+  name: string,
+  sig: string,
+): Promise<{ waited: any; greeting: { complex: string } }> {
+  const [waited, greeting] = await Promise.all([
+    Durable.workflow.condition<any>(sig),
+    greet(name),
+  ]);
+  return { waited, greeting };
+}
+
+/** Feature 21: Promise.all mixing a `condition()` with an `executeChild()`. The collator
+ *  must collect a wait (595) alongside a child (590) and return both in original order. */
+export async function testConditionPlusChild(
+  name: string,
+  sig: string,
+): Promise<{ waited: any; childDone: boolean }> {
+  const [waited, _child] = await Promise.all([
+    Durable.workflow.condition<any>(sig),
+    Durable.workflow.executeChild<void>({
+      workflowName: 'childExample',
+      args: [name],
+      taskQueue: 'basic-world',
+    }),
+  ]);
+  return { waited, childDone: true };
+}
+
+/** Feature 22: Promise.all mixing a `condition()` that carries an ESCALATION queueConfig
+ *  with a `proxyActivity()`. The collated wait must write its `hmsh_escalations` row at
+ *  suspension (so it is listable/claimable/resolvable) and resume when the escalation is
+ *  resolved — proving `collator_waiter` honors the escalation config exactly like the inline
+ *  single-condition `waiter` does. The `signalId` is derived from `orderId` so it is stable
+ *  across replays; the test discovers the row by `role` + `metadata.orderId`. */
+export async function testConditionEscalationPlusProxy(
+  name: string,
+  orderId: string,
+  role: string,
+): Promise<{ decision: any; greeting: { complex: string } }> {
+  const signalId = `collator-esc-${orderId}`;
+  const [decision, greeting] = await Promise.all([
+    Durable.workflow.condition<any>(signalId, {
+      role,
+      type: 'collator-escalation',
+      priority: 3,
+      description: `Approve collated order ${orderId}`,
+      metadata: { orderId },
+    }),
+    greet(name),
+  ]);
+  return { decision, greeting };
+}
+
+/** Lineage: a child that itself spawns a grandchild. Proves `origin_id` stays pinned to the
+ *  root across composition depth while `parent_id` always tracks the direct spawner. */
+export async function testLineageChild(grandchildId: string): Promise<{ done: boolean }> {
+  await Durable.workflow.executeChild<void>({
+    workflowName: 'childExample',
+    args: ['grandchild'],
+    taskQueue: 'basic-world',
+    workflowId: grandchildId,
+  });
+  return { done: true };
+}
+
+/** Lineage root: spawns a child (which spawns a grandchild) through the `childer` path.
+ *  The full root → child → grandchild chain must be reconstructable from the jobs table. */
+export async function testLineageRoot(
+  childId: string,
+  grandchildId: string,
+): Promise<{ done: boolean }> {
+  await Durable.workflow.executeChild<void>({
+    workflowName: 'testLineageChild',
+    args: [grandchildId],
+    taskQueue: 'basic-world',
+    workflowId: childId,
+  });
+  return { done: true };
+}
+
+/** Lineage via the collator: `Promise.all([executeChild, condition])` routes the child through
+ *  `collator_childer`. The child's `parent_id` must be THIS spawning workflow — not the
+ *  synthetic collator (`$C`) job that internally fans the work out. */
+export async function testLineageCollator(
+  childId: string,
+  sig: string,
+): Promise<{ done: boolean }> {
+  await Promise.all([
+    Durable.workflow.executeChild<void>({
+      workflowName: 'childExample',
+      args: ['collated-child'],
+      taskQueue: 'basic-world',
+      workflowId: childId,
+    }),
+    Durable.workflow.condition<any>(sig),
+  ]);
+  return { done: true };
+}
+
+/** Lineage nesting THROUGH the collator: the collated child (spawned via `collator_childer`)
+ *  is itself a composer that spawns a grandchild. Proves `origin_id` stays pinned to the root
+ *  and `parent_id` keeps chaining even when the middle hop is a Promise.all/collator fan-out —
+ *  i.e. lineage travels through the synthetic collator job without absorbing its id. */
+export async function testLineageCollatorNested(
+  childId: string,
+  grandchildId: string,
+  sig: string,
+): Promise<{ done: boolean }> {
+  await Promise.all([
+    Durable.workflow.executeChild<void>({
+      workflowName: 'testLineageChild', // this collated child spawns a grandchild
+      args: [grandchildId],
+      taskQueue: 'basic-world',
+      workflowId: childId,
+    }),
+    Durable.workflow.condition<any>(sig),
+  ]);
+  return { done: true };
+}
