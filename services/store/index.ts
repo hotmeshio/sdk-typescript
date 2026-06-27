@@ -321,6 +321,20 @@ abstract class StoreService<
     };
     attributes: Record<string, string>;
   }>;
+
+  /**
+   * Fetch just the lineage columns (`parent_id`, `origin_id`) for a job via a
+   * single indexed lookup on `key`. Powers the exporter's opt-in
+   * `include_lineage` pointer — `parent_id` is the real spawning workflow (never
+   * the synthetic collator `$C` job), `origin_id` is the root ancestor.
+   *
+   * @param jobKey - The job key (e.g., "hmsh:durable:j:workflowId")
+   * @returns parent/origin ids (null when absent — a null `parent_id` marks a root)
+   */
+  getJobLineage?(jobKey: string): Promise<{
+    parent_id: string | null;
+    origin_id: string | null;
+  } | null>;
 }
 
 export { StoreService };

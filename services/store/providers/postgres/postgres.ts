@@ -1786,6 +1786,23 @@ class PostgresStoreService extends StoreService<
   }
 
   /**
+   * Single indexed lookup of the lineage columns for a job key. Returns the real
+   * spawning parent (never the synthetic collator `$C` job) and the root ancestor.
+   */
+  async getJobLineage(jobKey: string): Promise<{
+    parent_id: string | null;
+    origin_id: string | null;
+  } | null> {
+    const { GET_JOB_LINEAGE } = await import('./exporter-sql');
+    const schemaName = this.kvsql().safeName(this.appId);
+    const sql = GET_JOB_LINEAGE.replace(/{schema}/g, schemaName);
+    const result = await this.pgClient.query(sql, [jobKey]);
+    if (result.rows.length === 0) return null;
+    const { parent_id, origin_id } = result.rows[0];
+    return { parent_id: parent_id ?? null, origin_id: origin_id ?? null };
+  }
+
+  /**
    * Fetch stream message history for a job from worker_streams.
    * Returns raw activity input/output data from soft-deleted messages.
    */

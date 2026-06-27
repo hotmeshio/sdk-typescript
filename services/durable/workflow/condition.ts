@@ -184,7 +184,16 @@ export async function condition<T>(
     type: 'DurableWaitForError',
     code: HMSH_CODE_DURABLE_WAIT,
     ...(timeout ? { duration: s(timeout) } : {}),
-    ...(queueConfig ? { queueConfig } : {}),
+    // taskQueue + workflowName ride along so a collated wait (Promise.all) can
+    // write a faithful hmsh_escalations row from inside the collator flow —
+    // matching the inline waiter, which sources these from its trigger.
+    ...(queueConfig
+      ? {
+          queueConfig,
+          taskQueue: store.get('taskQueue'),
+          workflowName: store.get('workflowName'),
+        }
+      : {}),
   };
   interruptionRegistry.push(interruptionMessage);
 

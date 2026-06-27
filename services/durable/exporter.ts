@@ -350,6 +350,15 @@ class ExporterService {
       await this.enrichExecutionInputs(execution, jobId);
     }
 
+    // Opt-in upward lineage pointer — one indexed lookup; surfaces the real
+    // spawning parent (not the collator $C job) and the root ancestor.
+    if (options.include_lineage && this.store.getJobLineage) {
+      const jobKey = `hmsh:${this.appId}:j:${jobId}`;
+      const lineage = await this.store.getJobLineage(jobKey);
+      execution.parent_workflow_id = lineage?.parent_id ?? null;
+      execution.origin_id = lineage?.origin_id ?? null;
+    }
+
     return execution;
   }
 

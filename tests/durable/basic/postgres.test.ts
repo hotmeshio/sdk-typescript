@@ -54,6 +54,16 @@ describe('DURABLE | baseline | Postgres', () => {
       workflows.testSignalThenStartChild,
       workflows.testParallelChildren,
       workflows.testSignalThenParallelChildren,
+      workflows.childWaitFor,
+      workflows.testParallelConditionChildren,
+      workflows.testParallelConditions,
+      workflows.testConditionPlusProxy,
+      workflows.testConditionPlusChild,
+      workflows.testConditionEscalationPlusProxy,
+      workflows.testLineageChild,
+      workflows.testLineageRoot,
+      workflows.testLineageCollator,
+      workflows.testLineageCollatorNested,
     ];
     for (const wf of workflowFunctions) {
       const worker = await Worker.create({
@@ -319,6 +329,245 @@ describe('DURABLE | baseline | Postgres', () => {
       expect(result).toBeDefined();
       expect((result as any).jobId).toBeDefined();
     }, 25_000);
+  });
+
+  describe('Feature: Promise.all(executeChild) — each child a condition, external signals', () => {
+    it('collects parallel condition-children when each is signaled externally', async () => {
+      const handle = await client.workflow.start({
+        args: ['HotMesh'],
+        taskQueue,
+        workflowName: 'testParallelConditionChildren',
+        workflowId: 'test-par-cond-children-' + guid(),
+        expire: 120,
+      });
+      // Let both child workflows reach their condition(), then signal each directly by its
+      // fixed workflowId. The parent's Promise.all(executeChild) must collect both and return.
+      await sleepFor(3_000);
+      const childA = await client.workflow.getHandle(taskQueue, 'childWaitFor', 'cond-child-a');
+      await childA.signal('child-sig-a', { ok: 'a' });
+      const childB = await client.workflow.getHandle(taskQueue, 'childWaitFor', 'cond-child-b');
+      await childB.signal('child-sig-b', { ok: 'b' });
+      const result = await handle.result();
+      expect((result as any).a).toEqual({ ok: 'a' });
+      expect((result as any).b).toEqual({ ok: 'b' });
+    }, 25_000);
+  });
+
+  describe('Feature: collator_waiter — Promise.all with a direct condition()', () => {
+    it('collects two parallel direct conditions through the collator flow', async () => {
+      const sigA = 'par-cond-a-' + guid();
+      const sigB = 'par-cond-b-' + guid();
+      const handle = await client.workflow.start({
+        args: [sigA, sigB],
+        taskQueue,
+        workflowName: 'testParallelConditions',
+        workflowId: 'test-par-conditions-' + guid(),
+        expire: 120,
+      });
+      // Both conditions register in the collator flow; signal each by its id.
+      await sleepFor(3_000);
+      await handle.signal(sigA, { v: 'a' });
+      await handle.signal(sigB, { v: 'b' });
+      const result = await handle.result();
+      expect((result as any).a).toEqual({ v: 'a' });
+      expect((result as any).b).toEqual({ v: 'b' });
+    }, 25_000);
+
+    it('collects a condition() alongside a proxyActivity() in one Promise.all', async () => {
+      const sig = 'cp-sig-' + guid();
+      const handle = await client.workflow.start({
+        args: ['HotMesh', sig],
+        taskQueue,
+        workflowName: 'testConditionPlusProxy',
+        workflowId: 'test-cond-proxy-' + guid(),
+        expire: 120,
+      });
+      await sleepFor(3_000);
+      await handle.signal(sig, { ok: true });
+      const result = await handle.result();
+      expect((result as any).waited).toEqual({ ok: true });
+      expect((result as any).greeting).toEqual({ complex: 'Basic, HotMesh!' });
+    }, 25_000);
+
+    it('collects a condition() alongside an executeChild() in one Promise.all', async () => {
+      const sig = 'cc-sig-' + guid();
+      const handle = await client.workflow.start({
+        args: ['HotMesh', sig],
+        taskQueue,
+        workflowName: 'testConditionPlusChild',
+        workflowId: 'test-cond-child-' + guid(),
+        expire: 120,
+      });
+      await sleepFor(3_000);
+      await handle.signal(sig, { ok: 'child' });
+      const result = await handle.result();
+      expect((result as any).waited).toEqual({ ok: 'child' });
+      expect((result as any).childDone).toBe(true);
+    }, 25_000);
+  });
+
+  describe('Feature: collator_waiter — Promise.all with an escalation-bearing condition()', () => {
+    it('writes the escalation row for a collated condition and resolves it', async () => {
+      const orderId = 'collator-order-' + guid();
+      const role = 'collator-approver-' + guid();
+      const handle = await client.workflow.start({
+        args: ['HotMesh', orderId, role],
+        taskQueue,
+        workflowName: 'testConditionEscalationPlusProxy',
+        workflowId: 'test-cond-esc-' + guid(),
+        expire: 120,
+      });
+      // Let the collated condition() suspend and write its hmsh_escalations row.
+      await sleepFor(3_000);
+      const list = await client.escalations.list({ role, status: 'pending' });
+      const esc = list.find((e) => (e.metadata as any)?.orderId === orderId);
+      expect(esc).toBeDefined();
+      expect(esc!.type).toBe('collator-escalation');
+      // Resolving the escalation must resume the collated wait (double-fires wfs.signal + wfs.wait).
+      await client.escalations.resolve({ id: esc!.id, resolverPayload: { approved: true } });
+      const result = await handle.result();
+      expect((result as any).decision).toEqual({ approved: true });
+      expect((result as any).greeting).toEqual({ complex: 'Basic, HotMesh!' });
+    }, 30_000);
+  });
+
+  describe('Feature: job lineage — parent_id / origin_id authored into the jobs table', () => {
+    const jobKey = (wfid: string) => `hmsh:durable:j:${wfid}`;
+    const lineageOf = async (wfid: string) => {
+      const { rows } = await postgresClient.query(
+        `SELECT key, parent_id, origin_id FROM durable.jobs WHERE key = $1`,
+        [jobKey(wfid)],
+      );
+      return rows[0];
+    };
+
+    it('records parent_id/origin_id across a 3-level composition (childer path)', async () => {
+      const rootId = 'lineage-root-' + guid();
+      const childId = 'lineage-child-' + guid();
+      const grandchildId = 'lineage-gc-' + guid();
+      const handle = await client.workflow.start({
+        args: [childId, grandchildId],
+        taskQueue,
+        workflowName: 'testLineageRoot',
+        workflowId: rootId,
+        expire: 120,
+      });
+      await handle.result();
+      const root = await lineageOf(rootId);
+      const child = await lineageOf(childId);
+      const grand = await lineageOf(grandchildId);
+      // Root has no parent — anything without a parent_id is a root for lineage reconstruction.
+      expect(root).toBeDefined();
+      expect(root.parent_id ?? null).toBeNull();
+      // Child: direct parent is the root; origin is the root.
+      expect(child.parent_id).toBe(rootId);
+      expect(child.origin_id).toBe(rootId);
+      // Grandchild: direct parent is the child; origin stays pinned to the root.
+      expect(grand.parent_id).toBe(childId);
+      expect(grand.origin_id).toBe(rootId);
+    }, 30_000);
+
+    it('records parent_id/origin_id for a collated child (collator_childer path)', async () => {
+      const rootId = 'lineage-col-root-' + guid();
+      const childId = 'lineage-col-child-' + guid();
+      const sig = 'lineage-col-sig-' + guid();
+      const handle = await client.workflow.start({
+        args: [childId, sig],
+        taskQueue,
+        workflowName: 'testLineageCollator',
+        workflowId: rootId,
+        expire: 120,
+      });
+      await sleepFor(2_000);
+      await handle.signal(sig, { ok: true });
+      await handle.result();
+      const child = await lineageOf(childId);
+      // The spawning workflow is the parent — NOT the synthetic collator ($C) job.
+      expect(child.parent_id).toBe(rootId);
+      expect(child.origin_id).toBe(rootId);
+      expect(child.parent_id).not.toContain('$C');
+    }, 30_000);
+
+    it('nests lineage THROUGH the collator: a collated child spawns its own grandchild', async () => {
+      const rootId = 'lineage-cn-root-' + guid();
+      const childId = 'lineage-cn-child-' + guid();
+      const grandchildId = 'lineage-cn-gc-' + guid();
+      const sig = 'lineage-cn-sig-' + guid();
+      const handle = await client.workflow.start({
+        args: [childId, grandchildId, sig],
+        taskQueue,
+        workflowName: 'testLineageCollatorNested',
+        workflowId: rootId,
+        expire: 120,
+      });
+      await sleepFor(2_000);
+      await handle.signal(sig, { ok: true });
+      await handle.result();
+      const child = await lineageOf(childId);
+      const grand = await lineageOf(grandchildId);
+      // The collated child's parent is the root (it passed through the collator, not absorbed it).
+      expect(child.parent_id).toBe(rootId);
+      expect(child.origin_id).toBe(rootId);
+      expect(child.parent_id).not.toContain('$C');
+      // The grandchild was spawned by the collated child — lineage keeps chaining through the
+      // collator, with origin still pinned to the root.
+      expect(grand.parent_id).toBe(childId);
+      expect(grand.origin_id).toBe(rootId);
+      expect(grand.parent_id).not.toContain('$C');
+    }, 30_000);
+
+    it('exposes the opt-in upward lineage pointer on export (real parent, not the collator)', async () => {
+      const rootId = 'lineage-exp-root-' + guid();
+      const childId = 'lineage-exp-child-' + guid();
+      const grandchildId = 'lineage-exp-gc-' + guid();
+      const rootHandle = await client.workflow.start({
+        args: [childId, grandchildId],
+        taskQueue,
+        workflowName: 'testLineageRoot',
+        workflowId: rootId,
+        expire: 120,
+      });
+      await rootHandle.result();
+
+      // Root: no parent pointer (it IS the root); origin is null for a root.
+      const rootExec = await rootHandle.exportExecution({ include_lineage: true });
+      expect(rootExec.parent_workflow_id ?? null).toBeNull();
+      expect(rootExec.origin_id ?? null).toBeNull();
+
+      // Child: parent points to the root, origin is the root.
+      const childHandle = await client.workflow.getHandle(taskQueue, 'testLineageChild', childId);
+      const childExec = await childHandle.exportExecution({ include_lineage: true });
+      expect(childExec.parent_workflow_id).toBe(rootId);
+      expect(childExec.origin_id).toBe(rootId);
+
+      // Backwards-compatible default: without the opt-in, the pointer is absent.
+      const childExecDefault = await childHandle.exportExecution();
+      expect(childExecDefault.parent_workflow_id).toBeUndefined();
+      expect(childExecDefault.origin_id).toBeUndefined();
+    }, 30_000);
+
+    it('export lineage pointer skips the collator for a collated child', async () => {
+      const rootId = 'lineage-exp-col-root-' + guid();
+      const childId = 'lineage-exp-col-child-' + guid();
+      const sig = 'lineage-exp-col-sig-' + guid();
+      const rootHandle = await client.workflow.start({
+        args: [childId, sig],
+        taskQueue,
+        workflowName: 'testLineageCollator',
+        workflowId: rootId,
+        expire: 120,
+      });
+      await sleepFor(2_000);
+      await rootHandle.signal(sig, { ok: true });
+      await rootHandle.result();
+
+      const childHandle = await client.workflow.getHandle(taskQueue, 'childExample', childId);
+      const childExec = await childHandle.exportExecution({ include_lineage: true });
+      // The pointer is the spawning workflow, never the synthetic collator ($C) job.
+      expect(childExec.parent_workflow_id).toBe(rootId);
+      expect(childExec.parent_workflow_id).not.toContain('$C');
+      expect(childExec.origin_id).toBe(rootId);
+    }, 30_000);
   });
 
   describe('Full workflow (original)', () => {

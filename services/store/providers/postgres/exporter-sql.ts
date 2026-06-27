@@ -14,6 +14,17 @@ export const GET_JOB_BY_KEY = `
 `;
 
 /**
+ * Fetch just the lineage columns for a job — a single indexed lookup on `key`.
+ * Backs the exporter's opt-in `include_lineage` pointer.
+ */
+export const GET_JOB_LINEAGE = `
+  SELECT parent_id, origin_id
+  FROM {schema}.jobs
+  WHERE key = $1
+  LIMIT 1
+`;
+
+/**
  * Fetch all attributes for a job.
  */
 export const GET_JOB_ATTRIBUTES = `
