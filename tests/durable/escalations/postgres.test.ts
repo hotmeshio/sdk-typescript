@@ -550,6 +550,94 @@ describe('DURABLE | escalations | Postgres', () => {
 
   });
 
+  describe('resolve() augments GIN-indexed metadata', () => {
+    it('merges resolution metadata into the queryable surface, separate from resolverPayload', async () => {
+      const orderTag = `gin-${guid()}`;
+      const esc = await client.escalations.create({
+        type: 'order-approval',
+        role: 'approver',
+        metadata: { orderId: orderTag, region: 'us-east' }, // creation: "what was intended"
+      });
+      const result = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { approved: true }, // signal payload — NOT merged into metadata
+        metadata: { outcome: 'approved', approver: 'alice' }, // resolution: "what happened"
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      // (a) merged row carries BOTH creation and resolution keys
+      expect((result.entry.metadata as any).orderId).toBe(orderTag);
+      expect((result.entry.metadata as any).region).toBe('us-east');
+      expect((result.entry.metadata as any).outcome).toBe('approved');
+      expect((result.entry.metadata as any).approver).toBe('alice');
+
+      // separation: resolution keys do NOT leak into resolver_payload
+      expect((result.entry.resolver_payload as any).approved).toBe(true);
+      expect((result.entry.resolver_payload as any).outcome).toBeUndefined();
+
+      // (b) discoverable via the GIN @> containment path
+      const byOutcome = await client.escalations.list({ metadata: { outcome: 'approved' } });
+      expect(byOutcome.some((e) => e.id === esc.id)).toBe(true);
+      const byIntersection = await client.escalations.list({
+        metadata: { orderId: orderTag, outcome: 'approved' },
+      });
+      expect(byIntersection.some((e) => e.id === esc.id)).toBe(true);
+    }, 5_000);
+
+    it('re-resolve does not merge metadata (loser writes nothing)', async () => {
+      const esc = await client.escalations.create({
+        type: 'support',
+        role: 'agent',
+        metadata: { idem: `idem-${guid()}` },
+      });
+      await client.escalations.resolve({ id: esc.id, metadata: { outcome: 'first' } });
+      const second = await client.escalations.resolve({ id: esc.id, metadata: { outcome: 'second' } });
+      expect(second.ok).toBe(false);
+      if (second.ok) return;
+      expect(second.reason).toBe('already-resolved');
+      const row = await client.escalations.get(esc.id);
+      expect((row?.metadata as any).outcome).toBe('first'); // loser did not overwrite
+    }, 5_000);
+
+    it('resolveByMetadata merges a separate metadata patch alongside the selector', async () => {
+      const sel = `rbm-${guid()}`;
+      const esc = await client.escalations.create({
+        type: 'order-approval',
+        role: 'rbm-approver',
+        metadata: { selector: sel },
+      });
+      const result = await client.escalations.resolveByMetadata({
+        key: 'selector',
+        value: sel,
+        resolverPayload: { approved: true },
+        metadata: { outcome: 'resolved-by-metadata' },
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.entry.id).toBe(esc.id);
+      expect((result.entry.metadata as any).selector).toBe(sel);
+      expect((result.entry.metadata as any).outcome).toBe('resolved-by-metadata');
+    }, 5_000);
+
+    it('resolveMany merges metadata into every winning row', async () => {
+      const tag = `bulkmeta-${guid()}`;
+      const created = await Promise.all([
+        client.escalations.create({ role: 'bulk-meta', metadata: { tag } }),
+        client.escalations.create({ role: 'bulk-meta', metadata: { tag } }),
+      ]);
+      const ids = created.map((e) => e.id);
+      const resolved = await client.escalations.resolveMany({ ids, metadata: { sweptBy: 'triage' } });
+      expect(resolved.length).toBe(2);
+      resolved.forEach((r) => {
+        expect((r.metadata as any).tag).toBe(tag); // creation key preserved
+        expect((r.metadata as any).sweptBy).toBe('triage');
+      });
+      const found = await client.escalations.list({ metadata: { sweptBy: 'triage', tag } });
+      expect(found.length).toBe(2);
+    }, 5_000);
+  });
+
   describe('signal-first transaction', () => {
     it('should resolve a standalone (no signal_key) escalation cleanly', async () => {
       const esc = await client.escalations.create({

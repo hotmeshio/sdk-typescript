@@ -235,6 +235,14 @@ export interface ResolveEscalationParams {
   id: string;
   namespace?: string;
   resolverPayload?: Record<string, unknown>;
+  /**
+   * Merged (not replaced) into the resolved row's `metadata` in the same atomic
+   * UPDATE — and only on the winning resolve. Records "what actually happened"
+   * into the GIN-indexed (`@>`-queryable) surface alongside the creation metadata.
+   * Distinct from `resolverPayload`, which is delivered to the waiting workflow as
+   * `condition()`'s return value and is not GIN-indexed.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface ResolveByMetadataParams {
@@ -243,6 +251,12 @@ export interface ResolveByMetadataParams {
   namespace?: string;
   resolverPayload?: Record<string, unknown>;
   roles?: string[];
+  /**
+   * Merge patch applied to the matched row's `metadata` (shallow, not replaced) in
+   * the same atomic UPDATE. Note this is the resolution patch — distinct from the
+   * `key`/`value` selector used to find the row. See {@link ResolveEscalationParams.metadata}.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface EscalateToRoleParams {
@@ -274,6 +288,11 @@ export interface ResolveManyParams {
   ids: string[];
   namespace?: string;
   resolverPayload?: Record<string, unknown>;
+  /**
+   * Merged (not replaced) into every winning (still-pending) row's `metadata` in
+   * the single bulk UPDATE. See {@link ResolveEscalationParams.metadata}.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /**
