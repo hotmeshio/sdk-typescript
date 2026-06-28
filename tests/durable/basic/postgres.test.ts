@@ -64,6 +64,7 @@ describe('DURABLE | baseline | Postgres', () => {
       workflows.testLineageRoot,
       workflows.testLineageCollator,
       workflows.testLineageCollatorNested,
+      workflows.testContinueAsNewThenParallelConditions,
     ];
     for (const wf of workflowFunctions) {
       const worker = await Worker.create({
@@ -568,6 +569,27 @@ describe('DURABLE | baseline | Postgres', () => {
       expect(childExec.parent_workflow_id).not.toContain('$C');
       expect(childExec.origin_id).toBe(rootId);
     }, 30_000);
+  });
+
+  describe('Feature: collator re-engages after continueAsNew', () => {
+    it('resumes collated parallel conditions in a continued generation', async () => {
+      const sigA = 'can-par-a-' + guid();
+      const sigB = 'can-par-b-' + guid();
+      const handle = await client.workflow.start({
+        args: ['first', sigA, sigB],
+        taskQueue,
+        workflowName: 'testContinueAsNewThenParallelConditions',
+        workflowId: 'test-can-parallel-' + guid(),
+        expire: 120,
+      });
+      // Let it continueAsNew and register both waits in the collator (continued generation).
+      await sleepFor(4_000);
+      await handle.signal(sigA, { v: 'a' });
+      await handle.signal(sigB, { v: 'b' });
+      const result = await handle.result();
+      expect((result as any).a).toEqual({ v: 'a' });
+      expect((result as any).b).toEqual({ v: 'b' });
+    }, 20_000);
   });
 
   describe('Full workflow (original)', () => {
