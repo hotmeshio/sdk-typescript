@@ -1136,7 +1136,13 @@ export class WorkerService {
               code: HMSH_CODE_DURABLE_ALL,
               items: [...interruptionRegistry],
               size: interruptionRegistry.length,
-              workflowDimension: workflowDimension || '',
+              // Use the items' execution dimension (all items in one Promise.all share it),
+              // not the raw input dimension. In a continued generation (post-continueAsNew)
+              // the effective dimension is the generation prefix `$N`, which the items carry
+              // but `workflowInput.workflowDimension` does not — mirrors the single-condition
+              // path above so the collator's harvested markers land where condition() replays.
+              workflowDimension:
+                interruptionRegistry[0].workflowDimension || workflowDimension || '',
               index: execIndex,
               originJobId: originJobId || workflowId,
               parentWorkflowId: workflowId,

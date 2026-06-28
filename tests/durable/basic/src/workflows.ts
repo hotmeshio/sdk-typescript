@@ -435,3 +435,26 @@ export async function testLineageCollatorNested(
   ]);
   return { done: true };
 }
+
+/** Feature 23: a collated `Promise.all([condition, condition])` inside a CONTINUED generation
+ *  (post-`continueAsNew`). The first execution immediately continues into a "harvest" generation
+ *  that fans two conditions into the collator. A continued generation's replay dimension is the
+ *  generation prefix (`$N`), not the empty first-execution dimension — so the collator must be
+ *  emitted with that same dimension for the harvested waits to resume. Mirrors Feature 19, but
+ *  one continueAsNew hop in. */
+export async function testContinueAsNewThenParallelConditions(
+  phase: string,
+  sigA: string,
+  sigB: string,
+): Promise<{ a: any; b: any }> {
+  if (phase === 'first') {
+    // First execution: immediately restart into the harvest generation.
+    await Durable.workflow.continueAsNew('harvest', sigA, sigB);
+  }
+  // Continued generation: collated parallel waits.
+  const [a, b] = await Promise.all([
+    Durable.workflow.condition<any>(sigA),
+    Durable.workflow.condition<any>(sigB),
+  ]);
+  return { a, b };
+}
