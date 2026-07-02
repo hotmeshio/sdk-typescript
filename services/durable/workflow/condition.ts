@@ -72,8 +72,10 @@ import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
  *     description: 'Approve or reject the regional order',
  *     metadata: { orderId, region },
  *     envelope: { instructions: 'Review the attached order' },
+ *     timeout: '72h',   // SLA: resume with false + expire the row if unresolved
  *   },
  * );
+ * if (decision === false) return 'auto-rejected-sla';  // row is now status='expired'
  *
  * // Elsewhere: list, claim, then resolve (resumes the workflow)
  * const [item] = await client.escalations.list({ role: 'manager', status: 'pending' });
@@ -106,17 +108,24 @@ import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
  * @param signalId - A unique signal identifier shared by the sender and receiver.
  * @param timeoutOrConfig - Optional timeout string (e.g. `'30s'`, `'24h'`) OR a
  *   {@link ConditionQueueConfig} that writes one row to `public.hmsh_escalations`
- *   atomically at suspension time. Cannot specify both; use the config object's
- *   `expiresAt` field for deadline enforcement when an escalation is involved.
- * @returns The signal payload, `false` if a timeout string was given and it expired,
- *   or `null` if the escalation was cancelled via `client.escalations.cancel()`.
+ *   atomically at suspension time. For an escalation-bearing wait with an SLA,
+ *   set the config's `timeout` field — the wait arms the same resume timer as
+ *   the string form, and when the timer wins the escalation row transitions
+ *   `pending → expired` so a late resolve fails as already-expired. (`expiresAt`
+ *   is display metadata on the row only; it arms nothing.)
+ * @returns The signal payload, `false` when a timeout (string form or
+ *   `config.timeout`) expired first, or `null` if the escalation was cancelled
+ *   via `client.escalations.cancel()`.
  */
 export async function condition<T>(
   signalId: string,
   timeoutOrConfig?: string | ConditionQueueConfig,
 ): Promise<T | false | null> {
-  const timeout = typeof timeoutOrConfig === 'string' ? timeoutOrConfig : undefined;
+  // A string arg is a bare timeout; a config object may carry its own
+  // `timeout` field — the engine's waiter block accepts duration and
+  // queueConfig together (one wait: escalation row + resume timer).
   const queueConfig = timeoutOrConfig && typeof timeoutOrConfig === 'object' ? timeoutOrConfig : undefined;
+  const timeout = typeof timeoutOrConfig === 'string' ? timeoutOrConfig : queueConfig?.timeout;
   const [didRunAlready, execIndex, result] = await didRun('wait');
   checkCancellation();
   if (didRunAlready) {

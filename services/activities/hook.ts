@@ -468,12 +468,7 @@ class Hook extends Activity {
       params.priority == null && params.metadata == null
     ) return null;
 
-    // Derive signal_key from the hook rule's expected condition — the same
-    // value registerWebHook stores as the signal lookup key.
-    const hookRule = await this.getHookRule(this.config.hook.topic);
-    const signalKey = hookRule?.conditions?.match?.[0]?.expected
-      ? Pipe.resolve(hookRule.conditions.match[0].expected as string, this.context)
-      : jid;
+    const signalKey = await this.deriveEscalationSignalKey();
 
     store.addEscalationToTransaction({
       namespace,
@@ -485,6 +480,19 @@ class Hook extends Activity {
     }, transaction);
 
     return signalKey as string;
+  }
+
+  /**
+   * Derive signal_key from the hook rule's expected condition — the same
+   * value registerWebHook stores as the signal lookup key. Used by the Leg1
+   * escalation INSERT and by the timeout path's expiry UPDATE, so both sides
+   * address the identical row.
+   */
+  private async deriveEscalationSignalKey(): Promise<string> {
+    const hookRule = await this.getHookRule(this.config.hook.topic);
+    return hookRule?.conditions?.match?.[0]?.expected
+      ? Pipe.resolve(hookRule.conditions.match[0].expected as string, this.context)
+      : this.context.metadata.jid;
   }
 
   /**
@@ -705,8 +713,57 @@ class Hook extends Activity {
           error: e.message,
         });
       }
+      await this.expireEscalationOnTimeout();
     }
     await this.processEvent(StreamStatus.SUCCESS, 200, 'hook');
+  }
+
+  /**
+   * The timeout won the race: transition the wait's escalation row
+   * `pending → expired` so the worklist stops offering work whose workflow
+   * has already resumed with `false`, and a late resolve fails as
+   * already-expired instead of delivering a payload into the void. The
+   * UPDATE is guarded by status='pending' — when the signal won (row
+   * already resolved) or the wait carried no escalation, it is a no-op.
+   */
+  private async expireEscalationOnTimeout(): Promise<void> {
+    if (!this.config.escalation) return;
+    const store = this.store as any;
+    if (typeof store.expireEscalationBySignalKey !== 'function') return;
+    try {
+      // The TIMEHOOK dispatch context carries metadata only — hydrate job
+      // state so the signal-key pipe expression resolves to the same value
+      // Leg1 stored on the row.
+      this.setLeg(2);
+      await this.getState();
+      const appId = this.engine.appId;
+      const namespace = (this.engine as any).namespace ?? appId;
+      const signalKey = await this.deriveEscalationSignalKey();
+      const row = await store.expireEscalationBySignalKey(signalKey, namespace, appId);
+      if (row?.id && store.eventsPublish) {
+        const ts = new Date().toISOString();
+        const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : ts;
+        void Promise.resolve(store.eventsPublish({
+          event_id: `${row.id}:expired:${updatedAt}`,
+          type: `system.escalation.${row.id}.expired`,
+          ts,
+          namespace: row.namespace ?? namespace,
+          app_id: row.app_id ?? appId,
+          workflow_id: row.workflow_id ?? undefined,
+          topic: row.topic ?? undefined,
+          origin_id: row.origin_id ?? undefined,
+          parent_id: row.parent_id ?? undefined,
+          trace_id: row.trace_id ?? undefined,
+          span_id: row.span_id ?? undefined,
+          data: row,
+        })).catch(() => { /* best-effort */ });
+      }
+    } catch (e) {
+      this.logger.debug('hook-timeout-escalation-expire', {
+        topic: this.config.hook?.topic,
+        error: e.message,
+      });
+    }
   }
 }
 

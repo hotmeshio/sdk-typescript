@@ -74,6 +74,12 @@ describe('DURABLE | escalations | Postgres', () => {
         workflow: workflows.cancelAwareWorkflow,
       });
       await cancelWorker.run();
+      const slaWorker = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.slaGatedWorkflow,
+      });
+      await slaWorker.run();
       // Wait for the condition() to fire and write the escalation row
       await sleepFor(2000);
     }, 15_000);
@@ -1104,5 +1110,81 @@ describe('DURABLE | escalations | Postgres', () => {
       expect(s.pending).toBe(2);
       expect(s.resolved).toBe(1);
     }, 5_000);
+  });
+
+  describe('SLA-gated wait — condition(signalId, { ...config, timeout })', () => {
+    const findRow = async (orderId: string) => {
+      for (let i = 0; i < 30; i++) {
+        const list = await client.escalations.list({ role: 'sla-approver' });
+        const esc = list.find((e) => (e.metadata as any)?.orderId === orderId);
+        if (esc) return esc;
+        await sleepFor(500);
+      }
+      return undefined;
+    };
+
+    it('timer fires first: workflow resumes false and the row expires', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, '3 seconds'],
+        taskQueue: 'escalation-test',
+        workflowName: 'slaGatedWorkflow',
+        workflowId: guid(),
+      });
+
+      // One wait produced BOTH artifacts: the pending worklist row...
+      const esc = await findRow(orderId);
+      expect(esc).toBeDefined();
+      expect(esc!.status).toBe('pending');
+      expect(esc!.signal_key).not.toBeNull();
+
+      // ...and the armed resume timer: the workflow comes back with false.
+      const output = await h.result();
+      expect((output as any).outcome).toBe('timed-out');
+
+      // The engine transitioned the row pending → expired in the timeout path.
+      let row = esc;
+      for (let i = 0; i < 30; i++) {
+        [row] = await client.escalations.list({ ids: [esc!.id] });
+        if (row?.status === 'expired') break;
+        await sleepFor(500);
+      }
+      expect(row!.status).toBe('expired');
+
+      // A post-deadline resolve is refused by name — the payload would have
+      // nowhere to go, and the operator must learn the SLA already fired.
+      const late = await client.escalations.resolve({
+        id: esc!.id,
+        resolverPayload: { approved: true },
+      });
+      expect(late.ok).toBe(false);
+      if (late.ok === false) expect(late.reason).toBe('already-expired');
+    }, 60_000);
+
+    it('signal first: payload delivered, row resolved, and the timer is inert', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, '90 seconds'],
+        taskQueue: 'escalation-test',
+        workflowName: 'slaGatedWorkflow',
+        workflowId: guid(),
+      });
+
+      const esc = await findRow(orderId);
+      expect(esc).toBeDefined();
+
+      const resolved = await client.escalations.resolve({
+        id: esc!.id,
+        resolverPayload: { approved: true, approvedBy: 'sla-reviewer' },
+      });
+      expect(resolved.ok).toBe(true);
+
+      const output = await h.result();
+      expect((output as any).outcome).toBe('resolved');
+      expect((output as any).payload?.approved).toBe(true);
+
+      const [row] = await client.escalations.list({ ids: [esc!.id] });
+      expect(row.status).toBe('resolved');
+    }, 60_000);
   });
 });

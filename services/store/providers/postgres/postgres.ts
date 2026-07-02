@@ -2058,6 +2058,32 @@ class PostgresStoreService extends StoreService<
     return result.rows[0] ?? null;
   }
 
+  /**
+   * Transition a wait's escalation row to `expired` when its resume timer
+   * fires first (`condition(signalId, { ..., timeout })`). Guarded by
+   * `status = 'pending'`: a signal that won the race already resolved the
+   * row and is never touched. Returns the expired row, or null when no
+   * pending row carried the key (signal won, or the wait had no escalation).
+   */
+  async expireEscalationBySignalKey(
+    signalKey: string,
+    namespace?: string,
+    appId?: string,
+  ): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+    const values: unknown[] = [signalKey];
+    let clause = '';
+    if (namespace) { values.push(namespace); clause += ` AND namespace = $${values.length}`; }
+    if (appId)     { values.push(appId);     clause += ` AND app_id = $${values.length}`; }
+    const result = await this.pgClient.query(
+      `UPDATE public.hmsh_escalations
+       SET status = 'expired', updated_at = NOW()
+       WHERE signal_key = $1${clause} AND status = 'pending'
+       RETURNING *`,
+      values,
+    );
+    return result.rows[0] ?? null;
+  }
+
   private _escalationFilterConditions(
     params: import('../../../../types/hmsh_escalations').ListEscalationsParams,
     startIdx = 1,
@@ -2284,6 +2310,14 @@ class PostgresStoreService extends StoreService<
       if (status === 'cancelled') {
         await this.pgClient.query('ROLLBACK');
         return { ok: false, reason: 'already-cancelled' };
+      }
+      if (status === 'expired') {
+        // The wait's SLA timer fired first and the workflow resumed with
+        // false — the resolver payload has nowhere to go. Name it, so the
+        // operator learns the deadline passed rather than believing the
+        // resolution landed.
+        await this.pgClient.query('ROLLBACK');
+        return { ok: false, reason: 'already-expired' };
       }
       const updateResult = await this.pgClient.query(
         `UPDATE public.hmsh_escalations

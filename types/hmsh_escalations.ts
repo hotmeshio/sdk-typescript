@@ -17,6 +17,14 @@ export interface ConditionQueueConfig {
   /** Unindexed display/form context for resolver UIs */
   envelope?: Record<string, unknown>;
   expiresAt?: Date;
+  /**
+   * SLA timer for the wait itself (e.g. `'30m'`, `'24h'`). Arms the same
+   * resume timer as `condition(signalId, '30m')`: when it fires first, the
+   * workflow resumes with `false` and the escalation row transitions
+   * `pending → expired` (a later resolve fails as already-expired). A signal
+   * that arrives first resolves normally and the timer is inert.
+   */
+  timeout?: string;
 }
 
 export interface EscalationEntry {
@@ -84,7 +92,7 @@ export type ClaimByMetadataResult =
 
 export type ResolveEscalationResult =
   | { ok: true; entry: EscalationEntry }
-  | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' };
+  | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' | 'already-expired' };
 
 export type ReleaseEscalationResult =
   | { ok: true; entry: EscalationEntry }
