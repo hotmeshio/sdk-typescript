@@ -83,6 +83,15 @@ import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
  * await client.escalations.resolve({ id: item.id, resolverPayload: { approved: true } });
  * ```
  *
+ * ## Placement: call escalation-bearing waits from main workflow code
+ *
+ * The resolve/signal delivery pipeline routes to the main flow's waiter.
+ * Inside a hook function (`execHook`), an escalation-bearing wait writes its
+ * row and honors `timeout` (the row expires and the hook resumes with
+ * `false`), while resolution delivery targets the main flow — so structure
+ * SLA-gated human waits in the workflow body and let hook functions report
+ * back via `signal()`.
+ *
  * ## Fan-in: wait for multiple signals in parallel
  *
  * ```typescript

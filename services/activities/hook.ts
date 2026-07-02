@@ -533,7 +533,15 @@ class Hook extends Activity {
 
   async getHookRule(topic: string): Promise<HookRule | undefined> {
     const rules = await this.store.getHookRules();
-    return rules?.[topic]?.[0] as HookRule;
+    const forTopic = rules?.[topic] as HookRule[] | undefined;
+    if (!forTopic?.length) return undefined;
+    // A topic may carry one rule per waiter activity — the durable factory
+    // registers `waiter` and `signaler_waiter` on the same wait topic. Select
+    // the rule that targets THIS activity: the positional first rule addresses
+    // a sibling branch for every activity but its own, so its expected-pipe
+    // resolves against output that does not exist in this flow (which is how
+    // execHook-context waits were writing signal_key-less escalation rows).
+    return (forTopic.find((rule) => rule.to === this.metadata.aid) ?? forTopic[0]) as HookRule;
   }
 
   /**
@@ -730,10 +738,20 @@ class Hook extends Activity {
     if (!this.config.escalation) return;
     const store = this.store as any;
     if (typeof store.expireEscalationBySignalKey !== 'function') return;
+    // Hydration here is THROWAWAY. getState() REPLACES this.context with
+    // restored job state, which does not carry the per-message dimensional
+    // address (dad) — the stream message is its only carrier for this leg.
+    // processEvent must receive the pristine dispatch state (verifyReentry
+    // hydrates for itself, reading dad from context.metadata), so snapshot
+    // everything getState mutates — the context reference, metadata.dad,
+    // and leg — and restore them on every exit path. Without this, a wait
+    // executing below the root (any dimension) crashes Leg2 notarization.
+    const dispatchContext = this.context;
+    const dispatchDad = this.metadata.dad;
+    const dispatchLeg = this.leg;
     try {
-      // The TIMEHOOK dispatch context carries metadata only — hydrate job
-      // state so the signal-key pipe expression resolves to the same value
-      // Leg1 stored on the row.
+      // Hydrate job state so the signal-key pipe expression resolves to the
+      // same value Leg1 stored on the row.
       this.setLeg(2);
       await this.getState();
       const appId = this.engine.appId;
@@ -763,6 +781,10 @@ class Hook extends Activity {
         topic: this.config.hook?.topic,
         error: e.message,
       });
+    } finally {
+      this.context = dispatchContext;
+      this.metadata.dad = dispatchDad;
+      this.setLeg(dispatchLeg);
     }
   }
 }

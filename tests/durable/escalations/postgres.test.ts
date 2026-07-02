@@ -80,6 +80,30 @@ describe('DURABLE | escalations | Postgres', () => {
         workflow: workflows.slaGatedWorkflow,
       });
       await slaWorker.run();
+      const slaHookParent = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.slaHookGatedWorkflow,
+      });
+      await slaHookParent.run();
+      const slaCycled = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.slaCycledWorkflow,
+      });
+      await slaCycled.run();
+      const slaCollated = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.slaCollatedWorkflow,
+      });
+      await slaCollated.run();
+      const slaGate = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.slaGateHook,
+      });
+      await slaGate.run();
       // Wait for the condition() to fire and write the escalation row
       await sleepFor(2000);
     }, 15_000);
@@ -1186,5 +1210,180 @@ describe('DURABLE | escalations | Postgres', () => {
       const [row] = await client.escalations.list({ ids: [esc!.id] });
       expect(row.status).toBe('resolved');
     }, 60_000);
+  });
+
+  describe('SLA-gated wait at a dimensional address (execHook)', () => {
+    // The waiter here executes below the root — the same topology an
+    // interceptor-wrapped host workflow produces. Both legs of the race
+    // must behave identically to the root-path suite above.
+    const findHookRow = async (orderId: string) => {
+      for (let i = 0; i < 30; i++) {
+        const list = await client.escalations.list({ role: 'sla-hook-approver' });
+        const esc = list.find((e) => (e.metadata as any)?.orderId === orderId);
+        if (esc) return esc;
+        await sleepFor(500);
+      }
+      return undefined;
+    };
+
+    it('timer fires below the root: workflow resumes false and the row expires', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, '3 seconds'],
+        taskQueue: 'escalation-test',
+        workflowName: 'slaHookGatedWorkflow',
+        workflowId: guid(),
+      });
+
+      const esc = await findHookRow(orderId);
+      expect(esc).toBeDefined();
+      expect(esc!.status).toBe('pending');
+
+      const output = await h.result();
+      expect((output as any).outcome).toBe('timed-out');
+
+      let row = esc;
+      for (let i = 0; i < 30; i++) {
+        [row] = await client.escalations.list({ ids: [esc!.id] });
+        if (row?.status === 'expired') break;
+        await sleepFor(500);
+      }
+      expect(row!.status).toBe('expired');
+    }, 60_000);
+
+    it('the row carries its signal_key at depth (aid-matched hook rule)', async () => {
+      // Leg1 derivation must select the hook rule targeting THIS activity —
+      // positionally-first rules reference a sibling branch's output and
+      // yield key-less (unaddressable) rows for every branch but the first.
+      const list = await client.escalations.list({ role: 'sla-hook-approver' });
+      expect(list.length).toBeGreaterThan(0);
+      expect(list.every((e) => e.signal_key != null)).toBe(true);
+    }, 10_000);
+  });
+
+  describe('SLA-gated wait at a cycled dimension (the interceptor topology)', () => {
+    // Durable operations before the wait advance the main-loop cycle index,
+    // so the waiter sits at dad ',0,N,0,0' — the address shape produced by
+    // host apps that wrap workflows in an interceptor. Both race outcomes
+    // must match the root-path suite exactly.
+    const findCycledRow = async (orderId: string) => {
+      for (let i = 0; i < 40; i++) {
+        const list = await client.escalations.list({ role: 'sla-cycled-approver' });
+        const esc = list.find((e) => (e.metadata as any)?.orderId === orderId);
+        if (esc) return esc;
+        await sleepFor(500);
+      }
+      return undefined;
+    };
+
+    it('timer fires at a cycled address: workflow resumes false and the row expires', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, '3 seconds'],
+        taskQueue: 'escalation-test',
+        workflowName: 'slaCycledWorkflow',
+        workflowId: guid(),
+      });
+
+      const esc = await findCycledRow(orderId);
+      expect(esc).toBeDefined();
+      expect(esc!.status).toBe('pending');
+      expect(esc!.signal_key).not.toBeNull();
+
+      const output = await h.result();
+      expect((output as any).outcome).toBe('timed-out');
+
+      let row = esc;
+      for (let i = 0; i < 30; i++) {
+        [row] = await client.escalations.list({ ids: [esc!.id] });
+        if (row?.status === 'expired') break;
+        await sleepFor(500);
+      }
+      expect(row!.status).toBe('expired');
+    }, 90_000);
+
+    it('signal first at a cycled address: payload delivered, row resolved, timer inert', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, '90 seconds'],
+        taskQueue: 'escalation-test',
+        workflowName: 'slaCycledWorkflow',
+        workflowId: guid(),
+      });
+
+      const esc = await findCycledRow(orderId);
+      expect(esc).toBeDefined();
+
+      const resolved = await client.escalations.resolve({
+        id: esc!.id,
+        resolverPayload: { approved: true },
+      });
+      expect(resolved.ok).toBe(true);
+
+      const output = await h.result();
+      expect((output as any).outcome).toBe('resolved');
+      expect((output as any).payload?.approved).toBe(true);
+
+      const [row] = await client.escalations.list({ ids: [esc!.id] });
+      expect(row.status).toBe('resolved');
+    }, 90_000);
+  });
+
+  describe('SLA-gated wait in a collated Promise.all (the collator reentry path)', () => {
+    // Two escalation-bearing waits collated together: item A carries the SLA,
+    // item B is open-ended. A's timer must settle A alone (false + expired
+    // row) at A's per-item dimension, B's row stays live, and Promise.all
+    // completes once B resolves through the collator's wfs.signal reentry.
+    const findItem = async (orderId: string, item: string) => {
+      for (let i = 0; i < 40; i++) {
+        const list = await client.escalations.list({ role: 'sla-collated-approver' });
+        const esc = list.find((e) => {
+          const m = e.metadata as any;
+          return m?.orderId === orderId && m?.item === item;
+        });
+        if (esc) return esc;
+        await sleepFor(500);
+      }
+      return undefined;
+    };
+
+    it('per-item timer: A expires and settles false, B survives, resolve of B completes the collation', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, '4 seconds'],
+        taskQueue: 'escalation-test',
+        workflowName: 'slaCollatedWorkflow',
+        workflowId: guid(),
+      });
+
+      const escA = await findItem(orderId, 'a');
+      const escB = await findItem(orderId, 'b');
+      expect(escA).toBeDefined();
+      expect(escB).toBeDefined();
+      expect(escA!.signal_key).not.toBeNull();
+
+      // A's timer fires: A's row expires; B's row is untouched and claimable.
+      let rowA = escA;
+      for (let i = 0; i < 30; i++) {
+        [rowA] = await client.escalations.list({ ids: [escA!.id] });
+        if (rowA?.status === 'expired') break;
+        await sleepFor(500);
+      }
+      expect(rowA!.status).toBe('expired');
+      const [rowBWhileWaiting] = await client.escalations.list({ ids: [escB!.id] });
+      expect(rowBWhileWaiting.status).toBe('pending');
+
+      // Resolve B — the collation completes with A=false, B=payload.
+      const resolved = await client.escalations.resolve({
+        id: escB!.id,
+        resolverPayload: { approved: true },
+      });
+      expect(resolved.ok).toBe(true);
+
+      const output = await h.result();
+      expect((output as any).a).toBe('timed-out');
+      expect((output as any).b).toBe('resolved');
+      expect((output as any).payloadB?.approved).toBe(true);
+    }, 120_000);
   });
 });
