@@ -156,6 +156,26 @@ describe('DURABLE | migrate() upgrade paths | Postgres', () => {
       expect(await idx('idx_hmsh_esc_task')).not.toBeNull();
     });
 
+    it('idx_hmsh_esc_stats_pending exists with status=pending predicate (0.25.0)', async () => {
+      const def = await idx('idx_hmsh_esc_stats_pending');
+      expect(def).not.toBeNull();
+      expect(def).toContain("'pending'");
+      expect(def).toContain('role, type, assigned_to, assigned_until, namespace');
+    });
+
+    it('idx_hmsh_esc_stats_created exists led by created_at (0.25.0)', async () => {
+      const def = await idx('idx_hmsh_esc_stats_created');
+      expect(def).not.toBeNull();
+      expect(def).toContain('created_at, role, namespace');
+    });
+
+    it('idx_hmsh_esc_stats_resolved exists with status=resolved predicate (0.25.0)', async () => {
+      const def = await idx('idx_hmsh_esc_stats_resolved');
+      expect(def).not.toBeNull();
+      expect(def).toContain("'resolved'");
+      expect(def).toContain('resolved_at, type, role, namespace');
+    });
+
     it('origin_id column added to jobs', async () => {
       expect(await col(APP_SCHEMA, 'jobs', 'origin_id')).toBe(true);
     });

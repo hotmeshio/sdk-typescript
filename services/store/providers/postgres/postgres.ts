@@ -2555,45 +2555,65 @@ class PostgresStoreService extends StoreService<
     if (namespace) queryParams.push(namespace);
     if (roles?.length) queryParams.push(roles);
 
+    // Three bounded sources instead of one all-history scan (v0.25.0):
+    //   backlog  — status='pending' partial (bounded by queue depth, never history)
+    //   created  — created_at window range (all statuses)
+    //   resolved — status='resolved' + resolved_at window range
+    // Totals derive from the grouped CTEs (NULL role/type groups included, so
+    // totals match the pre-0.25.0 all-row counts); NULL groups are excluded
+    // only from the by_role/by_type rollups, as before. resolved_at is only
+    // ever set alongside status='resolved' (and never survives a transition
+    // back to pending), so the status predicate is a pure index enabler.
+    // Roles/types with no pending rows and no window activity no longer emit
+    // zero-count rollup entries.
     const result = await this.pgClient.query(`
-      WITH base AS (
-        SELECT * FROM public.hmsh_escalations
-        WHERE true ${nsClause} ${rolClause}
-      ),
-      totals AS (
-        SELECT
-          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
-          COUNT(*) FILTER (WHERE status = 'pending'
-            AND assigned_to IS NOT NULL
-            AND assigned_until IS NOT NULL AND assigned_until > NOW())::int AS claimed,
-          COUNT(*) FILTER (WHERE created_at  >= NOW() - ($1 * INTERVAL '1 hour'))::int AS created,
-          COUNT(*) FILTER (WHERE resolved_at >= NOW() - ($1 * INTERVAL '1 hour'))::int AS resolved
-        FROM base
-      ),
-      by_role AS (
+      WITH pending_by_role AS (
         SELECT role,
-          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
-          COUNT(*) FILTER (WHERE status = 'pending'
-            AND assigned_to IS NOT NULL
+          COUNT(*)::int AS pending,
+          COUNT(*) FILTER (WHERE assigned_to IS NOT NULL
             AND assigned_until IS NOT NULL AND assigned_until > NOW())::int AS claimed
-        FROM base WHERE role IS NOT NULL
+        FROM public.hmsh_escalations
+        WHERE status = 'pending' ${nsClause} ${rolClause}
         GROUP BY role
       ),
-      by_type AS (
+      pending_by_type AS (
         SELECT type,
-          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
-          COUNT(*) FILTER (WHERE status = 'pending'
-            AND assigned_to IS NOT NULL
-            AND assigned_until IS NOT NULL AND assigned_until > NOW())::int AS claimed,
-          COUNT(*) FILTER (WHERE resolved_at >= NOW() - ($1 * INTERVAL '1 hour'))::int AS resolved
-        FROM base WHERE type IS NOT NULL
+          COUNT(*)::int AS pending,
+          COUNT(*) FILTER (WHERE assigned_to IS NOT NULL
+            AND assigned_until IS NOT NULL AND assigned_until > NOW())::int AS claimed
+        FROM public.hmsh_escalations
+        WHERE status = 'pending' ${nsClause} ${rolClause}
+        GROUP BY type
+      ),
+      created_agg AS (
+        SELECT COUNT(*)::int AS created
+        FROM public.hmsh_escalations
+        WHERE created_at >= NOW() - ($1 * INTERVAL '1 hour') ${nsClause} ${rolClause}
+      ),
+      resolved_by_type AS (
+        SELECT type, COUNT(*)::int AS resolved
+        FROM public.hmsh_escalations
+        WHERE status = 'resolved'
+          AND resolved_at >= NOW() - ($1 * INTERVAL '1 hour') ${nsClause} ${rolClause}
         GROUP BY type
       )
       SELECT
-        t.pending, t.claimed, t.created, t.resolved,
-        COALESCE((SELECT json_agg(json_build_object('role',role,'pending',pending,'claimed',claimed)) FROM by_role), '[]'::json) AS by_role,
-        COALESCE((SELECT json_agg(json_build_object('type',type,'pending',pending,'claimed',claimed,'resolved',resolved)) FROM by_type), '[]'::json) AS by_type
-      FROM totals t
+        COALESCE((SELECT SUM(pending)::int  FROM pending_by_role), 0)  AS pending,
+        COALESCE((SELECT SUM(claimed)::int  FROM pending_by_role), 0)  AS claimed,
+        (SELECT created FROM created_agg)                              AS created,
+        COALESCE((SELECT SUM(resolved)::int FROM resolved_by_type), 0) AS resolved,
+        COALESCE((SELECT json_agg(json_build_object('role',role,'pending',pending,'claimed',claimed))
+          FROM pending_by_role WHERE role IS NOT NULL), '[]'::json) AS by_role,
+        COALESCE((SELECT json_agg(json_build_object('type',t.type,'pending',t.pending,'claimed',t.claimed,'resolved',t.resolved))
+          FROM (
+            SELECT COALESCE(p.type, r.type) AS type,
+                   COALESCE(p.pending, 0)   AS pending,
+                   COALESCE(p.claimed, 0)   AS claimed,
+                   COALESCE(r.resolved, 0)  AS resolved
+            FROM pending_by_type p
+            FULL OUTER JOIN resolved_by_type r ON r.type = p.type
+            WHERE COALESCE(p.type, r.type) IS NOT NULL
+          ) t), '[]'::json) AS by_type
     `, queryParams);
     const row = result.rows[0];
     return {

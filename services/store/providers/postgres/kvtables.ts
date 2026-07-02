@@ -394,6 +394,27 @@ export const KVTables = (context: PostgresStoreService) => ({
         WHERE task_id IS NOT NULL;
     `);
 
+    // v0.25.0: escalationStats indexes. Callers filter by role (optional) and
+    // namespace (optional) — never namespace-first — so the pending index leads
+    // with role and the two windowed indexes lead with their time column: the
+    // scan stays window-bounded even for unfiltered (admin) calls. Trailing
+    // columns cover every column the stats aggregates touch, keeping each of
+    // the three CTE scans index-only.
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_stats_pending
+        ON public.hmsh_escalations(role, type, assigned_to, assigned_until, namespace)
+        WHERE status = 'pending';
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_stats_created
+        ON public.hmsh_escalations(created_at, role, namespace);
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_hmsh_esc_stats_resolved
+        ON public.hmsh_escalations(resolved_at, type, role, namespace)
+        WHERE status = 'resolved';
+    `);
+
     await client.query('COMMIT');
   },
 
@@ -527,6 +548,23 @@ export const KVTables = (context: PostgresStoreService) => ({
               CREATE INDEX IF NOT EXISTS idx_hmsh_esc_task
                 ON public.hmsh_escalations(task_id)
                 WHERE task_id IS NOT NULL;
+            `);
+            // escalationStats indexes: role/time-led so aggregate scans stay
+            // bounded (backlog or window) and index-only. See migrate() for
+            // the column-order rationale.
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_stats_pending
+                ON public.hmsh_escalations(role, type, assigned_to, assigned_until, namespace)
+                WHERE status = 'pending';
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_stats_created
+                ON public.hmsh_escalations(created_at, role, namespace);
+            `);
+            await client.query(`
+              CREATE INDEX IF NOT EXISTS idx_hmsh_esc_stats_resolved
+                ON public.hmsh_escalations(resolved_at, type, role, namespace)
+                WHERE status = 'resolved';
             `);
             break;
 
