@@ -1050,4 +1050,59 @@ describe('DURABLE | escalations | Postgres', () => {
       expect(types).toEqual(sorted);
     }, 5_000);
   });
+
+  describe('stats() bounded-source semantics', () => {
+    // Unique role/type names isolate these rows from everything else the
+    // suite creates, so exact-count assertions hold.
+    const roleA = `stats-role-a-${guid()}`;
+    const roleB = `stats-role-b-${guid()}`;
+    const typeX = `stats-type-x-${guid()}`;
+    const typeY = `stats-type-y-${guid()}`;
+
+    beforeAll(async () => {
+      // roleA/typeX: two pending, one of them claimed.
+      // roleB/typeY: one row, resolved immediately (backlog empty, window hit).
+      const [a1, , b1] = await Promise.all([
+        client.escalations.create({ type: typeX, role: roleA, priority: 5 }),
+        client.escalations.create({ type: typeX, role: roleA, priority: 5 }),
+        client.escalations.create({ type: typeY, role: roleB, priority: 5 }),
+      ]);
+      await client.escalations.claim({
+        id: a1.id,
+        assignee: 'stats-agent',
+        durationMinutes: 10,
+      });
+      await client.escalations.resolve({ id: b1.id, resolverPayload: { ok: true } });
+    }, 10_000);
+
+    it('scopes every count to the roles filter and detects active claims', async () => {
+      const s = await client.escalations.stats({ roles: [roleA] });
+      expect(s.pending).toBe(2);
+      expect(s.claimed).toBe(1);
+      expect(s.created).toBe(2);
+      expect(s.resolved).toBe(0);
+      expect(s.by_role).toEqual([{ role: roleA, pending: 2, claimed: 1 }]);
+      expect(s.by_type).toEqual([
+        { type: typeX, pending: 2, claimed: 1, resolved: 0 },
+      ]);
+    }, 5_000);
+
+    it('counts window-resolved rows into totals and by_type', async () => {
+      const s = await client.escalations.stats({ roles: [roleB] });
+      expect(s.pending).toBe(0);
+      expect(s.claimed).toBe(0);
+      expect(s.created).toBe(1);
+      expect(s.resolved).toBe(1);
+      expect(s.by_type).toEqual([
+        { type: typeY, pending: 0, claimed: 0, resolved: 1 },
+      ]);
+    }, 5_000);
+
+    it('by_role reflects the live backlog: roles with no pending rows emit no entry', async () => {
+      const s = await client.escalations.stats({ roles: [roleA, roleB] });
+      expect(s.by_role).toEqual([{ role: roleA, pending: 2, claimed: 1 }]);
+      expect(s.pending).toBe(2);
+      expect(s.resolved).toBe(1);
+    }, 5_000);
+  });
 });
