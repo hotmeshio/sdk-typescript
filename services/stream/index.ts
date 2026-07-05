@@ -162,6 +162,11 @@ export abstract class StreamService<
     messageIds: string[],
   ): Promise<number>;
 
+  // Optional job-scoped expiry (implemented by providers that support it).
+  // Soft-deletes every live stream message belonging to a job so that an
+  // interrupted job's queued/reserved/retry messages are never delivered.
+  expireJobMessages?(jid: string): Promise<number>;
+
   // Optional notification management methods (implemented by providers that support them)
   stopNotificationConsumer?(
     streamName: string,
