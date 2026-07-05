@@ -57,6 +57,11 @@ class PostgresStreamService extends StreamService<
   // Scout manager
   private scoutManager: ScoutManager;
 
+  // Job-liveness context for the delivery guard (worker streams).
+  // Shared by reference with fetchMessages so the guard can
+  // self-disable when the jobs table is not visible (42P01).
+  private liveness: Messages.JobLivenessContext | undefined;
+
   // Notification manager
   private notificationManager: NotificationManager<PostgresStreamService>;
 
@@ -81,6 +86,14 @@ class PostgresStreamService extends StreamService<
     // and never need direct table access.
     if (!this.securedMode) {
       await deploySchema(this.streamClient, this.appId, this.logger);
+      //delivery liveness guard: drops redelivered/retried worker messages
+      //whose job is dead. Secured workers cannot read the jobs table —
+      //interrupt-time purging (expireJobMessages) covers them instead.
+      this.liveness = {
+        jobsTable: `${this.safeName(this.appId)}.jobs`,
+        keyPrefix: this.mintKey(KeyType.JOB_STATE, { jobId: '' }),
+        enabled: true,
+      };
     }
 
     // Initialize scout manager (skipped in secured mode — roles table inaccessible)
@@ -489,6 +502,25 @@ class PostgresStreamService extends StreamService<
       target.isEngine,
       consumerName,
       options || {},
+      this.logger,
+      this.liveness,
+    );
+  }
+
+  /**
+   * Soft-deletes every live stream row that belongs to a job, across the
+   * worker and engine stream tables. Called by the engine when a job is
+   * interrupted or scrubbed so its queued, reserved, and scheduled-retry
+   * messages are never delivered again.
+   */
+  async expireJobMessages(jid: string): Promise<number> {
+    if (this.securedMode) {
+      return 0;
+    }
+    return Messages.expireJobMessages(
+      this.streamClient,
+      [this.getEngineTableName(), this.getWorkerTableName()],
+      jid,
       this.logger,
     );
   }

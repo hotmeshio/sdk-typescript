@@ -256,6 +256,123 @@ export function buildPublishSQL(
 }
 
 /**
+ * Job-liveness context for the delivery guard. `keyPrefix` is the minted
+ * job-key prefix (`hmsh:<app>:j:`) so `keyPrefix || jid` addresses the
+ * jobs row. `enabled` is mutated to false (self-disable) when the jobs
+ * table is not visible from the stream connection.
+ */
+export interface JobLivenessContext {
+  jobsTable: string;
+  keyPrefix: string;
+  enabled: boolean;
+}
+
+/**
+ * Soft-delete every live stream row that belongs to a job. Called when a
+ * job is interrupted so its queued, reserved, and scheduled-retry
+ * messages are never delivered again. Uses the partial jid indexes
+ * (idx_*_streams_jid_created); runs once per interrupt.
+ */
+export async function expireJobMessages(
+  client: PostgresClientType & ProviderClient,
+  tableNames: string[],
+  jid: string,
+  logger: ILogger,
+): Promise<number> {
+  if (!jid) return 0;
+  let total = 0;
+  for (const tableName of tableNames) {
+    try {
+      const res = await client.query(
+        `UPDATE ${tableName}
+         SET expired_at = NOW()
+         WHERE jid = $1 AND expired_at IS NULL`,
+        [jid],
+      );
+      total += res.rowCount ?? 0;
+    } catch (error) {
+      logger.error(`postgres-stream-expire-job-error`, {
+        tableName,
+        jid,
+        error,
+      });
+      throw error;
+    }
+  }
+  return total;
+}
+
+/**
+ * Delivery liveness guard. Scoped to messages that are REDELIVERIES
+ * (a prior reservation lapsed) or RETRIES (retry_attempt > 0) — zombie
+ * messages of interrupted jobs only resurface through those paths, so
+ * first deliveries (the steady-state hot path) pay zero extra cost.
+ * A suspect whose job exists, is live, and has status <= 0 is expired
+ * in place and dropped from the batch. A missing job row still delivers
+ * (job-creating messages precede the row). Fails open on any error;
+ * self-disables when the jobs table is not visible (42P01).
+ */
+async function dropDeadJobMessages(
+  client: PostgresClientType & ProviderClient,
+  tableName: string,
+  streamName: string,
+  rows: any[],
+  liveness: JobLivenessContext,
+  logger: ILogger,
+): Promise<Set<string>> {
+  const deadIds = new Set<string>();
+  const suspects = rows.filter(
+    (row) => row.jid && (row.redelivered || row.retry_attempt > 0),
+  );
+  if (suspects.length === 0) {
+    return deadIds;
+  }
+  try {
+    const res = await client.query(
+      `UPDATE ${tableName} t
+       SET expired_at = NOW()
+       FROM ${liveness.jobsTable} j
+       WHERE t.stream_name = $1
+         AND t.id = ANY($2::bigint[])
+         AND j.key = $3 || t.jid
+         AND j.is_live
+         AND j.status <= 0
+       RETURNING t.id`,
+      [streamName, suspects.map((row) => row.id), liveness.keyPrefix],
+    );
+    for (const row of res.rows) {
+      deadIds.add(row.id.toString());
+    }
+    if (deadIds.size > 0) {
+      logger.warn(`postgres-stream-zombie-dropped-${streamName}`, {
+        count: deadIds.size,
+        jids: [
+          ...new Set(
+            suspects
+              .filter((row) => deadIds.has(row.id.toString()))
+              .map((row) => row.jid),
+          ),
+        ],
+      });
+    }
+  } catch (error) {
+    if (error?.code === '42P01') {
+      //jobs table is not visible from this connection; the guard cannot
+      //run here — interrupt-time purging (expireJobMessages) still applies
+      liveness.enabled = false;
+      logger.info('postgres-stream-liveness-guard-disabled', {
+        jobsTable: liveness.jobsTable,
+      });
+    } else {
+      logger.error(`postgres-stream-liveness-guard-error-${streamName}`, {
+        error,
+      });
+    }
+  }
+  return deadIds;
+}
+
+/**
  * Fetch messages from the stream with optional exponential backoff.
  * Uses SKIP LOCKED for high-concurrency consumption.
  * No group_name filter needed - the table itself determines engine vs worker.
@@ -277,6 +394,7 @@ export async function fetchMessages(
     maxRetries?: number;
   } = {},
   logger: ILogger,
+  liveness?: JobLivenessContext,
 ): Promise<StreamMessage[]> {
   const enableBackoff = options?.enableBackoff ?? false;
   const initialBackoff = options?.initialBackoff ?? 100;
@@ -288,10 +406,11 @@ export async function fetchMessages(
 
   // Include workflow_name in RETURNING for worker streams. Columns are
   // qualified with the update target's alias because the claim UPDATE
-  // joins a CTE that also exposes an id column.
+  // joins a CTE that also exposes an id column. Worker streams also
+  // return jid and the pre-claim redelivery flag for the liveness guard.
   const returningClause = isEngine
     ? 't.id, t.message, t.max_retry_attempts, t.backoff_coefficient, t.maximum_interval_seconds, t.retry_attempt'
-    : 't.id, t.message, t.workflow_name, t.max_retry_attempts, t.backoff_coefficient, t.maximum_interval_seconds, t.retry_attempt';
+    : 't.id, t.message, t.workflow_name, t.max_retry_attempts, t.backoff_coefficient, t.maximum_interval_seconds, t.retry_attempt, t.jid, candidates.redelivered';
 
   try {
     while (retries < maxRetries) {
@@ -305,9 +424,12 @@ export async function fetchMessages(
       // reserves MORE rows than LIMIT. The UPDATE repeats stream_name so
       // the planner prunes to a single hash partition and joins on the
       // (stream_name, id) primary key.
+      // candidates exposes the PRE-claim reservation state: a non-null
+      // reserved_at at claim time means a prior reservation lapsed
+      // (redelivery) — the trigger condition for the liveness guard.
       const res = await client.query(
         `WITH candidates AS MATERIALIZED (
-           SELECT id FROM ${tableName}
+           SELECT id, (reserved_at IS NOT NULL) AS redelivered FROM ${tableName}
            WHERE stream_name = $1
              AND (reserved_at IS NULL OR reserved_at < NOW() - INTERVAL '${reservationTimeout} seconds')
              AND expired_at IS NULL
@@ -324,7 +446,22 @@ export async function fetchMessages(
         [streamName, batchSize, consumerName],
       );
 
-      const messages: StreamMessage[] = res.rows.map((row: any) => {
+      let rows = res.rows;
+      if (!isEngine && liveness?.enabled && rows.length > 0) {
+        const deadIds = await dropDeadJobMessages(
+          client,
+          tableName,
+          streamName,
+          rows,
+          liveness,
+          logger,
+        );
+        if (deadIds.size > 0) {
+          rows = rows.filter((row: any) => !deadIds.has(row.id.toString()));
+        }
+      }
+
+      const messages: StreamMessage[] = rows.map((row: any) => {
         const data = parseStreamMessage(row.message);
 
         const hasDefaultRetryPolicy =

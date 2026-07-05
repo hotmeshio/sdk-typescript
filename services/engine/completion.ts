@@ -127,6 +127,7 @@ export async function interrupt(
   options: JobInterruptOptions = {},
 ): Promise<string> {
   await instance.store.interrupt(topic, jobId, options);
+  await expireStreamMessages(instance, jobId);
   const context = (await instance.getState(topic, jobId)) as JobState;
   const completionOpts: JobCompletionOptions = {
     interrupt: options.descend,
@@ -143,7 +144,35 @@ export async function scrub(
   instance: CompletionContext,
   jobId: string,
 ) {
+  await expireStreamMessages(instance, jobId);
   await instance.store.scrub(jobId);
+}
+
+/**
+ * Soft-deletes the job's stream messages (queued, reserved, and
+ * scheduled retries) so no message belonging to a dead job is ever
+ * delivered again. Interrupting the job wins or throws before this
+ * runs; failures here are logged and absorbed because the delivery
+ * liveness guard drops any surviving message at claim time.
+ */
+async function expireStreamMessages(
+  instance: CompletionContext,
+  jobId: string,
+): Promise<void> {
+  try {
+    const expired = await instance.stream.expireJobMessages?.(jobId);
+    if (expired) {
+      instance.logger.info('engine-job-stream-messages-expired', {
+        jobId,
+        expired,
+      });
+    }
+  } catch (error) {
+    instance.logger.error('engine-job-stream-expire-error', {
+      jobId,
+      error,
+    });
+  }
 }
 
 /**
