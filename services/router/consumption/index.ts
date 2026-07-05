@@ -62,6 +62,9 @@ export class ConsumptionManager<
   private duressManager?: DuressManager;
   private onDuressChange?: (snapshot: DuressSnapshot) => void;
   private messagesSinceLastEval = 0;
+  // Lazily resolved once: whether the provider supports reservation
+  // heartbeats (extendReservation + feature flag).
+  private canExtendReservations: boolean | undefined;
 
   // Adaptive consumption pressure — scales reservation timeout AND batch
   // size based on stream depth. Under load: timeout grows (prevents
@@ -317,6 +320,7 @@ export class ConsumptionManager<
             message.id,
             message.data,
             callback,
+            consumer,
           );
         });
 
@@ -341,6 +345,7 @@ export class ConsumptionManager<
             message.id,
             message.data,
             callback,
+            consumer,
           );
         }
       }
@@ -370,6 +375,7 @@ export class ConsumptionManager<
               message.id,
               message.data,
               callback,
+              consumer,
             );
           });
           await Promise.allSettled(reclaimPromises);
@@ -384,6 +390,7 @@ export class ConsumptionManager<
               message.id,
               message.data,
               callback,
+              consumer,
             );
           }
         }
@@ -530,6 +537,7 @@ export class ConsumptionManager<
                 message.id,
                 message.data,
                 callback,
+                consumer,
               );
             });
 
@@ -557,6 +565,7 @@ export class ConsumptionManager<
                 message.id,
                 message.data,
                 callback,
+                consumer,
               );
             }
           }
@@ -590,6 +599,7 @@ export class ConsumptionManager<
                   message.id,
                   message.data,
                   callback,
+                  consumer,
                 );
               });
               await Promise.allSettled(reclaimPromises);
@@ -604,6 +614,7 @@ export class ConsumptionManager<
                   message.id,
                   message.data,
                   callback,
+                  consumer,
                 );
               }
             }
@@ -650,12 +661,27 @@ export class ConsumptionManager<
     consume.call(this);
   }
 
+  /**
+   * Whether reservation heartbeats are available: the provider must
+   * implement extendReservation and advertise the capability.
+   */
+  private supportsHeartbeat(): boolean {
+    if (this.canExtendReservations === undefined) {
+      this.canExtendReservations =
+        typeof this.stream.extendReservation === 'function' &&
+        this.stream.getProviderSpecificFeatures()
+          .supportsReservationExtension === true;
+    }
+    return this.canExtendReservations;
+  }
+
   async consumeOne(
     stream: string,
     group: string,
     id: string,
     input: StreamData,
     callback: (streamData: StreamData) => Promise<StreamDataResponse | void>,
+    consumer?: string,
   ): Promise<void> {
     this.logger.debug(`stream-read-one`, { group, stream, id });
 
@@ -726,11 +752,20 @@ export class ConsumptionManager<
       return;
     }
 
-    // Lease deadline: the full configured reservation timeout (N).
-    // The reclaim interval is N+5s, so the deadline always fires
-    // before a reclaimant can pick up the message. This preserves
-    // the user's contract — if they set 30s, the function gets 30s.
-    const deadlineMs = this.adaptiveReservationTimeout * 1000;
+    // Lease strategy. With heartbeat support (provider capability +
+    // consumer identity), the reservation is refreshed at half the base
+    // window while the callback runs, so an activity that outlives the
+    // window stays leased and executes exactly once; the deadline then
+    // acts as a runaway cap (HMSH_RESERVATION_TIMEOUT_MAX_S). A crashed
+    // consumer stops heartbeating and its message is rescued within one
+    // window through the normal claim path. Providers without extension
+    // keep the hard deadline at the reservation timeout (N), with
+    // reclaim at N+5s.
+    const canHeartbeat = Boolean(consumer) && this.supportsHeartbeat();
+    const deadlineS = canHeartbeat
+      ? HMSH_RESERVATION_TIMEOUT_MAX_S
+      : this.adaptiveReservationTimeout;
+    const deadlineMs = deadlineS * 1000;
 
     let output: StreamDataResponse | void;
     const telemetry = new RouterTelemetry(this.appId);
@@ -739,15 +774,54 @@ export class ConsumptionManager<
       telemetry.startStreamSpan(input, this.role);
 
       let deadlineTimer: ReturnType<typeof setTimeout>;
+      let rejectLease: (err: Error) => void;
       const deadlinePromise = new Promise<never>((_, reject) => {
+        rejectLease = reject;
         deadlineTimer = setTimeout(
-          () =>
-            reject(
-              new LeaseExpiredError(deadlineMs, this.adaptiveReservationTimeout),
-            ),
+          () => reject(new LeaseExpiredError(deadlineMs, deadlineS)),
           deadlineMs,
         );
       });
+
+      // Heartbeat at half the BASE window (adaptive scaling only grows
+      // the claim window, so the base cadence always outpaces reclaim
+      // eligibility). A beat that reports 0 means the lease is gone —
+      // reclaimed by another consumer, acked, or the job was
+      // interrupted — so this execution abandons without acking. A beat
+      // that errors is transient and retries on the next tick. Fast
+      // callbacks settle before the first beat ever fires.
+      let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+      if (canHeartbeat) {
+        const intervalMs = Math.max(
+          1_000,
+          Math.floor((HMSH_RESERVATION_TIMEOUT_S * 1000) / 2),
+        );
+        heartbeatTimer = setInterval(() => {
+          this.stream
+            .extendReservation(stream, id, consumer)
+            .then((extended) => {
+              if (extended === 0) {
+                this.logger.warn('stream-lease-lost', {
+                  group,
+                  stream,
+                  id,
+                  consumer,
+                  topic: input.metadata?.topic,
+                  jobId: input.metadata?.jid,
+                });
+                rejectLease(new LeaseExpiredError(deadlineMs, deadlineS));
+              }
+            })
+            .catch((error) => {
+              this.logger.warn('stream-lease-extend-error', {
+                group,
+                stream,
+                id,
+                error,
+              });
+            });
+        }, intervalMs);
+      }
 
       try {
         output = await Promise.race([
@@ -756,6 +830,9 @@ export class ConsumptionManager<
         ]);
       } finally {
         clearTimeout(deadlineTimer);
+        if (heartbeatTimer) {
+          clearInterval(heartbeatTimer);
+        }
       }
 
       telemetry.setStreamErrorFromOutput(output);
@@ -773,7 +850,7 @@ export class ConsumptionManager<
           stream,
           id,
           deadlineMs,
-          reservationTimeoutS: this.adaptiveReservationTimeout,
+          reservationTimeoutS: deadlineS,
           topic: input.metadata?.topic,
           activityId: input.metadata?.aid,
           jobId: input.metadata?.jid,

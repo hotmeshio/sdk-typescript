@@ -423,6 +423,7 @@ describe('FUNCTIONAL | PostgresStreamService', () => {
         supportsOrdering: true,
         supportsTrimming: true,
         supportsRetry: false,
+        supportsReservationExtension: true,
         maxMessageSize: 1024 * 1024,
         maxBatchSize: 256,
       });

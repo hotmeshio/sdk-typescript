@@ -303,6 +303,38 @@ export async function expireJobMessages(
 }
 
 /**
+ * Refresh an owned reservation (heartbeat). Scoped to the owning
+ * consumer and to live rows: a message that was reclaimed by another
+ * consumer, acked, or expired (job interrupted) reports 0 so the
+ * stale consumer can abandon its execution.
+ */
+export async function extendReservation(
+  client: PostgresClientType & ProviderClient,
+  tableName: string,
+  streamName: string,
+  messageId: string,
+  consumerName: string,
+  logger: ILogger,
+): Promise<number> {
+  try {
+    const res = await client.query(
+      `UPDATE ${tableName}
+       SET reserved_at = NOW()
+       WHERE stream_name = $1 AND id = $2
+         AND reserved_by = $3 AND expired_at IS NULL`,
+      [streamName, parseInt(messageId), consumerName],
+    );
+    return res.rowCount ?? 0;
+  } catch (error) {
+    logger.error(`postgres-stream-extend-error-${streamName}`, {
+      messageId,
+      error,
+    });
+    throw error;
+  }
+}
+
+/**
  * Delivery liveness guard. Scoped to messages that are REDELIVERIES
  * (a prior reservation lapsed) or RETRIES (retry_attempt > 0) — zombie
  * messages of interrupted jobs only resurface through those paths, so

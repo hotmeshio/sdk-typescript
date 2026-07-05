@@ -508,6 +508,31 @@ class PostgresStreamService extends StreamService<
   }
 
   /**
+   * Refreshes an owned reservation (heartbeat). Called by the consumer
+   * while an activity callback is still running so the message stays
+   * leased past the base reservation window. Returns 0 when the lease
+   * is no longer this consumer's to hold (reclaimed, acked, or expired).
+   */
+  async extendReservation(
+    streamName: string,
+    messageId: string,
+    consumerName: string,
+  ): Promise<number> {
+    if (this.securedMode) {
+      return 0;
+    }
+    const target = this.resolveStreamTarget(streamName);
+    return Messages.extendReservation(
+      this.streamClient,
+      target.tableName,
+      target.streamName,
+      messageId,
+      consumerName,
+      this.logger,
+    );
+  }
+
+  /**
    * Soft-deletes every live stream row that belongs to a job, across the
    * worker and engine stream tables. Called by the engine when a job is
    * interrupted or scrubbed so its queued, reserved, and scheduled-retry
@@ -701,7 +726,12 @@ class PostgresStreamService extends StreamService<
   }
 
   getProviderSpecificFeatures() {
-    return Stats.getProviderSpecificFeatures(this.config);
+    return {
+      ...Stats.getProviderSpecificFeatures(this.config),
+      //heartbeat lease extension uses direct table access; secured
+      //workers use stored procedures and keep hard-deadline leases
+      supportsReservationExtension: !this.securedMode,
+    };
   }
 
   async cleanup(): Promise<void> {
