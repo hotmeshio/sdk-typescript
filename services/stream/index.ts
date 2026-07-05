@@ -151,6 +151,7 @@ export abstract class StreamService<
     supportsRetry: boolean;
     supportsNotifications?: boolean; // New optional feature flag
     supportsParallelProcessing?: boolean;
+    supportsReservationExtension?: boolean; // heartbeat lease extension
     maxMessageSize: number;
     maxBatchSize: number;
   };
@@ -166,6 +167,16 @@ export abstract class StreamService<
   // Soft-deletes every live stream message belonging to a job so that an
   // interrupted job's queued/reserved/retry messages are never delivered.
   expireJobMessages?(jid: string): Promise<number>;
+
+  // Optional reservation heartbeat (implemented by providers that support
+  // it; advertised via supportsReservationExtension). Refreshes an owned
+  // reservation while the activity callback is still running; returns 0
+  // when the lease is no longer held (reclaimed, acked, or expired).
+  extendReservation?(
+    streamName: string,
+    messageId: string,
+    consumerName: string,
+  ): Promise<number>;
 
   // Optional notification management methods (implemented by providers that support them)
   stopNotificationConsumer?(
