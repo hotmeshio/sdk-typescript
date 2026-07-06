@@ -1056,6 +1056,7 @@ class PostgresStoreService extends StoreService<
   async setHookSignal(
     hook: HookSignal,
     transaction?: ProviderTransaction,
+    redelivery?: { aid: string; topic: string },
   ): Promise<{ success: boolean; pendingData?: string }> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
     const { topic, resolved, jobId } = hook;
@@ -1102,6 +1103,51 @@ class PostgresStoreService extends StoreService<
       const captured = lockResult.rows[0]?.value;
       const wasInsert = lockResult.rows[0]?.inserted;
       const isPending = captured?.startsWith('$pending::');
+
+      if (isPending && redelivery) {
+        //consume the marker and commit its redelivery as ONE unit: the
+        //pending wake becomes a durable engine stream message in the
+        //same transaction that destroys the marker, so the wake
+        //survives a crash at any instant. A crash before COMMIT leaves
+        //the marker intact for the resume path to consume again.
+        const pendingData = captured.slice('$pending::'.length);
+        const message = JSON.stringify({
+          type: 'webhook',
+          status: 'success',
+          code: 200,
+          metadata: {
+            guid: guid(),
+            aid: redelivery.aid,
+            topic: redelivery.topic,
+          },
+          data: JSON.parse(pendingData),
+        });
+        const schemaName = this.kvsql().safeName(this.appId);
+        await this.pgClient.query('BEGIN');
+        try {
+          await this.pgClient.query(
+            `UPDATE ${tableName}
+             SET value = $1, expiry = NOW() + INTERVAL '${delay} seconds'
+             WHERE key = $2`,
+            [jobId, storedKey],
+          );
+          await this.pgClient.query(
+            `INSERT INTO ${schemaName}.engine_streams
+             (stream_name, message, priority)
+             VALUES ($1, $2, 5)`,
+            [this.appId, message],
+          );
+          await this.pgClient.query('COMMIT');
+        } catch (redeliveryError) {
+          await this.pgClient.query('ROLLBACK');
+          throw redeliveryError;
+        }
+        this.logger.warn('hook-signal-pending-redelivered', {
+          key: signalKey,
+          topic: redelivery.topic,
+        });
+        return { success: true };
+      }
 
       if (!wasInsert) {
         //step 2: row existed — overwrite with hook value
