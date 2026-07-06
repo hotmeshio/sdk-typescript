@@ -171,10 +171,17 @@ abstract class StoreService<
    * Leg1: Attempts to set the hook signal. If a pending signal occupies
    * the key (race condition), overwrites it and returns the pending data.
    * When called with a transaction, queues the setnxex (no pending detection).
+   *
+   * When `redelivery` is provided (the webhook routing for this hook),
+   * a consumed pending signal is republished as an engine stream message
+   * in the SAME transaction that overwrites the marker — the wake
+   * survives a crash at any instant. `pendingData` is then not returned,
+   * since the store already owns the redelivery.
    */
   abstract setHookSignal(
     hook: HookSignal,
     transaction?: TransactionProvider,
+    redelivery?: { aid: string; topic: string },
   ): Promise<{ success: boolean; pendingData?: string }>;
   /**
    * Leg2: Atomically gets the hook signal OR inserts a pending signal

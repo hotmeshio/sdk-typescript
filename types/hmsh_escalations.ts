@@ -94,6 +94,20 @@ export type ResolveEscalationResult =
   | { ok: true; entry: EscalationEntry }
   | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' | 'already-expired' };
 
+/**
+ * A pre-built wake publish, executed INSIDE the resolve transaction so the
+ * awaiting workflow's wake commits atomically with `status='resolved'`. The
+ * SQL is a stream INSERT produced by the stream provider; `forSignalKey`
+ * pins the command to the row it was built for — the store executes it only
+ * when the locked row's `signal_key` matches (a mismatched row falls back
+ * to post-commit delivery).
+ */
+export interface EscalationWakeCommand {
+  forSignalKey: string;
+  sql: string;
+  params: unknown[];
+}
+
 export type ReleaseEscalationResult =
   | { ok: true; entry: EscalationEntry }
   | { ok: false; reason: 'not-found' | 'wrong-assignee' };

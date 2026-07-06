@@ -1056,6 +1056,7 @@ class PostgresStoreService extends StoreService<
   async setHookSignal(
     hook: HookSignal,
     transaction?: ProviderTransaction,
+    redelivery?: { aid: string; topic: string },
   ): Promise<{ success: boolean; pendingData?: string }> {
     const key = this.mintKey(KeyType.SIGNALS, { appId: this.appId });
     const { topic, resolved, jobId } = hook;
@@ -1102,6 +1103,51 @@ class PostgresStoreService extends StoreService<
       const captured = lockResult.rows[0]?.value;
       const wasInsert = lockResult.rows[0]?.inserted;
       const isPending = captured?.startsWith('$pending::');
+
+      if (isPending && redelivery) {
+        //consume the marker and commit its redelivery as ONE unit: the
+        //pending wake becomes a durable engine stream message in the
+        //same transaction that destroys the marker, so the wake
+        //survives a crash at any instant. A crash before COMMIT leaves
+        //the marker intact for the resume path to consume again.
+        const pendingData = captured.slice('$pending::'.length);
+        const message = JSON.stringify({
+          type: 'webhook',
+          status: 'success',
+          code: 200,
+          metadata: {
+            guid: guid(),
+            aid: redelivery.aid,
+            topic: redelivery.topic,
+          },
+          data: JSON.parse(pendingData),
+        });
+        const schemaName = this.kvsql().safeName(this.appId);
+        await this.pgClient.query('BEGIN');
+        try {
+          await this.pgClient.query(
+            `UPDATE ${tableName}
+             SET value = $1, expiry = NOW() + INTERVAL '${delay} seconds'
+             WHERE key = $2`,
+            [jobId, storedKey],
+          );
+          await this.pgClient.query(
+            `INSERT INTO ${schemaName}.engine_streams
+             (stream_name, message, priority)
+             VALUES ($1, $2, 5)`,
+            [this.appId, message],
+          );
+          await this.pgClient.query('COMMIT');
+        } catch (redeliveryError) {
+          await this.pgClient.query('ROLLBACK');
+          throw redeliveryError;
+        }
+        this.logger.warn('hook-signal-pending-redelivered', {
+          key: signalKey,
+          topic: redelivery.topic,
+        });
+        return { success: true };
+      }
 
       if (!wasInsert) {
         //step 2: row existed — overwrite with hook value
@@ -2283,9 +2329,39 @@ class PostgresStoreService extends StoreService<
     return { ok: true, entry: row.entry_json };
   }
 
+  /**
+   * Executes a pre-built wake publish inside the currently open resolve
+   * transaction, guarded by a SAVEPOINT so a wake failure can never roll
+   * back the resolve itself. Returns true when the wake row committed
+   * with the transaction; false means the caller should fall back to
+   * post-commit delivery.
+   */
+  private async enqueueEscalationWake(
+    wakeCommand: import('../../../../types/hmsh_escalations').EscalationWakeCommand | undefined,
+    signalKey: string | null,
+    escalationId: string,
+  ): Promise<boolean> {
+    if (!wakeCommand || !signalKey || wakeCommand.forSignalKey !== signalKey) {
+      return false;
+    }
+    await this.pgClient.query('SAVEPOINT escalation_wake');
+    try {
+      await this.pgClient.query(wakeCommand.sql, wakeCommand.params);
+      return true;
+    } catch (error) {
+      await this.pgClient.query('ROLLBACK TO SAVEPOINT escalation_wake');
+      this.logger.warn('escalation-wake-enqueue-error', {
+        escalationId,
+        error: error.message,
+      });
+      return false;
+    }
+  }
+
   async resolveEscalation(
     params: import('../../../../types/hmsh_escalations').ResolveEscalationParams,
-  ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null }> {
+    wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
+  ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
     const { id, namespace, resolverPayload, metadata } = params;
     const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
     // metaJson is bound at a fixed index; the CASE no-ops when null so resolution
@@ -2334,17 +2410,49 @@ class PostgresStoreService extends StoreService<
         await this.pgClient.query('ROLLBACK');
         return { ok: false, reason: 'already-resolved' };
       }
+      //the wake commits WITH the resolve: a crash after COMMIT leaves both
+      //the resolved row and its wake message durable; a crash before
+      //leaves neither. The engine_streams INSERT trigger emits the
+      //delivery NOTIFY on commit.
+      const wakeEnqueued = await this.enqueueEscalationWake(wakeCommand, signal_key, id);
       await this.pgClient.query('COMMIT');
-      return { ok: true, entry: updateResult.rows[0], signalKey: signal_key, topic };
+      return { ok: true, entry: updateResult.rows[0], signalKey: signal_key, topic, wakeEnqueued };
     } catch (e) {
       await this.pgClient.query('ROLLBACK');
       throw e;
     }
   }
 
+  /**
+   * Non-locking preview of the row `resolveEscalationByMetadata` would
+   * select — used to pre-build the wake command before the resolve
+   * transaction opens. The `forSignalKey` guard on the wake command
+   * handles the race where a different row wins the lock.
+   */
+  async peekEscalationByMetadata(
+    params: import('../../../../types/hmsh_escalations').ResolveByMetadataParams,
+  ): Promise<{ id: string; signalKey: string | null; topic: string | null } | null> {
+    const { key, value, namespace, roles } = params;
+    const filter = JSON.stringify({ [key]: value });
+    const result = await this.pgClient.query(
+      `SELECT id, signal_key, topic FROM public.hmsh_escalations
+       WHERE ${namespace ? 'namespace = $3 AND' : ''}
+             metadata @> $1::jsonb
+         AND ($2::text[] IS NULL OR role = ANY($2::text[]))
+         AND status IN ('pending', 'cancelled')
+       ORDER BY priority ASC, created_at ASC
+       LIMIT 1`,
+      namespace ? [filter, roles ?? null, namespace] : [filter, roles ?? null],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return { id: row.id, signalKey: row.signal_key, topic: row.topic };
+  }
+
   async resolveEscalationByMetadata(
     params: import('../../../../types/hmsh_escalations').ResolveByMetadataParams,
-  ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null }> {
+    wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
+  ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
     const { key, value, namespace, resolverPayload, roles, metadata } = params;
     const filter = JSON.stringify({ [key]: value });
     const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
@@ -2385,8 +2493,9 @@ class PostgresStoreService extends StoreService<
         await this.pgClient.query('ROLLBACK');
         return { ok: false, reason: 'already-resolved' };
       }
+      const wakeEnqueued = await this.enqueueEscalationWake(wakeCommand, signal_key, id);
       await this.pgClient.query('COMMIT');
-      return { ok: true, entry: updateResult.rows[0], signalKey: signal_key, topic };
+      return { ok: true, entry: updateResult.rows[0], signalKey: signal_key, topic, wakeEnqueued };
     } catch (e) {
       await this.pgClient.query('ROLLBACK');
       throw e;

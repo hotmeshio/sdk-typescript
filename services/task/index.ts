@@ -137,8 +137,13 @@ class TaskService {
         expire,
       };
       //called standalone (no transaction) so the single CTE query can
-      //atomically detect and return pending signal data on collision
-      const result = await this.store.setHookSignal(hook);
+      //atomically detect and return pending signal data on collision.
+      //the redelivery routing lets the store republish a consumed
+      //pending signal durably, in the same transaction that consumes it
+      const result = await this.store.setHookSignal(hook, undefined, {
+        aid: hookRule.to,
+        topic,
+      });
       if (result.pendingData) {
         this.logger.warn('task-signal-race-pending-consumed', {
           topic,
