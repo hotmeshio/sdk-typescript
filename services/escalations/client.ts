@@ -1,12 +1,15 @@
 import {
   HMSH_LOGLEVEL,
 } from '../../modules/enums';
-import { formatISODate, hashOptions } from '../../modules/utils';
+import { formatISODate, guid, hashOptions } from '../../modules/utils';
+import { KeyType } from '../../modules/key';
 import { HotMesh } from '../hotmesh';
 import { EventsConfig, SystemEvent, EscalationVerb } from '../../types/system_events';
 import { Connection } from '../../types/durable';
 import { StreamStatus } from '../../types';
+import { StreamDataType } from '../../types/stream';
 import {
+  EscalationWakeCommand,
   EscalationEntry,
   ClaimEscalationResult,
   ClaimByMetadataResult,
@@ -199,6 +202,52 @@ export class EscalationClientService {
     return delivered;
   }
 
+  /**
+   * Builds the wake publish as a SQL command so the store can commit it
+   * INSIDE the resolve transaction — the wake becomes durable with the
+   * resolved row, closing the crash window between resolve commit and
+   * post-commit signal delivery. Mirrors `_deliverEscalationSignal`'s
+   * topic fallback chain; returns null when no hook rule is deployed
+   * for any candidate topic (the caller then keeps post-commit
+   * delivery as the only path, preserving prior behavior).
+   */
+  private async _buildWakeCommand(
+    ns: string,
+    topic: string | null | undefined,
+    signalKey: string,
+    data: Record<string, unknown>,
+  ): Promise<EscalationWakeCommand | null> {
+    const hm = await this._engine(null, ns);
+    const engine = hm.engine as any;
+    const candidates = [topic, `${ns}.wfs.signal`, `${ns}.wfs.wait`].filter(
+      Boolean,
+    ) as string[];
+    for (const candidate of candidates) {
+      try {
+        const hookRule = await engine.taskService.getHookRule(candidate);
+        if (!hookRule) continue;
+        const [aid] = await engine.getSchema(`.${hookRule.to}`);
+        const streamData = {
+          type: StreamDataType.WEBHOOK,
+          status: StreamStatus.SUCCESS,
+          code: 200,
+          metadata: { guid: guid(), aid, topic: candidate },
+          data: { id: signalKey, data },
+        };
+        const streamKey = engine.stream.mintKey(KeyType.STREAMS, {
+          topic: null,
+        });
+        const { sql, params } = engine.stream._publishMessages(streamKey, [
+          JSON.stringify(streamData),
+        ]);
+        return { forSignalKey: signalKey, sql, params };
+      } catch {
+        /* candidate not deployed — try the next topic */
+      }
+    }
+    return null;
+  }
+
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   /**
@@ -358,11 +407,28 @@ export class EscalationClientService {
     const ns = (params.namespace ?? namespace) ?? APP_ID;
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
+
+    //pre-build the wake so it commits INSIDE the resolve transaction; the
+    //row's signal routing (signal_key, topic) is immutable after creation
+    let wakeCommand: EscalationWakeCommand | null = null;
+    const preview = await store.getEscalation(params.id, params.namespace);
+    if (preview?.signal_key) {
+      wakeCommand = await this._buildWakeCommand(
+        ns,
+        preview.topic,
+        preview.signal_key,
+        params.resolverPayload ?? {},
+      );
+    }
+
     const dbResult = await store.resolveEscalation(
       { id: params.id, resolverPayload: params.resolverPayload, metadata: params.metadata },
+      wakeCommand ?? undefined,
     );
     if (!dbResult.ok) return dbResult;
-    if (dbResult.signalKey) {
+    if (dbResult.signalKey && !dbResult.wakeEnqueued) {
+      //the wake was not part of the commit (no hook rule found, or the
+      //enqueue was rolled back to its savepoint) — deliver post-commit
       await this._deliverEscalationSignal(ns, dbResult.topic, {
         id: dbResult.signalKey,
         data: params.resolverPayload ?? {},
@@ -387,11 +453,31 @@ export class EscalationClientService {
     const ns = (params.namespace ?? namespace) ?? APP_ID;
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
+
+    //peek the row the resolve is expected to lock and pre-build its wake;
+    //the forSignalKey guard covers the race where a different row wins
+    let wakeCommand: EscalationWakeCommand | null = null;
+    const preview = await store.peekEscalationByMetadata({
+      key: params.key,
+      value: params.value,
+      roles: params.roles,
+      namespace: params.namespace,
+    });
+    if (preview?.signalKey) {
+      wakeCommand = await this._buildWakeCommand(
+        ns,
+        preview.topic,
+        preview.signalKey,
+        params.resolverPayload ?? {},
+      );
+    }
+
     const dbResult = await store.resolveEscalationByMetadata(
       { key: params.key, value: params.value, resolverPayload: params.resolverPayload, roles: params.roles, metadata: params.metadata },
+      wakeCommand ?? undefined,
     );
     if (!dbResult.ok) return dbResult;
-    if (dbResult.signalKey) {
+    if (dbResult.signalKey && !dbResult.wakeEnqueued) {
       await this._deliverEscalationSignal(ns, dbResult.topic, {
         id: dbResult.signalKey,
         data: params.resolverPayload ?? {},
