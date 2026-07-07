@@ -2366,46 +2366,34 @@ class PostgresStoreService extends StoreService<
   }
 
   /**
-   * Writes a pre-built wake message to engine_streams inside the
-   * currently open resolve transaction, guarded by a SAVEPOINT so a
-   * wake failure can never roll back the resolve itself. Returns true
-   * when the wake row committed with the transaction; false means the
-   * caller should fall back to post-commit delivery.
+   * Composes the wake as a data-modifying CTE appended to a settle
+   * statement (resolve/cancel). The INSERT fires iff the settle CTE
+   * (`fromCTE`) produced a row whose signal_key matches the wake — one
+   * atomic statement, safe on any connection type (Client or Pool),
+   * with no transaction window for unrelated queries to interleave
+   * into. Appends the wake params to `params` in place.
    */
-  private async enqueueEscalationWake(
+  private composeEscalationWakeCTE(
     wakeCommand: import('../../../../types/hmsh_escalations').EscalationWakeCommand | undefined,
-    signalKey: string | null,
-    escalationId: string,
-  ): Promise<boolean> {
-    if (!wakeCommand || !signalKey || wakeCommand.forSignalKey !== signalKey) {
-      return false;
+    params: any[],
+    fromCTE: string,
+  ): { wakeCTE: string; wakeCount: string } {
+    if (!wakeCommand) {
+      return { wakeCTE: '', wakeCount: '0::int AS wake_count' };
     }
     const schemaName = this.kvsql().safeName(this.appId);
-    try {
-      //SAVEPOINT inside the try: on a pooled client (no surrounding
-      //transaction) it raises 25P01 — treated like any other wake
-      //failure, so the resolve itself is never failed and the caller
-      //falls back to post-commit delivery
-      await this.pgClient.query('SAVEPOINT escalation_wake');
-      await this.pgClient.query(
-        `INSERT INTO ${schemaName}.engine_streams
-         (stream_name, message, priority)
-         VALUES ($1, $2, 5)`,
-        [this.appId, wakeCommand.message],
-      );
-      return true;
-    } catch (error) {
-      try {
-        await this.pgClient.query('ROLLBACK TO SAVEPOINT escalation_wake');
-      } catch {
-        //no savepoint to roll back to (pooled client) — nothing to undo
-      }
-      this.logger.warn('escalation-wake-enqueue-error', {
-        escalationId,
-        error: error.message,
-      });
-      return false;
-    }
+    const base = params.length;
+    params.push(this.appId, wakeCommand.message, wakeCommand.forSignalKey);
+    return {
+      wakeCTE: `,
+        wake AS (
+          INSERT INTO ${schemaName}.engine_streams (stream_name, message, priority)
+          SELECT $${base + 1}, $${base + 2}, 5 FROM ${fromCTE}
+          WHERE ${fromCTE}.signal_key = $${base + 3}
+          RETURNING id
+        )`,
+      wakeCount: '(SELECT COUNT(*) FROM wake)::int AS wake_count',
+    };
   }
 
   async resolveEscalation(
@@ -2414,63 +2402,69 @@ class PostgresStoreService extends StoreService<
   ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
     const { id, namespace, resolverPayload, metadata } = params;
     const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
-    // metaJson is bound at a fixed index; the CASE no-ops when null so resolution
-    // can merge into the GIN-indexed metadata without disturbing the param layout.
     const metaJson = metadata ? JSON.stringify(metadata) : null;
-    // Explicit transaction: FOR UPDATE locks the row; WHERE guard on UPDATE is the TOCTOU
-    // barrier — a concurrent caller whose UPDATE matches 0 rows sees 'already-resolved'.
-    // On crash before COMMIT neither write lands; on crash after COMMIT both are durable.
-    // The resolved row's signal_key is the durable proof for recovery sweeps.
-    await this.pgClient.query('BEGIN');
-    try {
-      const lockResult = await this.pgClient.query(
-        `SELECT id, signal_key, topic, status FROM public.hmsh_escalations
-         WHERE id = $1 ${namespace ? 'AND namespace = $2' : ''} FOR UPDATE`,
-        namespace ? [id, namespace] : [id],
-      );
-      if (!lockResult.rows[0]) {
-        await this.pgClient.query('ROLLBACK');
-        return { ok: false, reason: 'not-found' };
-      }
-      const { signal_key, topic, status } = lockResult.rows[0];
-      if (status === 'cancelled') {
-        await this.pgClient.query('ROLLBACK');
-        return { ok: false, reason: 'already-cancelled' };
-      }
-      if (status === 'expired') {
+    //single statement: FOR UPDATE lock, TOCTOU-guarded UPDATE, and the
+    //wake INSERT are one atomic unit. The wake commits WITH the
+    //resolve — a crash after the statement leaves both the resolved row
+    //and its wake message durable; before, neither. The engine_streams
+    //INSERT trigger emits the delivery NOTIFY on commit. Safe on any
+    //connection type; no window for unrelated queries to interleave.
+    const sqlParams: any[] = namespace
+      ? [id, payloadJson, metaJson, namespace]
+      : [id, payloadJson, metaJson];
+    const { wakeCTE, wakeCount } = this.composeEscalationWakeCTE(
+      wakeCommand,
+      sqlParams,
+      'resolved',
+    );
+    const result = await this.pgClient.query(`
+      WITH target AS MATERIALIZED (
+        SELECT id, signal_key, topic, status FROM public.hmsh_escalations
+        WHERE id = $1 ${namespace ? 'AND namespace = $4' : ''}
+        LIMIT 1 FOR UPDATE
+      ),
+      resolved AS (
+        UPDATE public.hmsh_escalations e
+        SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2,
+            metadata = CASE WHEN $3::jsonb IS NOT NULL
+                            THEN COALESCE(e.metadata, '{}'::jsonb) || $3::jsonb
+                            ELSE e.metadata END,
+            updated_at = NOW()
+        FROM target
+        WHERE e.id = target.id AND target.status = 'pending'
+        RETURNING e.*
+      )${wakeCTE}
+      SELECT t.id, t.status AS prior_status, t.signal_key, t.topic,
+        CASE
+          WHEN r.id IS NOT NULL THEN 'resolved'
+          WHEN t.id IS NULL     THEN 'not-found'
+          ELSE 'blocked'
+        END AS outcome,
+        row_to_json(r.*) AS entry_json,
+        ${wakeCount}
+      FROM (SELECT * FROM target) t
+      FULL OUTER JOIN (SELECT * FROM resolved) r ON r.id = t.id
+    `, sqlParams);
+    const row = result.rows[0];
+    if (!row || row.outcome === 'not-found') return { ok: false, reason: 'not-found' };
+    if (row.outcome === 'blocked') {
+      if (row.prior_status === 'cancelled') return { ok: false, reason: 'already-cancelled' };
+      if (row.prior_status === 'expired') {
         // The wait's SLA timer fired first and the workflow resumed with
         // false — the resolver payload has nowhere to go. Name it, so the
         // operator learns the deadline passed rather than believing the
         // resolution landed.
-        await this.pgClient.query('ROLLBACK');
         return { ok: false, reason: 'already-expired' };
       }
-      const updateResult = await this.pgClient.query(
-        `UPDATE public.hmsh_escalations
-         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2,
-             metadata = CASE WHEN $3::jsonb IS NOT NULL
-                             THEN COALESCE(metadata, '{}'::jsonb) || $3::jsonb
-                             ELSE metadata END,
-             updated_at = NOW()
-         WHERE id = $1 ${namespace ? 'AND namespace = $4' : ''} AND status = 'pending'
-         RETURNING *`,
-        namespace ? [id, payloadJson, metaJson, namespace] : [id, payloadJson, metaJson],
-      );
-      if (!updateResult.rows[0]) {
-        await this.pgClient.query('ROLLBACK');
-        return { ok: false, reason: 'already-resolved' };
-      }
-      //the wake commits WITH the resolve: a crash after COMMIT leaves both
-      //the resolved row and its wake message durable; a crash before
-      //leaves neither. The engine_streams INSERT trigger emits the
-      //delivery NOTIFY on commit.
-      const wakeEnqueued = await this.enqueueEscalationWake(wakeCommand, signal_key, id);
-      await this.pgClient.query('COMMIT');
-      return { ok: true, entry: updateResult.rows[0], signalKey: signal_key, topic, wakeEnqueued };
-    } catch (e) {
-      await this.pgClient.query('ROLLBACK');
-      throw e;
+      return { ok: false, reason: 'already-resolved' };
     }
+    return {
+      ok: true,
+      entry: row.entry_json,
+      signalKey: row.signal_key,
+      topic: row.topic,
+      wakeEnqueued: row.wake_count > 0,
+    };
   }
 
   /**
@@ -2507,49 +2501,60 @@ class PostgresStoreService extends StoreService<
     const filter = JSON.stringify({ [key]: value });
     const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
     const metaJson = metadata ? JSON.stringify(metadata) : null;
-    await this.pgClient.query('BEGIN');
-    try {
-      const lockResult = await this.pgClient.query(
-        `SELECT id, signal_key, topic, status FROM public.hmsh_escalations
-         WHERE ${namespace ? 'namespace = $3 AND' : ''}
-               metadata @> $1::jsonb
-           AND ($2::text[] IS NULL OR role = ANY($2::text[]))
-           AND status IN ('pending', 'cancelled')
-         ORDER BY priority ASC, created_at ASC
-         LIMIT 1 FOR UPDATE`,
-        namespace ? [filter, roles ?? null, namespace] : [filter, roles ?? null],
-      );
-      if (!lockResult.rows[0]) {
-        await this.pgClient.query('ROLLBACK');
-        return { ok: false, reason: 'not-found' };
-      }
-      const { id, signal_key, topic, status } = lockResult.rows[0];
-      if (status === 'cancelled') {
-        await this.pgClient.query('ROLLBACK');
-        return { ok: false, reason: 'already-cancelled' };
-      }
-      const updateResult = await this.pgClient.query(
-        `UPDATE public.hmsh_escalations
-         SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2,
-             metadata = CASE WHEN $3::jsonb IS NOT NULL
-                             THEN COALESCE(metadata, '{}'::jsonb) || $3::jsonb
-                             ELSE metadata END,
-             updated_at = NOW()
-         WHERE id = $1 AND status = 'pending'
-         RETURNING *`,
-        [id, payloadJson, metaJson],
-      );
-      if (!updateResult.rows[0]) {
-        await this.pgClient.query('ROLLBACK');
-        return { ok: false, reason: 'already-resolved' };
-      }
-      const wakeEnqueued = await this.enqueueEscalationWake(wakeCommand, signal_key, id);
-      await this.pgClient.query('COMMIT');
-      return { ok: true, entry: updateResult.rows[0], signalKey: signal_key, topic, wakeEnqueued };
-    } catch (e) {
-      await this.pgClient.query('ROLLBACK');
-      throw e;
+    //single statement — see resolveEscalation for the atomicity contract
+    const sqlParams: any[] = namespace
+      ? [filter, roles ?? null, payloadJson, metaJson, namespace]
+      : [filter, roles ?? null, payloadJson, metaJson];
+    const { wakeCTE, wakeCount } = this.composeEscalationWakeCTE(
+      wakeCommand,
+      sqlParams,
+      'resolved',
+    );
+    const result = await this.pgClient.query(`
+      WITH target AS MATERIALIZED (
+        SELECT id, signal_key, topic, status FROM public.hmsh_escalations
+        WHERE ${namespace ? 'namespace = $5 AND' : ''}
+              metadata @> $1::jsonb
+          AND ($2::text[] IS NULL OR role = ANY($2::text[]))
+          AND status IN ('pending', 'cancelled')
+        ORDER BY priority ASC, created_at ASC
+        LIMIT 1 FOR UPDATE
+      ),
+      resolved AS (
+        UPDATE public.hmsh_escalations e
+        SET status = 'resolved', resolved_at = NOW(), resolver_payload = $3,
+            metadata = CASE WHEN $4::jsonb IS NOT NULL
+                            THEN COALESCE(e.metadata, '{}'::jsonb) || $4::jsonb
+                            ELSE e.metadata END,
+            updated_at = NOW()
+        FROM target
+        WHERE e.id = target.id AND target.status = 'pending'
+        RETURNING e.*
+      )${wakeCTE}
+      SELECT t.id, t.status AS prior_status, t.signal_key, t.topic,
+        CASE
+          WHEN r.id IS NOT NULL THEN 'resolved'
+          WHEN t.id IS NULL     THEN 'not-found'
+          ELSE 'blocked'
+        END AS outcome,
+        row_to_json(r.*) AS entry_json,
+        ${wakeCount}
+      FROM (SELECT * FROM target) t
+      FULL OUTER JOIN (SELECT * FROM resolved) r ON r.id = t.id
+    `, sqlParams);
+    const row = result.rows[0];
+    if (!row || row.outcome === 'not-found') return { ok: false, reason: 'not-found' };
+    if (row.outcome === 'blocked') {
+      if (row.prior_status === 'cancelled') return { ok: false, reason: 'already-cancelled' };
+      return { ok: false, reason: 'already-resolved' };
     }
+    return {
+      ok: true,
+      entry: row.entry_json,
+      signalKey: row.signal_key,
+      topic: row.topic,
+      wakeEnqueued: row.wake_count > 0,
+    };
   }
 
   async cancelEscalation(
@@ -2561,22 +2566,12 @@ class PostgresStoreService extends StoreService<
     //that fires iff the cancel lands AND the row's signal_key matches
     //the wake — atomic on any connection type (Client or Pool), with
     //no BEGIN/COMMIT window for unrelated queries to interleave into
-    const schemaName = this.kvsql().safeName(this.appId);
     const params: any[] = namespace ? [id, namespace] : [id];
-    let wakeCTE = '';
-    let wakeCount = '0::int AS wake_count';
-    if (wakeCommand) {
-      const base = params.length;
-      params.push(this.appId, wakeCommand.message, wakeCommand.forSignalKey);
-      wakeCTE = `,
-        wake AS (
-          INSERT INTO ${schemaName}.engine_streams (stream_name, message, priority)
-          SELECT $${base + 1}, $${base + 2}, 5 FROM cancelled
-          WHERE cancelled.signal_key = $${base + 3}
-          RETURNING id
-        )`;
-      wakeCount = '(SELECT COUNT(*) FROM wake)::int AS wake_count';
-    }
+    const { wakeCTE, wakeCount } = this.composeEscalationWakeCTE(
+      wakeCommand,
+      params,
+      'cancelled',
+    );
     const result = await this.pgClient.query(`
       WITH target AS MATERIALIZED (
         SELECT id, status FROM public.hmsh_escalations
@@ -2751,6 +2746,7 @@ class PostgresStoreService extends StoreService<
        WHERE id = ANY($2::uuid[])
          ${namespace ? 'AND namespace = $4' : ''}
          AND status = 'pending'
+         AND signal_key IS NULL
        RETURNING *`,
       namespace ? [payloadJson, ids, metaJson, namespace] : [payloadJson, ids, metaJson],
     );

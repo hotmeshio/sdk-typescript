@@ -118,6 +118,108 @@ describe('DURABLE | wake-atomicity | cancel', () => {
     }
   }, 60_000);
 
+  it('should exclude live waiters from bulk resolution', async () => {
+    //resolveMany carries no wake: a row backing a condition() waiter
+    //must stay pending (targeted resolve/cancel owns its wake) rather
+    //than resolve silently and strand the workflow
+    const runId = guid();
+    const handle = await parkOne(runId);
+    const row = await findRow(runId);
+
+    const resolved = await client.escalations.resolveMany({
+      ids: [row.id],
+      resolverPayload: { bulk: true },
+    });
+    expect(resolved.length).toBe(0);
+
+    const after = await client.escalations.list({
+      role: 'crash-approver',
+      status: 'pending',
+    });
+    expect(after.some((e) => e.id === row.id)).toBe(true);
+
+    //targeted cancel still settles the waiter (condition returns null)
+    const cancel = await client.escalations.cancel(row.id);
+    expect(cancel.ok).toBe(true);
+    const output = await awaitWake(handle, runId);
+    expect(output).toBeNull();
+  }, 60_000);
+
+  it('should wake both siblings when their resolves land in the same tick', async () => {
+    //field case: two sibling workers parked on signal_key waits, both
+    //resolved near-simultaneously — the second wake was lost. The wake
+    //INSERT commits with each resolve, so same-tick resolves must both
+    //deliver.
+    const runA = guid();
+    const runB = guid();
+    const handleA = await parkOne(runA);
+    const handleB = await parkOne(runB);
+    const rowA = await findRow(runA);
+    const rowB = await findRow(runB);
+
+    const results = await Promise.all([
+      client.escalations.resolve({
+        id: rowA.id,
+        resolverPayload: { approved: true, via: 'sibling-a' },
+      }),
+      client.escalations.resolve({
+        id: rowB.id,
+        resolverPayload: { approved: true, via: 'sibling-b' },
+      }),
+    ]);
+    expect(results.every((r) => r.ok)).toBe(true);
+
+    const [outA, outB] = (await Promise.all([
+      awaitWake(handleA, runA),
+      awaitWake(handleB, runB),
+    ])) as Array<{ via: string }>;
+    expect(outA.via).toBe('sibling-a');
+    expect(outB.via).toBe('sibling-b');
+  }, 90_000);
+
+  it('should resolve the row AND wake the workflow under a concurrent claim', async () => {
+    //field case: a concurrent claim interleaved with the resolve — the
+    //signal was delivered but the row stayed pending+claimed forever,
+    //asserting work was owed on a completed order. Signal delivery and
+    //row settle are one atomic statement; a claim cannot split them.
+    const runId = guid();
+    const handle = await parkOne(runId);
+    const row = await findRow(runId);
+
+    const claimA = await client.escalations.claim({
+      id: row.id,
+      assignee: 'associate-a',
+      durationMinutes: 5,
+    });
+    expect(claimA.ok).toBe(true);
+
+    //associate B re-claims while C resolves by metadata, same tick
+    const [claimB, resolved] = await Promise.all([
+      client.escalations.claim({
+        id: row.id,
+        assignee: 'associate-b',
+        durationMinutes: 5,
+      }),
+      client.escalations.resolveByMetadata({
+        key: 'runId',
+        value: runId,
+        resolverPayload: { approved: true, via: 'raced-resolve' },
+      }),
+    ]);
+    expect(resolved.ok).toBe(true);
+    void claimB; //may win or lose the interleave; the row must settle either way
+
+    //the row cannot lie: it is resolved, and the workflow woke
+    const dbRow = await postgresClient.query(
+      `SELECT status FROM public.hmsh_escalations WHERE id = $1`,
+      [row.id],
+    );
+    expect(dbRow.rows[0].status).toBe('resolved');
+
+    const output = (await awaitWake(handle, runId)) as { via: string };
+    expect(output.via).toBe('raced-resolve');
+  }, 60_000);
+
   it('should wake every workflow in a burst of concurrent cancels', async () => {
     //the field wave: N ponds self-cancel within ~400ms of each other
     const runs = Array.from({ length: POND_COUNT }, () => guid());

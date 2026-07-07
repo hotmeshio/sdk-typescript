@@ -561,6 +561,12 @@ export class EscalationClientService {
    * (still-pending) row's GIN-indexed `metadata` in the single atomic UPDATE.
    * See {@link resolve}.
    */
+  /**
+   * Bulk-resolves standalone escalations (rows with `signal_key = null`).
+   * Rows backing a live `condition()` waiter are excluded — they stay
+   * pending so a targeted `resolve()`/`cancel()` can deliver their wake;
+   * bulk resolution carries no wake and would strand the workflow.
+   */
   async resolveMany(params: ResolveManyParams): Promise<EscalationEntry[]> {
     const hm = await this._engine(null, params.namespace);
     const entries = await (hm.engine.store as any).resolveManyEscalations(params);

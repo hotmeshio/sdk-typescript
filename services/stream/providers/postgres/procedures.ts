@@ -153,17 +153,19 @@ export function getCreateProceduresSQL(schemaName: string): string[] {
       -- Engine stream_name is the schema/appId name
       engine_stream_name := '${schemaName}';
 
+      -- jid stamped from the message metadata (parity with the raw
+      -- publish path) so job-scoped expiry can address these rows
       IF p_max_retry_attempts IS NOT NULL THEN
         INSERT INTO ${engineTable}
-          (stream_name, message, priority, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)
+          (stream_name, jid, message, priority, max_retry_attempts, backoff_coefficient, maximum_interval_seconds, visible_at, retry_attempt)
         VALUES
-          (engine_stream_name, p_message, p_priority, p_max_retry_attempts, p_backoff_coefficient, p_maximum_interval_seconds, p_visible_at, p_retry_attempt)
+          (engine_stream_name, COALESCE(p_message::jsonb -> 'metadata' ->> 'jid', ''), p_message, p_priority, p_max_retry_attempts, p_backoff_coefficient, p_maximum_interval_seconds, p_visible_at, p_retry_attempt)
         RETURNING id INTO new_id;
       ELSE
         INSERT INTO ${engineTable}
-          (stream_name, message, priority, visible_at, retry_attempt)
+          (stream_name, jid, message, priority, visible_at, retry_attempt)
         VALUES
-          (engine_stream_name, p_message, p_priority, p_visible_at, p_retry_attempt)
+          (engine_stream_name, COALESCE(p_message::jsonb -> 'metadata' ->> 'jid', ''), p_message, p_priority, p_visible_at, p_retry_attempt)
         RETURNING id INTO new_id;
       END IF;
 
