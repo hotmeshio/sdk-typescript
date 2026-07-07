@@ -95,17 +95,16 @@ export type ResolveEscalationResult =
   | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' | 'already-expired' };
 
 /**
- * A pre-built wake publish, executed INSIDE the resolve transaction so the
- * awaiting workflow's wake commits atomically with `status='resolved'`. The
- * SQL is a stream INSERT produced by the stream provider; `forSignalKey`
- * pins the command to the row it was built for — the store executes it only
- * when the locked row's `signal_key` matches (a mismatched row falls back
- * to post-commit delivery).
+ * A pre-built wake message, committed INSIDE the resolve/cancel transaction
+ * so the awaiting workflow's wake is durable with the status change. The
+ * client composes the webhook message; the store owns the stream INSERT.
+ * `forSignalKey` pins the wake to the row it was built for — it is written
+ * only when the affected row's `signal_key` matches (a mismatched row falls
+ * back to post-commit delivery).
  */
 export interface EscalationWakeCommand {
   forSignalKey: string;
-  sql: string;
-  params: unknown[];
+  message: string;
 }
 
 export type ReleaseEscalationResult =

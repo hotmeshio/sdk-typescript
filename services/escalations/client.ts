@@ -2,7 +2,6 @@ import {
   HMSH_LOGLEVEL,
 } from '../../modules/enums';
 import { formatISODate, guid, hashOptions } from '../../modules/utils';
-import { KeyType } from '../../modules/key';
 import { HotMesh } from '../hotmesh';
 import { EventsConfig, SystemEvent, EscalationVerb } from '../../types/system_events';
 import { Connection } from '../../types/durable';
@@ -203,9 +202,9 @@ export class EscalationClientService {
   }
 
   /**
-   * Builds the wake publish as a SQL command so the store can commit it
-   * INSIDE the resolve transaction — the wake becomes durable with the
-   * resolved row, closing the crash window between resolve commit and
+   * Builds the wake as a webhook message so the store can commit it
+   * INSIDE the resolve/cancel transaction — the wake becomes durable
+   * with the status change, closing the crash window between commit and
    * post-commit signal delivery. Mirrors `_deliverEscalationSignal`'s
    * topic fallback chain; returns null when no hook rule is deployed
    * for any candidate topic (the caller then keeps post-commit
@@ -234,13 +233,10 @@ export class EscalationClientService {
           metadata: { guid: guid(), aid, topic: candidate },
           data: { id: signalKey, data },
         };
-        const streamKey = engine.stream.mintKey(KeyType.STREAMS, {
-          topic: null,
-        });
-        const { sql, params } = engine.stream._publishMessages(streamKey, [
-          JSON.stringify(streamData),
-        ]);
-        return { forSignalKey: signalKey, sql, params };
+        return {
+          forSignalKey: signalKey,
+          message: JSON.stringify(streamData),
+        };
       } catch {
         /* candidate not deployed — try the next topic */
       }
@@ -354,18 +350,34 @@ export class EscalationClientService {
   /**
    * Cancels a pending escalation and delivers a cancellation signal to the
    * waiting workflow so that `condition()` returns `null`. Terminal rows
-   * return `already-terminal`. Signal delivery is best-effort post-commit —
-   * the committed cancelled row is the durable record; any missed delivery
-   * can be detected via a sweep of rows with `status = 'cancelled'` and a
-   * non-null `signal_key`.
+   * return `already-terminal`. The cancellation wake commits inside the
+   * cancel transaction (same durability contract as `resolve()`); when no
+   * hook rule is deployed for any candidate topic, delivery falls back to
+   * a best-effort post-commit publish.
    */
   async cancel(id: string, namespace?: string): Promise<CancelEscalationResult> {
     const ns = namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
-    const result = await (hm.engine.store as any).cancelEscalation(id, namespace);
+    const store = hm.engine.store as any;
+
+    //pre-build the cancellation wake so it commits INSIDE the cancel
+    //transaction — condition() resumes with null even if the process
+    //dies the instant the cancel commits
+    let wakeCommand: EscalationWakeCommand | null = null;
+    const preview = await store.getEscalation(id, namespace);
+    if (preview?.signal_key) {
+      wakeCommand = await this._buildWakeCommand(
+        ns,
+        preview.topic,
+        preview.signal_key,
+        { __escalation_cancelled: true },
+      );
+    }
+
+    const result = await store.cancelEscalation(id, namespace, wakeCommand ?? undefined);
     if (result.ok === true) {
       this._emit('cancelled', result.entry);
-      if (result.entry.signal_key) {
+      if (result.entry.signal_key && !result.wakeEnqueued) {
         await this._deliverEscalationSignal(ns, result.entry.topic, {
           id: result.entry.signal_key,
           data: { __escalation_cancelled: true },
@@ -548,6 +560,12 @@ export class EscalationClientService {
    * Pass `params.metadata` to merge a resolution patch into every winning
    * (still-pending) row's GIN-indexed `metadata` in the single atomic UPDATE.
    * See {@link resolve}.
+   */
+  /**
+   * Bulk-resolves standalone escalations (rows with `signal_key = null`).
+   * Rows backing a live `condition()` waiter are excluded — they stay
+   * pending so a targeted `resolve()`/`cancel()` can deliver their wake;
+   * bulk resolution carries no wake and would strand the workflow.
    */
   async resolveMany(params: ResolveManyParams): Promise<EscalationEntry[]> {
     const hm = await this._engine(null, params.namespace);

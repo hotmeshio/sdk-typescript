@@ -1,6 +1,7 @@
 import {
   HMSH_DEPLOYMENT_DELAY,
   HMSH_DEPLOYMENT_PAUSE,
+  HMSH_RESERVATION_TIMEOUT_S,
 } from '../../../../modules/enums';
 import { sleepFor } from '../../../../modules/utils';
 import { ILogger } from '../../../logger';
@@ -57,6 +58,10 @@ export async function deploySchema(
         await ensureIndexes(client, schemaName);
         await ensureProcedures(client, schemaName);
         await ensureStatementLevelTriggers(client, schemaName);
+        // Re-deploy the fallback poller's discovery function so existing
+        // databases receive predicate changes (v0.25.6: stale-reservation
+        // reclaim — see getNotifyVisibleMessagesSQL)
+        await client.query(getNotifyVisibleMessagesSQL(schemaName));
       } finally {
         await client.query('SELECT pg_advisory_unlock($1)', [lockId]);
       }
@@ -229,6 +234,20 @@ async function ensureIndexes(
     CREATE INDEX IF NOT EXISTS idx_worker_streams_message_fetch
     ON ${workerTable} (stream_name, priority DESC, id)
     WHERE expired_at IS NULL;
+  `);
+
+  // v0.25.6: in-flight partial indexes — bounded to currently reserved
+  // rows (≈ concurrent executions) — serve the fallback poller's
+  // stale-reservation reclaim branch (see getNotifyVisibleMessagesSQL)
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_engine_streams_inflight
+    ON ${engineTable} (stream_name, reserved_at)
+    WHERE expired_at IS NULL AND reserved_at IS NOT NULL;
+  `);
+  await client.query(`
+    CREATE INDEX IF NOT EXISTS idx_worker_streams_inflight
+    ON ${workerTable} (stream_name, reserved_at)
+    WHERE expired_at IS NULL AND reserved_at IS NOT NULL;
   `);
 
   // v0.18.0: add jid column to engine_streams for job tracing
@@ -558,7 +577,35 @@ async function createNotificationTriggers(
   `);
 
   // ---- Visibility timeout notification function (queries both tables) ----
-  await client.query(`
+  await client.query(getNotifyVisibleMessagesSQL(schemaName));
+}
+
+/**
+ * The fallback poller's discovery function. Surfaces streams that have
+ * deliverable work: unreserved visible messages AND stale reservations
+ * whose holder died (heartbeats refresh reserved_at every ~15s while an
+ * activity runs, so any reservation older than 60s has a dead holder or
+ * is already claimable). Stale-reservation discovery is the ONLY path
+ * that reclaims orphaned in-flight work on a quiet stream — without it,
+ * a process death wedges its reserved messages forever. A premature
+ * surface (reservation window configured above 60s on a provider with
+ * static leases) costs one empty fetch; the claim query enforces the
+ * real window.
+ *
+ * Deployed on fresh schemas AND re-deployed on every boot (see
+ * deploySchema) so existing databases receive predicate changes.
+ */
+function getNotifyVisibleMessagesSQL(schemaName: string): string {
+  const engineTable = `${schemaName}.engine_streams`;
+  const workerTable = `${schemaName}.worker_streams`;
+  //stale threshold tracks the configured base window: heartbeats refresh
+  //reserved_at every base/2 (15s default), so live holders never look
+  //stale; 2x base keeps static-lease holders (secured workers, one
+  //adaptive doubling) from surfacing as false positives. Baked at
+  //deploy time from the deploying node's env — a premature surface
+  //costs one empty fetch (the claim query enforces the real window).
+  const staleSeconds = Math.max(60, HMSH_RESERVATION_TIMEOUT_S * 2);
+  return `
     CREATE OR REPLACE FUNCTION ${schemaName}.notify_visible_messages()
     RETURNS INTEGER AS $$
     DECLARE
@@ -567,13 +614,23 @@ async function createNotificationTriggers(
       payload JSON;
       notification_count INTEGER := 0;
     BEGIN
-      -- Engine streams
+      -- Engine streams: visible unreserved work (active_messages
+      -- partial index) UNION stale reservations whose holder died
+      -- (inflight partial index) — each branch index-matched
       FOR msg IN
-        SELECT DISTINCT stream_name
-        FROM ${engineTable}
-        WHERE visible_at <= NOW()
-          AND reserved_at IS NULL
-          AND expired_at IS NULL
+        SELECT DISTINCT u.stream_name FROM (
+          (SELECT stream_name FROM ${engineTable}
+           WHERE visible_at <= NOW()
+             AND reserved_at IS NULL
+             AND expired_at IS NULL
+           LIMIT 50)
+          UNION ALL
+          (SELECT stream_name FROM ${engineTable}
+           WHERE expired_at IS NULL
+             AND reserved_at IS NOT NULL
+             AND reserved_at < NOW() - INTERVAL '${staleSeconds} seconds'
+           LIMIT 50)
+        ) u
         LIMIT 50
       LOOP
         channel_name := 'eng_' || msg.stream_name;
@@ -590,13 +647,21 @@ async function createNotificationTriggers(
         notification_count := notification_count + 1;
       END LOOP;
 
-      -- Worker streams
+      -- Worker streams: same two index-matched branches
       FOR msg IN
-        SELECT DISTINCT stream_name
-        FROM ${workerTable}
-        WHERE visible_at <= NOW()
-          AND reserved_at IS NULL
-          AND expired_at IS NULL
+        SELECT DISTINCT u.stream_name FROM (
+          (SELECT stream_name FROM ${workerTable}
+           WHERE visible_at <= NOW()
+             AND reserved_at IS NULL
+             AND expired_at IS NULL
+           LIMIT 50)
+          UNION ALL
+          (SELECT stream_name FROM ${workerTable}
+           WHERE expired_at IS NULL
+             AND reserved_at IS NOT NULL
+             AND reserved_at < NOW() - INTERVAL '${staleSeconds} seconds'
+           LIMIT 50)
+        ) u
         LIMIT 50
       LOOP
         channel_name := 'wrk_' || msg.stream_name;
@@ -616,7 +681,7 @@ async function createNotificationTriggers(
       RETURN notification_count;
     END;
     $$ LANGUAGE plpgsql;
-  `);
+  `;
 }
 
 export function getNotificationChannelName(
