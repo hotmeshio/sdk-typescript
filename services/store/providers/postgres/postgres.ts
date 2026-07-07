@@ -2502,35 +2502,59 @@ class PostgresStoreService extends StoreService<
     }
   }
 
-  async cancelEscalation(id: string, namespace?: string): Promise<import('../../../../types/hmsh_escalations').CancelEscalationResult> {
-    const result = await this.pgClient.query(`
-      WITH target AS MATERIALIZED (
-        SELECT id, status FROM public.hmsh_escalations
-        WHERE id = $1 ${namespace ? 'AND namespace = $2' : ''}
-        LIMIT 1 FOR UPDATE
-      ),
-      cancelled AS (
-        UPDATE public.hmsh_escalations
-        SET status = 'cancelled', updated_at = NOW()
-        FROM target
-        WHERE public.hmsh_escalations.id = target.id
-          AND target.status = 'pending'
-        RETURNING public.hmsh_escalations.*
-      )
-      SELECT t.id, t.status AS prior_status,
-        CASE
-          WHEN c.id IS NOT NULL THEN 'cancelled'
-          WHEN t.id IS NULL     THEN 'not-found'
-          ELSE 'already-terminal'
-        END AS outcome,
-        row_to_json(c.*) AS entry_json
-      FROM (SELECT * FROM target) t
-      FULL OUTER JOIN (SELECT * FROM cancelled) c ON c.id = t.id
-    `, namespace ? [id, namespace] : [id]);
-    if (!result.rows[0] || result.rows[0].outcome === 'not-found') return { ok: false, reason: 'not-found' };
-    if (result.rows[0].outcome === 'already-terminal') return { ok: false, reason: 'already-terminal' };
-    const entry = result.rows[0].entry_json as import('../../../../types/hmsh_escalations').EscalationEntry;
-    return { ok: true, entry };
+  async cancelEscalation(
+    id: string,
+    namespace?: string,
+    wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
+  ): Promise<import('../../../../types/hmsh_escalations').CancelEscalationResult & { wakeEnqueued?: boolean }> {
+    //explicit transaction so the cancellation wake commits WITH the
+    //status change — same durability contract as resolveEscalation
+    await this.pgClient.query('BEGIN');
+    try {
+      const result = await this.pgClient.query(`
+        WITH target AS MATERIALIZED (
+          SELECT id, status FROM public.hmsh_escalations
+          WHERE id = $1 ${namespace ? 'AND namespace = $2' : ''}
+          LIMIT 1 FOR UPDATE
+        ),
+        cancelled AS (
+          UPDATE public.hmsh_escalations
+          SET status = 'cancelled', updated_at = NOW()
+          FROM target
+          WHERE public.hmsh_escalations.id = target.id
+            AND target.status = 'pending'
+          RETURNING public.hmsh_escalations.*
+        )
+        SELECT t.id, t.status AS prior_status,
+          CASE
+            WHEN c.id IS NOT NULL THEN 'cancelled'
+            WHEN t.id IS NULL     THEN 'not-found'
+            ELSE 'already-terminal'
+          END AS outcome,
+          row_to_json(c.*) AS entry_json
+        FROM (SELECT * FROM target) t
+        FULL OUTER JOIN (SELECT * FROM cancelled) c ON c.id = t.id
+      `, namespace ? [id, namespace] : [id]);
+      if (!result.rows[0] || result.rows[0].outcome === 'not-found') {
+        await this.pgClient.query('ROLLBACK');
+        return { ok: false, reason: 'not-found' };
+      }
+      if (result.rows[0].outcome === 'already-terminal') {
+        await this.pgClient.query('ROLLBACK');
+        return { ok: false, reason: 'already-terminal' };
+      }
+      const entry = result.rows[0].entry_json as import('../../../../types/hmsh_escalations').EscalationEntry;
+      const wakeEnqueued = await this.enqueueEscalationWake(
+        wakeCommand,
+        entry.signal_key,
+        id,
+      );
+      await this.pgClient.query('COMMIT');
+      return { ok: true, entry, wakeEnqueued };
+    } catch (e) {
+      await this.pgClient.query('ROLLBACK');
+      throw e;
+    }
   }
 
   async escalateEscalationToRole(params: import('../../../../types/hmsh_escalations').EscalateToRoleParams): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {

@@ -354,18 +354,34 @@ export class EscalationClientService {
   /**
    * Cancels a pending escalation and delivers a cancellation signal to the
    * waiting workflow so that `condition()` returns `null`. Terminal rows
-   * return `already-terminal`. Signal delivery is best-effort post-commit —
-   * the committed cancelled row is the durable record; any missed delivery
-   * can be detected via a sweep of rows with `status = 'cancelled'` and a
-   * non-null `signal_key`.
+   * return `already-terminal`. The cancellation wake commits inside the
+   * cancel transaction (same durability contract as `resolve()`); when no
+   * hook rule is deployed for any candidate topic, delivery falls back to
+   * a best-effort post-commit publish.
    */
   async cancel(id: string, namespace?: string): Promise<CancelEscalationResult> {
     const ns = namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
-    const result = await (hm.engine.store as any).cancelEscalation(id, namespace);
+    const store = hm.engine.store as any;
+
+    //pre-build the cancellation wake so it commits INSIDE the cancel
+    //transaction — condition() resumes with null even if the process
+    //dies the instant the cancel commits
+    let wakeCommand: EscalationWakeCommand | null = null;
+    const preview = await store.getEscalation(id, namespace);
+    if (preview?.signal_key) {
+      wakeCommand = await this._buildWakeCommand(
+        ns,
+        preview.topic,
+        preview.signal_key,
+        { __escalation_cancelled: true },
+      );
+    }
+
+    const result = await store.cancelEscalation(id, namespace, wakeCommand ?? undefined);
     if (result.ok === true) {
       this._emit('cancelled', result.entry);
-      if (result.entry.signal_key) {
+      if (result.entry.signal_key && !result.wakeEnqueued) {
         await this._deliverEscalationSignal(ns, result.entry.topic, {
           id: result.entry.signal_key,
           data: { __escalation_cancelled: true },
