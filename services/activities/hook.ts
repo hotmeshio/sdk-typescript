@@ -649,6 +649,9 @@ class Hook extends Activity {
       this.context.metadata.jid = jobId;
       this.context.metadata.gid = gId;
       this.context.metadata.dad = dad;
+      //captured for the timeout disarm below: processEvent's state
+      //hydration replaces context.metadata before the disarm runs
+      const waiterJid = jobId;
 
       // Inline retry for FORBIDDEN: Leg2 arrived in the window between
       // setHookSignal (standalone) and Leg1 transaction.exec(). The 100B
@@ -664,6 +667,27 @@ class Hook extends Activity {
           await this.processEvent(status, code, 'hook');
           if (code === 200) {
             await taskService.deleteWebHookSignal(this.config.hook.topic, data);
+            //signal won the race: disarm the SLA timeout leg (the mirror
+            //of the timeout-won path, which deletes the signal). The
+            //armed timehook may not survive to fire against the settled
+            //wait. Addressed by the SIGNAL's jid + dimensional address —
+            //processEvent has since rehydrated this.context.
+            if (this.config.sleep) {
+              try {
+                await (this.store as any).expireTimeHook?.(
+                  waiterJid,
+                  this.metadata.aid,
+                );
+              } catch (error) {
+                //best-effort: a surviving timer fires once and is
+                //consumed as an inactive-job event
+                this.logger.warn('hook-timeout-disarm-error', {
+                  jid: waiterJid,
+                  aid: this.metadata.aid,
+                  error,
+                });
+              }
+            }
             //clean up orphan pending on the sibling signal topic
             //  wfs.wait delivered → remove wfs.signal pending
             //  wfs.signal delivered → remove wfs.wait pending

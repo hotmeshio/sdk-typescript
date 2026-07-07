@@ -2,7 +2,6 @@ import {
   HMSH_LOGLEVEL,
 } from '../../modules/enums';
 import { formatISODate, guid, hashOptions } from '../../modules/utils';
-import { KeyType } from '../../modules/key';
 import { HotMesh } from '../hotmesh';
 import { EventsConfig, SystemEvent, EscalationVerb } from '../../types/system_events';
 import { Connection } from '../../types/durable';
@@ -203,9 +202,9 @@ export class EscalationClientService {
   }
 
   /**
-   * Builds the wake publish as a SQL command so the store can commit it
-   * INSIDE the resolve transaction — the wake becomes durable with the
-   * resolved row, closing the crash window between resolve commit and
+   * Builds the wake as a webhook message so the store can commit it
+   * INSIDE the resolve/cancel transaction — the wake becomes durable
+   * with the status change, closing the crash window between commit and
    * post-commit signal delivery. Mirrors `_deliverEscalationSignal`'s
    * topic fallback chain; returns null when no hook rule is deployed
    * for any candidate topic (the caller then keeps post-commit
@@ -234,13 +233,10 @@ export class EscalationClientService {
           metadata: { guid: guid(), aid, topic: candidate },
           data: { id: signalKey, data },
         };
-        const streamKey = engine.stream.mintKey(KeyType.STREAMS, {
-          topic: null,
-        });
-        const { sql, params } = engine.stream._publishMessages(streamKey, [
-          JSON.stringify(streamData),
-        ]);
-        return { forSignalKey: signalKey, sql, params };
+        return {
+          forSignalKey: signalKey,
+          message: JSON.stringify(streamData),
+        };
       } catch {
         /* candidate not deployed — try the next topic */
       }

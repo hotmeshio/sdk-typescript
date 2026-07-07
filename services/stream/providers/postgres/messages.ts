@@ -388,12 +388,15 @@ async function dropDeadJobMessages(
       });
     }
   } catch (error) {
-    if (error?.code === '42P01') {
-      //jobs table is not visible from this connection; the guard cannot
-      //run here — interrupt-time purging (expireJobMessages) still applies
+    if (error?.code === '42P01' || error?.code === '42501') {
+      //jobs table is not visible (42P01) or not readable (42501) from
+      //this connection; the guard cannot run here — interrupt-time
+      //purging (expireJobMessages) still applies. Self-disable so the
+      //hot path stops issuing a failing cross-table query per fetch.
       liveness.enabled = false;
       logger.info('postgres-stream-liveness-guard-disabled', {
         jobsTable: liveness.jobsTable,
+        code: error.code,
       });
     } else {
       logger.error(`postgres-stream-liveness-guard-error-${streamName}`, {
