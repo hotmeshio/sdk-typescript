@@ -115,6 +115,31 @@ export type CancelEscalationResult =
   | { ok: true; entry: EscalationEntry }
   | { ok: false; reason: 'not-found' | 'already-terminal' };
 
+/**
+ * Retention parameters for `pruneEscalations`. Prunes only terminal rows
+ * (`resolved`/`cancelled`/`expired`) — the statuses every engine state
+ * transition treats as final — older than the given horizon.
+ */
+export interface PruneEscalationsParams {
+  /**
+   * Age horizon as a Postgres interval string (e.g. `'90 days'`, `'12 hours'`).
+   * Rows qualify when `updated_at < NOW() - olderThan`.
+   */
+  olderThan: string;
+  /** Terminal statuses to prune. Defaults to all three; non-terminal values are ignored. */
+  statuses?: Array<'resolved' | 'cancelled' | 'expired'>;
+  namespace?: string;
+  /**
+   * Max rows deleted per call (bounds lock time and vacuum pressure).
+   * Default 10,000, capped at 100,000. Loop until `deleted` is 0 to drain.
+   */
+  limit?: number;
+}
+
+export interface PruneEscalationsResult {
+  deleted: number;
+}
+
 export interface ListEscalationsParams {
   namespace?: string;
   role?: string;

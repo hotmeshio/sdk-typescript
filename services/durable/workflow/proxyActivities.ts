@@ -282,6 +282,20 @@ function wrapActivity<T>(activityName: string, options?: ActivityConfig): T {
  * }
  * ```
  *
+ * ## Long-running activities execute exactly once
+ *
+ * `startToCloseTimeout` bounds an activity's run and is honored for long
+ * work (a 30–120s batch loop is a supported shape: poll → reconcile → act,
+ * one durable checkpoint per call). While the activity runs, the consumer
+ * heartbeats its stream reservation at half the base window, so the message
+ * stays leased for the full run — however long — and is redelivered to
+ * another worker only when the owning consumer crashes and stops
+ * heartbeating. The collation ledger then guarantees any redelivered
+ * message settles as a duplicate before re-executing the activity. With a
+ * `securedWorker` connection (SECURITY DEFINER stored-proc mode), lease
+ * extension is unavailable and an activity must finish within the adaptive
+ * reservation window instead.
+ *
  * @template ACT - The activity type map (use `typeof activities` for inline registration).
  * @param {ActivityConfig} [options] - Activity configuration including retry policy and routing.
  * @returns {ProxyType<ACT>} A typed proxy object mapping activity names to their durable wrappers.

@@ -32,6 +32,8 @@ import {
   EscalateManyToRoleParams,
   UpdateManyPriorityParams,
   ResolveManyParams,
+  PruneEscalationsParams,
+  PruneEscalationsResult,
 } from '../../types/hmsh_escalations';
 import { APP_ID } from '../durable/schemas/factory';
 
@@ -263,6 +265,22 @@ export class EscalationClientService {
   async count(params?: ListEscalationsParams): Promise<number> {
     const hm = await this._engine(null, params?.namespace);
     return (hm.engine.store as any).countEscalations(params ?? {});
+  }
+
+  /**
+   * Retention: deletes terminal escalation rows (`resolved`/`cancelled`/`expired`)
+   * whose `updated_at` is older than the horizon (a Postgres interval string,
+   * e.g. `'90 days'`). Terminal rows are inert — every engine state transition
+   * guards on `status = 'pending'` — so pruning them is safe for live waiters,
+   * claims, and signal delivery; this call is the engine-blessed way to age
+   * out the audit backlog. Each call deletes at most `limit` rows (default
+   * 10,000) in one atomic statement; loop until `deleted` is 0 to drain a
+   * large backlog. `list()`/`get()`/`stats()` reads over windows older than
+   * the pruning horizon reflect only the rows retained.
+   */
+  async prune(params: PruneEscalationsParams): Promise<PruneEscalationsResult> {
+    const hm = await this._engine(null, params.namespace);
+    return (hm.engine.store as any).pruneEscalations(params);
   }
 
   /** Returns a single escalation row by UUID. Returns `null` if not found. */
