@@ -57,9 +57,12 @@ import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
  * ## With escalation queue config
  *
  * Pass a {@link ConditionQueueConfig} as the second argument to surface the
- * pause as a claimable row in `public.hmsh_escalations`. The INSERT is
- * committed atomically with the workflow checkpoint — one write, no
- * enrichment step, no secondary round-trip.
+ * pause as a claimable row in `public.hmsh_escalations`. The INSERT — every
+ * field of the config, including `metadata` facets — is committed atomically
+ * with the workflow checkpoint: one write, one commit, crash-safe. From the
+ * row's first visible moment it carries its complete routing context and
+ * metadata, so claim-by-metadata routing and version-pinned facets (e.g. a
+ * `schema_version` the resolver UI renders) can trust every row they read.
  *
  * ```typescript
  * const decision = await Durable.workflow.condition<{ approved: boolean }>(
@@ -92,6 +95,14 @@ import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
  * SLA-gated human waits in the workflow body and let hook functions report
  * back via `signal()`.
  *
+ * ## Early signals are buffered
+ *
+ * A signal delivered before its `condition()` registers — a fast signaler,
+ * or a payload deposited before the workflow starts — is buffered as a
+ * pending signal and delivered when the wait registers. The buffer holds a
+ * signal for 10 minutes by default; pass `expire` to `signal()` (e.g.
+ * `'1h'`, `'30d'`) to hold it longer when signaling early on purpose.
+ *
  * ## Fan-in: wait for multiple signals in parallel
  *
  * ```typescript
@@ -100,6 +111,12 @@ import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
  *   Durable.workflow.condition<number>('score-signal'),
  * ]);
  * ```
+ *
+ * Harvest fan-out scales the same way: open N waits with `Promise.all` and
+ * signal all of them at once. Buffering covers every signal that races
+ * ahead of registration, so size fan-out by the pending-signal TTL — how
+ * long a racing signal may wait for its condition to register — with no
+ * separate bound on the number of concurrent waits.
  *
  * ## Paired with hook: spawn work, wait for its signal
  *

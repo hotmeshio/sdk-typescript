@@ -2855,6 +2855,51 @@ class PostgresStoreService extends StoreService<
     // assigned_until, so no background sweep is needed to release expired claims.
     return 0;
   }
+
+  /**
+   * Deletes terminal escalation rows (`resolved`/`cancelled`/`expired`) whose
+   * `updated_at` is older than the given horizon. Terminal rows are inert —
+   * every state transition guards `status = 'pending'` — so pruning them is
+   * the engine-blessed retention path for the audit backlog.
+   *
+   * Single statement: the candidate SELECT (`FOR UPDATE SKIP LOCKED`) and the
+   * DELETE are one atomic unit, so concurrent pruners and readers never block
+   * each other and a row is either fully gone or fully present. `limit` bounds
+   * rows per call to keep vacuum pressure flat; callers loop until `deleted`
+   * returns 0.
+   */
+  async pruneEscalations(
+    params: import('../../../../types/hmsh_escalations').PruneEscalationsParams,
+  ): Promise<import('../../../../types/hmsh_escalations').PruneEscalationsResult> {
+    const TERMINAL = ['resolved', 'cancelled', 'expired'] as const;
+    const statuses = params.statuses?.length
+      ? params.statuses.filter((s): s is (typeof TERMINAL)[number] =>
+          (TERMINAL as readonly string[]).includes(s))
+      : [...TERMINAL];
+    if (!statuses.length) return { deleted: 0 };
+    const limit = Math.max(1, Math.min(params.limit ?? 10_000, 100_000));
+    const values: unknown[] = [statuses, params.olderThan, limit];
+    let nsClause = '';
+    if (params.namespace) {
+      values.push(params.namespace);
+      nsClause = `AND namespace = $${values.length}`;
+    }
+    const result = await this.pgClient.query(
+      `WITH doomed AS (
+         SELECT ctid FROM public.hmsh_escalations
+         WHERE status = ANY($1::text[])
+           AND status IN ('resolved', 'cancelled', 'expired')
+           AND updated_at < NOW() - $2::interval
+           ${nsClause}
+         LIMIT $3
+         FOR UPDATE SKIP LOCKED
+       )
+       DELETE FROM public.hmsh_escalations e
+       USING doomed WHERE e.ctid = doomed.ctid`,
+      values,
+    );
+    return { deleted: result.rowCount ?? 0 };
+  }
 }
 
 export { PostgresStoreService };

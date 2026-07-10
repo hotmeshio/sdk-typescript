@@ -1005,3 +1005,39 @@ console.log(resolved.status); // resolved
 ```
 
 The escalation table (`public.hmsh_escalations`) is global — all apps share it. Rows from different apps are distinguished by `namespace` and `app_id`. The `Durable.workflow.condition(signalId, queueConfig)` primitive on the Durable layer provides the same suspension behavior without writing YAML, and `Escalations.Client` / `Durable.Client.escalations` expose the full claim-and-resolve API with TypeScript types.
+
+### Escalation retention
+
+An escalation row is live while `status = 'pending'`; the terminal statuses
+(`resolved`, `cancelled`, `expired`) are audit history. Every engine state
+transition guards on `status = 'pending'`, so terminal rows are inert — the
+engine reads them only for `list()`, `get()`, and `stats()`. Age them out
+with `prune()`, the engine-owned retention call:
+
+```typescript
+// Delete terminal rows older than 90 days, at most 10,000 per call.
+// Loop until deleted === 0 to drain a large backlog.
+let deleted: number;
+do {
+  ({ deleted } = await client.escalations.prune({ olderThan: '90 days' }));
+} while (deleted > 0);
+```
+
+Each call is one atomic statement (`FOR UPDATE SKIP LOCKED` under the
+delete), so concurrent pruners cooperate and live waiters, claims, and
+signal delivery proceed untouched — a workflow parked on `condition()` for
+longer than the horizon keeps its pending row and still resolves. Pass
+`statuses` to prune a subset of terminal states and `namespace` to scope to
+one app. Reads over windows older than the pruning horizon (`stats()`
+created/resolved counts, `get()` by id) reflect only the rows retained, so
+choose a horizon at least as long as your reporting window.
+
+### Table stewardship for application indexes
+
+Engine migrations on `public.hmsh_escalations` are strictly additive —
+`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`,
+`CREATE INDEX IF NOT EXISTS` under an advisory lock. The table persists in
+place across upgrades, and the engine manages only its own indexes (the
+`idx_hmsh_esc_*` prefix). Application-owned indexes under any other name
+survive engine migrations; add them with
+`CREATE INDEX CONCURRENTLY IF NOT EXISTS` and they remain yours to evolve.

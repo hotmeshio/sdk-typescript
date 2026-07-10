@@ -16,11 +16,14 @@ const { Connection, Client, Worker } = Durable;
 
 /**
  * An activity that runs longer than the base reservation window (30s)
- * must execute exactly once and deliver its result. The consumer
- * heartbeats the reservation (reserved_at refresh) while the activity
- * callback runs, so the message never becomes claimable mid-execution.
- * A crashed consumer stops heartbeating and its message is rescued
- * within one window (proven at the provider layer in
+ * must execute exactly once and deliver its result — with a SECOND
+ * worker actively polling the same task queue, so a lapsed lease would
+ * be reclaimed and re-dispatched for real. The consumer heartbeats the
+ * reservation (reserved_at refresh) while the activity callback runs,
+ * so the message never becomes claimable mid-execution; the declared
+ * startToCloseTimeout (120s) bounds the run without affecting the
+ * lease. A crashed consumer stops heartbeating and its message is
+ * rescued within one window (proven at the provider layer in
  * tests/functional/stream/providers/postgres/extension.test.ts).
  */
 describe('DURABLE | heartbeat | Postgres', () => {
@@ -45,7 +48,7 @@ describe('DURABLE | heartbeat | Postgres', () => {
   }, 15_000);
 
   describe('Worker and Client', () => {
-    it('should run the worker and start the workflow', async () => {
+    it('should run two competing workers and start the workflow', async () => {
       const worker = await Worker.create({
         connection,
         taskQueue,
@@ -55,6 +58,18 @@ describe('DURABLE | heartbeat | Postgres', () => {
         },
       });
       await worker.run();
+
+      // A rival consumer on the same queue: if the lease lapsed mid-run,
+      // this worker would reclaim the message and execute a duplicate.
+      const rival = await Worker.create({
+        connection,
+        taskQueue,
+        workflow: workflows.heartbeatExample,
+        options: {
+          logLevel: HMSH_LOGLEVEL,
+        },
+      });
+      await rival.run();
 
       activities.resetExecutionCount();
       const client = new Client({ connection });

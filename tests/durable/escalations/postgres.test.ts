@@ -133,6 +133,49 @@ describe('DURABLE | escalations | Postgres', () => {
     }, 5_000);
   });
 
+  describe('Leg1 metadata atomicity contract', () => {
+    it('should expose config.metadata on the row from its first visible moment', async () => {
+      // The escalation INSERT (metadata included) commits inside the Leg1
+      // checkpoint transaction. A tight poll from workflow start therefore
+      // always sees a COMPLETE row: the first sighting carries metadata and
+      // full routing context. A two-commit write (row first, facets later)
+      // would hand this poller a metadata-less row.
+      const probeOrderId = guid();
+      const probe = await client.workflow.start({
+        args: [probeOrderId, region],
+        taskQueue: 'escalation-test',
+        workflowName: 'approvalWorkflow',
+        workflowId: guid(),
+      });
+
+      let first: Awaited<ReturnType<typeof client.escalations.list>>[number] | undefined;
+      const deadline = Date.now() + 10_000;
+      while (!first && Date.now() < deadline) {
+        const rows = await client.escalations.list({ role: 'approver', status: 'pending' });
+        first = rows.find((e) => (e.metadata as any)?.orderId === probeOrderId
+          || (e.description ?? '').includes(probeOrderId));
+        if (!first) await sleepFor(25);
+      }
+      expect(first).toBeDefined();
+      // First sighting is already complete — metadata facets AND routing.
+      expect((first!.metadata as any)?.orderId).toBe(probeOrderId);
+      expect((first!.metadata as any)?.region).toBe(region);
+      expect(first!.signal_key).not.toBeNull();
+      expect(first!.topic).toBeDefined();
+      expect(first!.workflow_id).toBeDefined();
+      expect(first!.task_queue).toBe('escalation-test');
+
+      // Leave no parked probe behind: resolve it and confirm completion.
+      const resolved = await client.escalations.resolve({
+        id: first!.id,
+        resolverPayload: { approved: true, approvedBy: 'atomicity-probe' },
+      });
+      expect(resolved.ok).toBe(true);
+      const output = await probe.result();
+      expect((output as any).approvedBy).toBe('atomicity-probe');
+    }, 20_000);
+  });
+
   describe('claim lifecycle', () => {
     let escalationId: string;
 
