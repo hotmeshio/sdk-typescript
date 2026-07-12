@@ -2753,6 +2753,129 @@ class PostgresStoreService extends StoreService<
     return result.rows;
   }
 
+  /**
+   * All-or-none bulk resolve with per-row payloads. One SQL statement:
+   * the FOR UPDATE lock (ordered by id — deterministic acquisition, no
+   * deadlock between overlapping batches), the count-gated UPDATE, and
+   * the per-row wake INSERTs are one atomic unit. When ANY row is
+   * missing, non-pending, or fails the assignee assertion, the gate
+   * count mismatches, the UPDATE matches zero rows, no wake is written,
+   * and the statement degrades to a pure read — the returned snapshot
+   * names each blocking row and why. Same durability contract as
+   * `resolveEscalation`: each wake commits WITH its row's resolve.
+   */
+  async resolveAllOrNoneEscalations(
+    params: import('../../../../types/hmsh_escalations').ResolveAllOrNoneParams,
+    wakeCommands?: import('../../../../types/hmsh_escalations').EscalationWakeCommand[],
+  ): Promise<
+    | { ok: true; entries: import('../../../../types/hmsh_escalations').EscalationEntry[]; wakeCount: number }
+    | { ok: false; failed: Array<{ id: string; reason: import('../../../../types/hmsh_escalations').ResolveAllOrNoneBlockReason }> }
+  > {
+    const { items, namespace, metadata, assertAssignee } = params;
+    if (!items?.length) return { ok: true, entries: [], wakeCount: 0 };
+    const ids = items.map((i) => i.id);
+    if (new Set(ids).size !== ids.length) {
+      throw new Error('resolveAllOrNoneEscalations: duplicate escalation ids in items');
+    }
+    const payloads = items.map((i) =>
+      i.resolverPayload ? JSON.stringify(i.resolverPayload) : null,
+    );
+    const metaJson = metadata ? JSON.stringify(metadata) : null;
+    const sqlParams: any[] = [ids, payloads, metaJson, assertAssignee ?? null];
+    let nsClause = '';
+    if (namespace) {
+      sqlParams.push(namespace);
+      nsClause = `AND e.namespace = $${sqlParams.length}`;
+    }
+    //per-row wakes: one engine_streams INSERT per resolved row whose
+    //signal_key matches its pre-built command; zero rows when the gate fails
+    let wakeCTE = '';
+    let wakeCount = '0::int AS wake_count';
+    if (wakeCommands?.length) {
+      const schemaName = this.kvsql().safeName(this.appId);
+      const base = sqlParams.length;
+      sqlParams.push(
+        this.appId,
+        wakeCommands.map((w) => w.forSignalKey),
+        wakeCommands.map((w) => w.message),
+      );
+      wakeCTE = `,
+        wake AS (
+          INSERT INTO ${schemaName}.engine_streams (stream_name, message, priority)
+          SELECT $${base + 1}, w.message, 5
+          FROM unnest($${base + 2}::text[], $${base + 3}::text[]) AS w(signal_key, message)
+          JOIN resolved r ON r.signal_key = w.signal_key
+          RETURNING id
+        )`;
+      wakeCount = '(SELECT COUNT(*) FROM wake)::int AS wake_count';
+    }
+    const result = await this.pgClient.query(`
+      WITH input AS MATERIALIZED (
+        SELECT * FROM unnest($1::uuid[], $2::text[]) AS t(id, payload_text)
+      ),
+      target AS MATERIALIZED (
+        SELECT e.id, e.signal_key, e.topic, e.status, e.assigned_to
+        FROM public.hmsh_escalations e
+        WHERE e.id = ANY($1::uuid[]) ${nsClause}
+        ORDER BY e.id
+        FOR UPDATE
+      ),
+      eligible AS (
+        SELECT t.id FROM target t
+        WHERE t.status = 'pending'
+          AND ($4::text IS NULL OR t.assigned_to = $4::text)
+      ),
+      resolved AS (
+        UPDATE public.hmsh_escalations e
+        SET status = 'resolved', resolved_at = NOW(),
+            resolver_payload = i.payload_text::jsonb,
+            metadata = CASE WHEN $3::jsonb IS NOT NULL
+                            THEN COALESCE(e.metadata, '{}'::jsonb) || $3::jsonb
+                            ELSE e.metadata END,
+            updated_at = NOW()
+        FROM input i
+        WHERE e.id = i.id
+          AND e.status = 'pending'
+          AND (SELECT COUNT(*) FROM eligible) = (SELECT COUNT(*) FROM input)
+        RETURNING e.*
+      )${wakeCTE}
+      SELECT
+        i.id AS input_id,
+        t.status AS prior_status,
+        CASE
+          WHEN r.id IS NOT NULL THEN 'resolved'
+          WHEN t.id IS NULL THEN 'not-found'
+          WHEN t.status = 'cancelled' THEN 'already-cancelled'
+          WHEN t.status = 'expired' THEN 'already-expired'
+          WHEN t.status <> 'pending' THEN 'already-resolved'
+          WHEN $4::text IS NOT NULL AND t.assigned_to IS DISTINCT FROM $4::text THEN 'assignee-mismatch'
+          ELSE 'blocked-by-batch'
+        END AS outcome,
+        row_to_json(r.*) AS entry_json,
+        ${wakeCount}
+      FROM input i
+      LEFT JOIN target t ON t.id = i.id
+      LEFT JOIN resolved r ON r.id = i.id
+      ORDER BY i.id
+    `, sqlParams);
+    const rows = result.rows;
+    if (rows.length && rows.every((r: any) => r.outcome === 'resolved')) {
+      return {
+        ok: true,
+        entries: rows.map((r: any) => r.entry_json),
+        wakeCount: rows[0].wake_count,
+      };
+    }
+    return {
+      ok: false,
+      //'blocked-by-batch' rows were themselves resolvable — only the true
+      //blockers are reported; the caller re-gangs around exactly these
+      failed: rows
+        .filter((r: any) => r.outcome !== 'resolved' && r.outcome !== 'blocked-by-batch')
+        .map((r: any) => ({ id: r.input_id, reason: r.outcome })),
+    };
+  }
+
   async escalationStats(
     params: import('../../../../types/hmsh_escalations').StatsEscalationsParams = {},
   ): Promise<import('../../../../types/hmsh_escalations').EscalationStats> {

@@ -137,6 +137,24 @@ export async function slaHookGatedWorkflow(
   return gate;
 }
 
+// Parks on condition() as one member of a gang — resolveAllOrNone() hands
+// each member its own mandate; the workflow returns exactly the payload it
+// received so the test can prove per-row delivery.
+export async function gangMemberWorkflow(gangId: string, unitId: string): Promise<unknown> {
+  const signalId = `gang-${gangId}-${unitId}`;
+  const result = await Durable.workflow.condition<Record<string, unknown>>(
+    signalId,
+    {
+      role: 'printer',
+      type: 'printer-availability',
+      priority: 2,
+      description: `Gang ${gangId} member ${unitId}`,
+      metadata: { gangId, unitId },
+    },
+  );
+  return result;
+}
+
 // Pauses at a condition and returns null when the escalation is cancelled,
 // or the resolver payload when resolved normally.
 export async function cancelAwareWorkflow(orderId: string): Promise<{ approved?: boolean; __escalation_cancelled?: boolean } | null> {
