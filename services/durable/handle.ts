@@ -1,4 +1,5 @@
 import { HotMesh } from '../hotmesh';
+import { sleepFor } from '../../modules/utils';
 import {
   DurableJobExport,
   ExportOptions,
@@ -313,8 +314,13 @@ export class WorkflowHandleService {
         }
       }
 
-      //subscribe to 'done' topic
-      this.hotMesh.sub(topic, async (_topic: string, state: JobOutput) => {
+      //subscribe to 'done' topic. Await the registration: the getStatus
+      //fallback below only covers completions that land BEFORE it reads.
+      //Unawaited, a job that completes after the status read but before
+      //the subscription goes active is seen by neither arm and result()
+      //never settles — hit reliably when a bulk resolve completes many
+      //workflows in the same instant.
+      await this.hotMesh.sub(topic, async (_topic: string, state: JobOutput) => {
         this.hotMesh.unsub(topic);
         if (state.data.done && !state.data?.$error) {
           await complete(state.data?.response as T);
@@ -326,10 +332,39 @@ export class WorkflowHandleService {
         }
       });
 
-      //check state in case completed during wiring
-      const status = await this.hotMesh.getStatus(this.workflowId);
-      if (status <= 0) {
-        await complete();
+      //check state in case completed during wiring. One read is not
+      //enough: the executed event commits before the status decrement,
+      //so a job caught mid-close shows status > 0 with its event already
+      //published — a subscriber wiring up in that window misses both
+      //arms. Escalating re-checks close the window (the status settles
+      //milliseconds after the publish), and the slow steady poll keeps
+      //result() live even if the notification itself is lost (NOTIFY
+      //carries no durability across connection drops).
+      const settleIfComplete = async (): Promise<boolean> => {
+        if (isResolved) return true;
+        const status = await this.hotMesh.getStatus(this.workflowId);
+        if (isResolved) return true;
+        if (status <= 0) {
+          await complete();
+          this.hotMesh.unsub(topic);
+          return true;
+        }
+        return false;
+      };
+      if (!(await settleIfComplete())) {
+        void (async () => {
+          const RECHECK_DELAYS_MS = [250, 1_000, 5_000];
+          for (const delay of RECHECK_DELAYS_MS) {
+            await sleepFor(delay);
+            if (await settleIfComplete()) return;
+          }
+          while (!isResolved) {
+            await sleepFor(30_000);
+            if (await settleIfComplete()) return;
+          }
+        })().catch(() => {
+          //the subscription remains the primary completion arm
+        });
       }
     });
   }

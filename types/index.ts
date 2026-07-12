@@ -328,6 +328,10 @@ export {
   ReleaseEscalationParams,
   ResolveEscalationParams,
   ResolveByMetadataParams,
+  ResolveAllOrNoneItem,
+  ResolveAllOrNoneParams,
+  ResolveAllOrNoneBlockReason,
+  ResolveAllOrNoneResult,
   EscalateToRoleParams,
   MigrateEscalationParams,
 } from './hmsh_escalations';

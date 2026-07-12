@@ -341,6 +341,49 @@ export interface ResolveManyParams {
   metadata?: Record<string, unknown>;
 }
 
+/** One member of a `resolveAllOrNone()` batch — its own `resolverPayload` is
+ * stored as that row's `resolver_payload` and delivered to that row's waiting
+ * workflow as `condition()`'s return value. */
+export interface ResolveAllOrNoneItem {
+  id: string;
+  resolverPayload?: Record<string, unknown>;
+}
+
+export interface ResolveAllOrNoneParams {
+  /** The batch. Ids must be unique; each item carries its own payload. */
+  items: ResolveAllOrNoneItem[];
+  namespace?: string;
+  /**
+   * Shared outcome patch merged (not replaced) into EVERY row's GIN-indexed
+   * `metadata` in the single atomic statement. See {@link ResolveEscalationParams.metadata}.
+   */
+  metadata?: Record<string, unknown>;
+  /**
+   * When provided, every row must currently be assigned to this assignee
+   * (`assigned_to` equality, asserted inside the same statement). Closes the
+   * claim-race window for claim-then-resolve flows: a row re-claimed by another
+   * principal between the caller's claim and this resolve blocks the batch.
+   */
+  assertAssignee?: string;
+}
+
+/** Why a specific row blocked a `resolveAllOrNone()` batch. */
+export type ResolveAllOrNoneBlockReason =
+  | 'not-found'
+  | 'already-resolved'
+  | 'already-cancelled'
+  | 'already-expired'
+  | 'assignee-mismatch';
+
+/**
+ * Result of `resolveAllOrNone()`. On `ok: false` NOTHING was written; `failed`
+ * lists only the rows that blocked the batch (rows that were themselves
+ * resolvable are not listed — they remain pending, untouched).
+ */
+export type ResolveAllOrNoneResult =
+  | { ok: true; entries: EscalationEntry[] }
+  | { ok: false; failed: Array<{ id: string; reason: ResolveAllOrNoneBlockReason }> };
+
 /**
  * Full-fidelity migration params. Extends `CreateEscalationParams` with:
  * - `id` (required) — preserves the original UUID; no auto-generation

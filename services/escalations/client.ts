@@ -32,6 +32,8 @@ import {
   EscalateManyToRoleParams,
   UpdateManyPriorityParams,
   ResolveManyParams,
+  ResolveAllOrNoneParams,
+  ResolveAllOrNoneResult,
   PruneEscalationsParams,
   PruneEscalationsResult,
 } from '../../types/hmsh_escalations';
@@ -590,6 +592,85 @@ export class EscalationClientService {
     const entries = await (hm.engine.store as any).resolveManyEscalations(params);
     this._emitMany('resolved', entries);
     return entries;
+  }
+
+  /**
+   * All-or-none bulk resolve with per-row payloads. Every item's escalation
+   * must be pending (and, when `assertAssignee` is set, currently assigned to
+   * that assignee) or NOTHING resolves — one atomic SQL statement locks the
+   * rows in deterministic order, applies each row's own `resolverPayload`,
+   * and commits each waiter's wake WITH its resolve (same durability contract
+   * as `resolve()`). Unlike `resolveMany()`, rows backing a live `condition()`
+   * waiter are first-class here: each receives its own payload as
+   * `condition()`'s return value.
+   *
+   * On `ok: false` no row was written and `failed` lists exactly the blocking
+   * rows with reasons (`not-found`, `already-resolved`, `already-cancelled`,
+   * `already-expired`, `assignee-mismatch`) — rows that were themselves
+   * resolvable stay pending and are not listed.
+   *
+   * Pass `params.metadata` to merge one shared outcome patch into every row's
+   * GIN-indexed `metadata` in the same statement. Ids must be unique; an empty
+   * `items` array returns `ok: true` with no entries.
+   */
+  async resolveAllOrNone(
+    params: ResolveAllOrNoneParams,
+    namespace?: string,
+  ): Promise<ResolveAllOrNoneResult> {
+    const ns = (params.namespace ?? namespace) ?? APP_ID;
+    const items = params.items ?? [];
+    if (!items.length) return { ok: true, entries: [] };
+    const ids = items.map((i) => i.id);
+    if (new Set(ids).size !== ids.length) {
+      throw new Error('resolveAllOrNone: duplicate escalation ids in items');
+    }
+    const hm = await this._engine(null, ns);
+    const store = hm.engine.store as any;
+
+    //pre-build each waiter's wake so it commits INSIDE the resolve
+    //statement; signal routing (signal_key, topic) is immutable after
+    //creation, so the preview rows are authoritative for wake targeting
+    const payloadById = new Map(items.map((i) => [i.id, i.resolverPayload ?? {}]));
+    const previews: EscalationEntry[] = await store.listEscalations({
+      ids,
+      namespace: params.namespace,
+    });
+    const wakeCommands: EscalationWakeCommand[] = [];
+    for (const row of previews) {
+      if (!row.signal_key) continue;
+      const cmd = await this._buildWakeCommand(
+        ns,
+        row.topic,
+        row.signal_key,
+        payloadById.get(row.id) ?? {},
+      );
+      if (cmd) wakeCommands.push(cmd);
+    }
+
+    const dbResult = await store.resolveAllOrNoneEscalations(
+      {
+        items,
+        namespace: params.namespace,
+        metadata: params.metadata,
+        assertAssignee: params.assertAssignee,
+      },
+      wakeCommands,
+    );
+    if (!dbResult.ok) return { ok: false, failed: dbResult.failed };
+
+    //rows whose wake was not part of the commit (no hook rule deployed, or
+    //signal routing enriched after the preview) — deliver post-commit
+    const enqueuedKeys = new Set(wakeCommands.map((w) => w.forSignalKey));
+    for (const entry of dbResult.entries) {
+      if (entry.signal_key && !enqueuedKeys.has(entry.signal_key)) {
+        await this._deliverEscalationSignal(ns, entry.topic, {
+          id: entry.signal_key,
+          data: payloadById.get(entry.id) ?? {},
+        });
+      }
+    }
+    this._emitMany('resolved', dbResult.entries);
+    return { ok: true, entries: dbResult.entries };
   }
 
   // ─── Aggregates ─────────────────────────────────────────────────────────────

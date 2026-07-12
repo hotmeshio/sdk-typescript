@@ -153,8 +153,8 @@ export interface SystemEvent {
   span_id?: string;
   /**
    * Full committed row for escalation events; lifecycle metadata for
-   * engine/worker events. Long-tail and hike-mono each cherry-pick fields
-   * for their own event shape.
+   * engine/worker events. Each dependent cherry-picks fields for its
+   * own event shape.
    */
   data: Record<string, unknown>;
 }
