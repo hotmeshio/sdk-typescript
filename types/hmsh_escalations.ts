@@ -92,7 +92,7 @@ export type ClaimByMetadataResult =
 
 export type ResolveEscalationResult =
   | { ok: true; entry: EscalationEntry }
-  | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' | 'already-expired' };
+  | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' | 'already-expired' | 'claim-expired' | 'claimed-by-other' };
 
 /**
  * A pre-built wake message, committed INSIDE the resolve/cancel transaction
@@ -289,6 +289,18 @@ export interface ResolveEscalationParams {
    * `condition()`'s return value and is not GIN-indexed.
    */
   metadata?: Record<string, unknown>;
+  /**
+   * When provided, the resolve additionally asserts — inside the same guarded
+   * UPDATE — that no claim LOCK stands against this assignee. A claim is a
+   * lock only while its TTL window (`assigned_until`) is active; the assert
+   * blocks exactly two states: a live window held by a different assignee
+   * (`claimed-by-other`), and this assignee's own lapsed window
+   * (`claim-expired` — stale work; re-claim to resolve). Unclaimed rows,
+   * durable pre-assignments (`assigned_to` with no window), and rows whose
+   * window lapsed under a different assignee resolve normally. Closes the
+   * claim-race window for interactive claim-then-resolve flows.
+   */
+  assertClaim?: string;
 }
 
 export interface ResolveByMetadataParams {

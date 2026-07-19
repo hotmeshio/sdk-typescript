@@ -2400,7 +2400,7 @@ class PostgresStoreService extends StoreService<
     params: import('../../../../types/hmsh_escalations').ResolveEscalationParams,
     wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
   ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
-    const { id, namespace, resolverPayload, metadata } = params;
+    const { id, namespace, resolverPayload, metadata, assertClaim } = params;
     const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
     const metaJson = metadata ? JSON.stringify(metadata) : null;
     //single statement: FOR UPDATE lock, TOCTOU-guarded UPDATE, and the
@@ -2412,6 +2412,15 @@ class PostgresStoreService extends StoreService<
     const sqlParams: any[] = namespace
       ? [id, payloadJson, metaJson, namespace]
       : [id, payloadJson, metaJson];
+    //claim assertion rides the same guarded UPDATE: when $claimIdx is NULL
+    //the predicate collapses to TRUE (today's semantics). A claim is a work
+    //LOCK that exists only while a TTL window (assigned_until) is active —
+    //blocked states are exactly: a live window held by a different assignee,
+    //and the asserting assignee's own lapsed window (stale work). Unclaimed
+    //rows, durable pre-assignments (assigned_to with no window), and rows
+    //whose window lapsed under a different assignee all resolve normally.
+    sqlParams.push(assertClaim ?? null);
+    const claimIdx = sqlParams.length;
     const { wakeCTE, wakeCount } = this.composeEscalationWakeCTE(
       wakeCommand,
       sqlParams,
@@ -2419,7 +2428,8 @@ class PostgresStoreService extends StoreService<
     );
     const result = await this.pgClient.query(`
       WITH target AS MATERIALIZED (
-        SELECT id, signal_key, topic, status FROM public.hmsh_escalations
+        SELECT id, signal_key, topic, status, assigned_to, assigned_until
+        FROM public.hmsh_escalations
         WHERE id = $1 ${namespace ? 'AND namespace = $4' : ''}
         LIMIT 1 FOR UPDATE
       ),
@@ -2432,9 +2442,14 @@ class PostgresStoreService extends StoreService<
             updated_at = NOW()
         FROM target
         WHERE e.id = target.id AND target.status = 'pending'
+          AND ($${claimIdx}::text IS NULL
+               OR target.assigned_to IS NULL
+               OR target.assigned_until IS NULL
+               OR (target.assigned_to =  $${claimIdx}::text AND target.assigned_until >  NOW())
+               OR (target.assigned_to <> $${claimIdx}::text AND target.assigned_until <= NOW()))
         RETURNING e.*
       )${wakeCTE}
-      SELECT t.id, t.status AS prior_status, t.signal_key, t.topic,
+      SELECT t.id, t.status AS prior_status, t.signal_key, t.topic, t.assigned_to,
         CASE
           WHEN r.id IS NOT NULL THEN 'resolved'
           WHEN t.id IS NULL     THEN 'not-found'
@@ -2455,6 +2470,15 @@ class PostgresStoreService extends StoreService<
         // operator learns the deadline passed rather than believing the
         // resolution landed.
         return { ok: false, reason: 'already-expired' };
+      }
+      if (row.prior_status === 'pending') {
+        // Still pending, yet blocked — only the claim assertion can do that.
+        // Same-assignee means their claim lapsed; anything else means the
+        // row is (or was last) held by a different principal.
+        return {
+          ok: false,
+          reason: row.assigned_to === assertClaim ? 'claim-expired' : 'claimed-by-other',
+        };
       }
       return { ok: false, reason: 'already-resolved' };
     }
