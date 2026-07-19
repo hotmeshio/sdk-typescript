@@ -623,6 +623,151 @@ describe('DURABLE | escalations | Postgres', () => {
 
   });
 
+  describe('resolve() assertClaim guard', () => {
+    /** Backdates a claim so `assigned_until` is in the past — an expired claim. */
+    const expireClaim = async (id: string) => {
+      await postgresClient.query(
+        `UPDATE public.hmsh_escalations
+         SET assigned_until = NOW() - INTERVAL '1 minute'
+         WHERE id = $1`,
+        [id],
+      );
+    };
+
+    it('resolves an unclaimed row when assertClaim is provided', async () => {
+      const esc = await client.escalations.create({
+        role: 'claim-guard',
+        metadata: { guardTest: `g-${guid()}` },
+      });
+      const result = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { approved: true },
+        assertClaim: 'alice@example.com',
+      });
+      expect(result.ok).toBe(true);
+    }, 5_000);
+
+    it('resolves when the asserting assignee holds a live claim', async () => {
+      const esc = await client.escalations.create({
+        role: 'claim-guard',
+        metadata: { guardTest: `g-${guid()}` },
+      });
+      await client.escalations.claim({ id: esc.id, assignee: 'alice@example.com', durationMinutes: 30 });
+      const result = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { approved: true },
+        assertClaim: 'alice@example.com',
+      });
+      expect(result.ok).toBe(true);
+    }, 5_000);
+
+    it('blocks with claim-expired when the asserting assignee\'s claim has lapsed', async () => {
+      const esc = await client.escalations.create({
+        role: 'claim-guard',
+        metadata: { guardTest: `g-${guid()}` },
+      });
+      await client.escalations.claim({ id: esc.id, assignee: 'alice@example.com', durationMinutes: 30 });
+      await expireClaim(esc.id);
+
+      const result = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { approved: true },
+        assertClaim: 'alice@example.com',
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toBe('claim-expired');
+
+      //the row is untouched — still pending, resolvable after re-claim
+      const row = await client.escalations.get(esc.id);
+      expect(row?.status).toBe('pending');
+
+      const reclaim = await client.escalations.claim({ id: esc.id, assignee: 'alice@example.com', durationMinutes: 30 });
+      expect(reclaim.ok).toBe(true);
+      const retry = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { approved: true },
+        assertClaim: 'alice@example.com',
+      });
+      expect(retry.ok).toBe(true);
+    }, 5_000);
+
+    it('blocks with claimed-by-other when a different assignee holds a live claim', async () => {
+      const esc = await client.escalations.create({
+        role: 'claim-guard',
+        metadata: { guardTest: `g-${guid()}` },
+      });
+      await client.escalations.claim({ id: esc.id, assignee: 'bob@example.com', durationMinutes: 30 });
+
+      const result = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { approved: true },
+        assertClaim: 'alice@example.com',
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.reason).toBe('claimed-by-other');
+
+      const row = await client.escalations.get(esc.id);
+      expect(row?.status).toBe('pending');
+      expect(row?.assigned_to).toBe('bob@example.com');
+    }, 5_000);
+
+    it('resolves when a different assignee\'s claim window has lapsed — the lock is gone', async () => {
+      const esc = await client.escalations.create({
+        role: 'claim-guard',
+        metadata: { guardTest: `g-${guid()}` },
+      });
+      await client.escalations.claim({ id: esc.id, assignee: 'bob@example.com', durationMinutes: 30 });
+      await expireClaim(esc.id);
+
+      const result = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { approved: true },
+        assertClaim: 'alice@example.com',
+      });
+      expect(result.ok).toBe(true);
+    }, 5_000);
+
+    it('resolves a durable pre-assignment (assigned_to with no expiry window)', async () => {
+      const esc = await client.escalations.create({
+        role: 'claim-guard',
+        metadata: { guardTest: `g-${guid()}` },
+      });
+      //pre-assignment shape: a workflow targets a named user with no TTL
+      //window — an assignment for routing/RBAC, not a lock
+      await postgresClient.query(
+        `UPDATE public.hmsh_escalations
+         SET assigned_to = 'alice@example.com', assigned_until = NULL
+         WHERE id = $1`,
+        [esc.id],
+      );
+
+      //the assignee resolves it
+      const result = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { approved: true },
+        assertClaim: 'alice@example.com',
+      });
+      expect(result.ok).toBe(true);
+    }, 5_000);
+
+    it('omitting assertClaim preserves existing semantics — expired claim does not block', async () => {
+      const esc = await client.escalations.create({
+        role: 'claim-guard',
+        metadata: { guardTest: `g-${guid()}` },
+      });
+      await client.escalations.claim({ id: esc.id, assignee: 'alice@example.com', durationMinutes: 30 });
+      await expireClaim(esc.id);
+
+      const result = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { approved: true },
+      });
+      expect(result.ok).toBe(true);
+    }, 5_000);
+  });
+
   describe('resolve() augments GIN-indexed metadata', () => {
     it('merges resolution metadata into the queryable surface, separate from resolverPayload', async () => {
       const orderTag = `gin-${guid()}`;

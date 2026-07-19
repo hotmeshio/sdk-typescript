@@ -431,6 +431,12 @@ export class EscalationClientService {
    * making it `@>`-queryable alongside the creation metadata ("what was
    * intended"). This is distinct from `resolverPayload`, which is delivered to
    * the waiting workflow as `condition()`'s return value and is not GIN-indexed.
+   *
+   * Pass `params.assertClaim` to additionally require — inside the same guarded
+   * UPDATE — that no active claim lock stands against that assignee. Blocks
+   * with `claim-expired` (own claim window lapsed) or `claimed-by-other` (a
+   * live window held by someone else); unclaimed rows and durable
+   * pre-assignments (no window) resolve normally.
    */
   async resolve(
     params: ResolveEscalationParams,
@@ -454,7 +460,7 @@ export class EscalationClientService {
     }
 
     const dbResult = await store.resolveEscalation(
-      { id: params.id, resolverPayload: params.resolverPayload, metadata: params.metadata },
+      { id: params.id, resolverPayload: params.resolverPayload, metadata: params.metadata, assertClaim: params.assertClaim },
       wakeCommand ?? undefined,
     );
     if (!dbResult.ok) return dbResult;
