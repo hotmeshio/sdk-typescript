@@ -334,5 +334,9 @@ export {
   ResolveAllOrNoneResult,
   EscalateToRoleParams,
   MigrateEscalationParams,
+  EscalationResolution,
+  ResolvedByIdentity,
+  ClaimManyQuerySelector,
+  ClaimManyByQueryParams,
 } from './hmsh_escalations';
 export { EscalationVerb, EngineVerb, WorkerVerb, SystemEvent, EventsConfig } from './system_events';

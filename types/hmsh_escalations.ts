@@ -107,6 +107,45 @@ export interface EscalationWakeCommand {
   message: string;
 }
 
+/**
+ * Resolution provenance delivered to the waiting workflow alongside the
+ * resolver payload, under the reserved `$resolution` key. Present exactly when
+ * the resolving caller supplied `resolvedBy` — without it the signal payload
+ * passes through byte-identical, so existing waiters are unaffected. The
+ * `$`-prefixed key namespace is reserved for control data riding the signal
+ * (like `$escalation_id` on the legacy routing path); consumer payload fields
+ * never collide with it. The stored `resolver_payload` row column stays clean —
+ * provenance rides the signal only.
+ *
+ * A waiting workflow declares the key in its `condition()` payload generic:
+ *
+ * ```typescript
+ * const decision = await Durable.workflow.condition<{
+ *   approved: boolean;
+ *   $resolution?: EscalationResolution;
+ * }>(signalId, config);
+ * decision.$resolution?.resolvedBy; // who resolved it
+ * ```
+ */
+export interface EscalationResolution {
+  /** The id of the escalation row whose resolve delivered this signal. */
+  escalationId: string;
+  /** Resolver's user id. */
+  resolvedBy: string;
+  /** Resolver's email — present when supplied alongside the id. */
+  resolvedByEmail?: string;
+}
+
+/**
+ * Resolver identity, supplied by the resolving caller (the API layer that
+ * authenticated the human or agent). Delivered to the waiting workflow inside
+ * `$resolution`; never written to the stored `resolver_payload`.
+ */
+export interface ResolvedByIdentity {
+  id: string;
+  email?: string;
+}
+
 export type ReleaseEscalationResult =
   | { ok: true; entry: EscalationEntry }
   | { ok: false; reason: 'not-found' | 'wrong-assignee' };
@@ -301,6 +340,12 @@ export interface ResolveEscalationParams {
    * claim-race window for interactive claim-then-resolve flows.
    */
   assertClaim?: string;
+  /**
+   * Resolver identity, delivered to the waiting workflow under the reserved
+   * `$resolution` signal key (see {@link EscalationResolution}). Never written
+   * to the stored `resolver_payload`.
+   */
+  resolvedBy?: ResolvedByIdentity;
 }
 
 export interface ResolveByMetadataParams {
@@ -315,12 +360,44 @@ export interface ResolveByMetadataParams {
    * `key`/`value` selector used to find the row. See {@link ResolveEscalationParams.metadata}.
    */
   metadata?: Record<string, unknown>;
+  /** Resolver identity delivered under `$resolution`. See {@link ResolveEscalationParams.resolvedBy}. */
+  resolvedBy?: ResolvedByIdentity;
 }
 
 export interface EscalateToRoleParams {
   id: string;
   targetRole: string;
   namespace?: string;
+}
+
+/**
+ * Query selector for `claimManyByQuery()` — the filterable subset of
+ * `ListEscalationsParams` that describes a claimable population. `status` is
+ * not accepted: the claim targets pending rows by definition, enforced in SQL.
+ */
+export interface ClaimManyQuerySelector {
+  role?: string;
+  roles?: string[];
+  type?: string;
+  subtype?: string;
+  entity?: string;
+  priority?: number;
+  /** GIN-indexed `@>` containment against row metadata — the facet filter. */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Atomic query-form bulk claim: one UPDATE selects and claims every matching
+ * pending, claimable row — no SELECT-then-claim window. Prefer this over
+ * `list()` + `claimMany({ids})` whenever the population is describable by
+ * filter: a row that re-parks between a search and an ids-claim is invisible
+ * to the ids form but claimed by this one.
+ */
+export interface ClaimManyByQueryParams {
+  query: ClaimManyQuerySelector;
+  namespace?: string;
+  assignee: string;
+  durationMinutes?: number;
 }
 
 export interface ClaimManyParams {
@@ -377,6 +454,11 @@ export interface ResolveAllOrNoneParams {
    * principal between the caller's claim and this resolve blocks the batch.
    */
   assertAssignee?: string;
+  /**
+   * Resolver identity delivered to EVERY item's waiting workflow under
+   * `$resolution` (one resolver per batch). See {@link ResolveEscalationParams.resolvedBy}.
+   */
+  resolvedBy?: ResolvedByIdentity;
 }
 
 /** Why a specific row blocked a `resolveAllOrNone()` batch. */

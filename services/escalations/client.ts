@@ -36,8 +36,17 @@ import {
   ResolveAllOrNoneResult,
   PruneEscalationsParams,
   PruneEscalationsResult,
+  ResolvedByIdentity,
+  ClaimManyByQueryParams,
 } from '../../types/hmsh_escalations';
 import { APP_ID } from '../durable/schemas/factory';
+
+/**
+ * Reserved signal-payload key carrying resolution provenance
+ * (`EscalationResolution`) to the waiting workflow. The `$` prefix marks the
+ * control-key namespace — consumer payload fields never collide with it.
+ */
+export const ESCALATION_RESOLUTION_KEY = '$resolution';
 
 export type GetHotMeshFn = (topic: string | null, namespace?: string) => Promise<HotMesh>;
 
@@ -178,6 +187,32 @@ export class EscalationClientService {
   }
 
   // ─── Signal delivery ───────────────────────────────────────────────────────
+
+  /**
+   * Composes the signal `data` delivered to the waiting workflow. When the
+   * resolving caller supplies `resolvedBy`, resolution provenance (escalation
+   * id + resolver identity) rides under the reserved `$resolution` key —
+   * making the waiter's payload contract deterministic per call site. Without
+   * `resolvedBy` the payload passes through byte-identical, so callers that
+   * exact-match on payloads are unaffected. The enrichment rides the SIGNAL
+   * only — the stored `resolver_payload` column receives the caller's payload
+   * untouched.
+   */
+  private _signalData(
+    payload: Record<string, unknown> | undefined,
+    escalationId: string,
+    resolvedBy?: ResolvedByIdentity,
+  ): Record<string, unknown> {
+    if (!resolvedBy) return payload ?? {};
+    return {
+      ...(payload ?? {}),
+      [ESCALATION_RESOLUTION_KEY]: {
+        escalationId,
+        resolvedBy: resolvedBy.id,
+        ...(resolvedBy.email ? { resolvedByEmail: resolvedBy.email } : {}),
+      },
+    };
+  }
 
   private async _deliverEscalationSignal(
     ns: string,
@@ -455,7 +490,7 @@ export class EscalationClientService {
         ns,
         preview.topic,
         preview.signal_key,
-        params.resolverPayload ?? {},
+        this._signalData(params.resolverPayload, params.id, params.resolvedBy),
       );
     }
 
@@ -469,7 +504,7 @@ export class EscalationClientService {
       //enqueue was rolled back to its savepoint) — deliver post-commit
       await this._deliverEscalationSignal(ns, dbResult.topic, {
         id: dbResult.signalKey,
-        data: params.resolverPayload ?? {},
+        data: this._signalData(params.resolverPayload, params.id, params.resolvedBy),
       });
     }
     this._emit('resolved', dbResult.entry);
@@ -502,11 +537,14 @@ export class EscalationClientService {
       namespace: params.namespace,
     });
     if (preview?.signalKey) {
+      //the wake embeds the previewed row's id; forSignalKey pins it to that
+      //row, so a different row winning the race falls through to post-commit
+      //delivery where the winner's own id is used
       wakeCommand = await this._buildWakeCommand(
         ns,
         preview.topic,
         preview.signalKey,
-        params.resolverPayload ?? {},
+        this._signalData(params.resolverPayload, preview.id, params.resolvedBy),
       );
     }
 
@@ -518,7 +556,7 @@ export class EscalationClientService {
     if (dbResult.signalKey && !dbResult.wakeEnqueued) {
       await this._deliverEscalationSignal(ns, dbResult.topic, {
         id: dbResult.signalKey,
-        data: params.resolverPayload ?? {},
+        data: this._signalData(params.resolverPayload, dbResult.entry.id, params.resolvedBy),
       });
     }
     this._emit('resolved', dbResult.entry);
@@ -559,6 +597,21 @@ export class EscalationClientService {
     const { entries, skipped } = await (hm.engine.store as any).claimManyEscalations(params);
     this._emitMany('claimed', entries);
     return { claimed: entries.length, skipped };
+  }
+
+  /**
+   * Atomic query-form bulk claim: one UPDATE selects and claims every pending,
+   * claimable row matching the selector (role/type/priority equality, metadata
+   * `@>` containment). Prefer this over `list()` + `claimMany({ids})` when the
+   * population is describable by filter — a row that re-parks between a search
+   * and an ids-claim is invisible to the ids form but claimed by this one.
+   * Returns the claimed rows.
+   */
+  async claimManyByQuery(params: ClaimManyByQueryParams): Promise<{ claimed: number; entries: EscalationEntry[] }> {
+    const hm = await this._engine(null, params.namespace);
+    const entries = await (hm.engine.store as any).claimManyEscalationsByQuery(params);
+    this._emitMany('claimed', entries);
+    return { claimed: entries.length, entries };
   }
 
   /**
@@ -648,7 +701,7 @@ export class EscalationClientService {
         ns,
         row.topic,
         row.signal_key,
-        payloadById.get(row.id) ?? {},
+        this._signalData(payloadById.get(row.id), row.id, params.resolvedBy),
       );
       if (cmd) wakeCommands.push(cmd);
     }
@@ -671,7 +724,7 @@ export class EscalationClientService {
       if (entry.signal_key && !enqueuedKeys.has(entry.signal_key)) {
         await this._deliverEscalationSignal(ns, entry.topic, {
           id: entry.signal_key,
-          data: payloadById.get(entry.id) ?? {},
+          data: this._signalData(payloadById.get(entry.id), entry.id, params.resolvedBy),
         });
       }
     }

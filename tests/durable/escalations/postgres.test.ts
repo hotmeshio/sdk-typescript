@@ -261,12 +261,24 @@ describe('DURABLE | escalations | Postgres', () => {
       const result = await client.escalations.resolve({
         id: escalationId,
         resolverPayload: { approved: true, approvedBy: 'reviewer-1' },
+        resolvedBy: { id: 'reviewer-1', email: 'reviewer-1@example.com' },
       });
       expect(result.ok).toBe(true);
 
       const output = await resultPromise;
       expect((output as any).approved).toBe(true);
       expect((output as any).approvedBy).toBe('reviewer-1');
+
+      // resolution provenance rides the signal under the reserved $resolution key
+      const resolution = (output as any).$resolution;
+      expect(resolution.escalationId).toBe(escalationId);
+      expect(resolution.resolvedBy).toBe('reviewer-1');
+      expect(resolution.resolvedByEmail).toBe('reviewer-1@example.com');
+
+      // ...but never pollutes the stored resolver_payload audit column
+      const row = await client.escalations.get(escalationId);
+      expect((row!.resolver_payload as any).$resolution).toBeUndefined();
+      expect((row!.resolver_payload as any).approved).toBe(true);
     }, 15_000);
 
     it('should return already-resolved when resolving again', async () => {
@@ -838,6 +850,27 @@ describe('DURABLE | escalations | Postgres', () => {
       expect((result.entry.metadata as any).outcome).toBe('resolved-by-metadata');
     }, 5_000);
 
+    it('resolveByMetadata with resolvedBy keeps the stored resolver_payload clean', async () => {
+      const sel = `rbm-id-${guid()}`;
+      const esc = await client.escalations.create({
+        type: 'order-approval',
+        role: 'rbm-approver',
+        metadata: { selector: sel },
+      });
+      const result = await client.escalations.resolveByMetadata({
+        key: 'selector',
+        value: sel,
+        resolverPayload: { approved: true },
+        resolvedBy: { id: 'rbm-user', email: 'rbm-user@example.com' },
+      });
+      expect(result.ok).toBe(true);
+      // $resolution rides the signal only — the audit column stores the
+      // caller's payload untouched
+      const row = await client.escalations.get(esc.id);
+      expect((row!.resolver_payload as any).approved).toBe(true);
+      expect((row!.resolver_payload as any).$resolution).toBeUndefined();
+    }, 5_000);
+
     it('resolveMany merges metadata into every winning row', async () => {
       const tag = `bulkmeta-${guid()}`;
       const created = await Promise.all([
@@ -1190,6 +1223,59 @@ describe('DURABLE | escalations | Postgres', () => {
       expect(result.claimed).toBe(0);
       expect(result.skipped).toBe(1);
     }, 5_000);
+
+    it('claimManyByQuery: one atomic UPDATE claims exactly the matching pending, claimable rows', async () => {
+      const walkType = `walk-${guid()}`;
+      const walkId = `walk-${guid()}`;
+      // three in the walk, one outside it (different facet), one in the walk
+      // but already claimed by someone else
+      const inWalk = await Promise.all([
+        client.escalations.create({ type: walkType, role: 'harvester', metadata: { walkId } }),
+        client.escalations.create({ type: walkType, role: 'harvester', metadata: { walkId } }),
+        client.escalations.create({ type: walkType, role: 'harvester', metadata: { walkId } }),
+      ]);
+      await client.escalations.create({ type: walkType, role: 'harvester', metadata: { walkId: 'other-walk' } });
+      const held = await client.escalations.create({ type: walkType, role: 'harvester', metadata: { walkId } });
+      await client.escalations.claim({ id: held.id, assignee: 'someone-else', durationMinutes: 5 });
+
+      const result = await client.escalations.claimManyByQuery({
+        query: { role: 'harvester', metadata: { walkId } },
+        assignee: 'harvester-1',
+        durationMinutes: 5,
+      });
+      expect(result.claimed).toBe(3);
+      const claimedIds = result.entries.map((e) => e.id).sort();
+      expect(claimedIds).toEqual(inWalk.map((e) => e.id).sort());
+      result.entries.forEach((e) => expect(e.assigned_to).toBe('harvester-1'));
+
+      // the foreign-claimed row was untouched
+      const heldRow = await client.escalations.get(held.id);
+      expect(heldRow?.assigned_to).toBe('someone-else');
+    }, 10_000);
+
+    it('claimManyByQuery: an empty selector throws — unbounded bulk claims are not allowed', async () => {
+      await expect(
+        client.escalations.claimManyByQuery({
+          query: {},
+          assignee: 'harvester-1',
+        }),
+      ).rejects.toThrow(/unbounded/);
+    }, 5_000);
+
+    it('claimManyByQuery: resolved rows are excluded even when the selector matches', async () => {
+      const walkId = `walk-done-${guid()}`;
+      const open = await client.escalations.create({ role: 'harvester', metadata: { walkId } });
+      const done = await client.escalations.create({ role: 'harvester', metadata: { walkId } });
+      await client.escalations.resolve({ id: done.id, resolverPayload: { approved: true } });
+
+      const result = await client.escalations.claimManyByQuery({
+        query: { role: 'harvester', metadata: { walkId } },
+        assignee: 'harvester-1',
+        durationMinutes: 5,
+      });
+      expect(result.claimed).toBe(1);
+      expect(result.entries[0].id).toBe(open.id);
+    }, 10_000);
 
     it('updateManyPriority: updates only pending rows', async () => {
       const count = await client.escalations.updateManyPriority({
