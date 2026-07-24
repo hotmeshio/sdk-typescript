@@ -2716,6 +2716,56 @@ class PostgresStoreService extends StoreService<
     return { entries, skipped: ids.length - entries.length };
   }
 
+  /**
+   * Atomic query-form bulk claim: the selector composes into the UPDATE's own
+   * WHERE via `_escalationFilterConditions`, so selection and claim are one
+   * statement — no SELECT-then-claim window. `status='pending'` and the
+   * claimability guard are forced regardless of the selector.
+   */
+  async claimManyEscalationsByQuery(
+    params: import('../../../../types/hmsh_escalations').ClaimManyByQueryParams,
+  ): Promise<import('../../../../types/hmsh_escalations').EscalationEntry[]> {
+    const { query, namespace, assignee, durationMinutes = 1 } = params;
+    const selectorIsEmpty =
+      !query.role && !query.roles?.length && !query.type && !query.subtype &&
+      !query.entity && query.priority === undefined &&
+      !(query.metadata && Object.keys(query.metadata).length);
+    if (selectorIsEmpty) {
+      throw new Error(
+        'claimManyEscalationsByQuery: empty selector — an unbounded bulk claim is not allowed',
+      );
+    }
+    const { conditions, values, idx } = this._escalationFilterConditions(
+      {
+        namespace,
+        role: query.role,
+        roles: query.roles,
+        type: query.type,
+        subtype: query.subtype,
+        entity: query.entity,
+        priority: query.priority,
+        metadata: query.metadata,
+      },
+      1,
+    );
+    const assigneeIdx = idx;
+    const durationIdx = idx + 1;
+    const result = await this.pgClient.query(
+      `UPDATE public.hmsh_escalations
+       SET assigned_to      = $${assigneeIdx},
+           claimed_at       = NOW(),
+           claim_expires_at = NOW() + ($${durationIdx} * INTERVAL '1 minute'),
+           assigned_until   = NOW() + ($${durationIdx} * INTERVAL '1 minute'),
+           updated_at       = NOW()
+       WHERE ${conditions.join(' AND ')}
+         AND status = 'pending'
+         AND (assigned_to IS NULL OR assigned_until IS NULL OR assigned_until <= NOW() OR assigned_to = $${assigneeIdx})
+       RETURNING *`,
+      [...values, assignee, durationMinutes],
+    );
+    return result.rows as import('../../../../types/hmsh_escalations').EscalationEntry[];
+  }
+
   async escalateManyEscalationsToRole(
     params: import('../../../../types/hmsh_escalations').EscalateManyToRoleParams,
   ): Promise<number> {

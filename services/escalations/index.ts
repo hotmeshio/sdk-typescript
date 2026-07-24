@@ -72,3 +72,4 @@ class EscalationsClass {
 
 export { EscalationsClass as Escalations };
 export { EscalationClientService };
+export { ESCALATION_RESOLUTION_KEY } from './client';
