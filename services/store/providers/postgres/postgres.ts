@@ -1975,17 +1975,29 @@ class PostgresStoreService extends StoreService<
 
   // ─── hmsh_escalations ────────────────────────────────────────────────────────
 
+  // Born-assigned rows ($25 assignee, $26 durationMinutes): assignee alone is
+  // a durable pre-assignment (assigned_to, no window — a routing hint);
+  // with durationMinutes the TTL window is armed in the same INSERT, exactly
+  // as claimEscalation writes it (assigned_until = claim_expires_at). Both
+  // NULL → every claim column NULL, byte-identical to the pre-feature row.
   private _escalationInsertSql = `
     INSERT INTO public.hmsh_escalations
       (namespace, app_id, signal_key, topic, workflow_id, task_queue, workflow_type,
        type, subtype, entity, description, role, priority,
        origin_id, parent_id, initiated_by, created_by, trace_id, span_id,
-       task_id, escalation_payload, metadata, envelope, expires_at)
+       task_id, escalation_payload, metadata, envelope, expires_at,
+       assigned_to, assigned_until, claimed_at, claim_expires_at)
     VALUES
       ($1, $2, $3, $4, $5, $6, $7,
        $8, $9, $10, $11, $12, $13,
        $14, $15, $16, $17, $18, $19,
-       $20, $21, $22, $23, $24)
+       $20, $21, $22, $23, $24,
+       $25,
+       CASE WHEN $25::text IS NOT NULL AND $26::numeric IS NOT NULL
+            THEN NOW() + ($26::numeric * INTERVAL '1 minute') END,
+       CASE WHEN $25::text IS NOT NULL THEN NOW() END,
+       CASE WHEN $25::text IS NOT NULL AND $26::numeric IS NOT NULL
+            THEN NOW() + ($26::numeric * INTERVAL '1 minute') END)
     ON CONFLICT (namespace, app_id, signal_key) WHERE signal_key IS NOT NULL DO NOTHING`;
 
   private _escalationInsertParams(
@@ -1996,6 +2008,7 @@ class PostgresStoreService extends StoreService<
       type, subtype, entity, description, role, priority,
       originId, parentId, initiatedBy, createdBy, traceId, spanId,
       taskId, escalationPayload, metadata, envelope, expiresAt,
+      assignee, durationMinutes,
     } = params;
     return [
       namespace ?? 'hmsh',
@@ -2022,6 +2035,8 @@ class PostgresStoreService extends StoreService<
       metadata ? JSON.stringify(metadata) : null,
       envelope ? JSON.stringify(envelope) : null,
       expiresAt ?? null,
+      assignee ?? null,
+      durationMinutes ?? null,
     ];
   }
 
@@ -2171,7 +2186,7 @@ class PostgresStoreService extends StoreService<
     startIdx = 1,
   ): { conditions: string[]; values: unknown[]; idx: number } {
     const { namespace, role, roles, type, subtype, entity, status, assignedTo, workflowId, originId,
-            available, priority, metadata, ids, taskId } = params;
+            parentId, available, priority, metadata, ids, taskId } = params;
     const conditions: string[] = [];
     const values: unknown[] = [];
     let idx = startIdx;
@@ -2186,6 +2201,7 @@ class PostgresStoreService extends StoreService<
     if (assignedTo)    { conditions.push(`assigned_to = $${idx++}`);                 values.push(assignedTo); }
     if (workflowId)    { conditions.push(`workflow_id = $${idx++}`);                 values.push(workflowId); }
     if (originId)      { conditions.push(`origin_id = $${idx++}`);                   values.push(originId); }
+    if (parentId)      { conditions.push(`parent_id = $${idx++}`);                   values.push(parentId); }
     if (priority !== undefined) { conditions.push(`priority = $${idx++}`);           values.push(priority); }
     if (metadata)      { conditions.push(`metadata @> $${idx++}::jsonb`);            values.push(JSON.stringify(metadata)); }
     if (ids?.length)   { conditions.push(`id = ANY($${idx++}::uuid[])`);             values.push(ids); }

@@ -387,8 +387,8 @@ class Hook extends Activity {
       await this.redeliverPendingSignal(pending);
     }
 
-    // Post-commit: fire the escalation.created event using the row returned
-    // directly from the RETURNING * clause — no extra SELECT.
+    // Post-commit: fire the escalation lifecycle events using the row
+    // returned directly from the RETURNING * clause — no extra SELECT.
     if (escalationSignalKey) {
       const store = this.store as any;
       if (store.eventsPublish) {
@@ -396,20 +396,29 @@ class Hook extends Activity {
         if (row?.id) {
           const ts = new Date().toISOString();
           const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : ts;
-          void Promise.resolve(store.eventsPublish({
-            event_id: `${row.id}:created:${updatedAt}`,
-            type: `system.escalation.${row.id}.created`,
-            ts,
-            namespace: row.namespace ?? (this.engine as any).namespace ?? this.engine.appId,
-            app_id: row.app_id ?? this.engine.appId,
-            workflow_id: row.workflow_id ?? undefined,
-            topic: row.topic ?? undefined,
-            origin_id: row.origin_id ?? undefined,
-            parent_id: row.parent_id ?? undefined,
-            trace_id: row.trace_id ?? undefined,
-            span_id: row.span_id ?? undefined,
-            data: row,
-          })).catch(() => { /* best-effort */ });
+          const publish = (verb: string, extras?: Record<string, unknown>) =>
+            void Promise.resolve(store.eventsPublish({
+              event_id: `${row.id}:${verb}:${updatedAt}`,
+              type: `system.escalation.${row.id}.${verb}`,
+              ts,
+              namespace: row.namespace ?? (this.engine as any).namespace ?? this.engine.appId,
+              app_id: row.app_id ?? this.engine.appId,
+              workflow_id: row.workflow_id ?? undefined,
+              topic: row.topic ?? undefined,
+              origin_id: row.origin_id ?? undefined,
+              parent_id: row.parent_id ?? undefined,
+              trace_id: row.trace_id ?? undefined,
+              span_id: row.span_id ?? undefined,
+              ...extras,
+              data: row,
+            })).catch(() => { /* best-effort */ });
+          publish('created');
+          // A born-assigned row is created AND claimed in the same Leg1
+          // commit — state both, in that order, so hand-off consumers act
+          // on the canonical claimed event instead of inferring from timing.
+          if (row.assigned_to != null) {
+            publish('claimed', { assigned_at_creation: true });
+          }
         }
       }
     }
@@ -457,6 +466,8 @@ class Hook extends Activity {
       metadata: resolveObj(escalationConfig.metadata),
       envelope: resolveObj(escalationConfig.envelope),
       expiresAt: resolveField(escalationConfig.expiresAt),
+      assignee: resolveField(escalationConfig.assignee),
+      durationMinutes: resolveField(escalationConfig.durationMinutes),
       taskQueue: resolveField(escalationConfig.taskQueue),
       workflowType: resolveField(escalationConfig.workflowType),
     };
@@ -465,7 +476,8 @@ class Hook extends Activity {
     // the factory waiter runs for a condition() call that had no queueConfig.
     if (
       params.role == null && params.type == null &&
-      params.priority == null && params.metadata == null
+      params.priority == null && params.metadata == null &&
+      params.assignee == null
     ) return null;
 
     const signalKey = await this.deriveEscalationSignalKey();

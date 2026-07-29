@@ -18,6 +18,22 @@ export interface ConditionQueueConfig {
   envelope?: Record<string, unknown>;
   expiresAt?: Date;
   /**
+   * Born-assigned: writes `assigned_to` in the same atomic INSERT that
+   * creates the row — on the `condition()` path, one commit with the
+   * workflow's Leg1 checkpoint. Alone it is a durable pre-assignment: the
+   * row surfaces in the assignee's `list({ assignedTo })` immediately, is
+   * resolvable by the assignee with `assertClaim`, and remains claimable
+   * by others (a routing hint). With `durationMinutes` it is a hard claim
+   * at creation. The `created` event payload carries the assignment.
+   */
+  assignee?: string;
+  /**
+   * With `assignee`, arms the claim TTL window (`assigned_until` /
+   * `claim_expires_at`) at creation — the row is born locked to the
+   * assignee, exactly as a post-create `claim()` locks it.
+   */
+  durationMinutes?: number;
+  /**
    * SLA timer for the wait itself (e.g. `'30m'`, `'24h'`). Arms the same
    * resume timer as `condition(signalId, '30m')`: when it fires first, the
    * workflow resumes with `false` and the escalation row transitions
@@ -191,6 +207,12 @@ export interface ListEscalationsParams {
   assignedTo?: string;
   workflowId?: string;
   originId?: string;
+  /**
+   * Filter by `parent_id` — the hand-off lineage key. With `assignedTo`
+   * this is the precise fallback query for a born-assigned child: "the
+   * child of the escalation I just resolved, assigned to me."
+   */
+  parentId?: string;
   /** When true, returns only rows without an active claim. When false, returns only actively claimed rows. */
   available?: boolean;
   /** Exact priority match. */
@@ -257,6 +279,14 @@ export interface CreateEscalationParams {
   metadata?: Record<string, unknown>;
   envelope?: Record<string, unknown>;
   expiresAt?: Date;
+  /**
+   * Born-assigned: writes `assigned_to` in the creation INSERT. See
+   * {@link ConditionQueueConfig.assignee} for the two modes (durable
+   * pre-assignment vs. hard claim with `durationMinutes`).
+   */
+  assignee?: string;
+  /** With `assignee`, arms the claim TTL window at creation. See {@link ConditionQueueConfig.durationMinutes}. */
+  durationMinutes?: number;
 }
 
 /**
