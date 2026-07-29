@@ -155,6 +155,104 @@ export async function gangMemberWorkflow(gangId: string, unitId: string): Promis
   return result;
 }
 
+// Born pre-assigned: the escalation row is created already routed to a named
+// user (assigned_to set, no TTL window) in the same Leg1 commit as the wait.
+export async function preAssignedWorkflow(orderId: string, assignee: string): Promise<unknown> {
+  const signalId = `pre-assigned-${Durable.guid()}`;
+  const result = await Durable.workflow.condition<Record<string, unknown>>(signalId, {
+    role: 'handoff-approver',
+    type: 'handoff-soft',
+    priority: 2,
+    description: `Hand-off for ${orderId}`,
+    metadata: { orderId },
+    assignee,
+  });
+  return result;
+}
+
+// Born hard-claimed: assignee + durationMinutes arms the claim TTL window at
+// creation, locking the row to the assignee exactly as a post-create claim().
+export async function hardClaimWorkflow(
+  orderId: string,
+  assignee: string,
+  durationMinutes: number,
+): Promise<unknown> {
+  const signalId = `hard-claim-${Durable.guid()}`;
+  const result = await Durable.workflow.condition<Record<string, unknown>>(signalId, {
+    role: 'handoff-approver',
+    type: 'handoff-hard',
+    priority: 2,
+    description: `Locked hand-off for ${orderId}`,
+    metadata: { orderId },
+    assignee,
+    durationMinutes,
+  });
+  return result;
+}
+
+// Born-assigned inside Promise.all — proves the collator_waiter path writes
+// the assignment. Item A is assigned; item B is a plain open wait.
+export async function collatedAssignedWorkflow(
+  orderId: string,
+  assignee: string,
+): Promise<{ a: unknown; b: unknown }> {
+  const sigA = `col-assigned-a-${Durable.guid()}`;
+  const sigB = `col-assigned-b-${Durable.guid()}`;
+  const [a, b] = await Promise.all([
+    Durable.workflow.condition<Record<string, unknown>>(sigA, {
+      role: 'handoff-collated',
+      type: 'handoff-collated',
+      priority: 2,
+      metadata: { orderId, item: 'a' },
+      assignee,
+    }),
+    Durable.workflow.condition<Record<string, unknown>>(sigB, {
+      role: 'handoff-collated',
+      type: 'handoff-collated',
+      priority: 2,
+      metadata: { orderId, item: 'b' },
+    }),
+  ]);
+  return { a, b };
+}
+
+// Born-assigned inside a hook function (execHook) — proves the signaler-branch
+// waiter path writes the assignment. Resolution delivery targets the main
+// flow's waiter (see condition() placement docs), so this gate completes via
+// its SLA timer and reports back through signal(), like slaGateHook.
+export async function assignedGateHook(
+  orderId: string,
+  assignee: string,
+  timeout: string,
+): Promise<void> {
+  const signalId = `assigned-hook-${orderId}`;
+  const result = await Durable.workflow.condition<Record<string, unknown>>(signalId, {
+    role: 'handoff-hook',
+    type: 'handoff-hook',
+    priority: 3,
+    metadata: { orderId },
+    assignee,
+    timeout,
+  });
+  await Durable.workflow.signal(`assigned-hook-done-${orderId}`, {
+    outcome: result === false ? 'timed-out' : 'resolved',
+  });
+}
+
+// The parent: spawns the assigned gate as a hook and awaits its verdict.
+export async function assignedHookParent(
+  orderId: string,
+  assignee: string,
+  timeout: string,
+): Promise<{ outcome: string }> {
+  return Durable.workflow.execHook<{ outcome: string }>({
+    taskQueue: 'escalation-test',
+    workflowName: 'assignedGateHook',
+    args: [orderId, assignee, timeout],
+    signalId: `assigned-hook-done-${orderId}`,
+  });
+}
+
 // Pauses at a condition and returns null when the escalation is cancelled,
 // or the resolver payload when resolved normally.
 export async function cancelAwareWorkflow(orderId: string): Promise<{ approved?: boolean; __escalation_cancelled?: boolean } | null> {

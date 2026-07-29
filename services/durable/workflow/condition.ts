@@ -86,6 +86,14 @@ import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
  * await client.escalations.resolve({ id: item.id, resolverPayload: { approved: true } });
  * ```
  *
+ * ## Assign at creation
+ *
+ * Set `assignee` in the config to write `assigned_to` in the same atomic
+ * commit — the row is born routed to that user (e.g. hand the follow-on step
+ * to `$resolution.resolvedBy` of a prior escalation) and is resolvable by
+ * them immediately. Add `durationMinutes` to arm the claim TTL window at
+ * creation, locking the row to the assignee exactly as `claim()` would.
+ *
  * ## Placement: call escalation-bearing waits from main workflow code
  *
  * The resolve/signal delivery pipeline routes to the main flow's waiter.

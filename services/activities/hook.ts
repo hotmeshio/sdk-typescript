@@ -457,6 +457,8 @@ class Hook extends Activity {
       metadata: resolveObj(escalationConfig.metadata),
       envelope: resolveObj(escalationConfig.envelope),
       expiresAt: resolveField(escalationConfig.expiresAt),
+      assignee: resolveField(escalationConfig.assignee),
+      durationMinutes: resolveField(escalationConfig.durationMinutes),
       taskQueue: resolveField(escalationConfig.taskQueue),
       workflowType: resolveField(escalationConfig.workflowType),
     };
@@ -465,7 +467,8 @@ class Hook extends Activity {
     // the factory waiter runs for a condition() call that had no queueConfig.
     if (
       params.role == null && params.type == null &&
-      params.priority == null && params.metadata == null
+      params.priority == null && params.metadata == null &&
+      params.assignee == null
     ) return null;
 
     const signalKey = await this.deriveEscalationSignalKey();

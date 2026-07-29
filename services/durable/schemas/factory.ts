@@ -3,9 +3,10 @@
 // schema upgrade and hot-swap to it (see WorkerService.activateWorkflow and
 // ClientService.deployAndActivate). Changing the YAML without a bump leaves
 // every already-deployed database on the old schema forever. Numeric string —
-// compared with `Number()` for ordering. (v17: collator_waiter escalation block —
-// escalation-bearing condition() inside Promise.all writes its hmsh_escalations row.)
-const APP_VERSION = '17';
+// compared with `Number()` for ordering. (v18: assign-at-creation — the
+// escalation blocks forward queueConfig.assignee/durationMinutes so a
+// condition() row is born assigned in the Leg1 commit.)
+const APP_VERSION = '18';
 const APP_ID = 'durable';
 
 /**
@@ -391,6 +392,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
             traceId: '{worker.output.data.queueConfig.traceId}'
             spanId: '{worker.output.data.queueConfig.spanId}'
             expiresAt: '{worker.output.data.queueConfig.expiresAt}'
+            assignee: '{worker.output.data.queueConfig.assignee}'
+            durationMinutes: '{worker.output.data.queueConfig.durationMinutes}'
             taskQueue: '{trigger.output.data.taskQueue}'
             workflowType: '{trigger.output.data.workflowName}'
           sleep: '{worker.output.data.duration}'
@@ -1206,6 +1209,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
             traceId: '{signaler_worker.output.data.queueConfig.traceId}'
             spanId: '{signaler_worker.output.data.queueConfig.spanId}'
             expiresAt: '{signaler_worker.output.data.queueConfig.expiresAt}'
+            assignee: '{signaler_worker.output.data.queueConfig.assignee}'
+            durationMinutes: '{signaler_worker.output.data.queueConfig.durationMinutes}'
             taskQueue: '{trigger.output.data.taskQueue}'
             workflowType: '{trigger.output.data.workflowName}'
           sleep: '{signaler_worker.output.data.duration}'
@@ -1982,6 +1987,8 @@ const getWorkflowYAML = (app: string, version: string): string => {
             traceId: '{$self.output.data.queueConfig.traceId}'
             spanId: '{$self.output.data.queueConfig.spanId}'
             expiresAt: '{$self.output.data.queueConfig.expiresAt}'
+            assignee: '{$self.output.data.queueConfig.assignee}'
+            durationMinutes: '{$self.output.data.queueConfig.durationMinutes}'
             taskQueue: '{$self.output.data.taskQueue}'
             workflowType: '{$self.output.data.workflowName}'
           hook:

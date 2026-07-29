@@ -104,6 +104,36 @@ describe('DURABLE | escalations | Postgres', () => {
         workflow: workflows.slaGateHook,
       });
       await slaGate.run();
+      const preAssigned = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.preAssignedWorkflow,
+      });
+      await preAssigned.run();
+      const hardClaim = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.hardClaimWorkflow,
+      });
+      await hardClaim.run();
+      const collatedAssigned = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.collatedAssignedWorkflow,
+      });
+      await collatedAssigned.run();
+      const assignedParent = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.assignedHookParent,
+      });
+      await assignedParent.run();
+      const assignedGate = await Worker.create({
+        connection,
+        taskQueue: 'escalation-test',
+        workflow: workflows.assignedGateHook,
+      });
+      await assignedGate.run();
       // Wait for the condition() to fire and write the escalation row
       await sleepFor(2000);
     }, 15_000);
@@ -124,6 +154,12 @@ describe('DURABLE | escalations | Postgres', () => {
       expect(esc!.priority).toBe(2);
       expect((esc!.metadata as any)?.orderId).toBe(orderId);
       expect((esc!.metadata as any)?.region).toBe(region);
+      // Regression guard for assign-at-creation: a no-assignee config writes
+      // a row byte-identical to before the feature — all four claim columns NULL.
+      expect(esc!.assigned_to).toBeNull();
+      expect(esc!.assigned_until).toBeNull();
+      expect(esc!.claimed_at).toBeNull();
+      expect(esc!.claim_expires_at).toBeNull();
     }, 5_000);
 
     it('should list by type+subtype filter', async () => {
@@ -1601,6 +1637,228 @@ describe('DURABLE | escalations | Postgres', () => {
       const [row] = await client.escalations.list({ ids: [esc!.id] });
       expect(row.status).toBe('resolved');
     }, 90_000);
+  });
+
+  describe('assign at creation — condition({ assignee }) / create({ assignee })', () => {
+    const alice = 'alice@example.com';
+    const bob = 'bob@example.com';
+    const findByRole = async (role: string, orderId: string, item?: string) => {
+      for (let i = 0; i < 40; i++) {
+        const list = await client.escalations.list({ role });
+        const esc = list.find((e) => {
+          const m = e.metadata as any;
+          return m?.orderId === orderId && (item === undefined || m?.item === item);
+        });
+        if (esc) return esc;
+        await sleepFor(500);
+      }
+      return undefined;
+    };
+
+    it('condition({ assignee }) — row born pre-assigned: routing hint, resolvable by the assignee', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, alice],
+        taskQueue: 'escalation-test',
+        workflowName: 'preAssignedWorkflow',
+        workflowId: guid(),
+      });
+
+      const esc = await findByRole('handoff-approver', orderId);
+      expect(esc).toBeDefined();
+      // Born assigned, atomically with the Leg1 checkpoint: no unassigned window.
+      expect(esc!.status).toBe('pending');
+      expect(esc!.assigned_to).toBe(alice);
+      // Pre-assignment shape: no TTL window — a routing hint, not a lock.
+      expect(esc!.assigned_until).toBeNull();
+      expect(esc!.claim_expires_at).toBeNull();
+      expect(esc!.claimed_at).not.toBeNull();
+
+      // Immediately visible in the assignee's worklist.
+      const mine = await client.escalations.list({ assignedTo: alice });
+      expect(mine.some((e) => e.id === esc!.id)).toBe(true);
+
+      // The assignee resolves it directly — no prior claim() required.
+      const resolved = await client.escalations.resolve({
+        id: esc!.id,
+        resolverPayload: { approved: true },
+        assertClaim: alice,
+      });
+      expect(resolved.ok).toBe(true);
+      const output = await h.result();
+      expect((output as any).approved).toBe(true);
+    }, 60_000);
+
+    it('condition({ assignee, durationMinutes }) — row born hard-claimed: locked to the assignee', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, alice, 30],
+        taskQueue: 'escalation-test',
+        workflowName: 'hardClaimWorkflow',
+        workflowId: guid(),
+      });
+
+      const esc = await findByRole('handoff-approver', orderId);
+      expect(esc).toBeDefined();
+      // Full claim shape at creation — identical to a post-create claim().
+      expect(esc!.status).toBe('pending');
+      expect(esc!.assigned_to).toBe(alice);
+      expect(esc!.assigned_until).not.toBeNull();
+      expect(esc!.claim_expires_at).not.toBeNull();
+      expect(esc!.claimed_at).not.toBeNull();
+      expect(new Date(esc!.assigned_until!).getTime()).toBeGreaterThan(Date.now());
+
+      // The window locks the row: a different assignee cannot claim...
+      const steal = await client.escalations.claim({
+        id: esc!.id,
+        assignee: bob,
+        durationMinutes: 5,
+      });
+      expect(steal.ok).toBe(false);
+      if (steal.ok === false) expect(steal.reason).toBe('conflict');
+
+      // ...and cannot resolve when asserting their claim.
+      const blocked = await client.escalations.resolve({
+        id: esc!.id,
+        resolverPayload: { approved: true },
+        assertClaim: bob,
+      });
+      expect(blocked.ok).toBe(false);
+      if (blocked.ok === false) expect(blocked.reason).toBe('claimed-by-other');
+
+      // The born-assignee resolves and the workflow resumes.
+      const resolved = await client.escalations.resolve({
+        id: esc!.id,
+        resolverPayload: { approved: true },
+        assertClaim: alice,
+      });
+      expect(resolved.ok).toBe(true);
+      const output = await h.result();
+      expect((output as any).approved).toBe(true);
+    }, 60_000);
+
+    it('create({ assignee }) — standalone row born pre-assigned; still claimable by another (not a lock)', async () => {
+      const esc = await client.escalations.create({
+        role: 'handoff-standalone',
+        type: 'handoff-standalone',
+        metadata: { tag: `born-soft-${guid()}` },
+        assignee: alice,
+      });
+      // The created entry (also the `created` event payload) carries the assignment.
+      expect(esc.assigned_to).toBe(alice);
+      expect(esc.assigned_until).toBeNull();
+      expect(esc.claim_expires_at).toBeNull();
+      expect(esc.claimed_at).not.toBeNull();
+
+      // Pre-assignment is a routing hint: another user may still claim it.
+      const claim = await client.escalations.claim({
+        id: esc.id,
+        assignee: bob,
+        durationMinutes: 5,
+      });
+      expect(claim.ok).toBe(true);
+      if (claim.ok) expect(claim.entry.assigned_to).toBe(bob);
+    }, 10_000);
+
+    it('create({ assignee, durationMinutes }) — standalone row born hard-claimed', async () => {
+      const esc = await client.escalations.create({
+        role: 'handoff-standalone',
+        type: 'handoff-standalone',
+        metadata: { tag: `born-hard-${guid()}` },
+        assignee: alice,
+        durationMinutes: 30,
+      });
+      expect(esc.assigned_to).toBe(alice);
+      expect(esc.assigned_until).not.toBeNull();
+      expect(esc.claim_expires_at).not.toBeNull();
+
+      const steal = await client.escalations.claim({
+        id: esc.id,
+        assignee: bob,
+        durationMinutes: 5,
+      });
+      expect(steal.ok).toBe(false);
+      if (steal.ok === false) expect(steal.reason).toBe('conflict');
+
+      const resolved = await client.escalations.resolve({
+        id: esc.id,
+        resolverPayload: { done: true },
+        assertClaim: alice,
+      });
+      expect(resolved.ok).toBe(true);
+    }, 10_000);
+
+    it('create({ durationMinutes }) with no assignee — the window fields stay NULL', async () => {
+      const esc = await client.escalations.create({
+        role: 'handoff-standalone',
+        type: 'handoff-standalone',
+        metadata: { tag: `no-assignee-${guid()}` },
+        durationMinutes: 30,
+      });
+      expect(esc.assigned_to).toBeNull();
+      expect(esc.assigned_until).toBeNull();
+      expect(esc.claimed_at).toBeNull();
+      expect(esc.claim_expires_at).toBeNull();
+    }, 10_000);
+
+    it('collated Promise.all — the assigned item is born assigned, its sibling is not', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, alice],
+        taskQueue: 'escalation-test',
+        workflowName: 'collatedAssignedWorkflow',
+        workflowId: guid(),
+      });
+
+      const escA = await findByRole('handoff-collated', orderId, 'a');
+      const escB = await findByRole('handoff-collated', orderId, 'b');
+      expect(escA).toBeDefined();
+      expect(escB).toBeDefined();
+      expect(escA!.assigned_to).toBe(alice);
+      expect(escA!.assigned_until).toBeNull();
+      expect(escB!.assigned_to).toBeNull();
+
+      const [ra, rb] = await Promise.all([
+        client.escalations.resolve({ id: escA!.id, resolverPayload: { item: 'a' }, assertClaim: alice }),
+        client.escalations.resolve({ id: escB!.id, resolverPayload: { item: 'b' } }),
+      ]);
+      expect(ra.ok).toBe(true);
+      expect(rb.ok).toBe(true);
+
+      const output = await h.result();
+      expect((output as any).a?.item).toBe('a');
+      expect((output as any).b?.item).toBe('b');
+    }, 120_000);
+
+    it('execHook (signaler path) — the hook wait writes its row born assigned', async () => {
+      const orderId = guid();
+      const h = await client.workflow.start({
+        args: [orderId, alice, '5 seconds'],
+        taskQueue: 'escalation-test',
+        workflowName: 'assignedHookParent',
+        workflowId: guid(),
+      });
+
+      // The signaler-branch waiter wrote the row born assigned.
+      const esc = await findByRole('handoff-hook', orderId);
+      expect(esc).toBeDefined();
+      expect(esc!.assigned_to).toBe(alice);
+      expect(esc!.assigned_until).toBeNull();
+      expect(esc!.claimed_at).not.toBeNull();
+      expect(esc!.signal_key).not.toBeNull();
+
+      // Hook waits complete via their SLA leg (resolution delivery targets
+      // the main flow) — the timer also proves expiry works on a born-assigned row.
+      const output = await h.result();
+      expect((output as any).outcome).toBe('timed-out');
+      let row = esc;
+      for (let i = 0; i < 30; i++) {
+        [row] = await client.escalations.list({ ids: [esc!.id] });
+        if (row?.status === 'expired') break;
+        await sleepFor(500);
+      }
+      expect(row!.status).toBe('expired');
+    }, 120_000);
   });
 
   describe('SLA-gated wait in a collated Promise.all (the collator reentry path)', () => {
