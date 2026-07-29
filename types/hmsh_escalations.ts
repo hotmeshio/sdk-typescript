@@ -207,6 +207,12 @@ export interface ListEscalationsParams {
   assignedTo?: string;
   workflowId?: string;
   originId?: string;
+  /**
+   * Filter by `parent_id` — the hand-off lineage key. With `assignedTo`
+   * this is the precise fallback query for a born-assigned child: "the
+   * child of the escalation I just resolved, assigned to me."
+   */
+  parentId?: string;
   /** When true, returns only rows without an active claim. When false, returns only actively claimed rows. */
   available?: boolean;
   /** Exact priority match. */

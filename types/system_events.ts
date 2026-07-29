@@ -15,7 +15,7 @@
  * | verb        | trigger                                                  | `data` shape        |
  * |-------------|----------------------------------------------------------|---------------------|
  * | `created`   | `client.create()` or hook Leg1 INSERT                    | full `EscalationEntry` row |
- * | `claimed`   | `client.claim()` / `client.claimByMetadata()`            | full `EscalationEntry` row |
+ * | `claimed`   | `client.claim()` / `client.claimByMetadata()` / born-assigned create (`assignee` set) | full `EscalationEntry` row |
  * | `released`  | `client.release()`                                       | full `EscalationEntry` row |
  * | `reassigned`| `client.escalateToRole()` / role change                  | full `EscalationEntry` row |
  * | `resolved`  | `client.resolve()` / `client.resolveByMetadata()`        | full `EscalationEntry` row |
@@ -73,6 +73,20 @@
  * - Escalation: `${id}:${verb}:${updated_at_iso}` — claim→release→reclaim
  *   produces distinct IDs because `updated_at` changes on each transition.
  * - Engine / worker: `${app_id_or_queue}:${verb}:${ts}`.
+ *
+ * ## Replay / retry semantics (at-most-once)
+ *
+ * Both escalation-create emitters publish from the INSERT's `RETURNING *`
+ * row. An idempotent re-run — a crash-replayed Leg1 checkpoint or a
+ * retried `create()` hitting `ON CONFLICT … DO NOTHING` — returns no row,
+ * so the no-op emits nothing: `created`/`claimed` fire exactly once per
+ * row that actually commits. The remaining gap is a crash landing between
+ * the commit and the post-commit fire-and-forget publish, which drops the
+ * event; recover a missed born-assigned hand-off with the precise
+ * fallback query (`list({ parentId, assignedTo })` — `claimed_at` equals
+ * `created_at` on such rows). A hypothetical duplicate would carry the
+ * identical `event_id` (the row's `updated_at` is unchanged by a no-op),
+ * so consumer-side `event_id` dedup remains a safe belt-and-braces guard.
  *
  * ## Fire-and-forget contract
  *
@@ -151,6 +165,17 @@ export interface SystemEvent {
   parent_id?: string;
   trace_id?: string;
   span_id?: string;
+  /**
+   * Assignment provenance, present on every `claimed` event. `true` when
+   * the row was born assigned (a directed, programmatic assignment via
+   * `condition({ assignee })` / `create({ assignee })` — the engine emits
+   * `created` then `claimed` from the same commit); `false` when a caller
+   * claimed it interactively (`claim`, `claimByMetadata`, `claimMany`,
+   * `claimManyByQuery`). Lets a consumer distinguish system-directed
+   * hand-offs from claims it observes, as a stated fact of the transition —
+   * the committed row alone cannot express how its assignment came to be.
+   */
+  assigned_at_creation?: boolean;
   /**
    * Full committed row for escalation events; lifecycle metadata for
    * engine/worker events. Each dependent cherry-picks fields for its

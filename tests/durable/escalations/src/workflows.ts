@@ -157,7 +157,11 @@ export async function gangMemberWorkflow(gangId: string, unitId: string): Promis
 
 // Born pre-assigned: the escalation row is created already routed to a named
 // user (assigned_to set, no TTL window) in the same Leg1 commit as the wait.
-export async function preAssignedWorkflow(orderId: string, assignee: string): Promise<unknown> {
+export async function preAssignedWorkflow(
+  orderId: string,
+  assignee: string,
+  parentId: string,
+): Promise<unknown> {
   const signalId = `pre-assigned-${Durable.guid()}`;
   const result = await Durable.workflow.condition<Record<string, unknown>>(signalId, {
     role: 'handoff-approver',
@@ -166,6 +170,7 @@ export async function preAssignedWorkflow(orderId: string, assignee: string): Pr
     description: `Hand-off for ${orderId}`,
     metadata: { orderId },
     assignee,
+    parentId,
   });
   return result;
 }

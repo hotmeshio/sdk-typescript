@@ -1657,8 +1657,9 @@ describe('DURABLE | escalations | Postgres', () => {
 
     it('condition({ assignee }) — row born pre-assigned: routing hint, resolvable by the assignee', async () => {
       const orderId = guid();
+      const parentId = guid();
       const h = await client.workflow.start({
-        args: [orderId, alice],
+        args: [orderId, alice, parentId],
         taskQueue: 'escalation-test',
         workflowName: 'preAssignedWorkflow',
         workflowId: guid(),
@@ -1673,10 +1674,19 @@ describe('DURABLE | escalations | Postgres', () => {
       expect(esc!.assigned_until).toBeNull();
       expect(esc!.claim_expires_at).toBeNull();
       expect(esc!.claimed_at).not.toBeNull();
+      // Lineage: the caller-supplied parentId persists (the hand-off
+      // correlation key), and claimed_at equals created_at — both written by
+      // the same statement's NOW() — so a fallback query is precise.
+      expect(esc!.parent_id).toBe(parentId);
+      expect(new Date(esc!.claimed_at!).getTime()).toBe(new Date(esc!.created_at).getTime());
 
-      // Immediately visible in the assignee's worklist.
+      // Immediately visible in the assignee's worklist — and via the
+      // hand-off fallback query: the child of a known parent, assigned to me.
       const mine = await client.escalations.list({ assignedTo: alice });
       expect(mine.some((e) => e.id === esc!.id)).toBe(true);
+      const children = await client.escalations.list({ parentId, assignedTo: alice });
+      expect(children.length).toBe(1);
+      expect(children[0].id).toBe(esc!.id);
 
       // The assignee resolves it directly — no prior claim() required.
       const resolved = await client.escalations.resolve({

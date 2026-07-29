@@ -123,7 +123,11 @@ export class EscalationClientService {
    * Detached (not awaited); a publish error never fails the caller.
    * @private
    */
-  private _emit(verb: EscalationVerb, entry: EscalationEntry): void {
+  private _emit(
+    verb: EscalationVerb,
+    entry: EscalationEntry,
+    assignedAtCreation?: boolean,
+  ): void {
     if (!this._events?.publish) return;
     const ts = new Date().toISOString();
     const updatedAt = entry.updated_at
@@ -141,6 +145,7 @@ export class EscalationClientService {
       parent_id: entry.parent_id ?? undefined,
       trace_id: entry.trace_id ?? undefined,
       span_id: entry.span_id ?? undefined,
+      ...(assignedAtCreation !== undefined ? { assigned_at_creation: assignedAtCreation } : {}),
       data: entry as unknown as Record<string, unknown>,
     };
     void Promise.resolve(this._events.publish(event)).catch(() => { /* best-effort */ });
@@ -150,8 +155,12 @@ export class EscalationClientService {
    * Fires per-row events for bulk operations. Skipped rows are not emitted.
    * @private
    */
-  private _emitMany(verb: EscalationVerb, entries: EscalationEntry[]): void {
-    for (const entry of entries) this._emit(verb, entry);
+  private _emitMany(
+    verb: EscalationVerb,
+    entries: EscalationEntry[],
+    assignedAtCreation?: boolean,
+  ): void {
+    for (const entry of entries) this._emit(verb, entry, assignedAtCreation);
   }
 
   private _makeEngineFactory(connection: Connection): GetHotMeshFn {
@@ -339,7 +348,12 @@ export class EscalationClientService {
   async create(params: CreateEscalationParams): Promise<EscalationEntry> {
     const hm = await this._engine(null, params.namespace);
     const entry = await (hm.engine.store as any).createEscalation(params);
-    if (entry) this._emit('created', entry);
+    if (entry) {
+      this._emit('created', entry);
+      // A born-assigned row is created AND claimed in one commit — state
+      // both, in that order, so hand-off consumers act without inferring.
+      if (entry.assigned_to != null) this._emit('claimed', entry, true);
+    }
     return entry;
   }
 
@@ -366,7 +380,7 @@ export class EscalationClientService {
   async claim(params: ClaimEscalationParams): Promise<ClaimEscalationResult> {
     const hm = await this._engine(null, params.namespace);
     const result = await (hm.engine.store as any).claimEscalation(params);
-    if (result.ok === true) this._emit('claimed', result.entry);
+    if (result.ok === true) this._emit('claimed', result.entry, false);
     return result;
   }
 
@@ -379,7 +393,7 @@ export class EscalationClientService {
   async claimByMetadata(params: ClaimByMetadataParams): Promise<ClaimByMetadataResult> {
     const hm = await this._engine(null, params.namespace);
     const result = await (hm.engine.store as any).claimEscalationByMetadata(params);
-    if (result.ok === true) this._emit('claimed', result.entry);
+    if (result.ok === true) this._emit('claimed', result.entry, false);
     return result;
   }
 
@@ -595,7 +609,7 @@ export class EscalationClientService {
   async claimMany(params: ClaimManyParams): Promise<{ claimed: number; skipped: number }> {
     const hm = await this._engine(null, params.namespace);
     const { entries, skipped } = await (hm.engine.store as any).claimManyEscalations(params);
-    this._emitMany('claimed', entries);
+    this._emitMany('claimed', entries, false);
     return { claimed: entries.length, skipped };
   }
 
@@ -610,7 +624,7 @@ export class EscalationClientService {
   async claimManyByQuery(params: ClaimManyByQueryParams): Promise<{ claimed: number; entries: EscalationEntry[] }> {
     const hm = await this._engine(null, params.namespace);
     const entries = await (hm.engine.store as any).claimManyEscalationsByQuery(params);
-    this._emitMany('claimed', entries);
+    this._emitMany('claimed', entries, false);
     return { claimed: entries.length, entries };
   }
 

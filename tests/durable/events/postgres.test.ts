@@ -84,13 +84,73 @@ describe('DURABLE | system-event emission | Postgres', () => {
       expect((evt.data as any).id).toBe(escalationId);
     }, 10_000);
 
-    it('claim fires system.escalation.*.claimed', async () => {
+    it('claim fires system.escalation.*.claimed with assigned_at_creation false', async () => {
       const before = collected.length;
       const result = await client.claim({ id: escalationId, assignee: 'alice', durationMinutes: 1, namespace: APP_ID });
       expect(result.ok).toBe(true);
       expect(collected.length).toBe(before + 1);
       const evt = collected[collected.length - 1];
       expect(evt.type).toBe(`system.escalation.${escalationId}.claimed`);
+      // Interactive claim — the assignment provenance marker states it plainly.
+      expect(evt.assigned_at_creation).toBe(false);
+    }, 10_000);
+
+    it('create with assignee fires created THEN claimed — one act, both statements', async () => {
+      const parentId = guid();
+      const before = collected.length;
+      const entry = await client.create({
+        namespace: APP_ID,
+        role: 'agent',
+        type: 'born-assigned-ticket',
+        assignee: 'alice',
+        parentId,
+      });
+      // Both events fire from the single create, in order: existence, then assignment.
+      expect(collected.length).toBe(before + 2);
+      const createdEvt = collected[before];
+      const claimedEvt = collected[before + 1];
+      expect(createdEvt.type).toBe(`system.escalation.${entry.id}.created`);
+      expect(claimedEvt.type).toBe(`system.escalation.${entry.id}.claimed`);
+      // The claimed event is canonical: directed assignment, full row, correlation key.
+      expect(claimedEvt.assigned_at_creation).toBe(true);
+      expect(claimedEvt.parent_id).toBe(parentId);
+      expect((claimedEvt.data as any).assigned_to).toBe('alice');
+      expect((claimedEvt.data as any).parent_id).toBe(parentId);
+      expect((createdEvt.data as any).assigned_to).toBe('alice');
+      // Distinct event_ids for the two verbs of the same commit.
+      expect(createdEvt.event_id).not.toBe(claimedEvt.event_id);
+    }, 10_000);
+
+    it('unassigned create fires created only — no claimed (regression guard)', async () => {
+      const before = collected.length;
+      const entry = await client.create({ namespace: APP_ID, role: 'agent', type: 'plain-ticket' });
+      expect(collected.length).toBe(before + 1);
+      expect(collected[before].type).toBe(`system.escalation.${entry.id}.created`);
+    }, 10_000);
+
+    it('idempotent re-create (ON CONFLICT no-op) emits nothing — exactly-once per committed row', async () => {
+      const signalKey = `replay-${guid()}`;
+      const first = await client.create({
+        namespace: APP_ID,
+        role: 'agent',
+        type: 'replay-ticket',
+        signalKey,
+        assignee: 'alice',
+      });
+      expect(first.assigned_to).toBe('alice');
+      const before = collected.length;
+      // Same (namespace, app_id, signal_key) — the INSERT no-ops and returns
+      // no row, so the emitters have nothing to publish. This is the same
+      // guard a crash-replayed Leg1 checkpoint rides through.
+      const replay = await client.create({
+        namespace: APP_ID,
+        role: 'agent',
+        type: 'replay-ticket',
+        signalKey,
+        assignee: 'alice',
+      });
+      expect(replay).toBeFalsy();
+      expect(collected.length).toBe(before);
     }, 10_000);
 
     it('release fires system.escalation.*.released', async () => {
@@ -210,8 +270,10 @@ describe('DURABLE | system-event emission | Postgres', () => {
       const result = await client.claimMany({ ids, assignee: 'batch-worker', durationMinutes: 5, namespace: APP_ID });
       expect(result.claimed).toBe(3);
       expect(result.skipped).toBe(0);
-      const after = collected.filter(e => e.type.endsWith('.claimed')).length;
-      expect(after - before).toBe(3);
+      const claimedEvts = collected.filter(e => e.type.endsWith('.claimed'));
+      expect(claimedEvts.length - before).toBe(3);
+      // Bulk interactive claims carry the provenance marker too.
+      claimedEvts.slice(-3).forEach(e => expect(e.assigned_at_creation).toBe(false));
     }, 10_000);
 
     it('claimMany skipped rows emit nothing', async () => {
@@ -223,6 +285,28 @@ describe('DURABLE | system-event emission | Postgres', () => {
       expect(result.skipped).toBe(1);
       expect(collected.length).toBe(before); // no event
     }, 10_000);
+
+    it('claimByMetadata and claimManyByQuery carry assigned_at_creation false', async () => {
+      const tag = guid();
+      await client.create({ namespace: APP_ID, role: 'bulk-tester', type: 'bulk-meta', metadata: { tag } });
+      const byMeta = await client.claimByMetadata({
+        key: 'tag', value: tag, assignee: 'meta-worker', durationMinutes: 5, namespace: APP_ID,
+      });
+      expect(byMeta.ok).toBe(true);
+      const metaEvt = collected[collected.length - 1];
+      expect(metaEvt.type).toMatch(/\.claimed$/);
+      expect(metaEvt.assigned_at_creation).toBe(false);
+
+      const tag2 = guid();
+      await client.create({ namespace: APP_ID, role: 'bulk-tester', type: 'bulk-query', metadata: { tag2 } });
+      const byQuery = await client.claimManyByQuery({
+        query: { metadata: { tag2 } }, assignee: 'query-worker', durationMinutes: 5, namespace: APP_ID,
+      });
+      expect(byQuery.claimed).toBe(1);
+      const queryEvt = collected[collected.length - 1];
+      expect(queryEvt.type).toMatch(/\.claimed$/);
+      expect(queryEvt.assigned_at_creation).toBe(false);
+    }, 15_000);
 
     it('resolveMany emits one event per resolved row', async () => {
       const before = collected.filter(e => e.type.endsWith('.resolved')).length;
@@ -340,6 +424,70 @@ describe('DURABLE | system-event emission | Postgres', () => {
       expect((createdEvt!.data as any).signal_key).not.toBeNull();
       expect((createdEvt!.data as any).workflow_id).toBeDefined();
       expect(createdEvt!.event_id).toMatch(/^[^:]+:created:/);
+
+      // Regression guard: an unassigned condition() row emits NO claimed event.
+      const rowId = (createdEvt!.data as any).id;
+      const claimedForRow = collected.find(e => e.type === `system.escalation.${rowId}.claimed`);
+      expect(claimedForRow).toBeUndefined();
     }, 20_000);
+
+    // Born-assigned condition(): the engine states the hand-off canonically —
+    // created (existence) then claimed (assignment), both carrying the full
+    // row with parent_id, the claimed event marked assigned_at_creation.
+    async function bornAssignedWorkflow(orderId: string, assignee: string, parentId: string): Promise<unknown> {
+      const signalId = `born-${Durable.guid()}`;
+      return Durable.workflow.condition(signalId, {
+        role: 'reviewer',
+        type: 'event-test-handoff',
+        priority: 1,
+        metadata: { orderId },
+        assignee,
+        parentId,
+      });
+    }
+
+    it('born-assigned condition() emits created then claimed with assigned_at_creation + parent_id', async () => {
+      const orderId = guid();
+      const parentId = guid();
+      const sharedPublish = (e: SystemEvent) => { collected.push(e); };
+
+      const client = new Durable.Client({
+        connection,
+        events: { publish: sharedPublish },
+      });
+      await client.workflow.start({
+        args: [orderId, 'alice@example.com', parentId],
+        taskQueue,
+        workflowName: 'bornAssignedWorkflow',
+        workflowId: guid(),
+      });
+      const worker = await Durable.Worker.create({
+        connection,
+        taskQueue,
+        workflow: bornAssignedWorkflow,
+        events: { publish: sharedPublish },
+      });
+      await worker.run();
+      await sleepFor(4000);
+
+      const createdEvt = collected.find(e =>
+        e.type.endsWith('.created') && (e.data as any)?.metadata?.orderId === orderId,
+      );
+      expect(createdEvt).toBeTruthy();
+      const rowId = (createdEvt!.data as any).id;
+      const claimedEvt = collected.find(e => e.type === `system.escalation.${rowId}.claimed`);
+      expect(claimedEvt).toBeTruthy();
+
+      // Ordering: existence precedes assignment, from the same performing actor.
+      expect(collected.indexOf(createdEvt!)).toBeLessThan(collected.indexOf(claimedEvt!));
+
+      // The canonical hand-off predicate: verb + assignee + provenance + lineage.
+      expect(claimedEvt!.assigned_at_creation).toBe(true);
+      expect(claimedEvt!.parent_id).toBe(parentId);
+      expect((claimedEvt!.data as any).assigned_to).toBe('alice@example.com');
+      expect((claimedEvt!.data as any).parent_id).toBe(parentId);
+      expect((createdEvt!.data as any).parent_id).toBe(parentId);
+      expect(claimedEvt!.event_id).toMatch(/^[^:]+:claimed:/);
+    }, 30_000);
   });
 });

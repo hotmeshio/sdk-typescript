@@ -2186,7 +2186,7 @@ class PostgresStoreService extends StoreService<
     startIdx = 1,
   ): { conditions: string[]; values: unknown[]; idx: number } {
     const { namespace, role, roles, type, subtype, entity, status, assignedTo, workflowId, originId,
-            available, priority, metadata, ids, taskId } = params;
+            parentId, available, priority, metadata, ids, taskId } = params;
     const conditions: string[] = [];
     const values: unknown[] = [];
     let idx = startIdx;
@@ -2201,6 +2201,7 @@ class PostgresStoreService extends StoreService<
     if (assignedTo)    { conditions.push(`assigned_to = $${idx++}`);                 values.push(assignedTo); }
     if (workflowId)    { conditions.push(`workflow_id = $${idx++}`);                 values.push(workflowId); }
     if (originId)      { conditions.push(`origin_id = $${idx++}`);                   values.push(originId); }
+    if (parentId)      { conditions.push(`parent_id = $${idx++}`);                   values.push(parentId); }
     if (priority !== undefined) { conditions.push(`priority = $${idx++}`);           values.push(priority); }
     if (metadata)      { conditions.push(`metadata @> $${idx++}::jsonb`);            values.push(JSON.stringify(metadata)); }
     if (ids?.length)   { conditions.push(`id = ANY($${idx++}::uuid[])`);             values.push(ids); }
