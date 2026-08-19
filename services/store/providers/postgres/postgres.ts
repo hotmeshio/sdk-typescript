@@ -1723,6 +1723,21 @@ class PostgresStoreService extends StoreService<
   // ── Exporter queries ───────────────────────────────────────────────────────
 
   /**
+   * Fetch and decode a single compressed-symbol field from a job's HASH.
+   * Reads one field with `hmget` (no full-hash scan), then decodes it with
+   * the same rules the serializer uses on write. Powers narrow getters such
+   * as the workflow input arguments without a full export.
+   */
+  async getJobArguments(jobId: string, symbolField: string): Promise<any> {
+    const key = this.mintKey(KeyType.JOB_STATE, { appId: this.appId, jobId });
+    const [raw] = await this.kvsql().hmget(key, [symbolField]);
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
+    return this.parseHmshValue(raw);
+  }
+
+  /**
    * Fetch activity inputs for a workflow. Used by the exporter to enrich
    * timeline events with activity arguments.
    */

@@ -294,6 +294,17 @@ abstract class StoreService<
   ): Promise<Map<string, any>>;
 
   /**
+   * Fetch and decode a single compressed-symbol field from a job's HASH.
+   * Reads one field with `hmget` rather than the whole hash, so it is the
+   * cheap path for narrow getters like the workflow input arguments.
+   *
+   * @param jobId - The job ID
+   * @param symbolField - The compressed symbol field (symbol + dimension)
+   * @returns The decoded value, or undefined if the field is absent
+   */
+  getJobArguments?(jobId: string, symbolField: string): Promise<any>;
+
+  /**
    * Fetch stream message history for a job from worker_streams.
    * Returns raw activity input/output data from soft-deleted messages.
    *
