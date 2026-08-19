@@ -280,6 +280,31 @@ class ExporterService {
   }
 
   /**
+   * Read the workflow input arguments without a full export. Resolves the
+   * `trigger/output/data/arguments` symbol and reads that single field from
+   * the job hash, so the cost is one symbol lookup (cached) plus a one-field
+   * `hmget` rather than a whole-hash read.
+   *
+   * @param jobId - the workflow ID
+   * @returns the input arguments array, or undefined if unavailable
+   */
+  async getInput(jobId: string): Promise<any> {
+    if (!this.store.getJobArguments) {
+      return undefined;
+    }
+    const symbolSets = await this.store.getSymbolKeys(['trigger']);
+    const field = this.resolveSymbolField(
+      symbolSets,
+      'trigger',
+      'trigger/output/data/arguments',
+    );
+    if (!field) {
+      return undefined;
+    }
+    return this.store.getJobArguments(jobId, field);
+  }
+
+  /**
    * Export a workflow execution as a structured event history ({@link WorkflowExecution}).
    *
    * Returns a Temporal-style event list with typed events, chronological ordering,

@@ -197,6 +197,37 @@ describe('DURABLE | baseline | Postgres', () => {
     }, 25_000);
   });
 
+  describe('Feature: input() / output() narrow getters', () => {
+    it('reads input mid-flight and output after completion without a full export', async () => {
+      const inputValue = 'input-envelope-' + guid();
+      const handle = await client.workflow.start({
+        args: [inputValue],
+        taskQueue,
+        workflowName: 'testWaitFor',
+        workflowId: 'test-input-output-' + guid(),
+        expire: 120,
+      });
+
+      // Paused on condition(): input is retrievable, output is not yet set.
+      await sleepFor(3_000);
+      const inputWhilePaused = await handle.input<[string]>();
+      expect(inputWhilePaused).toEqual([inputValue]);
+      const outputWhilePaused = await handle.output();
+      expect(outputWhilePaused).toBeUndefined();
+
+      // Resume and complete.
+      const signalPayload = { id: 'test-signal', data: { hello: 'world' } };
+      await handle.signal('test-signal', signalPayload);
+      const result = await handle.result();
+
+      // After completion: output matches result, input is still retrievable.
+      const outputAfterDone = await handle.output();
+      expect(outputAfterDone).toEqual(result);
+      const inputAfterDone = await handle.input<[string]>();
+      expect(inputAfterDone).toEqual([inputValue]);
+    }, 25_000);
+  });
+
   describe('Feature: Promise.all with activities', () => {
     it('should run parallel proxy activities', async () => {
       const handle = await client.workflow.start({

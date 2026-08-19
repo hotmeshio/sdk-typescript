@@ -193,6 +193,49 @@ export class WorkflowHandleService {
   }
 
   /**
+   * Returns the input arguments the workflow was started with, exactly as
+   * passed to `client.workflow.start({ args })`. Reads a single field from
+   * the job hash (no full export), so it stays cheap on large jobs and is
+   * available for the life of the job — while running or after completion.
+   *
+   * @template T - The tuple type of the workflow's arguments.
+   *
+   * @example
+   * ```typescript
+   * const [orderId, region] = await handle.input<[string, string]>();
+   * ```
+   */
+  async input<T = any[]>(): Promise<T> {
+    return (await this.exporter.getInput(this.workflowId)) as T;
+  }
+
+  /**
+   * Returns the workflow's response if it has completed, or `undefined`
+   * while it is still running. Unlike {@link result}, this never blocks —
+   * it reads the current state and returns immediately.
+   *
+   * @template T - The workflow's return type.
+   *
+   * @example
+   * ```typescript
+   * const value = await handle.output<{ ok: boolean }>();
+   * if (value === undefined) {
+   *   // still running
+   * }
+   * ```
+   */
+  async output<T = any>(): Promise<T | undefined> {
+    const state = await this.hotMesh.getState(
+      `${this.hotMesh.appId}.execute`,
+      this.workflowId,
+    );
+    if (!state.data && state.metadata?.err) {
+      throw new Error(JSON.parse(state.metadata.err));
+    }
+    return state.data?.response as T | undefined;
+  }
+
+  /**
    * Returns the workflow's numeric status code: `0` = completed,
    * positive = still running, negative = interrupted/errored.
    */
