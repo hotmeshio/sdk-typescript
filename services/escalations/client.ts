@@ -38,6 +38,9 @@ import {
   PruneEscalationsResult,
   ResolvedByIdentity,
   ClaimManyByQueryParams,
+  ResolveBatchItemParams,
+  ResolveBatchItemByMetadataParams,
+  ResolveBatchItemResult,
 } from '../../types/hmsh_escalations';
 import { APP_ID } from '../durable/schemas/factory';
 
@@ -575,6 +578,140 @@ export class EscalationClientService {
     }
     this._emit('resolved', dbResult.entry);
     return { ok: true, entry: dbResult.entry };
+  }
+
+  /**
+   * Pre-serializes the `$resolution` control object merged into a completing
+   * batch item's delivered collection. Rides the signal only — the stored
+   * `resolver_payload` receives the bare collection.
+   */
+  private _batchResolutionJson(
+    escalationId: string,
+    resolvedBy?: ResolvedByIdentity,
+  ): string | null {
+    if (!resolvedBy) return null;
+    return JSON.stringify({
+      [ESCALATION_RESOLUTION_KEY]: {
+        escalationId,
+        resolvedBy: resolvedBy.id,
+        ...(resolvedBy.email ? { resolvedByEmail: resolvedBy.email } : {}),
+      },
+    });
+  }
+
+  /**
+   * Shared post-statement handling for both batch-item forms: post-commit
+   * wake fallback (the committed `resolver_payload` — the full assembled
+   * collection — is the recovery record) and lifecycle events
+   * (`batch-item` on interim fills, `resolved` on completion).
+   */
+  private async _settleBatchItemResult(
+    ns: string,
+    dbResult: ResolveBatchItemResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean },
+    resolvedBy?: ResolvedByIdentity,
+  ): Promise<ResolveBatchItemResult> {
+    if (!dbResult.ok) return dbResult;
+    if (dbResult.outcome === 'completed') {
+      if (dbResult.signalKey && !dbResult.wakeEnqueued) {
+        await this._deliverEscalationSignal(ns, dbResult.topic, {
+          id: dbResult.signalKey,
+          data: this._signalData(
+            dbResult.entry.resolver_payload ?? {},
+            dbResult.entry.id,
+            resolvedBy,
+          ),
+        });
+      }
+      this._emit('resolved', dbResult.entry);
+    } else {
+      this._emit('batch-item', dbResult.entry);
+    }
+    return { ok: true, outcome: dbResult.outcome, remaining: dbResult.remaining, entry: dbResult.entry };
+  }
+
+  /**
+   * Fills ONE declared item of a batch escalation (a wait created with
+   * `condition(signalId, { batch: [...] })` or a standalone `create()` with
+   * `batch`). One atomic statement: the payload lands in
+   * `envelope.batch_items[itemKey]` only while `itemKey` is still pending,
+   * the `batch_pending`/`batch_count` facets recompute, and — on the LAST
+   * item — the row resolves with the assembled collection as its
+   * `resolver_payload` and the waiting workflow's wake commits WITH the
+   * fill (same durability contract as `resolve()`). The caller that lands
+   * the last item learns it from `outcome: 'completed'`.
+   *
+   * Fills are claim-agnostic by default — a batch accumulates contributions
+   * from multiple principals. Pass `assertClaim` to opt into the same
+   * claim-lock assertion as `resolve()`. Pass `metadata` to merge an outcome
+   * patch into the row's GIN-indexed metadata in the same UPDATE (reserved
+   * batch keys cannot be overridden). Pass `resolvedBy` on submissions to
+   * deliver `$resolution` provenance with the completing item's signal.
+   *
+   * A duplicate submission of an already-filled key returns
+   * `outcome: 'duplicate-item'` without touching the row — safe under
+   * webhook retries.
+   */
+  async resolveBatchItem(
+    params: ResolveBatchItemParams,
+    namespace?: string,
+  ): Promise<ResolveBatchItemResult> {
+    const ns = (params.namespace ?? namespace) ?? APP_ID;
+    const hm = await this._engine(null, ns);
+    const store = hm.engine.store as any;
+
+    //pre-build the wake with a placeholder payload — the store overwrites
+    //the {data,data} slot with the assembled collection inside the fill
+    //statement, so the wake commits WITH the completing fill
+    let wakeCommand: EscalationWakeCommand | null = null;
+    const preview = params.id
+      ? await store.getEscalation(params.id, params.namespace)
+      : await store.getEscalationBySignalKey(params.signalKey, params.namespace);
+    if (preview?.signal_key) {
+      wakeCommand = await this._buildWakeCommand(ns, preview.topic, preview.signal_key, {});
+    }
+
+    const dbResult = await store.resolveEscalationBatchItem(
+      params,
+      wakeCommand ?? undefined,
+      preview ? this._batchResolutionJson(preview.id, params.resolvedBy) : null,
+    );
+    return this._settleBatchItemResult(ns, dbResult, params.resolvedBy);
+  }
+
+  /**
+   * Batch-item fill selecting the row by metadata facet — the highest
+   * priority pending row whose `metadata` contains the key/value, mirroring
+   * `resolveByMetadata()`'s selector semantics. See {@link resolveBatchItem}
+   * for the fill contract.
+   */
+  async resolveBatchItemByMetadata(
+    params: ResolveBatchItemByMetadataParams,
+    namespace?: string,
+  ): Promise<ResolveBatchItemResult> {
+    const ns = (params.namespace ?? namespace) ?? APP_ID;
+    const hm = await this._engine(null, ns);
+    const store = hm.engine.store as any;
+
+    //peek the row the fill is expected to lock; forSignalKey pins the wake
+    //to that row, so a different row winning the race falls through to
+    //post-commit delivery using the winner's own committed collection
+    let wakeCommand: EscalationWakeCommand | null = null;
+    const preview = await store.peekEscalationByMetadata({
+      key: params.key,
+      value: params.value,
+      roles: params.roles,
+      namespace: params.namespace,
+    });
+    if (preview?.signalKey) {
+      wakeCommand = await this._buildWakeCommand(ns, preview.topic, preview.signalKey, {});
+    }
+
+    const dbResult = await store.resolveEscalationBatchItemByMetadata(
+      params,
+      wakeCommand ?? undefined,
+      preview ? this._batchResolutionJson(preview.id, params.resolvedBy) : null,
+    );
+    return this._settleBatchItemResult(ns, dbResult, params.resolvedBy);
   }
 
   /**

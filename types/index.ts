@@ -338,5 +338,13 @@ export {
   ResolvedByIdentity,
   ClaimManyQuerySelector,
   ClaimManyByQueryParams,
+  BatchItemOutcome,
+  ResolveBatchItemParams,
+  ResolveBatchItemByMetadataParams,
+  ResolveBatchItemResult,
+  ESCALATION_BATCH_PENDING_KEY,
+  ESCALATION_BATCH_COUNT_KEY,
+  ESCALATION_BATCH_KEYS_KEY,
+  ESCALATION_BATCH_ITEMS_KEY,
 } from './hmsh_escalations';
 export { EscalationVerb, EngineVerb, WorkerVerb, SystemEvent, EventsConfig } from './system_events';

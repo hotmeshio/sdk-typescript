@@ -53,6 +53,7 @@ import { WorkListTaskType } from '../../../../types/task';
 import { ThrottleOptions } from '../../../../types/quorum';
 import { Cache } from '../../cache';
 import { StoreService } from '../..';
+import { foldBatchConfig } from '../../../escalations/batch';
 import { PostgresClientType } from '../../../../types';
 
 import { KVSQL } from './kvsql';
@@ -2018,13 +2019,16 @@ class PostgresStoreService extends StoreService<
   private _escalationInsertParams(
     params: import('../../../../types/hmsh_escalations').CreateEscalationParams,
   ): unknown[] {
+    // A `batch` declaration folds into metadata/envelope so the accumulator
+    // shape is present from the row's first visible moment.
+    const folded = params.batch ? foldBatchConfig(params) : params;
     const {
       namespace, appId, signalKey, topic, workflowId, taskQueue, workflowType,
       type, subtype, entity, description, role, priority,
       originId, parentId, initiatedBy, createdBy, traceId, spanId,
       taskId, escalationPayload, metadata, envelope, expiresAt,
       assignee, durationMinutes,
-    } = params;
+    } = folded;
     return [
       namespace ?? 'hmsh',
       appId ?? 'hmsh',
@@ -2610,6 +2614,239 @@ class PostgresStoreService extends StoreService<
       topic: row.topic,
       wakeEnqueued: row.wake_count > 0,
     };
+  }
+
+  /**
+   * Composes the batch-completion wake CTE. Unlike
+   * `composeEscalationWakeCTE`, the signal payload is only knowable inside
+   * the statement (the assembled item collection), so the pre-built message
+   * carries a placeholder that `jsonb_set` overwrites at `{data,data}` —
+   * the exact slot `condition()` unwraps. The jsonb round-trip may reorder
+   * keys; the engine parses the message by key, so this is safe. The INSERT
+   * fires only when the fill CTE resolved the row (last item) and its
+   * signal_key matches the wake.
+   */
+  private composeBatchWakeCTE(
+    wakeCommand: import('../../../../types/hmsh_escalations').EscalationWakeCommand | undefined,
+    resolutionJson: string | null,
+    params: any[],
+    fromCTE: string,
+  ): { wakeCTE: string; wakeCount: string } {
+    if (!wakeCommand) {
+      return { wakeCTE: '', wakeCount: '0::int AS wake_count' };
+    }
+    const schemaName = this.kvsql().safeName(this.appId);
+    const base = params.length;
+    params.push(this.appId, wakeCommand.message, wakeCommand.forSignalKey, resolutionJson);
+    return {
+      wakeCTE: `,
+        wake AS (
+          INSERT INTO ${schemaName}.engine_streams (stream_name, message, priority)
+          SELECT $${base + 1},
+                 jsonb_set($${base + 2}::jsonb, '{data,data}',
+                           ${fromCTE}.resolver_payload::jsonb || COALESCE($${base + 4}::jsonb, '{}'::jsonb))::text,
+                 5
+          FROM ${fromCTE}
+          WHERE ${fromCTE}.status = 'resolved' AND ${fromCTE}.signal_key = $${base + 3}
+          RETURNING id
+        )`,
+      wakeCount: '(SELECT COUNT(*) FROM wake)::int AS wake_count',
+    };
+  }
+
+  /**
+   * The shared body of both batch-item store ops: guarded fill of one item
+   * into `envelope.batch_items`, `batch_pending`/`batch_count` recompute,
+   * resolve-on-last-item with the assembled collection as
+   * `resolver_payload`, wake enqueue, and outcome classification — one
+   * atomic statement. `targetCTE` supplies the row selector; it must expose
+   * id, signal_key, topic, status, assigned_to, assigned_until, batch_keys,
+   * batch_pending.
+   */
+  private _batchItemStatement(targetCTE: string, itemKeyIdx: number, payloadIdx: number, metaIdx: number, claimIdx: number, wakeCTE: string, wakeCount: string): string {
+    const remaining = `jsonb_array_length((e.metadata->'batch_pending') - $${itemKeyIdx}::text)`;
+    return `
+      WITH target AS MATERIALIZED (${targetCTE}),
+      filled AS (
+        UPDATE public.hmsh_escalations e
+        SET envelope = COALESCE(e.envelope, '{}'::jsonb)
+              || jsonb_build_object('batch_items',
+                   COALESCE(e.envelope->'batch_items', '{}'::jsonb)
+                   || jsonb_build_object($${itemKeyIdx}::text, $${payloadIdx}::jsonb)),
+            metadata = COALESCE(e.metadata, '{}'::jsonb)
+              || COALESCE($${metaIdx}::jsonb, '{}'::jsonb)
+              || jsonb_build_object(
+                   'batch_pending', (e.metadata->'batch_pending') - $${itemKeyIdx}::text,
+                   'batch_count',   ${remaining}),
+            status           = CASE WHEN ${remaining} = 0 THEN 'resolved' ELSE e.status END,
+            resolved_at      = CASE WHEN ${remaining} = 0 THEN NOW() ELSE e.resolved_at END,
+            resolver_payload = CASE WHEN ${remaining} = 0
+                                    THEN COALESCE(e.envelope->'batch_items', '{}'::jsonb)
+                                         || jsonb_build_object($${itemKeyIdx}::text, $${payloadIdx}::jsonb)
+                                    ELSE e.resolver_payload END,
+            updated_at = NOW()
+        FROM target
+        WHERE e.id = target.id
+          AND target.status = 'pending'
+          AND jsonb_typeof(target.batch_pending) = 'array'
+          AND target.batch_pending ? $${itemKeyIdx}::text
+          AND ($${claimIdx}::text IS NULL
+               OR target.assigned_to IS NULL
+               OR target.assigned_until IS NULL
+               OR (target.assigned_to =  $${claimIdx}::text AND target.assigned_until >  NOW())
+               OR (target.assigned_to <> $${claimIdx}::text AND target.assigned_until <= NOW()))
+        RETURNING e.*
+      )${wakeCTE}
+      SELECT t.id, t.status AS prior_status, t.signal_key, t.topic, t.assigned_to,
+        CASE
+          WHEN f.id IS NOT NULL AND f.status = 'resolved' THEN 'completed'
+          WHEN f.id IS NOT NULL                           THEN 'accepted'
+          WHEN t.id IS NULL                               THEN 'not-found'
+          WHEN t.status <> 'pending'                      THEN 'blocked'
+          WHEN NOT ($${claimIdx}::text IS NULL
+                    OR t.assigned_to IS NULL
+                    OR t.assigned_until IS NULL
+                    OR (t.assigned_to =  $${claimIdx}::text AND t.assigned_until >  NOW())
+                    OR (t.assigned_to <> $${claimIdx}::text AND t.assigned_until <= NOW()))
+                                                          THEN 'claim-blocked'
+          WHEN jsonb_typeof(t.batch_pending) IS DISTINCT FROM 'array' THEN 'not-batch'
+          WHEN NOT (t.batch_keys ? $${itemKeyIdx}::text)  THEN 'unknown-item'
+          ELSE 'duplicate-item'
+        END AS outcome,
+        jsonb_array_length(f.metadata->'batch_pending')::int AS remaining,
+        row_to_json(f.*) AS entry_json,
+        ${wakeCount}
+      FROM (SELECT * FROM target) t
+      FULL OUTER JOIN (SELECT * FROM filled) f ON f.id = t.id
+    `;
+  }
+
+  private _mapBatchItemRow(
+    row: any,
+    assertClaim?: string,
+  ): import('../../../../types/hmsh_escalations').ResolveBatchItemResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean } {
+    if (!row || row.outcome === 'not-found') return { ok: false, outcome: 'not-found' };
+    if (row.outcome === 'completed' || row.outcome === 'accepted') {
+      return {
+        ok: true,
+        outcome: row.outcome,
+        remaining: row.remaining ?? 0,
+        entry: row.entry_json,
+        signalKey: row.signal_key,
+        topic: row.topic,
+        wakeEnqueued: row.wake_count > 0,
+      };
+    }
+    if (row.outcome === 'blocked') {
+      if (row.prior_status === 'cancelled') return { ok: false, outcome: 'already-cancelled' };
+      if (row.prior_status === 'expired') return { ok: false, outcome: 'already-expired' };
+      return { ok: false, outcome: 'already-resolved' };
+    }
+    if (row.outcome === 'claim-blocked') {
+      return {
+        ok: false,
+        outcome: row.assigned_to === assertClaim ? 'claim-expired' : 'claimed-by-other',
+      };
+    }
+    return { ok: false, outcome: row.outcome };
+  }
+
+  /**
+   * Fills one declared item of a batch escalation — see
+   * `_batchItemStatement` for the atomicity contract. Selects the row by
+   * `id` or `signalKey` (exactly one required). `resolutionJson` is the
+   * pre-serialized `$resolution` object merged into the delivered
+   * collection ONLY (never into the stored `resolver_payload`).
+   */
+  async resolveEscalationBatchItem(
+    params: import('../../../../types/hmsh_escalations').ResolveBatchItemParams,
+    wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
+    resolutionJson?: string | null,
+  ): Promise<import('../../../../types/hmsh_escalations').ResolveBatchItemResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
+    const { id, signalKey, namespace, itemKey, payload, metadata, assertClaim } = params;
+    if ((id ? 1 : 0) + (signalKey ? 1 : 0) !== 1) {
+      throw new Error('resolveBatchItem requires exactly one of `id` or `signalKey`');
+    }
+    const sqlParams: any[] = [
+      id ?? signalKey,
+      itemKey,
+      JSON.stringify(payload ?? {}),
+      metadata ? JSON.stringify(metadata) : null,
+      assertClaim ?? null,
+    ];
+    let nsClause = '';
+    if (namespace) {
+      sqlParams.push(namespace);
+      nsClause = ` AND namespace = $${sqlParams.length}`;
+    }
+    const { wakeCTE, wakeCount } = this.composeBatchWakeCTE(
+      wakeCommand,
+      resolutionJson ?? null,
+      sqlParams,
+      'filled',
+    );
+    const targetCTE = `
+        SELECT id, signal_key, topic, status, assigned_to, assigned_until,
+               metadata->'batch_keys'    AS batch_keys,
+               metadata->'batch_pending' AS batch_pending
+        FROM public.hmsh_escalations
+        WHERE ${id ? 'id' : 'signal_key'} = $1${nsClause}
+        LIMIT 1 FOR UPDATE`;
+    const result = await this.pgClient.query(
+      this._batchItemStatement(targetCTE, 2, 3, 4, 5, wakeCTE, wakeCount),
+      sqlParams,
+    );
+    return this._mapBatchItemRow(result.rows[0], assertClaim ?? undefined);
+  }
+
+  /**
+   * Batch-item fill selecting the row by metadata facet — the highest
+   * priority pending row whose `metadata` contains the key/value, mirroring
+   * `resolveEscalationByMetadata`'s selector. No claim assertion on this
+   * variant, matching the by-metadata precedent.
+   */
+  async resolveEscalationBatchItemByMetadata(
+    params: import('../../../../types/hmsh_escalations').ResolveBatchItemByMetadataParams,
+    wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
+    resolutionJson?: string | null,
+  ): Promise<import('../../../../types/hmsh_escalations').ResolveBatchItemResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
+    const { key, value, roles, namespace, itemKey, payload, metadata } = params;
+    const filter = JSON.stringify({ [key]: value });
+    const sqlParams: any[] = [
+      filter,
+      itemKey,
+      JSON.stringify(payload ?? {}),
+      metadata ? JSON.stringify(metadata) : null,
+      null, // no claim assertion on the by-metadata form
+      roles ?? null,
+    ];
+    let nsClause = '';
+    if (namespace) {
+      sqlParams.push(namespace);
+      nsClause = `namespace = $${sqlParams.length} AND`;
+    }
+    const { wakeCTE, wakeCount } = this.composeBatchWakeCTE(
+      wakeCommand,
+      resolutionJson ?? null,
+      sqlParams,
+      'filled',
+    );
+    const targetCTE = `
+        SELECT id, signal_key, topic, status, assigned_to, assigned_until,
+               metadata->'batch_keys'    AS batch_keys,
+               metadata->'batch_pending' AS batch_pending
+        FROM public.hmsh_escalations
+        WHERE ${nsClause}
+              metadata @> $1::jsonb
+          AND ($6::text[] IS NULL OR role = ANY($6::text[]))
+          AND status IN ('pending', 'cancelled')
+        ORDER BY priority ASC, created_at ASC
+        LIMIT 1 FOR UPDATE`;
+    const result = await this.pgClient.query(
+      this._batchItemStatement(targetCTE, 2, 3, 4, 5, wakeCTE, wakeCount),
+      sqlParams,
+    );
+    return this._mapBatchItemRow(result.rows[0]);
   }
 
   async cancelEscalation(
