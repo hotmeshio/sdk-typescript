@@ -9,6 +9,7 @@ import {
 import { checkCancellation } from './cancellationScope';
 import { didRun } from './didRun';
 import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
+import { foldBatchConfig } from '../../escalations/batch';
 
 /**
  * Pauses the workflow until a signal with the given `signalId` is received.
@@ -94,6 +95,34 @@ import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
  * them immediately. Add `durationMinutes` to arm the claim TTL window at
  * creation, locking the row to the assignee exactly as `claim()` would.
  *
+ * ## Batch accumulation: one wait, N contributions
+ *
+ * Set `batch` in the config to declare the wait as an accumulator. Each
+ * declared item key is filled exactly once via
+ * `client.escalations.resolveBatchItem()`; interim fills are cheap row
+ * updates (`accepted`, row stays pending), and the LAST fill resolves the
+ * row and resumes the wait with the full collection — one atomic statement.
+ * Type the generic as the collection:
+ *
+ * ```typescript
+ * const parts = await Durable.workflow.condition<
+ *   Record<'cut' | 'weld' | 'paint', StationResult>
+ * >(signalId, {
+ *   role: 'assembly',
+ *   batch: ['cut', 'weld', 'paint'],
+ *   metadata: { orderId },
+ *   timeout: '24h',
+ * });
+ * if (parts === false) return 'sla-expired';   // partial items audit on the expired row
+ * if (parts === null) return 'cancelled';
+ * parts.weld; // typed item payload
+ * ```
+ *
+ * The row's `metadata.batch_pending` / `batch_count` facets track progress
+ * (`@>`-queryable); payloads accumulate in `envelope.batch_items`. A plain
+ * `resolve()` on a batch row remains an admin override that resolves the
+ * whole row with the payload given.
+ *
  * ## Placement: call escalation-bearing waits from main workflow code
  *
  * The resolve/signal delivery pipeline routes to the main flow's waiter.
@@ -158,7 +187,11 @@ export async function condition<T>(
   // A string arg is a bare timeout; a config object may carry its own
   // `timeout` field — the engine's waiter block accepts duration and
   // queueConfig together (one wait: escalation row + resume timer).
-  const queueConfig = timeoutOrConfig && typeof timeoutOrConfig === 'object' ? timeoutOrConfig : undefined;
+  // A `batch` declaration folds into metadata/envelope here, before the
+  // interruption message is built, so the accumulator shape rides the
+  // same Leg1-atomic INSERT as every other config field.
+  const rawConfig = timeoutOrConfig && typeof timeoutOrConfig === 'object' ? timeoutOrConfig : undefined;
+  const queueConfig = rawConfig?.batch ? foldBatchConfig(rawConfig) : rawConfig;
   const timeout = typeof timeoutOrConfig === 'string' ? timeoutOrConfig : queueConfig?.timeout;
   const [didRunAlready, execIndex, result] = await didRun('wait');
   checkCancellation();

@@ -73,3 +73,10 @@ class EscalationsClass {
 export { EscalationsClass as Escalations };
 export { EscalationClientService };
 export { ESCALATION_RESOLUTION_KEY } from './client';
+export { foldBatchConfig } from './batch';
+export {
+  ESCALATION_BATCH_PENDING_KEY,
+  ESCALATION_BATCH_COUNT_KEY,
+  ESCALATION_BATCH_KEYS_KEY,
+  ESCALATION_BATCH_ITEMS_KEY,
+} from '../../types/hmsh_escalations';

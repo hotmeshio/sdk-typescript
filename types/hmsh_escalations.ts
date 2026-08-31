@@ -18,6 +18,19 @@ export interface ConditionQueueConfig {
   envelope?: Record<string, unknown>;
   expiresAt?: Date;
   /**
+   * Declares the wait as a batch accumulator: the escalation only resolves
+   * once every named item has been submitted via `resolveBatchItem()`. Each
+   * entry is an item key a contributor fills exactly once; the wait's signal
+   * fires with the full collection (`Record<itemKey, payload>`) when the LAST
+   * item lands. Folded at creation into the row's queryable facets
+   * (`metadata.batch_pending` / `batch_count` / `batch_keys`) and payload
+   * accumulator (`envelope.batch_items`) — one atomic INSERT with the
+   * workflow checkpoint. `timeout` and `cancel()` semantics are unchanged:
+   * `false` / `null`, with any partially filled items preserved on the
+   * terminal row for audit.
+   */
+  batch?: string[];
+  /**
    * Born-assigned: writes `assigned_to` in the same atomic INSERT that
    * creates the row — on the `condition()` path, one commit with the
    * workflow's Leg1 checkpoint. Alone it is a durable pre-assignment: the
@@ -287,6 +300,12 @@ export interface CreateEscalationParams {
   assignee?: string;
   /** With `assignee`, arms the claim TTL window at creation. See {@link ConditionQueueConfig.durationMinutes}. */
   durationMinutes?: number;
+  /**
+   * Declares the row as a batch accumulator. See
+   * {@link ConditionQueueConfig.batch}. Standalone batch rows (no
+   * `signalKey`) accumulate and complete identically; the wake is a no-op.
+   */
+  batch?: string[];
 }
 
 /**
@@ -399,6 +418,89 @@ export interface EscalateToRoleParams {
   targetRole: string;
   namespace?: string;
 }
+
+// ─── Batch accumulation ───────────────────────────────────────────────────────
+
+/** Metadata facet: item keys still awaiting submission (jsonb string array).
+ * `metadata @> '{"batch_pending":["x"]}'` finds rows still missing item `x`. */
+export const ESCALATION_BATCH_PENDING_KEY = 'batch_pending';
+/** Metadata facet: count of items still awaiting submission. Recomputed from
+ * `batch_pending` in every fill statement — the two can never drift. */
+export const ESCALATION_BATCH_COUNT_KEY = 'batch_count';
+/** Metadata facet: the full declared item-key list, immutable after creation. */
+export const ESCALATION_BATCH_KEYS_KEY = 'batch_keys';
+/** Envelope key: the payload accumulator (`Record<itemKey, payload>`).
+ * Payloads are plumbing, not facets — they live in the unindexed envelope. */
+export const ESCALATION_BATCH_ITEMS_KEY = 'batch_items';
+
+/**
+ * Outcome of a `resolveBatchItem()` call.
+ * - `completed` — this was the LAST item: the row resolved and the waiting
+ *   workflow was woken with the full collection, in the same statement.
+ * - `accepted` — interim fill: the item landed, the row stays `pending`.
+ * - `duplicate-item` — the key was declared but already filled.
+ * - `unknown-item` — the key was never declared in `batch_keys`.
+ * - `not-batch` — the row carries no batch declaration.
+ * - Remaining values match {@link ResolveEscalationResult} semantics.
+ */
+export type BatchItemOutcome =
+  | 'completed'
+  | 'accepted'
+  | 'duplicate-item'
+  | 'unknown-item'
+  | 'not-batch'
+  | 'not-found'
+  | 'already-resolved'
+  | 'already-cancelled'
+  | 'already-expired'
+  | 'claim-expired'
+  | 'claimed-by-other';
+
+export interface ResolveBatchItemParams {
+  /** Row selector — exactly one of `id` | `signalKey`. */
+  id?: string;
+  /** Row selector — the value passed to `condition()`. */
+  signalKey?: string;
+  namespace?: string;
+  /** The declared batch key this submission fills. */
+  itemKey: string;
+  /** The item's payload — stored under `envelope.batch_items[itemKey]` and,
+   * on completion, delivered as `collection[itemKey]` to the waiter. */
+  payload: Record<string, unknown>;
+  /** Merge patch applied to the row's GIN-indexed `metadata` in the same
+   * atomic UPDATE. See {@link ResolveEscalationParams.metadata}. */
+  metadata?: Record<string, unknown>;
+  /** Claim-lock assertion inside the same guarded UPDATE. Batch fills are
+   * claim-agnostic without it (multiple contributors are the norm). See
+   * {@link ResolveEscalationParams.assertClaim}. */
+  assertClaim?: string;
+  /** Resolver identity. Delivered under `$resolution` ONLY on the completing
+   * item's signal. See {@link ResolveEscalationParams.resolvedBy}. */
+  resolvedBy?: ResolvedByIdentity;
+}
+
+export interface ResolveBatchItemByMetadataParams {
+  /** Facet selector — mirrors {@link ResolveByMetadataParams}. */
+  key: string;
+  value: unknown;
+  roles?: string[];
+  namespace?: string;
+  itemKey: string;
+  payload: Record<string, unknown>;
+  /** Merge patch for the matched row's `metadata` — distinct from the
+   * `key`/`value` selector. */
+  metadata?: Record<string, unknown>;
+  resolvedBy?: ResolvedByIdentity;
+}
+
+/**
+ * Result of `resolveBatchItem()` / `resolveBatchItemByMetadata()`. On
+ * `ok: true`, `remaining` is the count of items still unfilled (0 exactly
+ * when `outcome` is `completed`) and `entry` is the post-fill row.
+ */
+export type ResolveBatchItemResult =
+  | { ok: true; outcome: 'completed' | 'accepted'; remaining: number; entry: EscalationEntry }
+  | { ok: false; outcome: Exclude<BatchItemOutcome, 'completed' | 'accepted'> };
 
 /**
  * Query selector for `claimManyByQuery()` — the filterable subset of
