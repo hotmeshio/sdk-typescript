@@ -76,6 +76,9 @@ describe('DURABLE | escalations-batch | timeout | Postgres', () => {
     const expired = await client.escalations.get(row!.id);
     expect(expired!.status).toBe('expired');
     expect((expired!.envelope as any).batch_items.cut).toEqual({ station: 'cut-1', ok: true });
+    // the partial timeline survives expiry alongside the partial items
+    expect((expired!.envelope as any).batch_filled_at.cut).toBeTruthy();
+    expect((expired!.envelope as any).batch_filled_at.weld).toBeUndefined();
     expect((expired!.metadata as any).batch_pending).toEqual(['weld', 'paint']);
     expect((expired!.metadata as any).batch_count).toBe(2);
 

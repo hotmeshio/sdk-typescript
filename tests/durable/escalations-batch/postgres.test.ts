@@ -78,6 +78,7 @@ describe('DURABLE | escalations-batch | Postgres', () => {
       expect((row!.metadata as any).batch_count).toBe(3);
       expect((row!.metadata as any).batch_keys).toEqual(['cut', 'weld', 'paint']);
       expect((row!.envelope as any).batch_items).toEqual({});
+      expect((row!.envelope as any).batch_filled_at).toEqual({});
       expect((row!.envelope as any).instructions).toBe('Each station submits its result');
       expect(row!.signal_key).not.toBeNull();
 
@@ -112,6 +113,10 @@ describe('DURABLE | escalations-batch | Postgres', () => {
       expect((first.entry.metadata as any).batch_pending).toEqual(['weld', 'paint']);
       expect((first.entry.metadata as any).batch_count).toBe(2);
       expect((first.entry.envelope as any).batch_items.cut).toEqual({ station: 'cut-1', ok: true });
+      // fill timestamps are row truth — stamped by the database clock in the
+      // same statement as the fill
+      const cutFilledAt = (first.entry.envelope as any).batch_filled_at.cut;
+      expect(new Date(cutFilledAt).getTime()).toBeGreaterThan(0);
 
       const second = await client.escalations.resolveBatchItem({
         id: row!.id,
@@ -140,6 +145,10 @@ describe('DURABLE | escalations-batch | Postgres', () => {
       expect(last.outcome).toBe('completed');
       expect(last.remaining).toBe(0);
       expect(last.entry.status).toBe('resolved');
+      const filledAt = (last.entry.envelope as any).batch_filled_at;
+      expect(Object.keys(filledAt).sort()).toEqual(['cut', 'paint', 'weld']);
+      expect(new Date(filledAt.cut).getTime()).toBeLessThanOrEqual(new Date(filledAt.weld).getTime());
+      expect(new Date(filledAt.weld).getTime()).toBeLessThanOrEqual(new Date(filledAt.paint).getTime());
       // the stored resolver_payload is the assembled collection
       expect((last.entry.resolver_payload as any).cut).toEqual({ station: 'cut-1', ok: true });
       expect((last.entry.resolver_payload as any).weld).toEqual({ station: 'weld-1', ok: true });
@@ -364,6 +373,12 @@ describe('DURABLE | escalations-batch | Postgres', () => {
       await expect(
         client.escalations.create({ role: 'assembly', batch: [] }),
       ).rejects.toThrow(/non-empty/);
+    }, 5_000);
+
+    it('rejects an item key longer than the maximum on create()', async () => {
+      await expect(
+        client.escalations.create({ role: 'assembly', batch: ['x'.repeat(129)] }),
+      ).rejects.toThrow(/at most 128/);
     }, 5_000);
 
     it('rejects duplicate item keys on create()', async () => {

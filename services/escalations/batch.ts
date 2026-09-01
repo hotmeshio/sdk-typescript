@@ -1,5 +1,7 @@
 import {
   ESCALATION_BATCH_COUNT_KEY,
+  ESCALATION_BATCH_FILLED_AT_KEY,
+  ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH,
   ESCALATION_BATCH_ITEMS_KEY,
   ESCALATION_BATCH_KEYS_KEY,
   ESCALATION_BATCH_PENDING_KEY,
@@ -9,6 +11,11 @@ const RESERVED_METADATA_KEYS = new Set([
   ESCALATION_BATCH_PENDING_KEY,
   ESCALATION_BATCH_COUNT_KEY,
   ESCALATION_BATCH_KEYS_KEY,
+]);
+
+const RESERVED_ENVELOPE_KEYS = new Set([
+  ESCALATION_BATCH_ITEMS_KEY,
+  ESCALATION_BATCH_FILLED_AT_KEY,
 ]);
 
 /**
@@ -36,6 +43,11 @@ export function foldBatchConfig<
     if (typeof key !== 'string' || key.length === 0) {
       throw new Error('batch item keys must be non-empty strings');
     }
+    if (key.length > ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH) {
+      throw new Error(
+        `batch item keys must be at most ${ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH} characters: '${key.slice(0, 32)}…'`,
+      );
+    }
     if (seen.has(key)) {
       throw new Error(`batch item keys must be unique: '${key}'`);
     }
@@ -46,10 +58,10 @@ export function foldBatchConfig<
       throw new Error(`metadata key '${reserved}' is reserved for batch state`);
     }
   }
-  if (rest.envelope && ESCALATION_BATCH_ITEMS_KEY in rest.envelope) {
-    throw new Error(
-      `envelope key '${ESCALATION_BATCH_ITEMS_KEY}' is reserved for batch state`,
-    );
+  for (const reserved of RESERVED_ENVELOPE_KEYS) {
+    if (rest.envelope && reserved in rest.envelope) {
+      throw new Error(`envelope key '${reserved}' is reserved for batch state`);
+    }
   }
   return {
     ...rest,
@@ -62,6 +74,7 @@ export function foldBatchConfig<
     envelope: {
       ...(rest.envelope ?? {}),
       [ESCALATION_BATCH_ITEMS_KEY]: {},
+      [ESCALATION_BATCH_FILLED_AT_KEY]: {},
     },
   };
 }

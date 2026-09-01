@@ -430,8 +430,19 @@ export const ESCALATION_BATCH_COUNT_KEY = 'batch_count';
 /** Metadata facet: the full declared item-key list, immutable after creation. */
 export const ESCALATION_BATCH_KEYS_KEY = 'batch_keys';
 /** Envelope key: the payload accumulator (`Record<itemKey, payload>`).
- * Payloads are plumbing, not facets — they live in the unindexed envelope. */
+ * Payloads are plumbing, not facets — they live in the unindexed envelope.
+ * Payload keys are caller-owned: the platform will never reserve names
+ * inside `batch_items` values. */
 export const ESCALATION_BATCH_ITEMS_KEY = 'batch_items';
+/** Envelope key: per-item fill timestamps (`Record<itemKey, iso8601>`),
+ * stamped by the DATABASE clock inside the same guarded fill statement —
+ * row truth, not caller clocks. The attempt timeline for free. */
+export const ESCALATION_BATCH_FILLED_AT_KEY = 'batch_filled_at';
+
+/** Item keys are non-empty strings up to this length. Any characters are
+ * accepted (keys are always parameterized and stored as jsonb text); prefer
+ * URL/query-friendly names (e.g. `u1-L`) for endpoint ergonomics. */
+export const ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH = 128;
 
 /**
  * Outcome of a `resolveBatchItem()` call.
