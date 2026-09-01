@@ -2656,7 +2656,8 @@ class PostgresStoreService extends StoreService<
 
   /**
    * The shared body of both batch-item store ops: guarded fill of one item
-   * into `envelope.batch_items`, `batch_pending`/`batch_count` recompute,
+   * into `envelope.batch_items` (with its `batch_filled_at` stamp — the
+   * database clock, row truth), `batch_pending`/`batch_count` recompute,
    * resolve-on-last-item with the assembled collection as
    * `resolver_payload`, wake enqueue, and outcome classification — one
    * atomic statement. `targetCTE` supplies the row selector; it must expose
@@ -2670,9 +2671,13 @@ class PostgresStoreService extends StoreService<
       filled AS (
         UPDATE public.hmsh_escalations e
         SET envelope = COALESCE(e.envelope, '{}'::jsonb)
-              || jsonb_build_object('batch_items',
+              || jsonb_build_object(
+                   'batch_items',
                    COALESCE(e.envelope->'batch_items', '{}'::jsonb)
-                   || jsonb_build_object($${itemKeyIdx}::text, $${payloadIdx}::jsonb)),
+                   || jsonb_build_object($${itemKeyIdx}::text, $${payloadIdx}::jsonb),
+                   'batch_filled_at',
+                   COALESCE(e.envelope->'batch_filled_at', '{}'::jsonb)
+                   || jsonb_build_object($${itemKeyIdx}::text, to_jsonb(NOW()))),
             metadata = COALESCE(e.metadata, '{}'::jsonb)
               || COALESCE($${metaIdx}::jsonb, '{}'::jsonb)
               || jsonb_build_object(
