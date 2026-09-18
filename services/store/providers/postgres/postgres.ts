@@ -53,7 +53,16 @@ import { WorkListTaskType } from '../../../../types/task';
 import { ThrottleOptions } from '../../../../types/quorum';
 import { Cache } from '../../cache';
 import { StoreService } from '../..';
-import { foldBatchConfig } from '../../../escalations/batch';
+import { foldEscalationConfig } from '../../../escalations/fold';
+import {
+  AccumulateRowSelector,
+  AccumulateWake,
+  buildAccumulateStatement,
+  buildRemoveStatement,
+  resolvePayloadSql,
+  resolveWakeMessageSql,
+  timeoutPayloadSql,
+} from './escalation-accumulate';
 import { PostgresClientType } from '../../../../types';
 
 import { KVSQL } from './kvsql';
@@ -2019,9 +2028,9 @@ class PostgresStoreService extends StoreService<
   private _escalationInsertParams(
     params: import('../../../../types/hmsh_escalations').CreateEscalationParams,
   ): unknown[] {
-    // A `batch` declaration folds into metadata/envelope so the accumulator
-    // shape is present from the row's first visible moment.
-    const folded = params.batch ? foldBatchConfig(params) : params;
+    // A `batch` or `accumulate` declaration folds into metadata/envelope so
+    // the accumulator shape is present from the row's first visible moment.
+    const folded = foldEscalationConfig(params);
     const {
       namespace, appId, signalKey, topic, workflowId, taskQueue, workflowType,
       type, subtype, entity, description, role, priority,
@@ -2178,26 +2187,44 @@ class PostgresStoreService extends StoreService<
    * Transition a wait's escalation row to `expired` when its resume timer
    * fires first (`condition(signalId, { ..., timeout })`). Guarded by
    * `status = 'pending'`: a signal that won the race already resolved the
-   * row and is never touched. Returns the expired row, or null when no
-   * pending row carried the key (signal won, or the wait had no escalation).
+   * row and is never touched. An accumulator row (or a batch row with
+   * `partialOnTimeout`) has its `resolver_payload` set to the delivered
+   * collection in the same UPDATE, so row truth and the waiter's value
+   * agree. Returns the expired row plus the row's prior status, so the
+   * caller can tell "a resolve won" (row exists, not pending) from "no
+   * row" (the wait carried no escalation).
    */
   async expireEscalationBySignalKey(
     signalKey: string,
     namespace?: string,
     appId?: string,
-  ): Promise<import('../../../../types/hmsh_escalations').EscalationEntry | null> {
+  ): Promise<import('../../../../types/hmsh_escalations').ExpireEscalationResult> {
     const values: unknown[] = [signalKey];
     let clause = '';
     if (namespace) { values.push(namespace); clause += ` AND namespace = $${values.length}`; }
     if (appId)     { values.push(appId);     clause += ` AND app_id = $${values.length}`; }
-    const result = await this.pgClient.query(
-      `UPDATE public.hmsh_escalations
-       SET status = 'expired', updated_at = NOW()
-       WHERE signal_key = $1${clause} AND status = 'pending'
-       RETURNING *`,
-      values,
-    );
-    return result.rows[0] ?? null;
+    const result = await this.pgClient.query(`
+      WITH target AS MATERIALIZED (
+        SELECT id, status FROM public.hmsh_escalations
+        WHERE signal_key = $1${clause}
+        ORDER BY created_at DESC
+        LIMIT 1 FOR UPDATE
+      ),
+      expired AS (
+        UPDATE public.hmsh_escalations e
+        SET status = 'expired', updated_at = NOW(),
+            resolver_payload = ${timeoutPayloadSql('e')}
+        FROM target
+        WHERE e.id = target.id AND target.status = 'pending'
+        RETURNING e.*
+      )
+      SELECT t.status AS prior_status, row_to_json(x.*) AS entry_json
+      FROM (SELECT * FROM target) t
+      FULL OUTER JOIN (SELECT * FROM expired) x ON x.id = t.id
+    `, values);
+    const row = result.rows[0];
+    if (!row) return { entry: null, priorStatus: null };
+    return { entry: row.entry_json ?? null, priorStatus: row.prior_status ?? null };
   }
 
   private _escalationFilterConditions(
@@ -2412,6 +2439,7 @@ class PostgresStoreService extends StoreService<
     wakeCommand: import('../../../../types/hmsh_escalations').EscalationWakeCommand | undefined,
     params: any[],
     fromCTE: string,
+    resolution?: { resolutionJson: string | null },
   ): { wakeCTE: string; wakeCount: string } {
     if (!wakeCommand) {
       return { wakeCTE: '', wakeCount: '0::int AS wake_count' };
@@ -2419,11 +2447,18 @@ class PostgresStoreService extends StoreService<
     const schemaName = this.kvsql().safeName(this.appId);
     const base = params.length;
     params.push(this.appId, wakeCommand.message, wakeCommand.forSignalKey);
+    //a resolve on an accumulator row delivers the committed collection: the
+    //message's {data,data} slot is rewritten from resolver_payload in SQL
+    let message = `$${base + 2}`;
+    if (resolution) {
+      params.push(resolution.resolutionJson);
+      message = resolveWakeMessageSql(fromCTE, `$${base + 2}`, `$${base + 4}`);
+    }
     return {
       wakeCTE: `,
         wake AS (
           INSERT INTO ${schemaName}.engine_streams (stream_name, message, priority)
-          SELECT $${base + 1}, $${base + 2}, 5 FROM ${fromCTE}
+          SELECT $${base + 1}, ${message}, 5 FROM ${fromCTE}
           WHERE ${fromCTE}.signal_key = $${base + 3}
           RETURNING id
         )`,
@@ -2434,6 +2469,7 @@ class PostgresStoreService extends StoreService<
   async resolveEscalation(
     params: import('../../../../types/hmsh_escalations').ResolveEscalationParams,
     wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
+    resolutionJson?: string | null,
   ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
     const { id, namespace, resolverPayload, metadata, assertClaim } = params;
     const payloadJson = resolverPayload ? JSON.stringify(resolverPayload) : null;
@@ -2460,6 +2496,7 @@ class PostgresStoreService extends StoreService<
       wakeCommand,
       sqlParams,
       'resolved',
+      { resolutionJson: resolutionJson ?? null },
     );
     const result = await this.pgClient.query(`
       WITH target AS MATERIALIZED (
@@ -2470,7 +2507,8 @@ class PostgresStoreService extends StoreService<
       ),
       resolved AS (
         UPDATE public.hmsh_escalations e
-        SET status = 'resolved', resolved_at = NOW(), resolver_payload = $2,
+        SET status = 'resolved', resolved_at = NOW(),
+            resolver_payload = ${resolvePayloadSql('e', '$2')},
             metadata = CASE WHEN $3::jsonb IS NOT NULL
                             THEN COALESCE(e.metadata, '{}'::jsonb) || $3::jsonb
                             ELSE e.metadata END,
@@ -2555,6 +2593,7 @@ class PostgresStoreService extends StoreService<
   async resolveEscalationByMetadata(
     params: import('../../../../types/hmsh_escalations').ResolveByMetadataParams,
     wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
+    resolutionJson?: string | null,
   ): Promise<import('../../../../types/hmsh_escalations').ResolveEscalationResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
     const { key, value, namespace, resolverPayload, roles, metadata } = params;
     const filter = JSON.stringify({ [key]: value });
@@ -2568,6 +2607,7 @@ class PostgresStoreService extends StoreService<
       wakeCommand,
       sqlParams,
       'resolved',
+      { resolutionJson: resolutionJson ?? null },
     );
     const result = await this.pgClient.query(`
       WITH target AS MATERIALIZED (
@@ -2581,7 +2621,8 @@ class PostgresStoreService extends StoreService<
       ),
       resolved AS (
         UPDATE public.hmsh_escalations e
-        SET status = 'resolved', resolved_at = NOW(), resolver_payload = $3,
+        SET status = 'resolved', resolved_at = NOW(),
+            resolver_payload = ${resolvePayloadSql('e', '$3')},
             metadata = CASE WHEN $4::jsonb IS NOT NULL
                             THEN COALESCE(e.metadata, '{}'::jsonb) || $4::jsonb
                             ELSE e.metadata END,
@@ -2854,6 +2895,211 @@ class PostgresStoreService extends StoreService<
     return this._mapBatchItemRow(result.rows[0]);
   }
 
+  private _accumulateSelector(
+    sel: { id?: string; signalKey?: string; key?: string; value?: unknown; roles?: string[] },
+    label: string,
+  ): AccumulateRowSelector {
+    const forms = (sel.id ? 1 : 0) + (sel.signalKey ? 1 : 0) + (sel.key !== undefined ? 1 : 0);
+    if (forms !== 1) {
+      throw new Error(`${label} requires exactly one of id, signalKey, or key/value`);
+    }
+    if (sel.id) return { kind: 'id', id: sel.id };
+    if (sel.signalKey) return { kind: 'signalKey', signalKey: sel.signalKey };
+    return { kind: 'metadata', key: sel.key as string, value: sel.value, roles: sel.roles };
+  }
+
+  private _mapAccumulateRows(
+    rows: any[],
+    assertClaim: string | undefined,
+    wakes: AccumulateWake[],
+  ): import('../../../../types/hmsh_escalations').AccumulateItemResult & {
+    wake?: { primary: { signalKey: string | null; topic: string | null; wakeEnqueued: boolean };
+             reciprocal?: { signalKey: string | null; topic: string | null; wakeEnqueued: boolean } };
+  } {
+    const primary = rows.find((r) => r.is_primary);
+    const reciprocal = rows.find((r) => !r.is_primary);
+    if (!primary) return { ok: false, outcome: 'not-found' };
+    const side = (row: any) => {
+      const entry = row.entry_json as import('../../../../types/hmsh_escalations').EscalationEntry;
+      const count = Number((entry.metadata as any)?.accumulate_count ?? 0);
+      const max = (entry.metadata as any)?.accumulate_max;
+      const remaining = typeof max === 'number' ? Math.max(0, max - count) : null;
+      const wakeIdx = wakes.findIndex((w) => w.command.forSignalKey === row.signal_key);
+      const wakeEnqueued = wakeIdx >= 0 && Number(row.wake_counts?.[wakeIdx] ?? 0) > 0;
+      return { entry, count, remaining, wakeEnqueued };
+    };
+    if (primary.outcome === 'completed' || primary.outcome === 'accepted') {
+      const p = side(primary);
+      const r = reciprocal ? side(reciprocal) : undefined;
+      return {
+        ok: true,
+        outcome: primary.outcome,
+        count: p.count,
+        remaining: p.remaining,
+        entry: p.entry,
+        ...(reciprocal && r
+          ? { reciprocal: { outcome: reciprocal.outcome, count: r.count, remaining: r.remaining, entry: r.entry } }
+          : {}),
+        wake: {
+          primary: { signalKey: primary.signal_key, topic: primary.topic, wakeEnqueued: p.wakeEnqueued },
+          ...(reciprocal && r
+            ? { reciprocal: { signalKey: reciprocal.signal_key, topic: reciprocal.topic, wakeEnqueued: r.wakeEnqueued } }
+            : {}),
+        },
+      };
+    }
+    if (primary.outcome !== 'gated') {
+      if (primary.outcome === 'blocked') {
+        if (primary.prior_status === 'cancelled') return { ok: false, outcome: 'already-cancelled' };
+        if (primary.prior_status === 'expired') return { ok: false, outcome: 'already-expired' };
+        return { ok: false, outcome: 'already-resolved' };
+      }
+      if (primary.outcome === 'claim-blocked') {
+        return {
+          ok: false,
+          outcome: primary.assigned_to === assertClaim ? 'claim-expired' : 'claimed-by-other',
+        };
+      }
+      return { ok: false, outcome: primary.outcome };
+    }
+    //the container was eligible: the reciprocal side blocked the write
+    if (!reciprocal) return { ok: false, outcome: 'reciprocal-not-found' };
+    switch (reciprocal.outcome) {
+      case 'blocked':          return { ok: false, outcome: 'reciprocal-terminal' };
+      case 'not-accumulator':  return { ok: false, outcome: 'reciprocal-not-accumulator' };
+      case 'duplicate-item':   return { ok: false, outcome: 'reciprocal-duplicate' };
+      case 'full':             return { ok: false, outcome: 'reciprocal-full' };
+      default:                 return { ok: false, outcome: 'reciprocal-not-found' };
+    }
+  }
+
+  /**
+   * Appends one item to an accumulator escalation, and the container's id
+   * to the reciprocal row when one is named, in ONE statement: both rows
+   * locked in id order, both guards evaluated before either write, both
+   * writes or neither. A side reaching `max` (with `resolveAtMax`) resolves
+   * with the ordered collection as `resolver_payload` and its wake commits
+   * in the same statement. See `buildAccumulateStatement`.
+   */
+  async accumulateEscalationItem(
+    params: import('../../../../types/hmsh_escalations').AccumulateItemParams,
+    wakes: AccumulateWake[] = [],
+  ) {
+    const primary = this._accumulateSelector(params, 'accumulateItem');
+    return this._runAccumulate(primary, params, wakes);
+  }
+
+  /** By-metadata form of `accumulateEscalationItem`, mirroring the
+   * `resolveEscalationByMetadata` selector. No claim assertion. */
+  async accumulateEscalationItemByMetadata(
+    params: import('../../../../types/hmsh_escalations').AccumulateItemByMetadataParams,
+    wakes: AccumulateWake[] = [],
+  ) {
+    const primary: AccumulateRowSelector = { kind: 'metadata', key: params.key, value: params.value, roles: params.roles };
+    return this._runAccumulate(primary, { ...params, assertClaim: undefined }, wakes);
+  }
+
+  private async _runAccumulate(
+    primary: AccumulateRowSelector,
+    params: {
+      namespace?: string; itemKey: string; payload?: Record<string, unknown>;
+      metadata?: Record<string, unknown>; actor?: string; assertClaim?: string;
+      reciprocal?: import('../../../../types/hmsh_escalations').AccumulateReciprocalSelector;
+    },
+    wakes: AccumulateWake[],
+  ) {
+    const reciprocal = params.reciprocal ? this._accumulateSelector(params.reciprocal, 'reciprocal') : null;
+    if (reciprocal && JSON.stringify(reciprocal) === JSON.stringify(primary)) {
+      throw new Error('reciprocal must name a different row than the container');
+    }
+    const { sql, values } = buildAccumulateStatement({
+      primary,
+      reciprocal,
+      namespace: params.namespace,
+      itemKey: params.itemKey,
+      payload: params.payload ?? null,
+      reciprocalPayload: params.reciprocal?.payload ?? null,
+      metadata: params.metadata ?? null,
+      actor: params.actor ?? null,
+      assertClaim: params.assertClaim ?? null,
+      wakes,
+      appId: this.appId,
+      schemaName: this.kvsql().safeName(this.appId),
+    });
+    const result = await this.pgClient.query(sql, values);
+    return this._mapAccumulateRows(result.rows, params.assertClaim ?? undefined, wakes);
+  }
+
+  private _mapRemoveRows(rows: any[]): import('../../../../types/hmsh_escalations').RemoveAccumulatedItemResult {
+    const primary = rows.find((r) => r.is_primary);
+    const reciprocal = rows.find((r) => !r.is_primary);
+    if (!primary) return { ok: false, outcome: 'not-found' };
+    const count = (row: any) => Number((row.entry_json?.metadata as any)?.accumulate_count ?? 0);
+    if (primary.outcome === 'removed') {
+      return {
+        ok: true,
+        outcome: 'removed',
+        count: count(primary),
+        entry: primary.entry_json,
+        ...(reciprocal ? { reciprocal: { count: count(reciprocal), entry: reciprocal.entry_json } } : {}),
+      };
+    }
+    if (primary.outcome !== 'gated') {
+      if (primary.outcome === 'blocked') {
+        if (primary.prior_status === 'cancelled') return { ok: false, outcome: 'already-cancelled' };
+        if (primary.prior_status === 'expired') return { ok: false, outcome: 'already-expired' };
+        return { ok: false, outcome: 'already-resolved' };
+      }
+      return { ok: false, outcome: primary.outcome };
+    }
+    if (!reciprocal) return { ok: false, outcome: 'reciprocal-not-found' };
+    switch (reciprocal.outcome) {
+      case 'blocked':          return { ok: false, outcome: 'reciprocal-terminal' };
+      case 'not-accumulator':  return { ok: false, outcome: 'reciprocal-not-accumulator' };
+      case 'item-absent':      return { ok: false, outcome: 'reciprocal-absent' };
+      default:                 return { ok: false, outcome: 'reciprocal-not-found' };
+    }
+  }
+
+  /**
+   * Removes one held item from an accumulator escalation (and the
+   * container's id from the reciprocal row when named) in ONE guarded
+   * statement. Never wakes the waiter and never changes status. See
+   * `buildRemoveStatement`.
+   */
+  async removeAccumulatedEscalationItem(
+    params: import('../../../../types/hmsh_escalations').RemoveAccumulatedItemParams,
+  ): Promise<import('../../../../types/hmsh_escalations').RemoveAccumulatedItemResult> {
+    const primary = this._accumulateSelector(params, 'removeAccumulatedItem');
+    return this._runRemove(primary, params);
+  }
+
+  /** By-metadata form of `removeAccumulatedEscalationItem`. */
+  async removeAccumulatedEscalationItemByMetadata(
+    params: import('../../../../types/hmsh_escalations').RemoveAccumulatedItemByMetadataParams,
+  ): Promise<import('../../../../types/hmsh_escalations').RemoveAccumulatedItemResult> {
+    const primary: AccumulateRowSelector = { kind: 'metadata', key: params.key, value: params.value, roles: params.roles };
+    return this._runRemove(primary, params);
+  }
+
+  private async _runRemove(
+    primary: AccumulateRowSelector,
+    params: { namespace?: string; itemKey: string; reciprocal?: { id?: string; signalKey?: string; key?: string; value?: unknown; roles?: string[] } },
+  ): Promise<import('../../../../types/hmsh_escalations').RemoveAccumulatedItemResult> {
+    const reciprocal = params.reciprocal ? this._accumulateSelector(params.reciprocal, 'reciprocal') : null;
+    if (reciprocal && JSON.stringify(reciprocal) === JSON.stringify(primary)) {
+      throw new Error('reciprocal must name a different row than the container');
+    }
+    const { sql, values } = buildRemoveStatement({
+      primary,
+      reciprocal,
+      namespace: params.namespace,
+      itemKey: params.itemKey,
+    });
+    const result = await this.pgClient.query(sql, values);
+    return this._mapRemoveRows(result.rows);
+  }
+
   async cancelEscalation(
     id: string,
     namespace?: string,
@@ -3114,6 +3360,7 @@ class PostgresStoreService extends StoreService<
   async resolveAllOrNoneEscalations(
     params: import('../../../../types/hmsh_escalations').ResolveAllOrNoneParams,
     wakeCommands?: import('../../../../types/hmsh_escalations').EscalationWakeCommand[],
+    resolutionJsons?: (string | null)[],
   ): Promise<
     | { ok: true; entries: import('../../../../types/hmsh_escalations').EscalationEntry[]; wakeCount: number }
     | { ok: false; failed: Array<{ id: string; reason: import('../../../../types/hmsh_escalations').ResolveAllOrNoneBlockReason }> }
@@ -3145,12 +3392,13 @@ class PostgresStoreService extends StoreService<
         this.appId,
         wakeCommands.map((w) => w.forSignalKey),
         wakeCommands.map((w) => w.message),
+        wakeCommands.map((_, i) => resolutionJsons?.[i] ?? null),
       );
       wakeCTE = `,
         wake AS (
           INSERT INTO ${schemaName}.engine_streams (stream_name, message, priority)
-          SELECT $${base + 1}, w.message, 5
-          FROM unnest($${base + 2}::text[], $${base + 3}::text[]) AS w(signal_key, message)
+          SELECT $${base + 1}, ${resolveWakeMessageSql('r', 'w.message', 'w.resolution')}, 5
+          FROM unnest($${base + 2}::text[], $${base + 3}::text[], $${base + 4}::text[]) AS w(signal_key, message, resolution)
           JOIN resolved r ON r.signal_key = w.signal_key
           RETURNING id
         )`;
@@ -3175,7 +3423,7 @@ class PostgresStoreService extends StoreService<
       resolved AS (
         UPDATE public.hmsh_escalations e
         SET status = 'resolved', resolved_at = NOW(),
-            resolver_payload = i.payload_text::jsonb,
+            resolver_payload = ${resolvePayloadSql('e', 'i.payload_text')},
             metadata = CASE WHEN $3::jsonb IS NOT NULL
                             THEN COALESCE(e.metadata, '{}'::jsonb) || $3::jsonb
                             ELSE e.metadata END,

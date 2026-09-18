@@ -1,6 +1,6 @@
 {
   "name": "@hotmeshio/hotmesh",
-  "version": "0.28.1",
+  "version": "0.29.0",
   "description": "Durable Workflow",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
@@ -52,6 +52,7 @@
     "test:durable:unknown": "vitest run tests/durable/unknown/postgres.test.ts",
     "test:durable:escalations": "HMSH_LOGLEVEL=info vitest run tests/durable/escalations",
     "test:durable:escalations-batch": "HMSH_LOGLEVEL=info vitest run tests/durable/escalations-batch",
+    "test:durable:escalations-accumulate": "HMSH_LOGLEVEL=info vitest run tests/durable/escalations-accumulate",
     "test:durable:exporter": "HMSH_LOGLEVEL=info vitest run tests/durable/exporter",
     "test:durable:exporter:debug": "EXPORT_DEBUG=1 HMSH_LOGLEVEL=error vitest run tests/durable/basic/postgres.test.ts",
     "test:durable:codec": "vitest run tests/durable/codec/postgres.test.ts",

@@ -3,10 +3,10 @@
 // schema upgrade and hot-swap to it (see WorkerService.activateWorkflow and
 // ClientService.deployAndActivate). Changing the YAML without a bump leaves
 // every already-deployed database on the old schema forever. Numeric string —
-// compared with `Number()` for ordering. (v18: assign-at-creation — the
-// escalation blocks forward queueConfig.assignee/durationMinutes so a
-// condition() row is born assigned in the Leg1 commit.)
-const APP_VERSION = '18';
+// compared with `Number()` for ordering. (v19: the timeout markers carry
+// `data`, so an accumulator row delivers its collection to condition()
+// when the timer wins; a plain timeout still resumes with false.)
+const APP_VERSION = '19';
 const APP_ID = 'durable';
 
 /**
@@ -419,7 +419,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                       - [type, wait, data, '{$self.hook.data}', ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
                       - ['{@object.create}']
                     - '@pipe':
-                      - [timedOut, true, ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
+                      - [timedOut, true, data, '{$self.hook.data.data}', ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
                       - ['{@object.create}']
                     - ['{@conditional.ternary}']
                   - ['{@object.create}']
@@ -1236,7 +1236,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                       - [type, wait, data, '{$self.hook.data}', ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
                       - ['{@object.create}']
                     - '@pipe':
-                      - [timedOut, true, ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
+                      - [timedOut, true, data, '{$self.hook.data.data}', ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
                       - ['{@object.create}']
                     - ['{@conditional.ternary}']
                   - ['{@object.create}']
@@ -2009,7 +2009,7 @@ const getWorkflowYAML = (app: string, version: string): string => {
                       - [type, wait, data, '{$self.hook.data}', ac, '{$job.metadata.jc}', au, '{$self.output.metadata.au}']
                       - ['{@object.create}']
                     - '@pipe':
-                      - [type, wait, timedOut, true, ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
+                      - [type, wait, timedOut, true, data, '{$self.hook.data.data}', ac, '{$self.output.metadata.ac}', au, '{$self.output.metadata.au}']
                       - ['{@object.create}']
                     - ['{@conditional.ternary}']
                   - ['{@object.create}']

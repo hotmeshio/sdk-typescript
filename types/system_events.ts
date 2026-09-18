@@ -123,7 +123,10 @@ export type EscalationVerb =
   | 'reassigned'
   | 'resolved'
   | 'cancelled'
-  | 'batch-item';
+  | 'expired'
+  | 'batch-item'
+  | 'accumulated'
+  | 'removed';
 
 /** Verbs for engine lifecycle transitions. */
 export type EngineVerb = 'started' | 'stopped' | 'deployed';

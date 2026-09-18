@@ -368,7 +368,8 @@ class Hook extends Activity {
     //enqueue escalation INSERT inside the Leg1 transaction so it is
     //written atomically with the job state checkpoint — one committed
     //unit, crash-safe, no separate recovery path needed.
-    const escalationSignalKey = await this.addEscalationToTransaction(transaction);
+    const escalationSignalKey =
+      await this.addEscalationToTransaction(transaction);
 
     // exec() returns one result per queued command; the escalation INSERT
     // (with RETURNING *) is the last command — its row is results[last].
@@ -395,23 +396,32 @@ class Hook extends Activity {
         const row = execResults[execResults.length - 1];
         if (row?.id) {
           const ts = new Date().toISOString();
-          const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : ts;
+          const updatedAt = row.updated_at
+            ? new Date(row.updated_at).toISOString()
+            : ts;
           const publish = (verb: string, extras?: Record<string, unknown>) =>
-            void Promise.resolve(store.eventsPublish({
-              event_id: `${row.id}:${verb}:${updatedAt}`,
-              type: `system.escalation.${row.id}.${verb}`,
-              ts,
-              namespace: row.namespace ?? (this.engine as any).namespace ?? this.engine.appId,
-              app_id: row.app_id ?? this.engine.appId,
-              workflow_id: row.workflow_id ?? undefined,
-              topic: row.topic ?? undefined,
-              origin_id: row.origin_id ?? undefined,
-              parent_id: row.parent_id ?? undefined,
-              trace_id: row.trace_id ?? undefined,
-              span_id: row.span_id ?? undefined,
-              ...extras,
-              data: row,
-            })).catch(() => { /* best-effort */ });
+            void Promise.resolve(
+              store.eventsPublish({
+                event_id: `${row.id}:${verb}:${updatedAt}`,
+                type: `system.escalation.${row.id}.${verb}`,
+                ts,
+                namespace:
+                  row.namespace ??
+                  (this.engine as any).namespace ??
+                  this.engine.appId,
+                app_id: row.app_id ?? this.engine.appId,
+                workflow_id: row.workflow_id ?? undefined,
+                topic: row.topic ?? undefined,
+                origin_id: row.origin_id ?? undefined,
+                parent_id: row.parent_id ?? undefined,
+                trace_id: row.trace_id ?? undefined,
+                span_id: row.span_id ?? undefined,
+                ...extras,
+                data: row,
+              }),
+            ).catch(() => {
+              /* best-effort */
+            });
           publish('created');
           // A born-assigned row is created AND claimed in the same Leg1
           // commit — state both, in that order, so hand-off consumers act
@@ -446,7 +456,8 @@ class Hook extends Activity {
       if (!v || typeof v !== 'object' || Array.isArray(v)) return v;
       const out: Record<string, unknown> = {};
       for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-        out[k] = typeof val === 'string' ? Pipe.resolve(val, this.context) : val;
+        out[k] =
+          typeof val === 'string' ? Pipe.resolve(val, this.context) : val;
       }
       return out;
     };
@@ -475,21 +486,27 @@ class Hook extends Activity {
     // Skip the INSERT when no escalation fields resolved — this happens when
     // the factory waiter runs for a condition() call that had no queueConfig.
     if (
-      params.role == null && params.type == null &&
-      params.priority == null && params.metadata == null &&
+      params.role == null &&
+      params.type == null &&
+      params.priority == null &&
+      params.metadata == null &&
       params.assignee == null
-    ) return null;
+    )
+      return null;
 
     const signalKey = await this.deriveEscalationSignalKey();
 
-    store.addEscalationToTransaction({
-      namespace,
-      appId,
-      signalKey,
-      topic: this.config.hook.topic,
-      workflowId: jid,
-      ...params,
-    }, transaction);
+    store.addEscalationToTransaction(
+      {
+        namespace,
+        appId,
+        signalKey,
+        topic: this.config.hook.topic,
+        workflowId: jid,
+        ...params,
+      },
+      transaction,
+    );
 
     return signalKey as string;
   }
@@ -503,7 +520,10 @@ class Hook extends Activity {
   private async deriveEscalationSignalKey(): Promise<string> {
     const hookRule = await this.getHookRule(this.config.hook.topic);
     return hookRule?.conditions?.match?.[0]?.expected
-      ? Pipe.resolve(hookRule.conditions.match[0].expected as string, this.context)
+      ? Pipe.resolve(
+          hookRule.conditions.match[0].expected as string,
+          this.context,
+        )
       : this.context.metadata.jid;
   }
 
@@ -553,7 +573,8 @@ class Hook extends Activity {
     // a sibling branch for every activity but its own, so its expected-pipe
     // resolves against output that does not exist in this flow (which is how
     // execHook-context waits were writing signal_key-less escalation rows).
-    return (forTopic.find((rule) => rule.to === this.metadata.aid) ?? forTopic[0]) as HookRule;
+    return (forTopic.find((rule) => rule.to === this.metadata.aid) ??
+      forTopic[0]) as HookRule;
   }
 
   /**
@@ -561,9 +582,7 @@ class Hook extends Activity {
    * Time hooks don't participate in the signal race — they're
    * purely internal timeout registrations.
    */
-  async registerTimeHook(
-    transaction: ProviderTransaction,
-  ): Promise<void> {
+  async registerTimeHook(transaction: ProviderTransaction): Promise<void> {
     if (this.config.sleep) {
       const duration = Pipe.resolve(this.config.sleep, this.context);
       if (!isNaN(duration) && Number(duration) > 0) {
@@ -719,9 +738,11 @@ class Hook extends Activity {
           }
           return;
         } catch (error) {
-          if (error instanceof CollationError &&
-              error.fault === CollationFaultType.FORBIDDEN &&
-              attempt < MAX_FORBIDDEN_RETRIES) {
+          if (
+            error instanceof CollationError &&
+            error.fault === CollationFaultType.FORBIDDEN &&
+            attempt < MAX_FORBIDDEN_RETRIES
+          ) {
             this.logger.warn('hook-webhook-forbidden-inline-retry', {
               attempt: attempt + 1,
               maxAttempts: MAX_FORBIDDEN_RETRIES,
@@ -757,7 +778,21 @@ class Hook extends Activity {
           error: e.message,
         });
       }
-      await this.expireEscalationOnTimeout();
+      const expiry = await this.expireEscalationOnTimeout();
+      if (expiry.settledElsewhere) {
+        // A resolve or cancel committed first and its wake is already
+        // durable; a second Leg2 here would race it.
+        this.logger.debug('hook-timeout-settled-elsewhere', {
+          jid: jobId,
+          aid: this.metadata.aid,
+        });
+        return;
+      }
+      if (expiry.delivered !== undefined) {
+        // The expired row delivers a collection: it rides the hook data so
+        // the waiter's timeout marker carries it to condition().
+        this.data = { ...this.data, data: expiry.delivered };
+      }
     }
     await this.processEvent(StreamStatus.SUCCESS, 200, 'hook');
   }
@@ -765,15 +800,22 @@ class Hook extends Activity {
   /**
    * The timeout won the race: transition the wait's escalation row
    * `pending → expired` so the worklist stops offering work whose workflow
-   * has already resumed with `false`, and a late resolve fails as
-   * already-expired instead of delivering a payload into the void. The
-   * UPDATE is guarded by status='pending' — when the signal won (row
-   * already resolved) or the wait carried no escalation, it is a no-op.
+   * has already resumed, and a late resolve fails as already-expired
+   * instead of delivering a payload into the void. The UPDATE is guarded
+   * by status='pending'. Returns what the row delivers to the waiter (an
+   * accumulator's collection, set as `resolver_payload` in the same
+   * UPDATE), and `settledElsewhere` when a row exists but a resolve or
+   * cancel already moved it off `pending`, so the caller skips Leg2. With
+   * no row (the wait carried no escalation) the timeout proceeds as usual.
    */
-  private async expireEscalationOnTimeout(): Promise<void> {
-    if (!this.config.escalation) return;
+  private async expireEscalationOnTimeout(): Promise<{
+    delivered?: Record<string, unknown>;
+    settledElsewhere: boolean;
+  }> {
+    const proceed = { settledElsewhere: false };
+    if (!this.config.escalation) return proceed;
     const store = this.store as any;
-    if (typeof store.expireEscalationBySignalKey !== 'function') return;
+    if (typeof store.expireEscalationBySignalKey !== 'function') return proceed;
     // Hydration here is THROWAWAY. getState() REPLACES this.context with
     // restored job state, which does not carry the per-message dimensional
     // address (dad) — the stream message is its only carrier for this leg.
@@ -793,30 +835,50 @@ class Hook extends Activity {
       const appId = this.engine.appId;
       const namespace = (this.engine as any).namespace ?? appId;
       const signalKey = await this.deriveEscalationSignalKey();
-      const row = await store.expireEscalationBySignalKey(signalKey, namespace, appId);
+      const expiry = await store.expireEscalationBySignalKey(
+        signalKey,
+        namespace,
+        appId,
+      );
+      const row = expiry && 'entry' in expiry ? expiry.entry : expiry;
+      const priorStatus: string | null = expiry?.priorStatus ?? null;
+      if (!row?.id && priorStatus && priorStatus !== 'pending') {
+        return { settledElsewhere: true };
+      }
       if (row?.id && store.eventsPublish) {
         const ts = new Date().toISOString();
-        const updatedAt = row.updated_at ? new Date(row.updated_at).toISOString() : ts;
-        void Promise.resolve(store.eventsPublish({
-          event_id: `${row.id}:expired:${updatedAt}`,
-          type: `system.escalation.${row.id}.expired`,
-          ts,
-          namespace: row.namespace ?? namespace,
-          app_id: row.app_id ?? appId,
-          workflow_id: row.workflow_id ?? undefined,
-          topic: row.topic ?? undefined,
-          origin_id: row.origin_id ?? undefined,
-          parent_id: row.parent_id ?? undefined,
-          trace_id: row.trace_id ?? undefined,
-          span_id: row.span_id ?? undefined,
-          data: row,
-        })).catch(() => { /* best-effort */ });
+        const updatedAt = row.updated_at
+          ? new Date(row.updated_at).toISOString()
+          : ts;
+        void Promise.resolve(
+          store.eventsPublish({
+            event_id: `${row.id}:expired:${updatedAt}`,
+            type: `system.escalation.${row.id}.expired`,
+            ts,
+            namespace: row.namespace ?? namespace,
+            app_id: row.app_id ?? appId,
+            workflow_id: row.workflow_id ?? undefined,
+            topic: row.topic ?? undefined,
+            origin_id: row.origin_id ?? undefined,
+            parent_id: row.parent_id ?? undefined,
+            trace_id: row.trace_id ?? undefined,
+            span_id: row.span_id ?? undefined,
+            data: row,
+          }),
+        ).catch(() => {
+          /* best-effort */
+        });
       }
+      const delivered = row?.resolver_payload;
+      return delivered && typeof delivered === 'object'
+        ? { delivered, settledElsewhere: false }
+        : proceed;
     } catch (e) {
       this.logger.debug('hook-timeout-escalation-expire', {
         topic: this.config.hook?.topic,
         error: e.message,
       });
+      return proceed;
     } finally {
       this.context = dispatchContext;
       this.metadata.dad = dispatchDad;

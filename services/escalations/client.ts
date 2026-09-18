@@ -1,9 +1,11 @@
-import {
-  HMSH_LOGLEVEL,
-} from '../../modules/enums';
+import { HMSH_LOGLEVEL } from '../../modules/enums';
 import { formatISODate, guid, hashOptions } from '../../modules/utils';
 import { HotMesh } from '../hotmesh';
-import { EventsConfig, SystemEvent, EscalationVerb } from '../../types/system_events';
+import {
+  EventsConfig,
+  SystemEvent,
+  EscalationVerb,
+} from '../../types/system_events';
 import { Connection } from '../../types/durable';
 import { StreamStatus } from '../../types';
 import { StreamDataType } from '../../types/stream';
@@ -41,8 +43,20 @@ import {
   ResolveBatchItemParams,
   ResolveBatchItemByMetadataParams,
   ResolveBatchItemResult,
+  AccumulateItemParams,
+  AccumulateItemByMetadataParams,
+  AccumulateItemResult,
+  AccumulateReciprocalSelector,
+  RemoveAccumulatedItemParams,
+  RemoveAccumulatedItemByMetadataParams,
+  RemoveAccumulatedItemResult,
 } from '../../types/hmsh_escalations';
 import { APP_ID } from '../durable/schemas/factory';
+
+import {
+  ACCUMULATE_RESERVED_METADATA_KEYS,
+  assertAccumulateItemKey,
+} from './accumulate';
 
 /**
  * Reserved signal-payload key carrying resolution provenance
@@ -51,7 +65,10 @@ import { APP_ID } from '../durable/schemas/factory';
  */
 export const ESCALATION_RESOLUTION_KEY = '$resolution';
 
-export type GetHotMeshFn = (topic: string | null, namespace?: string) => Promise<HotMesh>;
+export type GetHotMeshFn = (
+  topic: string | null,
+  namespace?: string,
+) => Promise<HotMesh>;
 
 export interface EscalationClientConfig {
   /** Postgres connection options — used when creating a standalone EscalationClient. */
@@ -116,7 +133,9 @@ export class EscalationClientService {
     } else if (config.connection) {
       this._engine = this._makeEngineFactory(config.connection);
     } else {
-      throw new Error('EscalationClient requires either `connection` or `getHotMeshClient`');
+      throw new Error(
+        'EscalationClient requires either `connection` or `getHotMeshClient`',
+      );
     }
     this._events = config.events;
   }
@@ -133,9 +152,7 @@ export class EscalationClientService {
   ): void {
     if (!this._events?.publish) return;
     const ts = new Date().toISOString();
-    const updatedAt = entry.updated_at
-      ? formatISODate(entry.updated_at)
-      : ts;
+    const updatedAt = entry.updated_at ? formatISODate(entry.updated_at) : ts;
     const event: SystemEvent = {
       event_id: `${entry.id}:${verb}:${updatedAt}`,
       type: `system.escalation.${entry.id}.${verb}`,
@@ -148,10 +165,14 @@ export class EscalationClientService {
       parent_id: entry.parent_id ?? undefined,
       trace_id: entry.trace_id ?? undefined,
       span_id: entry.span_id ?? undefined,
-      ...(assignedAtCreation !== undefined ? { assigned_at_creation: assignedAtCreation } : {}),
+      ...(assignedAtCreation !== undefined
+        ? { assigned_at_creation: assignedAtCreation }
+        : {}),
       data: entry as unknown as Record<string, unknown>,
     };
-    void Promise.resolve(this._events.publish(event)).catch(() => { /* best-effort */ });
+    void Promise.resolve(this._events.publish(event)).catch(() => {
+      /* best-effort */
+    });
   }
 
   /**
@@ -167,7 +188,10 @@ export class EscalationClientService {
   }
 
   private _makeEngineFactory(connection: Connection): GetHotMeshFn {
-    return async (topic: string | null, namespace?: string): Promise<HotMesh> => {
+    return async (
+      topic: string | null,
+      namespace?: string,
+    ): Promise<HotMesh> => {
       const optionsHash = this._hashConnection(connection);
       const targetNS = namespace ?? APP_ID;
       const key = `esc:${optionsHash}.${targetNS}`;
@@ -236,19 +260,31 @@ export class EscalationClientService {
         const tc = await this._engine(topic, ns);
         await tc.engine.signal(topic, signalPayload, StreamStatus.SUCCESS, 200);
         return true;
-      } catch { /* topic not currently registered — fall through */ }
+      } catch {
+        /* topic not currently registered — fall through */
+      }
     }
     let delivered = false;
     try {
       const sc = await this._engine(`${ns}.wfs.signal`, ns);
-      await sc.engine.signal(`${ns}.wfs.signal`, signalPayload, StreamStatus.SUCCESS, 200);
+      await sc.engine.signal(
+        `${ns}.wfs.signal`,
+        signalPayload,
+        StreamStatus.SUCCESS,
+        200,
+      );
       delivered = true;
-    } catch { }
+    } catch {}
     try {
       const wc = await this._engine(`${ns}.wfs.wait`, ns);
-      await wc.engine.signal(`${ns}.wfs.wait`, signalPayload, StreamStatus.SUCCESS, 200);
+      await wc.engine.signal(
+        `${ns}.wfs.wait`,
+        signalPayload,
+        StreamStatus.SUCCESS,
+        200,
+      );
       delivered = true;
-    } catch { }
+    } catch {}
     return delivered;
   }
 
@@ -339,9 +375,15 @@ export class EscalationClientService {
   }
 
   /** Looks up an escalation by `signal_key` — the value passed to `condition()`. */
-  async getBySignalKey(signalKey: string, namespace?: string): Promise<EscalationEntry | null> {
+  async getBySignalKey(
+    signalKey: string,
+    namespace?: string,
+  ): Promise<EscalationEntry | null> {
     const hm = await this._engine(null, namespace);
-    return (hm.engine.store as any).getEscalationBySignalKey(signalKey, namespace);
+    return (hm.engine.store as any).getEscalationBySignalKey(
+      signalKey,
+      namespace,
+    );
   }
 
   /**
@@ -364,13 +406,17 @@ export class EscalationClientService {
    * Patches an existing escalation row. `metadata` is merged, not replaced.
    * Signal routing fields can be enriched after creation.
    */
-  async update(params: UpdateEscalationParams): Promise<EscalationEntry | null> {
+  async update(
+    params: UpdateEscalationParams,
+  ): Promise<EscalationEntry | null> {
     const hm = await this._engine(null, params.namespace);
     return (hm.engine.store as any).updateEscalation(params);
   }
 
   /** Appends milestone entries to the escalation's audit trail. */
-  async appendMilestones(params: AppendMilestonesParams): Promise<EscalationEntry | null> {
+  async appendMilestones(
+    params: AppendMilestonesParams,
+  ): Promise<EscalationEntry | null> {
     const hm = await this._engine(null, params.namespace);
     return (hm.engine.store as any).appendEscalationMilestones(params);
   }
@@ -393,15 +439,21 @@ export class EscalationClientService {
    * in the same atomic UPDATE. Returns `isExtension: true` when the same assignee
    * re-claims a row they already hold (extends the expiry).
    */
-  async claimByMetadata(params: ClaimByMetadataParams): Promise<ClaimByMetadataResult> {
+  async claimByMetadata(
+    params: ClaimByMetadataParams,
+  ): Promise<ClaimByMetadataResult> {
     const hm = await this._engine(null, params.namespace);
-    const result = await (hm.engine.store as any).claimEscalationByMetadata(params);
+    const result = await (hm.engine.store as any).claimEscalationByMetadata(
+      params,
+    );
     if (result.ok === true) this._emit('claimed', result.entry, false);
     return result;
   }
 
   /** Releases a claimed escalation, returning it to available status. */
-  async release(params: ReleaseEscalationParams): Promise<ReleaseEscalationResult> {
+  async release(
+    params: ReleaseEscalationParams,
+  ): Promise<ReleaseEscalationResult> {
     const hm = await this._engine(null, params.namespace);
     const result = await (hm.engine.store as any).releaseEscalation(params);
     if (result.ok === true) this._emit('released', result.entry);
@@ -412,9 +464,13 @@ export class EscalationClientService {
    * Reassigns the escalation to a different role, clearing any current claim
    * and resetting status to `'pending'`.
    */
-  async escalateToRole(params: EscalateToRoleParams): Promise<EscalationEntry | null> {
+  async escalateToRole(
+    params: EscalateToRoleParams,
+  ): Promise<EscalationEntry | null> {
     const hm = await this._engine(null, params.namespace);
-    const entry = await (hm.engine.store as any).escalateEscalationToRole(params);
+    const entry = await (hm.engine.store as any).escalateEscalationToRole(
+      params,
+    );
     if (entry) this._emit('reassigned', entry);
     return entry;
   }
@@ -427,7 +483,10 @@ export class EscalationClientService {
    * hook rule is deployed for any candidate topic, delivery falls back to
    * a best-effort post-commit publish.
    */
-  async cancel(id: string, namespace?: string): Promise<CancelEscalationResult> {
+  async cancel(
+    id: string,
+    namespace?: string,
+  ): Promise<CancelEscalationResult> {
     const ns = namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
@@ -446,7 +505,11 @@ export class EscalationClientService {
       );
     }
 
-    const result = await store.cancelEscalation(id, namespace, wakeCommand ?? undefined);
+    const result = await store.cancelEscalation(
+      id,
+      namespace,
+      wakeCommand ?? undefined,
+    );
     if (result.ok === true) {
       this._emit('cancelled', result.entry);
       if (result.entry.signal_key && !result.wakeEnqueued) {
@@ -494,7 +557,7 @@ export class EscalationClientService {
     params: ResolveEscalationParams,
     namespace?: string,
   ): Promise<ResolveEscalationResult> {
-    const ns = (params.namespace ?? namespace) ?? APP_ID;
+    const ns = params.namespace ?? namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
 
@@ -512,16 +575,27 @@ export class EscalationClientService {
     }
 
     const dbResult = await store.resolveEscalation(
-      { id: params.id, resolverPayload: params.resolverPayload, metadata: params.metadata, assertClaim: params.assertClaim },
+      {
+        id: params.id,
+        resolverPayload: params.resolverPayload,
+        metadata: params.metadata,
+        assertClaim: params.assertClaim,
+      },
       wakeCommand ?? undefined,
+      this._batchResolutionJson(params.id, params.resolvedBy),
     );
     if (!dbResult.ok) return dbResult;
     if (dbResult.signalKey && !dbResult.wakeEnqueued) {
       //the wake was not part of the commit (no hook rule found, or the
-      //enqueue was rolled back to its savepoint) — deliver post-commit
+      //enqueue was rolled back to its savepoint) — deliver post-commit from
+      //the committed payload (an accumulator row stores its collection)
       await this._deliverEscalationSignal(ns, dbResult.topic, {
         id: dbResult.signalKey,
-        data: this._signalData(params.resolverPayload, params.id, params.resolvedBy),
+        data: this._signalData(
+          dbResult.entry.resolver_payload ?? {},
+          params.id,
+          params.resolvedBy,
+        ),
       });
     }
     this._emit('resolved', dbResult.entry);
@@ -540,7 +614,7 @@ export class EscalationClientService {
     params: ResolveByMetadataParams,
     namespace?: string,
   ): Promise<ResolveEscalationResult> {
-    const ns = (params.namespace ?? namespace) ?? APP_ID;
+    const ns = params.namespace ?? namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
 
@@ -566,14 +640,25 @@ export class EscalationClientService {
     }
 
     const dbResult = await store.resolveEscalationByMetadata(
-      { key: params.key, value: params.value, resolverPayload: params.resolverPayload, roles: params.roles, metadata: params.metadata },
+      {
+        key: params.key,
+        value: params.value,
+        resolverPayload: params.resolverPayload,
+        roles: params.roles,
+        metadata: params.metadata,
+      },
       wakeCommand ?? undefined,
+      preview ? this._batchResolutionJson(preview.id, params.resolvedBy) : null,
     );
     if (!dbResult.ok) return dbResult;
     if (dbResult.signalKey && !dbResult.wakeEnqueued) {
       await this._deliverEscalationSignal(ns, dbResult.topic, {
         id: dbResult.signalKey,
-        data: this._signalData(params.resolverPayload, dbResult.entry.id, params.resolvedBy),
+        data: this._signalData(
+          dbResult.entry.resolver_payload ?? {},
+          dbResult.entry.id,
+          params.resolvedBy,
+        ),
       });
     }
     this._emit('resolved', dbResult.entry);
@@ -607,7 +692,11 @@ export class EscalationClientService {
    */
   private async _settleBatchItemResult(
     ns: string,
-    dbResult: ResolveBatchItemResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean },
+    dbResult: ResolveBatchItemResult & {
+      signalKey?: string | null;
+      topic?: string | null;
+      wakeEnqueued?: boolean;
+    },
     resolvedBy?: ResolvedByIdentity,
   ): Promise<ResolveBatchItemResult> {
     if (!dbResult.ok) return dbResult;
@@ -626,7 +715,12 @@ export class EscalationClientService {
     } else {
       this._emit('batch-item', dbResult.entry);
     }
-    return { ok: true, outcome: dbResult.outcome, remaining: dbResult.remaining, entry: dbResult.entry };
+    return {
+      ok: true,
+      outcome: dbResult.outcome,
+      remaining: dbResult.remaining,
+      entry: dbResult.entry,
+    };
   }
 
   /**
@@ -655,7 +749,7 @@ export class EscalationClientService {
     params: ResolveBatchItemParams,
     namespace?: string,
   ): Promise<ResolveBatchItemResult> {
-    const ns = (params.namespace ?? namespace) ?? APP_ID;
+    const ns = params.namespace ?? namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
 
@@ -665,9 +759,17 @@ export class EscalationClientService {
     let wakeCommand: EscalationWakeCommand | null = null;
     const preview = params.id
       ? await store.getEscalation(params.id, params.namespace)
-      : await store.getEscalationBySignalKey(params.signalKey, params.namespace);
+      : await store.getEscalationBySignalKey(
+          params.signalKey,
+          params.namespace,
+        );
     if (preview?.signal_key) {
-      wakeCommand = await this._buildWakeCommand(ns, preview.topic, preview.signal_key, {});
+      wakeCommand = await this._buildWakeCommand(
+        ns,
+        preview.topic,
+        preview.signal_key,
+        {},
+      );
     }
 
     const dbResult = await store.resolveEscalationBatchItem(
@@ -688,7 +790,7 @@ export class EscalationClientService {
     params: ResolveBatchItemByMetadataParams,
     namespace?: string,
   ): Promise<ResolveBatchItemResult> {
-    const ns = (params.namespace ?? namespace) ?? APP_ID;
+    const ns = params.namespace ?? namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
 
@@ -703,7 +805,12 @@ export class EscalationClientService {
       namespace: params.namespace,
     });
     if (preview?.signalKey) {
-      wakeCommand = await this._buildWakeCommand(ns, preview.topic, preview.signalKey, {});
+      wakeCommand = await this._buildWakeCommand(
+        ns,
+        preview.topic,
+        preview.signalKey,
+        {},
+      );
     }
 
     const dbResult = await store.resolveEscalationBatchItemByMetadata(
@@ -714,6 +821,318 @@ export class EscalationClientService {
     return this._settleBatchItemResult(ns, dbResult, params.resolvedBy);
   }
 
+  // ─── Open accumulation ──────────────────────────────────────────────────────
+
+  private async _previewAccumulateRow(
+    store: any,
+    selector: {
+      id?: string;
+      signalKey?: string;
+      key?: string;
+      value?: unknown;
+      roles?: string[];
+    },
+    namespace?: string,
+  ): Promise<{
+    id: string;
+    signalKey: string | null;
+    topic: string | null;
+  } | null> {
+    if (selector.id) {
+      const row = await store.getEscalation(selector.id, namespace);
+      return row
+        ? { id: row.id, signalKey: row.signal_key, topic: row.topic }
+        : null;
+    }
+    if (selector.signalKey) {
+      const row = await store.getEscalationBySignalKey(
+        selector.signalKey,
+        namespace,
+      );
+      return row
+        ? { id: row.id, signalKey: row.signal_key, topic: row.topic }
+        : null;
+    }
+    if (selector.key !== undefined) {
+      const peek = await store.peekEscalationByMetadata({
+        key: selector.key,
+        value: selector.value,
+        roles: selector.roles,
+        namespace,
+      });
+      return peek
+        ? { id: peek.id, signalKey: peek.signalKey, topic: peek.topic }
+        : null;
+    }
+    return null;
+  }
+
+  /**
+   * Pre-builds one side's wake with a placeholder payload; the store
+   * rewrites the `{data,data}` slot from the committed collection inside
+   * the add statement, so a completing side's wake commits WITH the add.
+   */
+  private async _accumulateWake(
+    ns: string,
+    preview: {
+      id: string;
+      signalKey: string | null;
+      topic: string | null;
+    } | null,
+    resolvedBy?: ResolvedByIdentity,
+  ): Promise<{
+    command: EscalationWakeCommand;
+    resolutionJson: string | null;
+  } | null> {
+    if (!preview?.signalKey) return null;
+    const command = await this._buildWakeCommand(
+      ns,
+      preview.topic,
+      preview.signalKey,
+      {},
+    );
+    if (!command) return null;
+    return {
+      command,
+      resolutionJson: this._batchResolutionJson(preview.id, resolvedBy),
+    };
+  }
+
+  private _assertAccumulatePatch(metadata?: Record<string, unknown>): void {
+    if (!metadata) return;
+    for (const reserved of ACCUMULATE_RESERVED_METADATA_KEYS) {
+      if (reserved in metadata) {
+        throw new Error(
+          `metadata key '${reserved}' is reserved for accumulate state`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Shared post-statement handling for both add forms: post-commit wake
+   * fallback per completed side (the committed `resolver_payload` is the
+   * recovery record) and lifecycle events (`accumulated` on an interim
+   * add, `resolved` on completion) for the container and the reciprocal.
+   */
+  private async _settleAccumulateResult(
+    ns: string,
+    dbResult: AccumulateItemResult & {
+      wake?: {
+        primary: {
+          signalKey: string | null;
+          topic: string | null;
+          wakeEnqueued: boolean;
+        };
+        reciprocal?: {
+          signalKey: string | null;
+          topic: string | null;
+          wakeEnqueued: boolean;
+        };
+      };
+    },
+    resolvedBy?: ResolvedByIdentity,
+  ): Promise<AccumulateItemResult> {
+    if (!dbResult.ok) return dbResult;
+    const { wake, ...result } = dbResult;
+    const settleSide = async (
+      entry: EscalationEntry,
+      side?: { wakeEnqueued: boolean },
+    ) => {
+      if (entry.status !== 'resolved') {
+        this._emit('accumulated', entry);
+        return;
+      }
+      if (entry.signal_key && !side?.wakeEnqueued) {
+        await this._deliverEscalationSignal(ns, entry.topic, {
+          id: entry.signal_key,
+          data: this._signalData(
+            entry.resolver_payload ?? {},
+            entry.id,
+            resolvedBy,
+          ),
+        });
+      }
+      this._emit('resolved', entry);
+    };
+    await settleSide(result.entry, wake?.primary);
+    if (result.reciprocal)
+      await settleSide(result.reciprocal.entry, wake?.reciprocal);
+    return result;
+  }
+
+  private async _accumulateWakes(
+    ns: string,
+    store: any,
+    primary: {
+      id?: string;
+      signalKey?: string;
+      key?: string;
+      value?: unknown;
+      roles?: string[];
+    },
+    reciprocal: AccumulateReciprocalSelector | undefined,
+    namespace: string | undefined,
+    resolvedBy: ResolvedByIdentity | undefined,
+  ): Promise<
+    Array<{ command: EscalationWakeCommand; resolutionJson: string | null }>
+  > {
+    const wakes: Array<{
+      command: EscalationWakeCommand;
+      resolutionJson: string | null;
+    }> = [];
+    const first = await this._accumulateWake(
+      ns,
+      await this._previewAccumulateRow(store, primary, namespace),
+      resolvedBy,
+    );
+    if (first) wakes.push(first);
+    if (reciprocal) {
+      const second = await this._accumulateWake(
+        ns,
+        await this._previewAccumulateRow(store, reciprocal, namespace),
+        resolvedBy,
+      );
+      if (second) wakes.push(second);
+    }
+    return wakes;
+  }
+
+  /**
+   * Adds ONE item to an accumulator escalation (a wait created with
+   * `condition(signalId, { accumulate: {...} })` or a standalone `create()`
+   * with `accumulate`). One atomic statement: the entry lands under
+   * `envelope.accumulate_items[itemKey]` with a database-clock `at`, the
+   * `accumulate_keys` / `accumulate_count` facets recompute, and, when the
+   * add reaches `max` with `resolveAtMax`, the row resolves with the
+   * ordered collection (`{ $accumulated, $trigger: 'count' }`) as its
+   * `resolver_payload` and the waiting workflow's wake commits WITH the
+   * add. The caller that completes the row learns it from
+   * `outcome: 'completed'`.
+   *
+   * Pass `reciprocal` to write a second accumulator row in the same
+   * statement, both or neither: the reciprocal holds the container's id as
+   * its item key, each entry carries the other row's id as `reciprocalId`,
+   * and a member row declared `accumulate: { max: 1 }` completes and wakes
+   * here too. A blocked reciprocal leaves the container untouched and
+   * answers `reciprocal-*`.
+   *
+   * Adds are claim-agnostic by default; pass `assertClaim` for the same
+   * claim-lock assertion as `resolve()` on the container row. Pass
+   * `metadata` to merge an outcome patch into the container's GIN-indexed
+   * metadata in the same UPDATE (reserved accumulate keys are rejected).
+   * A repeated key answers `duplicate-item` without touching the row
+   * unless the accumulator was declared `unique: false`, which replaces
+   * the entry in place.
+   */
+  async accumulateItem(
+    params: AccumulateItemParams,
+    namespace?: string,
+  ): Promise<AccumulateItemResult> {
+    if ((params.id ? 1 : 0) + (params.signalKey ? 1 : 0) !== 1) {
+      throw new Error(
+        'accumulateItem requires exactly one of `id` or `signalKey`',
+      );
+    }
+    assertAccumulateItemKey(params.itemKey);
+    this._assertAccumulatePatch(params.metadata);
+    const ns = params.namespace ?? namespace ?? APP_ID;
+    const hm = await this._engine(null, ns);
+    const store = hm.engine.store as any;
+    const wakes = await this._accumulateWakes(
+      ns,
+      store,
+      params,
+      params.reciprocal,
+      params.namespace,
+      params.resolvedBy,
+    );
+    const dbResult = await store.accumulateEscalationItem(params, wakes);
+    return this._settleAccumulateResult(ns, dbResult, params.resolvedBy);
+  }
+
+  /**
+   * Add selecting the container by metadata facet: the highest priority
+   * pending row whose `metadata` contains the key/value, mirroring
+   * `resolveByMetadata()`'s selector. See {@link accumulateItem} for the
+   * add contract.
+   */
+  async accumulateItemByMetadata(
+    params: AccumulateItemByMetadataParams,
+    namespace?: string,
+  ): Promise<AccumulateItemResult> {
+    assertAccumulateItemKey(params.itemKey);
+    this._assertAccumulatePatch(params.metadata);
+    const ns = params.namespace ?? namespace ?? APP_ID;
+    const hm = await this._engine(null, ns);
+    const store = hm.engine.store as any;
+    const wakes = await this._accumulateWakes(
+      ns,
+      store,
+      params,
+      params.reciprocal,
+      params.namespace,
+      params.resolvedBy,
+    );
+    const dbResult = await store.accumulateEscalationItemByMetadata(
+      params,
+      wakes,
+    );
+    return this._settleAccumulateResult(ns, dbResult, params.resolvedBy);
+  }
+
+  private _settleRemoveResult(
+    dbResult: RemoveAccumulatedItemResult,
+  ): RemoveAccumulatedItemResult {
+    if (!dbResult.ok) return dbResult;
+    this._emit('removed', dbResult.entry);
+    if (dbResult.reciprocal) this._emit('removed', dbResult.reciprocal.entry);
+    return dbResult;
+  }
+
+  /**
+   * Removes ONE held item from a pending accumulator escalation in one
+   * guarded statement: the entry leaves `accumulate_items`, the facets
+   * recompute, the row stays `pending`, and the waiter is never woken.
+   * Pass `reciprocal` to also remove the container's id from that row,
+   * both or neither. A key that is not held answers `item-absent`.
+   */
+  async removeAccumulatedItem(
+    params: RemoveAccumulatedItemParams,
+    namespace?: string,
+  ): Promise<RemoveAccumulatedItemResult> {
+    if ((params.id ? 1 : 0) + (params.signalKey ? 1 : 0) !== 1) {
+      throw new Error(
+        'removeAccumulatedItem requires exactly one of `id` or `signalKey`',
+      );
+    }
+    assertAccumulateItemKey(params.itemKey);
+    const hm = await this._engine(
+      null,
+      params.namespace ?? namespace ?? APP_ID,
+    );
+    const dbResult = await (
+      hm.engine.store as any
+    ).removeAccumulatedEscalationItem(params);
+    return this._settleRemoveResult(dbResult);
+  }
+
+  /** Removal selecting the container by metadata facet. See {@link removeAccumulatedItem}. */
+  async removeAccumulatedItemByMetadata(
+    params: RemoveAccumulatedItemByMetadataParams,
+    namespace?: string,
+  ): Promise<RemoveAccumulatedItemResult> {
+    assertAccumulateItemKey(params.itemKey);
+    const hm = await this._engine(
+      null,
+      params.namespace ?? namespace ?? APP_ID,
+    );
+    const dbResult = await (
+      hm.engine.store as any
+    ).removeAccumulatedEscalationItemByMetadata(params);
+    return this._settleRemoveResult(dbResult);
+  }
+
   /**
    * Full-fidelity migration: inserts an escalation row preserving the original
    * UUID and lifecycle state. Returns `null` on duplicate (idempotent).
@@ -722,7 +1141,7 @@ export class EscalationClientService {
     params: MigrateEscalationParams,
     namespace?: string,
   ): Promise<EscalationEntry | null> {
-    const ns = (params.namespace ?? namespace) ?? APP_ID;
+    const ns = params.namespace ?? namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
     return (hm.engine.store as any).createEscalationForMigration(params);
   }
@@ -743,9 +1162,13 @@ export class EscalationClientService {
    * Returns `{ claimed, skipped }` — skipped rows are either already claimed
    * by another assignee or non-existent. Implicit-claim semantics apply.
    */
-  async claimMany(params: ClaimManyParams): Promise<{ claimed: number; skipped: number }> {
+  async claimMany(
+    params: ClaimManyParams,
+  ): Promise<{ claimed: number; skipped: number }> {
     const hm = await this._engine(null, params.namespace);
-    const { entries, skipped } = await (hm.engine.store as any).claimManyEscalations(params);
+    const { entries, skipped } = await (
+      hm.engine.store as any
+    ).claimManyEscalations(params);
     this._emitMany('claimed', entries, false);
     return { claimed: entries.length, skipped };
   }
@@ -758,9 +1181,13 @@ export class EscalationClientService {
    * and an ids-claim is invisible to the ids form but claimed by this one.
    * Returns the claimed rows.
    */
-  async claimManyByQuery(params: ClaimManyByQueryParams): Promise<{ claimed: number; entries: EscalationEntry[] }> {
+  async claimManyByQuery(
+    params: ClaimManyByQueryParams,
+  ): Promise<{ claimed: number; entries: EscalationEntry[] }> {
     const hm = await this._engine(null, params.namespace);
-    const entries = await (hm.engine.store as any).claimManyEscalationsByQuery(params);
+    const entries = await (hm.engine.store as any).claimManyEscalationsByQuery(
+      params,
+    );
     this._emitMany('claimed', entries, false);
     return { claimed: entries.length, entries };
   }
@@ -799,7 +1226,9 @@ export class EscalationClientService {
    */
   async resolveMany(params: ResolveManyParams): Promise<EscalationEntry[]> {
     const hm = await this._engine(null, params.namespace);
-    const entries = await (hm.engine.store as any).resolveManyEscalations(params);
+    const entries = await (hm.engine.store as any).resolveManyEscalations(
+      params,
+    );
     this._emitMany('resolved', entries);
     return entries;
   }
@@ -827,7 +1256,7 @@ export class EscalationClientService {
     params: ResolveAllOrNoneParams,
     namespace?: string,
   ): Promise<ResolveAllOrNoneResult> {
-    const ns = (params.namespace ?? namespace) ?? APP_ID;
+    const ns = params.namespace ?? namespace ?? APP_ID;
     const items = params.items ?? [];
     if (!items.length) return { ok: true, entries: [] };
     const ids = items.map((i) => i.id);
@@ -840,12 +1269,15 @@ export class EscalationClientService {
     //pre-build each waiter's wake so it commits INSIDE the resolve
     //statement; signal routing (signal_key, topic) is immutable after
     //creation, so the preview rows are authoritative for wake targeting
-    const payloadById = new Map(items.map((i) => [i.id, i.resolverPayload ?? {}]));
+    const payloadById = new Map(
+      items.map((i) => [i.id, i.resolverPayload ?? {}]),
+    );
     const previews: EscalationEntry[] = await store.listEscalations({
       ids,
       namespace: params.namespace,
     });
     const wakeCommands: EscalationWakeCommand[] = [];
+    const resolutionJsons: (string | null)[] = [];
     for (const row of previews) {
       if (!row.signal_key) continue;
       const cmd = await this._buildWakeCommand(
@@ -854,7 +1286,12 @@ export class EscalationClientService {
         row.signal_key,
         this._signalData(payloadById.get(row.id), row.id, params.resolvedBy),
       );
-      if (cmd) wakeCommands.push(cmd);
+      if (cmd) {
+        wakeCommands.push(cmd);
+        resolutionJsons.push(
+          this._batchResolutionJson(row.id, params.resolvedBy),
+        );
+      }
     }
 
     const dbResult = await store.resolveAllOrNoneEscalations(
@@ -865,17 +1302,23 @@ export class EscalationClientService {
         assertAssignee: params.assertAssignee,
       },
       wakeCommands,
+      resolutionJsons,
     );
     if (!dbResult.ok) return { ok: false, failed: dbResult.failed };
 
     //rows whose wake was not part of the commit (no hook rule deployed, or
-    //signal routing enriched after the preview) — deliver post-commit
+    //signal routing enriched after the preview) — deliver post-commit from
+    //the committed payload (an accumulator row stores its collection)
     const enqueuedKeys = new Set(wakeCommands.map((w) => w.forSignalKey));
     for (const entry of dbResult.entries) {
       if (entry.signal_key && !enqueuedKeys.has(entry.signal_key)) {
         await this._deliverEscalationSignal(ns, entry.topic, {
           id: entry.signal_key,
-          data: this._signalData(payloadById.get(entry.id), entry.id, params.resolvedBy),
+          data: this._signalData(
+            entry.resolver_payload ?? {},
+            entry.id,
+            params.resolvedBy,
+          ),
         });
       }
     }

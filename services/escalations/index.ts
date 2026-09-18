@@ -74,11 +74,21 @@ export { EscalationsClass as Escalations };
 export { EscalationClientService };
 export { ESCALATION_RESOLUTION_KEY } from './client';
 export { foldBatchConfig } from './batch';
+export { foldAccumulateConfig, assertAccumulateItemKey } from './accumulate';
+export { foldEscalationConfig } from './fold';
 export {
   ESCALATION_BATCH_PENDING_KEY,
   ESCALATION_BATCH_COUNT_KEY,
   ESCALATION_BATCH_KEYS_KEY,
   ESCALATION_BATCH_ITEMS_KEY,
   ESCALATION_BATCH_FILLED_AT_KEY,
+  ESCALATION_BATCH_PARTIAL_ON_TIMEOUT_KEY,
   ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH,
+  ESCALATION_ACCUMULATE_COUNT_KEY,
+  ESCALATION_ACCUMULATE_MAX_KEY,
+  ESCALATION_ACCUMULATE_KEYS_KEY,
+  ESCALATION_ACCUMULATE_ITEMS_KEY,
+  ESCALATION_ACCUMULATE_CONFIG_KEY,
+  ESCALATION_ACCUMULATED_KEY,
+  ESCALATION_TRIGGER_KEY,
 } from '../../types/hmsh_escalations';

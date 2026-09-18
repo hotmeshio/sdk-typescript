@@ -1,3 +1,6 @@
+import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
+import { foldEscalationConfig } from '../../escalations/fold';
+
 import {
   sleepImmediate,
   DurableWaitForError,
@@ -8,8 +11,6 @@ import {
 } from './common';
 import { checkCancellation } from './cancellationScope';
 import { didRun } from './didRun';
-import { ConditionQueueConfig } from '../../../types/hmsh_escalations';
-import { foldBatchConfig } from '../../escalations/batch';
 
 /**
  * Pauses the workflow until a signal with the given `signalId` is received.
@@ -187,12 +188,18 @@ export async function condition<T>(
   // A string arg is a bare timeout; a config object may carry its own
   // `timeout` field — the engine's waiter block accepts duration and
   // queueConfig together (one wait: escalation row + resume timer).
-  // A `batch` declaration folds into metadata/envelope here, before the
-  // interruption message is built, so the accumulator shape rides the
-  // same Leg1-atomic INSERT as every other config field.
-  const rawConfig = timeoutOrConfig && typeof timeoutOrConfig === 'object' ? timeoutOrConfig : undefined;
-  const queueConfig = rawConfig?.batch ? foldBatchConfig(rawConfig) : rawConfig;
-  const timeout = typeof timeoutOrConfig === 'string' ? timeoutOrConfig : queueConfig?.timeout;
+  // A `batch` or `accumulate` declaration folds into metadata/envelope
+  // here, before the interruption message is built, so the accumulator
+  // shape rides the same Leg1-atomic INSERT as every other config field.
+  const rawConfig =
+    timeoutOrConfig && typeof timeoutOrConfig === 'object'
+      ? timeoutOrConfig
+      : undefined;
+  const queueConfig = rawConfig ? foldEscalationConfig(rawConfig) : rawConfig;
+  const timeout =
+    typeof timeoutOrConfig === 'string'
+      ? timeoutOrConfig
+      : queueConfig?.timeout;
   const [didRunAlready, execIndex, result] = await didRun('wait');
   checkCancellation();
   if (didRunAlready) {
@@ -216,14 +223,21 @@ export async function condition<T>(
         );
       }
     }
-    // If the condition timed out (timeout won the race), return false
+    // The timeout won the race. An accumulator row (or a batch row with
+    // `partialOnTimeout`) delivers its collection through the marker's
+    // `data`; every other wait resumes with false.
     if (result?.timedOut) {
-      return false;
+      const delivered = (result as { data?: T }).data;
+      return delivered === undefined || delivered === null ? false : delivered;
     }
     const signalData = (result as { id: string; data: { data: T } }).data?.data;
     // If the escalation was cancelled via cancel(), the signal carries this marker.
     // Return null so the workflow can distinguish cancellation from a real resolution.
-    if (signalData && typeof signalData === 'object' && (signalData as Record<string, unknown>).__escalation_cancelled === true) {
+    if (
+      signalData &&
+      typeof signalData === 'object' &&
+      (signalData as Record<string, unknown>).__escalation_cancelled === true
+    ) {
       return null;
     }
     return signalData as T;
