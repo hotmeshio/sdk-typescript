@@ -31,6 +31,24 @@ export interface ConditionQueueConfig {
    */
   batch?: string[];
   /**
+   * With `batch`, a timeout resumes the wait with the items filled so far
+   * plus `$trigger: 'timeout'` instead of `false`. Off by default, so
+   * existing batch waiters are unchanged.
+   */
+  partialOnTimeout?: boolean;
+  /**
+   * Declares the wait as an open accumulator: items arrive over time via
+   * `accumulateItem()` and the collection is delivered on every terminal
+   * path except cancel. Resolves with `{ $accumulated, $trigger }` when
+   * `max` items are held (`$trigger: 'count'`), when `timeout` fires
+   * (`'timeout'`, status `expired`), or on a manual `resolve()`
+   * (`'resolve'`, merged with the resolver payload). Folded at creation
+   * into `metadata.accumulate_count` / `accumulate_max` / `accumulate_keys`
+   * and `envelope.accumulate_items` / `accumulate_config` — one atomic
+   * INSERT with the workflow checkpoint. Mutually exclusive with `batch`.
+   */
+  accumulate?: AccumulateConfig;
+  /**
    * Born-assigned: writes `assigned_to` in the same atomic INSERT that
    * creates the row — on the `condition()` path, one commit with the
    * workflow's Leg1 checkpoint. Alone it is a durable pre-assignment: the
@@ -116,12 +134,26 @@ export type ClaimEscalationResult =
  * - `isExtension` — true when the same assignee re-claims a row they already hold (extends the expiry)
  */
 export type ClaimByMetadataResult =
-  | { ok: true; entry: EscalationEntry; candidatesExist: number; isExtension: boolean }
+  | {
+      ok: true;
+      entry: EscalationEntry;
+      candidatesExist: number;
+      isExtension: boolean;
+    }
   | { ok: false; reason: 'not-found' | 'conflict'; candidatesExist: number };
 
 export type ResolveEscalationResult =
   | { ok: true; entry: EscalationEntry }
-  | { ok: false; reason: 'not-found' | 'already-resolved' | 'already-cancelled' | 'already-expired' | 'claim-expired' | 'claimed-by-other' };
+  | {
+      ok: false;
+      reason:
+        | 'not-found'
+        | 'already-resolved'
+        | 'already-cancelled'
+        | 'already-expired'
+        | 'claim-expired'
+        | 'claimed-by-other';
+    };
 
 /**
  * A pre-built wake message, committed INSIDE the resolve/cancel transaction
@@ -243,7 +275,13 @@ export interface ListEscalationsParams {
    * Columns are applied left to right.
    */
   orderBy?: Array<{
-    column: 'priority' | 'created_at' | 'updated_at' | 'resolved_at' | 'role' | 'type';
+    column:
+      | 'priority'
+      | 'created_at'
+      | 'updated_at'
+      | 'resolved_at'
+      | 'role'
+      | 'type';
     direction: 'asc' | 'desc';
   }>;
   limit?: number;
@@ -264,7 +302,12 @@ export interface EscalationStats {
   created: number;
   resolved: number;
   by_role: Array<{ role: string; pending: number; claimed: number }>;
-  by_type: Array<{ type: string; pending: number; claimed: number; resolved: number }>;
+  by_type: Array<{
+    type: string;
+    pending: number;
+    claimed: number;
+    resolved: number;
+  }>;
 }
 
 export interface CreateEscalationParams {
@@ -306,6 +349,14 @@ export interface CreateEscalationParams {
    * `signalKey`) accumulate and complete identically; the wake is a no-op.
    */
   batch?: string[];
+  /** See {@link ConditionQueueConfig.partialOnTimeout}. */
+  partialOnTimeout?: boolean;
+  /**
+   * Declares the row as an open accumulator. See
+   * {@link ConditionQueueConfig.accumulate}. Standalone rows (no
+   * `signalKey`) accumulate and complete identically; the wake is a no-op.
+   */
+  accumulate?: AccumulateConfig;
 }
 
 /**
@@ -444,6 +495,254 @@ export const ESCALATION_BATCH_FILLED_AT_KEY = 'batch_filled_at';
  * URL/query-friendly names (e.g. `u1-L`) for endpoint ergonomics. */
 export const ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH = 128;
 
+/** Envelope key: set by `partialOnTimeout` on a batch row so the expiry
+ * statement knows to deliver the filled items with `$trigger: 'timeout'`. */
+export const ESCALATION_BATCH_PARTIAL_ON_TIMEOUT_KEY =
+  'batch_partial_on_timeout';
+
+// ─── Open accumulation ────────────────────────────────────────────────────────
+
+/** Metadata facet: number of items currently held. Recomputed from
+ * `accumulate_keys` in every add/remove statement so the two never drift. */
+export const ESCALATION_ACCUMULATE_COUNT_KEY = 'accumulate_count';
+/** Metadata facet: the count trigger, or `null` when the accumulator is
+ * unbounded. `metadata @> '{"accumulate_max": 4}'` finds four-slot rows. */
+export const ESCALATION_ACCUMULATE_MAX_KEY = 'accumulate_max';
+/** Metadata facet: held item keys (jsonb string array).
+ * `metadata @> '{"accumulate_keys":["order-1"]}'` finds the row holding it. */
+export const ESCALATION_ACCUMULATE_KEYS_KEY = 'accumulate_keys';
+/** Envelope key: the item store, `Record<itemKey, AccumulatedEntry>`. Each
+ * entry carries `at` (database clock), optional `payload`, `actor`, and
+ * `reciprocalId`. Payloads are plumbing, not facets. */
+export const ESCALATION_ACCUMULATE_ITEMS_KEY = 'accumulate_items';
+/** Envelope key: the folded declaration (`{ unique, resolveAtMax }`) the
+ * add statement reads to decide replacement and completion. */
+export const ESCALATION_ACCUMULATE_CONFIG_KEY = 'accumulate_config';
+
+/** Reserved signal-payload key: the ordered collection delivered to the
+ * waiter of an accumulator row. */
+export const ESCALATION_ACCUMULATED_KEY = '$accumulated';
+/** Reserved signal-payload key: which terminal path delivered the
+ * collection (`count` | `timeout` | `resolve`). */
+export const ESCALATION_TRIGGER_KEY = '$trigger';
+
+export interface AccumulateConfig {
+  /** Count trigger. Absent means unbounded: only `timeout` or a manual
+   * resolve ends the wait. */
+  max?: number;
+  /** Default `true`: reaching `max` resolves and wakes in the same
+   * statement as the completing add. `false` makes `max` a cap only;
+   * further adds answer `full` and the wait ends by timeout or resolve. */
+  resolveAtMax?: boolean;
+  /** Default `true`: a repeated item key answers `duplicate-item`. `false`
+   * replaces the entry in place; the count is unchanged. */
+  unique?: boolean;
+}
+
+/** One held item as stored under `envelope.accumulate_items[itemKey]`. */
+export interface AccumulatedEntry<P = Record<string, unknown>> {
+  payload?: P;
+  /** ISO-8601, stamped by the database clock in the add statement. */
+  at: string;
+  actor?: string;
+  /** The row written in the same statement on the other side of a
+   * reciprocal add: the member's id on the container's entry, the
+   * container's id on the member's entry. */
+  reciprocalId?: string;
+}
+
+/** One held item as delivered under `$accumulated`. */
+export type AccumulatedItem<P = Record<string, unknown>> =
+  AccumulatedEntry<P> & { itemKey: string };
+
+export type AccumulatorTrigger = 'count' | 'timeout' | 'resolve';
+
+/**
+ * What `condition()` resolves with for an accumulator row on every terminal
+ * path except cancel (`null`). `R` is the manual resolver payload, present
+ * only when `$trigger` is `'resolve'`.
+ */
+export type AccumulatorResult<
+  P = Record<string, unknown>,
+  R extends Record<string, unknown> = Record<string, unknown>,
+> = R & {
+  $accumulated: AccumulatedItem<P>[];
+  $trigger: AccumulatorTrigger;
+  $resolution?: EscalationResolution;
+};
+
+/** Selector for the second row of a reciprocal add. Exactly one of `id` |
+ * `signalKey` | (`key` + `value`). */
+export interface AccumulateReciprocalSelector {
+  id?: string;
+  signalKey?: string;
+  key?: string;
+  value?: unknown;
+  roles?: string[];
+  /** Stored as the reciprocal entry's payload. */
+  payload?: Record<string, unknown>;
+}
+
+/**
+ * Outcome of an `accumulateItem()` call.
+ * - `completed` — this add reached `max`: the row resolved and the waiter
+ *   was woken with the collection, in the same statement.
+ * - `accepted` — the item landed, the row stays `pending`.
+ * - `duplicate-item` — `unique` and the key is already held.
+ * - `full` — `max` items held and the key is new (only with
+ *   `resolveAtMax: false`, or racing a completing add).
+ * - `not-accumulator` — the row carries no accumulate declaration.
+ * - `reciprocal-*` — the reciprocal row blocked the add; the container
+ *   row was left untouched.
+ * - Remaining values match {@link ResolveEscalationResult} semantics.
+ */
+export type AccumulateItemOutcome =
+  | 'completed'
+  | 'accepted'
+  | 'duplicate-item'
+  | 'full'
+  | 'not-accumulator'
+  | 'not-found'
+  | 'already-resolved'
+  | 'already-cancelled'
+  | 'already-expired'
+  | 'claim-expired'
+  | 'claimed-by-other'
+  | 'reciprocal-duplicate'
+  | 'reciprocal-full'
+  | 'reciprocal-terminal'
+  | 'reciprocal-not-accumulator'
+  | 'reciprocal-not-found';
+
+export interface AccumulateItemParams {
+  /** Row selector — exactly one of `id` | `signalKey`. */
+  id?: string;
+  signalKey?: string;
+  namespace?: string;
+  /** The key this item is held under. Non-empty, at most
+   * {@link ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH} characters. */
+  itemKey: string;
+  /** Stored as the entry's `payload` and delivered inside `$accumulated`. */
+  payload?: Record<string, unknown>;
+  /** Merge patch applied to the row's GIN-indexed `metadata` in the same
+   * UPDATE. Reserved accumulate keys cannot be overridden. */
+  metadata?: Record<string, unknown>;
+  /** Recorded on the entry (and the reciprocal entry) as `actor`. */
+  actor?: string;
+  /** Claim-lock assertion inside the same guarded UPDATE, on the container
+   * row only. See {@link ResolveEscalationParams.assertClaim}. */
+  assertClaim?: string;
+  /** Resolver identity, delivered under `$resolution` with a completing
+   * wake. See {@link ResolveEscalationParams.resolvedBy}. */
+  resolvedBy?: ResolvedByIdentity;
+  /**
+   * A second accumulator row written in the same statement, both or
+   * neither. The reciprocal row holds the container's id as its item key
+   * and each entry points at the other row via `reciprocalId`. A member
+   * row declared `accumulate: { max: 1 }` completes and wakes here too.
+   */
+  reciprocal?: AccumulateReciprocalSelector;
+}
+
+export interface AccumulateItemByMetadataParams {
+  /** Facet selector — mirrors {@link ResolveByMetadataParams}. */
+  key: string;
+  value: unknown;
+  roles?: string[];
+  namespace?: string;
+  itemKey: string;
+  payload?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  actor?: string;
+  resolvedBy?: ResolvedByIdentity;
+  reciprocal?: AccumulateReciprocalSelector;
+}
+
+/** The written side of a reciprocal add. */
+export interface AccumulateReciprocalResult {
+  outcome: 'completed' | 'accepted';
+  count: number;
+  remaining: number | null;
+  entry: EscalationEntry;
+}
+
+/**
+ * Result of `accumulateItem()` / `accumulateItemByMetadata()`. On `ok: true`,
+ * `count` is the items held after the add, `remaining` is `max - count`
+ * (`null` when unbounded), and `entry` is the post-add container row.
+ */
+export type AccumulateItemResult =
+  | {
+      ok: true;
+      outcome: 'completed' | 'accepted';
+      count: number;
+      remaining: number | null;
+      entry: EscalationEntry;
+      reciprocal?: AccumulateReciprocalResult;
+    }
+  | {
+      ok: false;
+      outcome: Exclude<AccumulateItemOutcome, 'completed' | 'accepted'>;
+    };
+
+export type RemoveAccumulatedItemOutcome =
+  | 'removed'
+  | 'item-absent'
+  | 'not-accumulator'
+  | 'not-found'
+  | 'already-resolved'
+  | 'already-cancelled'
+  | 'already-expired'
+  | 'reciprocal-absent'
+  | 'reciprocal-terminal'
+  | 'reciprocal-not-accumulator'
+  | 'reciprocal-not-found';
+
+export interface RemoveAccumulatedItemParams {
+  /** Row selector — exactly one of `id` | `signalKey`. */
+  id?: string;
+  signalKey?: string;
+  namespace?: string;
+  itemKey: string;
+  /** Recorded in the lifecycle event only; the entry is gone. */
+  actor?: string;
+  /** Also remove the container's id from this row, both or neither. */
+  reciprocal?: Omit<AccumulateReciprocalSelector, 'payload'>;
+}
+
+export interface RemoveAccumulatedItemByMetadataParams {
+  key: string;
+  value: unknown;
+  roles?: string[];
+  namespace?: string;
+  itemKey: string;
+  actor?: string;
+  reciprocal?: Omit<AccumulateReciprocalSelector, 'payload'>;
+}
+
+/** Result of `removeAccumulatedItem()`. A removal never wakes the waiter. */
+export type RemoveAccumulatedItemResult =
+  | {
+      ok: true;
+      outcome: 'removed';
+      count: number;
+      entry: EscalationEntry;
+      reciprocal?: { count: number; entry: EscalationEntry };
+    }
+  | { ok: false; outcome: Exclude<RemoveAccumulatedItemOutcome, 'removed'> };
+
+/**
+ * Result of the timeout path's expiry statement. `entry` is the row that
+ * moved `pending → expired` (with `resolver_payload` set when the row
+ * delivers a collection), or `null` when no pending row carried the key.
+ * `priorStatus` names the row's status before the statement when a row
+ * exists, so the caller can tell "a resolve won" from "no row".
+ */
+export interface ExpireEscalationResult {
+  entry: EscalationEntry | null;
+  priorStatus: EscalationEntry['status'] | null;
+}
+
 /**
  * Outcome of a `resolveBatchItem()` call.
  * - `completed` — this was the LAST item: the row resolved and the waiting
@@ -510,7 +809,12 @@ export interface ResolveBatchItemByMetadataParams {
  * when `outcome` is `completed`) and `entry` is the post-fill row.
  */
 export type ResolveBatchItemResult =
-  | { ok: true; outcome: 'completed' | 'accepted'; remaining: number; entry: EscalationEntry }
+  | {
+      ok: true;
+      outcome: 'completed' | 'accepted';
+      remaining: number;
+      entry: EscalationEntry;
+    }
   | { ok: false; outcome: Exclude<BatchItemOutcome, 'completed' | 'accepted'> };
 
 /**
@@ -619,7 +923,10 @@ export type ResolveAllOrNoneBlockReason =
  */
 export type ResolveAllOrNoneResult =
   | { ok: true; entries: EscalationEntry[] }
-  | { ok: false; failed: Array<{ id: string; reason: ResolveAllOrNoneBlockReason }> };
+  | {
+      ok: false;
+      failed: Array<{ id: string; reason: ResolveAllOrNoneBlockReason }>;
+    };
 
 /**
  * Full-fidelity migration params. Extends `CreateEscalationParams` with:

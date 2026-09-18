@@ -45,3 +45,14 @@ describe('UNIT | durable schema factory | version + escalation hook', () => {
     expect((yaml.match(/queueConfig/g) || []).length).toBeGreaterThan(1);
   });
 });
+
+describe('UNIT | durable schema factory | timeout markers carry data (v19)', () => {
+  it('every timeout marker forwards the hook data payload to condition()', () => {
+    expect(Number(APP_VERSION)).toBeGreaterThanOrEqual(19);
+    const yaml = getWorkflowYAML(APP_ID, APP_VERSION);
+    const markers = yaml.match(/timedOut, true, data, '\{\$self\.hook\.data\.data\}'/g) ?? [];
+    // inline waiter, signaler waiter, and the collated (Promise.all) waiter
+    expect(markers).toHaveLength(3);
+    expect(yaml).not.toMatch(/timedOut, true, ac,/);
+  });
+});
