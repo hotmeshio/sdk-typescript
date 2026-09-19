@@ -141,13 +141,17 @@ function pickCte(
     case 'signalKey':
       return `${name} AS MATERIALIZED (SELECT e.id ${from} WHERE e.signal_key = ${p.add(selector.signalKey)}${ns} LIMIT 1)`;
     case 'metadata': {
+      // The facet names a container: only a pending row carrying the
+      // accumulator declaration qualifies, so a release or remediation row
+      // sharing the facet (or a closed older generation) is never picked.
       const filter = p.add(JSON.stringify({ [selector.key]: selector.value }));
       const roles = p.add(selector.roles ?? null);
       return `${name} AS MATERIALIZED (
         SELECT e.id ${from}
         WHERE e.metadata @> ${filter}::jsonb
+          AND e.metadata ? '${COUNT}'
           AND (${roles}::text[] IS NULL OR e.role = ANY(${roles}::text[]))
-          AND e.status IN ('pending', 'cancelled')${ns}
+          AND e.status = 'pending'${ns}
         ORDER BY e.priority ASC, e.created_at ASC
         LIMIT 1)`;
     }

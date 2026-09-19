@@ -63,6 +63,10 @@ describe('UNIT | store | accumulate SQL builders', () => {
       reciprocal: null,
     });
     expect(sql).toContain("e.metadata @> $9::jsonb");
+    // a facet selects among pending accumulator rows only
+    expect(sql).toContain("e.metadata ? 'accumulate_count'");
+    expect(sql).toContain("e.status = 'pending'");
+    expect(sql).not.toContain("e.status IN ('pending', 'cancelled')");
     expect(sql).toContain('ORDER BY e.priority ASC, e.created_at ASC');
     expect(values[8]).toBe(JSON.stringify({ binKey: 'b-9' }));
     expect(values[9]).toEqual(['bin']);
