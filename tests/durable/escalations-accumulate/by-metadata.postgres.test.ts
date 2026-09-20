@@ -60,4 +60,66 @@ describe('DURABLE | escalations-accumulate | by-metadata | Postgres', () => {
     expect(output.payload.$trigger).toBe('count');
     expect(output.payload.$accumulated.map((i) => i.itemKey)).toEqual(['bag-1', orderId]);
   }, 40_000);
+
+  it('a facet picks the pending accumulator, never a higher-priority non-accumulator sharing it', async () => {
+    const binKey = guid();
+    await client.workflow.start({
+      args: [binKey, { max: 3 }], taskQueue, workflowName: 'binWorkflow', workflowId: guid(), expire: 180,
+    });
+    const bin = await findPending(client, 'bin', { binKey });
+    // the release row of the previous generation: same facet, same role, higher priority
+    const release = await client.escalations.create({ role: 'bin', type: 'release', priority: 1, metadata: { binKey } });
+    // a closed older generation that was cancelled: an accumulator, but not pending
+    await client.workflow.start({
+      args: [`${binKey}-old`, { max: 3 }], taskQueue, workflowName: 'binWorkflow', workflowId: guid(), expire: 180,
+    });
+    const old = await findPending(client, 'bin', { binKey: `${binKey}-old` });
+    await client.escalations.cancel(old.id);
+
+    const added = await client.escalations.accumulateItemByMetadata({ key: 'binKey', value: binKey, itemKey: 'bag-1' });
+    expect(added.ok && added.outcome === 'accepted' && added.entry.id === bin.id).toBe(true);
+    const untouched = await client.escalations.get(release.id);
+    expect(untouched!.status).toBe('pending');
+    expect((untouched!.envelope as any)?.accumulate_items).toBeUndefined();
+
+    const removed = await client.escalations.removeAccumulatedItemByMetadata({ key: 'binKey', value: binKey, itemKey: 'bag-1' });
+    expect(removed.ok && removed.entry.id === bin.id).toBe(true);
+    await client.escalations.cancel(bin.id);
+    await client.escalations.cancel(release.id);
+  }, 40_000);
+
+  it('only non-accumulator rows sharing the facet answer not-found, and the by-id form still names not-accumulator', async () => {
+    const binKey = guid();
+    const release = await client.escalations.create({ role: 'bin', type: 'release', priority: 1, metadata: { binKey } });
+    const added = await client.escalations.accumulateItemByMetadata({ key: 'binKey', value: binKey, itemKey: 'bag-1' });
+    expect(added.ok).toBe(false);
+    if (!added.ok) expect(added.outcome).toBe('not-found');
+    const removed = await client.escalations.removeAccumulatedItemByMetadata({ key: 'binKey', value: binKey, itemKey: 'bag-1' });
+    expect(removed.ok).toBe(false);
+    if (!removed.ok) expect(removed.outcome).toBe('not-found');
+
+    const byId = await client.escalations.accumulateItem({ id: release.id, itemKey: 'bag-1' });
+    expect(byId.ok).toBe(false);
+    if (!byId.ok) expect(byId.outcome).toBe('not-accumulator');
+    await client.escalations.cancel(release.id);
+  }, 30_000);
+
+  it('a cancelled accumulator generation beside the open one is never the pick', async () => {
+    const binKey = guid();
+    // older generation, opened first so it sorts first on created_at, then cancelled
+    await client.workflow.start({
+      args: [binKey, { max: 3 }], taskQueue, workflowName: 'binWorkflow', workflowId: guid(), expire: 180,
+    });
+    const older = await findPending(client, 'bin', { binKey });
+    await client.escalations.cancel(older.id);
+    await client.workflow.start({
+      args: [binKey, { max: 3 }], taskQueue, workflowName: 'binWorkflow', workflowId: guid(), expire: 180,
+    });
+    const open = await findPending(client, 'bin', { binKey });
+    expect(open.id).not.toBe(older.id);
+    const added = await client.escalations.accumulateItemByMetadata({ key: 'binKey', value: binKey, itemKey: 'bag-1' });
+    expect(added.ok && added.entry.id === open.id).toBe(true);
+    await client.escalations.cancel(open.id);
+  }, 40_000);
 });
+
