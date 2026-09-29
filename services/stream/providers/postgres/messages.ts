@@ -335,6 +335,41 @@ export async function extendReservation(
 }
 
 /**
+ * Release reservations the consumer still holds so the messages are
+ * redelivered immediately. Scoped to the owning consumer and to live
+ * rows: a message another consumer reclaimed, or one already acked or
+ * expired, is left alone.
+ */
+export async function releaseReservations(
+  client: PostgresClientType & ProviderClient,
+  tableName: string,
+  streamName: string,
+  messageIds: string[],
+  consumerName: string,
+  logger: ILogger,
+): Promise<number> {
+  if (messageIds.length === 0) {
+    return 0;
+  }
+  try {
+    const res = await client.query(
+      `UPDATE ${tableName}
+       SET reserved_at = NULL, reserved_by = NULL
+       WHERE stream_name = $1 AND id = ANY($2::bigint[])
+         AND reserved_by = $3 AND expired_at IS NULL`,
+      [streamName, messageIds.map((id) => parseInt(id, 10)), consumerName],
+    );
+    return res.rowCount ?? 0;
+  } catch (error) {
+    logger.error(`postgres-stream-release-error-${streamName}`, {
+      messageIds,
+      error,
+    });
+    throw error;
+  }
+}
+
+/**
  * Delivery liveness guard. Scoped to messages that are REDELIVERIES
  * (a prior reservation lapsed) or RETRIES (retry_attempt > 0) — zombie
  * messages of interrupted jobs only resurface through those paths, so

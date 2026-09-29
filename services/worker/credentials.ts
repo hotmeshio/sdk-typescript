@@ -33,6 +33,11 @@ async function createAdminClient(
   const ClientClass = config.class;
   const options = config.options;
   const client = new ClientClass(options);
+  //a lost socket fails the pending admin query; the 'error' event itself
+  //must never go unhandled (that ends the process)
+  if (typeof client.on === 'function') {
+    client.on('error', () => undefined);
+  }
   await client.connect();
   return client;
 }

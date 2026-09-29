@@ -1,9 +1,13 @@
 import { guid } from '../../../modules/utils';
 import {
+  HotMeshConnectionError,
   LeaseExpiredError,
   ErrorCategory,
   classifyError,
+  isConnectionError,
 } from '../../../modules/errors';
+import { HMSH_PG_RECONNECT_MAX_MS } from '../../../modules/enums';
+import { ConnectionHealth } from '../../connector/health';
 import { ILogger } from '../../logger';
 import { StreamService } from '../../stream';
 import { ThrottleManager } from '../throttling';
@@ -65,6 +69,14 @@ export class ConsumptionManager<
   // Lazily resolved once: whether the provider supports reservation
   // heartbeats (extendReservation + feature flag).
   private canExtendReservations: boolean | undefined;
+  //streams with a pending redelivery wake (one schedule per stream)
+  private redeliveryWakes = new Set<string>();
+  //messages deferred during an outage, released when a connection returns
+  private deferredReservations = new Map<
+    string,
+    { stream: string; consumer: string; ids: Set<string> }
+  >();
+  private releaseArmed = false;
 
   // Adaptive consumption pressure — scales reservation timeout AND batch
   // size based on stream depth. Under load: timeout grows (prevents
@@ -640,6 +652,23 @@ export class ConsumptionManager<
       } catch (error) {
         if (
           this.lifecycleManager.getShouldConsume() &&
+          error instanceof HotMeshConnectionError
+        ) {
+          //the connection is reconnecting: resume within one reconnect ceiling
+          this.logger.warn(`router-stream-connection-unavailable`, {
+            stream,
+            group,
+            consumer,
+            error: error.message,
+          });
+          this.errorCount++;
+          const timeout = Math.min(
+            1_000 * 2 ** Math.min(this.errorCount, 10),
+            Math.max(HMSH_PG_RECONNECT_MAX_MS, 1_000),
+          );
+          setTimeout(consume.bind(this), timeout);
+        } else if (
+          this.lifecycleManager.getShouldConsume() &&
           process.env.NODE_ENV !== 'test'
         ) {
           this.logger.error(`router-stream-error`, {
@@ -659,6 +688,116 @@ export class ConsumptionManager<
     };
 
     consume.call(this);
+  }
+
+  /**
+   * Record a message this consumer deferred because the connection was
+   * unavailable. The reservation is released as soon as a connection is
+   * restored, so the message is redelivered at once; the timed wake below
+   * remains the fallback when a release is not possible.
+   */
+  private deferForRedelivery(
+    stream: string,
+    id: string,
+    consumer?: string,
+  ): void {
+    this.scheduleRedeliveryWake(stream);
+    if (!consumer || typeof this.stream.releaseReservations !== 'function') {
+      return;
+    }
+    const key = `${stream}|${consumer}`;
+    let entry = this.deferredReservations.get(key);
+    if (!entry) {
+      entry = { stream, consumer, ids: new Set() };
+      this.deferredReservations.set(key, entry);
+    }
+    entry.ids.add(id);
+    this.armDeferredRelease();
+  }
+
+  private armDeferredRelease(): void {
+    if (this.releaseArmed) {
+      return;
+    }
+    this.releaseArmed = true;
+    ConnectionHealth.once('restored', () => {
+      this.releaseArmed = false;
+      return this.releaseDeferred();
+    });
+  }
+
+  private async releaseDeferred(): Promise<void> {
+    const batches = Array.from(this.deferredReservations.values());
+    this.deferredReservations.clear();
+    for (const batch of batches) {
+      const ids = Array.from(batch.ids);
+      try {
+        const released = await this.stream.releaseReservations(
+          batch.stream,
+          ids,
+          batch.consumer,
+        );
+        this.logger.info('stream-deferred-released', {
+          stream: batch.stream,
+          consumer: batch.consumer,
+          requested: ids.length,
+          released,
+        });
+      } catch (error) {
+        //the stream's own connection is not back yet: keep the batch for
+        //the next restore (the timed wake still covers it)
+        const key = `${batch.stream}|${batch.consumer}`;
+        const pending = this.deferredReservations.get(key);
+        if (pending) {
+          ids.forEach((id) => pending.ids.add(id));
+        } else {
+          this.deferredReservations.set(key, batch);
+        }
+        this.armDeferredRelease();
+        this.logger.warn('stream-deferred-release-error', {
+          stream: batch.stream,
+          consumer: batch.consumer,
+          error: (error as Error)?.message,
+        });
+      }
+    }
+  }
+
+  /**
+   * A message left unacked because the connection was unavailable is
+   * redelivered once its reservation lapses, but only when a consumer
+   * next fetches. Wake the stream's consumers just after the lapse (and
+   * twice more, in case the database is still away) instead of waiting
+   * for the fallback poller. One schedule per stream at a time.
+   */
+  private scheduleRedeliveryWake(stream: string): void {
+    const streamService = this.stream as any;
+    if (
+      typeof streamService.scheduleStreamNotify !== 'function' ||
+      this.redeliveryWakes.has(stream)
+    ) {
+      return;
+    }
+    this.redeliveryWakes.add(stream);
+    //a message becomes claimable once the longest reservation window lapses
+    const windowMs =
+      Math.max(
+        Number(streamService.reservationTimeout) || 0,
+        this.adaptiveReservationTimeout + ConsumptionManager.LEASE_BUFFER_S,
+      ) * 1000;
+    const delays = [
+      windowMs + 1_000,
+      windowMs * 2 + 1_000,
+      windowMs * 4 + 1_000,
+    ];
+    for (const delay of delays) {
+      streamService.scheduleStreamNotify(stream, delay);
+    }
+    const release = setTimeout(
+      () => this.redeliveryWakes.delete(stream),
+      delays[delays.length - 1],
+    );
+    release.unref?.();
   }
 
   /**
@@ -840,6 +979,27 @@ export class ConsumptionManager<
     } catch (err) {
       const category = classifyError(err);
 
+      if (category === ErrorCategory.UNAVAILABLE) {
+        // The HotMesh database connection is unavailable. Do NOT ack and
+        // do NOT publish an error response: the message stays reserved and
+        // is redelivered once the connection returns, without spending
+        // the retry budget on an outage.
+        this.logger.warn('stream-connection-unavailable', {
+          category,
+          group,
+          stream,
+          id,
+          topic: input.metadata?.topic,
+          activityId: input.metadata?.aid,
+          jobId: input.metadata?.jid,
+          error: (err as Error)?.message,
+        });
+        telemetry.setStreamErrorFromException(err);
+        telemetry.endStreamSpan();
+        this.deferForRedelivery(stream, id, consumer);
+        return; // NO ack — redelivered after the connection returns
+      }
+
       if (err instanceof LeaseExpiredError) {
         // FATAL: lease expired — do NOT ack. The message remains in the
         // stream for a reclaimant to pick up cleanly. Any partial writes
@@ -906,6 +1066,7 @@ export class ConsumptionManager<
       }
     }
 
+    let skipAck = false;
     try {
       // When the ENGINE encounters an infrastructure error (schema not found,
       // subscription missing — code 598), the message is permanently unprocessable.
@@ -925,15 +1086,46 @@ export class ConsumptionManager<
         telemetry.setStreamAttributes({ 'app.worker.mid': messageId });
       }
     } catch (publishErr) {
-      // If publishResponse fails, still ack the message to prevent
-      // infinite reprocessing. Log the error for debugging.
-      this.logger.error(`stream-publish-response-error`, {
-        category: classifyError(publishErr),
-        group, stream, id, error: publishErr,
-      });
+      if (isConnectionError(publishErr)) {
+        // The response was not written because the connection is gone.
+        // Acking now would lose it; leave the message for redelivery.
+        skipAck = true;
+        this.deferForRedelivery(stream, id, consumer);
+        this.logger.warn(`stream-publish-response-deferred`, {
+          category: ErrorCategory.UNAVAILABLE,
+          group,
+          stream,
+          id,
+          error: (publishErr as Error)?.message,
+        });
+      } else {
+        // If publishResponse fails, still ack the message to prevent
+        // infinite reprocessing. Log the error for debugging.
+        this.logger.error(`stream-publish-response-error`, {
+          category: classifyError(publishErr),
+          group,
+          stream,
+          id,
+          error: publishErr,
+        });
+      }
       this.errorCount++;
     } finally {
-      await this.ackAndDelete(stream, group, id);
+      if (!skipAck) {
+        try {
+          await this.ackAndDelete(stream, group, id);
+        } catch (ackErr) {
+          // An unacked message is redelivered; never let the ack reject
+          // the consumer loop.
+          this.logger.warn(`stream-ack-deferred`, {
+            category: classifyError(ackErr),
+            group,
+            stream,
+            id,
+            error: (ackErr as Error)?.message,
+          });
+        }
+      }
       telemetry.endStreamSpan();
       this.logger.debug(`stream-read-one-end`, { group, stream, id });
     }
@@ -949,6 +1141,11 @@ export class ConsumptionManager<
     try {
       output = await callback(input);
     } catch (error) {
+      if (error instanceof HotMeshConnectionError) {
+        //an outage is not the callback's failure; consumeOne leaves the
+        //message for redelivery instead of structuring an error response
+        throw error;
+      }
       this.logger.error(`stream-call-function-error`, {
         category: classifyError(error),
         error,

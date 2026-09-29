@@ -21,6 +21,8 @@ export class NotificationManager<TService> {
   > = new Map();
   private static clientNotificationHandlers: Map<any, boolean> = new Map();
   private static clientFallbackPollers: Map<any, NodeJS.Timeout> = new Map();
+  // Clients whose 'reconnected' event re-arms LISTEN (armed once per client)
+  private static relistenClients: WeakSet<object> = new WeakSet();
 
   // Instance-level tracking
   private instanceNotificationConsumers: Set<string> = new Set();
@@ -52,6 +54,72 @@ export class NotificationManager<TService> {
 
     this.client.on('notification', this.notificationHandlerBound);
     NotificationManager.clientNotificationHandlers.set(this.client, true);
+
+    // A resilient client replaces its session after a loss; LISTEN is
+    // session state, so channels are re-armed and every consumer fetches
+    // at once (NOTIFYs sent while the session was down are gone)
+    const client = this.client as any;
+    if (!NotificationManager.relistenClients.has(client)) {
+      NotificationManager.relistenClients.add(client);
+      client.on('reconnected', () => {
+        void NotificationManager.relisten(client, this.logger);
+      });
+    }
+  }
+
+  /**
+   * Re-issue LISTEN for every stream channel with a consumer on this
+   * client, then wake each listening consumer. Failures are logged; the
+   * fallback poller and the next reconnect cover what remains.
+   */
+  private static async relisten(client: any, logger: ILogger): Promise<void> {
+    const consumersByKey =
+      NotificationManager.clientNotificationConsumers.get(client);
+    if (!consumersByKey) {
+      return;
+    }
+    let armed = 0;
+    for (const [consumerKey, instanceMap] of consumersByKey.entries()) {
+      const consumers = Array.from(instanceMap.values());
+      const anyConsumer = consumers[0];
+      if (!anyConsumer) {
+        continue;
+      }
+      const separator = consumerKey.lastIndexOf(':');
+      const resolvedStreamName = consumerKey.substring(0, separator);
+      const isEngine = consumerKey.substring(separator + 1) === 'ENGINE';
+      const channelName = getNotificationChannelName(
+        resolvedStreamName,
+        isEngine,
+      );
+      const serviceAny = anyConsumer.serviceInstance as any;
+      try {
+        if (serviceAny?.securedMode && serviceAny?.safeName) {
+          const schema = serviceAny.safeName(serviceAny.appId);
+          await client.query(`SELECT ${schema}.worker_listen($1)`, [
+            resolvedStreamName,
+          ]);
+        } else {
+          await client.query(`LISTEN "${channelName}"`);
+        }
+        armed++;
+      } catch (error) {
+        logger.warn('postgres-stream-relisten-error', { channelName, error });
+        continue;
+      }
+      for (const consumer of consumers) {
+        if (
+          consumer.isListening &&
+          consumer.serviceInstance?.fetchAndDeliverMessages
+        ) {
+          consumer.serviceInstance.fetchAndDeliverMessages(consumer);
+        }
+      }
+    }
+    logger.info('postgres-stream-relisten', {
+      channels: consumersByKey.size,
+      armed,
+    });
   }
 
   /**
@@ -143,7 +211,7 @@ export class NotificationManager<TService> {
                 groupName: consumer.groupName,
                 messageCount: messages.length,
               });
-              consumer.callback(messages);
+              deliver(consumer, messages, this.logger);
             }
 
             consumer.lastFallbackCheck = now;
@@ -469,6 +537,36 @@ export class NotificationManager<TService> {
    */
   private getConsumerKey(streamName: string, groupName: string): string {
     return `${streamName}:${groupName}`;
+  }
+}
+
+/**
+ * Hand a batch to a consumer's callback. The callback is async in
+ * practice; its rejection is logged here and never becomes an unhandled
+ * rejection. Unacked messages are redelivered by the stream.
+ */
+export function deliver(
+  consumer: NotificationConsumer,
+  messages: StreamMessage[],
+  logger: ILogger,
+): void {
+  try {
+    const settled = consumer.callback(messages) as unknown;
+    if (settled && typeof (settled as Promise<unknown>).catch === 'function') {
+      (settled as Promise<unknown>).catch((error) =>
+        logger.error('postgres-stream-consumer-callback-error', {
+          streamName: consumer.streamName,
+          groupName: consumer.groupName,
+          error,
+        }),
+      );
+    }
+  } catch (error) {
+    logger.error('postgres-stream-consumer-callback-error', {
+      streamName: consumer.streamName,
+      groupName: consumer.groupName,
+      error,
+    });
   }
 }
 

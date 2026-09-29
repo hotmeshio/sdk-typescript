@@ -8,7 +8,7 @@ import {
   StreamRole,
 } from '../../types/stream';
 import { KeyType } from '../../modules/key';
-import { guid as makeGuid } from '../../modules/utils';
+import { detach, guid as makeGuid } from '../../modules/utils';
 import { HMSH_ENGINE_CONCURRENCY } from '../../modules/enums';
 
 type WorkerCallback = (data: StreamData) => Promise<StreamDataResponse | void>;
@@ -99,7 +99,12 @@ class StreamConsumerRegistry {
           appId,
           topic: taskQueue,
         });
-        router.consumeMessages(streamKey, 'WORKER', guid, dispatchCallback);
+        detach(
+          router.consumeMessages(streamKey, 'WORKER', guid, dispatchCallback),
+          logger,
+          'stream-consumer-registry-worker-start-error',
+          { taskQueue },
+        );
       }
     }
 
@@ -162,7 +167,17 @@ class StreamConsumerRegistry {
           logger,
         );
         entry.routers.push(router);
-        router.consumeMessages(streamKey, 'ENGINE', consumerGuid, dispatchCallback);
+        detach(
+          router.consumeMessages(
+            streamKey,
+            'ENGINE',
+            consumerGuid,
+            dispatchCallback,
+          ),
+          logger,
+          'stream-consumer-registry-engine-start-error',
+          { appId },
+        );
       }
 
       if (HMSH_ENGINE_CONCURRENCY > 1) {
@@ -312,6 +327,16 @@ class StreamConsumerRegistry {
       }
     }
     return merged;
+  }
+
+  /**
+   * Forget every registered consumer without stopping them. Used after
+   * the routers were already stopped process-wide, so a later init in the
+   * same process creates live consumers instead of reusing stopped ones.
+   */
+  static clear(): void {
+    StreamConsumerRegistry.workerConsumers.clear();
+    StreamConsumerRegistry.engineConsumers.clear();
   }
 
   /**

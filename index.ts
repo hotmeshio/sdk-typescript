@@ -18,6 +18,7 @@ import * as KeyStore from './modules/key';
 import { ConnectorService as Connector } from './services/connector/factory';
 import { PostgresConnection as ConnectorPostgres } from './services/connector/providers/postgres';
 import { NatsConnection as ConnectorNATS } from './services/connector/providers/nats';
+import { ConnectionHealth } from './services/connector/health';
 import { Escalations } from './services/escalations';
 
 export {
@@ -25,6 +26,7 @@ export {
   Connector, //factory
   ConnectorNATS,
   ConnectorPostgres,
+  ConnectionHealth,
 
   //Top-level Modules
   HotMesh,

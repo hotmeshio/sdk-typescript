@@ -5,7 +5,7 @@ import {
   KeyType,
   HMNS,
 } from '../../../../modules/key';
-import { guid } from '../../../../modules/utils';
+import { detach, guid } from '../../../../modules/utils';
 import { ILogger } from '../../../logger';
 import {
   MDATA_SYMBOLS,
@@ -1328,8 +1328,16 @@ class PostgresStoreService extends StoreService<
     if (didRemove) {
       if (scrub) {
         //indexes can be designed to be self-cleaning; `engine.hookAll` exposes this option
-        this.kvsql().del(processedKey);
-        this.kvsql().del(key.split(':').slice(0, 5).join(':'));
+        detach(
+          this.kvsql().del(processedKey),
+          this.logger,
+          'store-scrub-error',
+        );
+        detach(
+          this.kvsql().del(key.split(':').slice(0, 5).join(':')),
+          this.logger,
+          'store-scrub-error',
+        );
       } else {
         await this.kvsql().rename(processedKey, key);
       }

@@ -5,7 +5,58 @@ import {
   PostgresClassType,
   PostgresPoolClientType,
 } from '../../../types/postgres';
-import { hashOptions } from '../../../modules/utils';
+import { guid, hashOptions } from '../../../modules/utils';
+import {
+  HMSH_PG_CONNECT_TIMEOUT_MS,
+  HMSH_PG_KEEPALIVE_DELAY_MS,
+  HMSH_PG_RESILIENT,
+} from '../../../modules/enums';
+
+import { ResilientPostgresClient } from './postgres-resilient-client';
+
+/**
+ * Connection defaults HotMesh applies to the clients it creates. Only
+ * keys the caller left unset are filled; an explicit caller value
+ * (including `connectionString` parameters) always wins.
+ */
+export function withConnectionDefaults(
+  options: PostgresClientOptions,
+): PostgresClientOptions {
+  const resolved: PostgresClientOptions = { ...options };
+  if (
+    resolved.connectionTimeoutMillis === undefined &&
+    HMSH_PG_CONNECT_TIMEOUT_MS > 0
+  ) {
+    resolved.connectionTimeoutMillis = HMSH_PG_CONNECT_TIMEOUT_MS;
+  }
+  if (resolved.keepAlive === undefined) {
+    resolved.keepAlive = true;
+  }
+  if (resolved.keepAliveInitialDelayMillis === undefined) {
+    resolved.keepAliveInitialDelayMillis = HMSH_PG_KEEPALIVE_DELAY_MS;
+  }
+  if (resolved.application_name === undefined) {
+    resolved.application_name = 'hotmesh';
+  }
+  return resolved;
+}
+
+/** Attach a logging `'error'` listener to an emitter that has none. */
+function guardErrors(target: any, label: string): void {
+  if (
+    target &&
+    typeof target.on === 'function' &&
+    typeof target.listenerCount === 'function' &&
+    target.listenerCount('error') === 0
+  ) {
+    target.on('error', (error: Error) => {
+      AbstractConnection.logger.warn(label, {
+        error: error?.message,
+        code: (error as any)?.code,
+      });
+    });
+  }
+}
 
 class PostgresConnection extends AbstractConnection<
   PostgresClassType,
@@ -129,12 +180,27 @@ class PostgresConnection extends AbstractConnection<
       ) {
         // It's a PoolClient
         connection = clientConstructor as PostgresPoolClientType;
+        //an idle pooled client that loses its socket is re-emitted on the
+        //pool; never let that reach an unhandled 'error' event
+        guardErrors(clientConstructor, 'postgres-pool-client-lost');
         if (config.connect) {
           const client = await clientConstructor.connect();
+          //a checked-out client has no pool listener while it is held
+          guardErrors(client, 'postgres-pool-held-client-lost');
           //register the connection singularly to be 'released' later
           PostgresConnection.poolClientInstances.add(client);
           this.poolClientInstance = client;
         }
+      } else if (HMSH_PG_RESILIENT) {
+        // It's a Client: wrap it so the session survives restarts
+        const resilient = new ResilientPostgresClient(
+          clientConstructor as PostgresClassType,
+          withConnectionDefaults(options),
+          this.id ?? guid(),
+          PostgresConnection.logger,
+        );
+        await resilient.connect();
+        connection = resilient as unknown as PostgresClientType;
       } else {
         // It's a Client
         connection = new (clientConstructor as PostgresClassType)(options);
@@ -175,28 +241,38 @@ class PostgresConnection extends AbstractConnection<
     //this.logConnectionStats();
     if (!this.disconnecting) {
       this.disconnecting = true;
-      await this.disconnectPoolClients();
-      await this.disconnectConnections();
-      // Clear taskQueue connections cache when disconnecting all
-      this.taskQueueConnections.clear();
-      // Clear the base class instances cache to allow reconnection with same IDs
-      this.instances.clear();
-      this.disconnecting = false;
+      try {
+        // Clear the reuse caches first so no caller is handed a closing connection
+        this.taskQueueConnections.clear();
+        this.instances.clear();
+        await this.disconnectPoolClients();
+        await this.disconnectConnections();
+      } finally {
+        this.disconnecting = false;
+      }
     }
   }
 
   public static async disconnectPoolClients(): Promise<void> {
-    Array.from(this.poolClientInstances.values()).map((instance) => {
-      instance.release();
-    });
+    const clients = Array.from(this.poolClientInstances.values());
     this.poolClientInstances.clear();
+    for (const instance of clients) {
+      try {
+        instance.release();
+      } catch (error) {
+        this.logger.debug('postgres-pool-client-release-error', { error });
+      }
+    }
   }
 
   public static async disconnectConnections(): Promise<void> {
-    Array.from(this.connectionInstances.values()).map((instance) => {
-      instance.end();
-    });
+    const connections = Array.from(this.connectionInstances.values());
     this.connectionInstances.clear();
+    await Promise.allSettled(
+      connections.map((instance) =>
+        Promise.resolve().then(() => instance.end()),
+      ),
+    );
   }
 
   async closeConnection(connection: PostgresClientType): Promise<void> {

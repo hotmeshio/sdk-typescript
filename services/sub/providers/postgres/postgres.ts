@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 
 import { HMSH_NOTIFY_PAYLOAD_LIMIT } from '../../../../modules/enums';
+import { isConnectionError } from '../../../../modules/errors';
 import {
   KeyService,
   KeyStoreParams,
@@ -28,6 +29,8 @@ class PostgresSubService extends SubService<
     PostgresClientType & ProviderClient,
     boolean
   > = new Map();
+  // Clients whose 'reconnected' event re-arms LISTEN (armed once per client)
+  private static relistenClients: WeakSet<object> = new WeakSet();
 
   // Instance-level subscriptions for cleanup
   private instanceSubscriptions: Map<string, string> = new Map(); // topic -> callbackKey mapping
@@ -81,7 +84,19 @@ class PostgresSubService extends SubService<
             // Call all callbacks
             callbackArray.forEach(([callbackKey, callback], index) => {
               try {
-                callback(msg.channel, payload);
+                //async subscribers settle here; a rejection is logged, never unhandled
+                const settled = callback(msg.channel, payload) as unknown;
+                if (
+                  settled &&
+                  typeof (settled as Promise<unknown>).catch === 'function'
+                ) {
+                  (settled as Promise<unknown>).catch((err) =>
+                    this.logger?.error(
+                      `Error in subscription callback for ${msg.channel}:`,
+                      err,
+                    ),
+                  );
+                }
               } catch (err) {
                 this.logger?.error(
                   `Error in subscription callback for ${msg.channel}:`,
@@ -99,8 +114,44 @@ class PostgresSubService extends SubService<
       },
     );
 
+    // A resilient client replaces its session after a loss; LISTEN is
+    // session state, so every channel is re-armed on the new session
+    const eventClient = this.eventClient as any;
+    if (
+      typeof eventClient.on === 'function' &&
+      !PostgresSubService.relistenClients.has(eventClient)
+    ) {
+      PostgresSubService.relistenClients.add(eventClient);
+      eventClient.on('reconnected', () => {
+        void PostgresSubService.relisten(eventClient, this.logger);
+      });
+    }
+
     // Mark this client as having a notification handler
     PostgresSubService.clientHandlers.set(this.eventClient, true);
+  }
+
+  /**
+   * Re-issue LISTEN for every channel subscribed on a client. A failure
+   * leaves the channel for the next reconnect; nothing is thrown.
+   */
+  private static async relisten(
+    client: PostgresClientType & ProviderClient,
+    logger: ILogger,
+  ): Promise<void> {
+    const channels = Array.from(
+      PostgresSubService.clientSubscriptions.get(client)?.keys() ?? [],
+    );
+    let armed = 0;
+    for (const channel of channels) {
+      try {
+        await client.query(`LISTEN "${channel}"`);
+        armed++;
+      } catch (error) {
+        logger?.warn('postgres-sub-relisten-error', { channel, error });
+      }
+    }
+    logger?.info('postgres-sub-relisten', { channels: channels.length, armed });
   }
 
   transact(): ProviderTransaction {
@@ -163,7 +214,21 @@ class PostgresSubService extends SubService<
       clientSubscriptions.set(safeKey, callbacks);
 
       // Start listening to the safe topic (only once per channel across all instances)
-      await this.eventClient.query(`LISTEN "${safeKey}"`);
+      try {
+        await this.eventClient.query(`LISTEN "${safeKey}"`);
+      } catch (err) {
+        if (!isConnectionError(err)) {
+          clientSubscriptions.delete(safeKey);
+          throw err;
+        }
+        //the session is being replaced: the channel stays registered and
+        //the reconnect re-arms it, so the subscriber is not lost
+        this.logger?.warn('postgres-subscribe-deferred', {
+          originalKey,
+          safeKey,
+          error: err?.message,
+        });
+      }
     }
 
     // Generate unique callback key to avoid overwrites
@@ -357,6 +422,15 @@ class PostgresSubService extends SubService<
       });
       return true;
     } catch (err) {
+      // Pub/sub is best effort: an outage drops the message, never the caller
+      if (isConnectionError(err)) {
+        this.logger?.warn('postgres-publish-failed-connection-unavailable', {
+          originalKey,
+          safeKey,
+          error: err?.message,
+        });
+        return false;
+      }
       // Handle gracefully if client was closed during operation
       if (err?.message?.includes('closed') || err?.message?.includes('queryable')) {
         this.logger?.debug('postgres-publish-failed-closed-client', { 

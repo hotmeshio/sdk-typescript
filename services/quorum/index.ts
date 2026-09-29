@@ -5,6 +5,7 @@ import {
 } from '../../modules/enums';
 import {
   XSleepFor,
+  detach,
   formatISODate,
   getSystemHealth,
   identifyProvider,
@@ -87,8 +88,16 @@ class QuorumService {
         instance.guid,
       );
 
-      instance.engine.processWebHooks();
-      instance.engine.processTimeHooks();
+      detach(
+        instance.engine.processWebHooks(),
+        logger,
+        'quorum-process-webhooks-error',
+      );
+      detach(
+        instance.engine.processTimeHooks(),
+        logger,
+        'quorum-process-timehooks-error',
+      );
       return instance;
     }
   }
@@ -143,11 +152,15 @@ class QuorumService {
       if (message.type === 'activate') {
         self.engine.setCacheMode(message.cache_mode, message.until_version);
       } else if (message.type === 'ping') {
-        self.sayPong(
-          self.appId,
-          self.guid,
-          message.originator,
-          message.details,
+        detach(
+          self.sayPong(
+            self.appId,
+            self.guid,
+            message.originator,
+            message.details,
+          ),
+          self.logger,
+          'quorum-pong-error',
         );
       } else if (message.type === 'pong' && self.guid === message.originator) {
         self.quorum = self.quorum + 1;
@@ -155,9 +168,17 @@ class QuorumService {
           self.profiles.push(message.profile);
         }
       } else if (message.type === 'throttle') {
-        self.engine.throttle(message.throttle);
+        detach(
+          self.engine.throttle(message.throttle),
+          self.logger,
+          'quorum-throttle-error',
+        );
       } else if (message.type === 'work') {
-        self.engine.processWebHooks();
+        detach(
+          self.engine.processWebHooks(),
+          self.logger,
+          'quorum-process-webhooks-error',
+        );
       } else if (message.type === 'job') {
         let jobOutput = message.job;
         // If _ref is true, payload was too large - fetch full job data via getState
@@ -178,9 +199,17 @@ class QuorumService {
             return; // Can't route without job data
           }
         }
-        self.engine.routeToSubscribers(message.topic, jobOutput);
+        detach(
+          self.engine.routeToSubscribers(message.topic, jobOutput),
+          self.logger,
+          'quorum-route-subscribers-error',
+        );
       } else if (message.type === 'cron') {
-        self.engine.processTimeHooks();
+        detach(
+          self.engine.processTimeHooks(),
+          self.logger,
+          'quorum-process-timehooks-error',
+        );
       } else if (message.type === 'duress') {
         // Apply remote duress signal (skip our own broadcasts)
         if (message.originator !== self.guid) {
@@ -190,7 +219,7 @@ class QuorumService {
           );
         }
       } else if (message.type === 'rollcall') {
-        self.doRollCall(message);
+        detach(self.doRollCall(message), self.logger, 'quorum-rollcall-error');
       }
       //if there are any callbacks, call them
       if (self.callbacks.length > 0) {
@@ -239,15 +268,19 @@ class QuorumService {
         profile.duress_per_type = duressSnapshot.per_type;
       }
     }
-    this.subscribe.publish(
-      KeyType.QUORUM,
-      {
-        type: 'pong',
-        guid,
-        originator,
-        profile,
-      },
-      appId,
+    detach(
+      this.subscribe.publish(
+        KeyType.QUORUM,
+        {
+          type: 'pong',
+          guid,
+          originator,
+          profile,
+        },
+        appId,
+      ),
+      this.logger,
+      'quorum-pong-publish-error',
     );
   }
 
@@ -342,7 +375,7 @@ class QuorumService {
       this.profiles as { stream: string }[],
     );
 
-    this.profiles.forEach(async (profile: QuorumProfile, index: number) => {
+    this.profiles.forEach((profile: QuorumProfile, index: number) => {
       //if nothing in the table, the depth will be 0
       //todo: separate table for every worker stream?
       profile.stream_depth = stream_depths?.[index]?.depth ?? 0;
@@ -376,10 +409,14 @@ class QuorumService {
     const q3 = await this.requestQuorum(delay);
     if (q1 && q1 === q2 && q2 === q3) {
       this.logger.info('quorum-rollcall-succeeded', { q1, q2, q3 });
-      this.subscribe.publish(
-        KeyType.QUORUM,
-        { type: 'activate', cache_mode: 'nocache', until_version: version },
-        this.appId,
+      detach(
+        this.subscribe.publish(
+          KeyType.QUORUM,
+          { type: 'activate', cache_mode: 'nocache', until_version: version },
+          this.appId,
+        ),
+        this.logger,
+        'quorum-activate-publish-error',
       );
       await new Promise((resolve) => setTimeout(resolve, delay));
       await this.store.releaseScoutRole('activate');
@@ -401,7 +438,11 @@ class QuorumService {
       }
     } else {
       this.logger.warn('quorum-rollcall-error', { q1, q2, q3, count });
-      this.store.releaseScoutRole('activate');
+      detach(
+        this.store.releaseScoutRole('activate'),
+        this.logger,
+        'quorum-release-scout-error',
+      );
       if (count < HMSH_ACTIVATION_MAX_RETRY) {
         //increase the delay (give the quorum time to respond) and try again
         return await this.activate(version, delay * 2, count + 1);

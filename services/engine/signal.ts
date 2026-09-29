@@ -11,7 +11,7 @@
  */
 
 import { KeyType, VALSEP } from '../../modules/key';
-import { getSubscriptionTopic, guid } from '../../modules/utils';
+import { detach, getSubscriptionTopic, guid } from '../../modules/utils';
 import { ReporterService } from '../reporter';
 import { Router } from '../router';
 import { StoreService } from '../store';
@@ -152,10 +152,14 @@ export async function signalAll(
           ].join(VALSEP),
         ),
       );
-      instance.subscribe.publish(
-        KeyType.QUORUM,
-        { type: 'work', originator: instance.guid },
-        instance.appId,
+      detach(
+        instance.subscribe.publish(
+          KeyType.QUORUM,
+          { type: 'work', originator: instance.guid },
+          instance.appId,
+        ),
+        instance.logger,
+        'engine-signal-work-publish-error',
       );
     }
     return workItems;
@@ -168,7 +172,11 @@ export async function processWebHooks(
   instance: SignalContext,
   signalFn: HookInterface,
 ) {
-  instance.taskService.processWebHooks(signalFn);
+  detach(
+    instance.taskService.processWebHooks(signalFn),
+    instance.logger,
+    'engine-process-webhooks-error',
+  );
 }
 
 export async function processTimeHooks(
@@ -180,7 +188,11 @@ export async function processTimeHooks(
     type: WorkListTaskType,
   ) => Promise<void>,
 ) {
-  instance.taskService.processTimeHooks(hookTimeFn);
+  detach(
+    instance.taskService.processTimeHooks(hookTimeFn),
+    instance.logger,
+    'engine-process-timehooks-error',
+  );
 }
 
 export async function throttle(instance: SignalContext, delayInMillis: number) {

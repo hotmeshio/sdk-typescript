@@ -34,15 +34,23 @@ import {
  *               Message is acked; job is marked failed.
  * COLLATION   — duplicate delivery detected via GUID ledger.
  *               Silent ack; no work needed.
+ * UNAVAILABLE — the HotMesh database connection is unavailable.
+ *               The message is NOT acked and no response is published;
+ *               it is redelivered once the connection returns, without
+ *               spending the retry budget.
  */
 export enum ErrorCategory {
   FATAL = 'fatal',
   RETRYABLE = 'retryable',
   TERMINAL = 'terminal',
   COLLATION = 'collation',
+  UNAVAILABLE = 'unavailable',
 }
 
 export function classifyError(error: unknown): ErrorCategory {
+  if (error instanceof HotMeshConnectionError) {
+    return ErrorCategory.UNAVAILABLE;
+  }
   if (error instanceof LeaseExpiredError) {
     return ErrorCategory.FATAL;
   }
@@ -368,6 +376,92 @@ class LeaseExpiredError extends Error {
   }
 }
 
+/**
+ * Raised by a HotMesh PostgreSQL connection when the failure is the
+ * connection's, not the statement's: the session was lost, is
+ * reconnecting, or a transaction did not survive a reconnect. The
+ * native error, when there is one, is kept on `cause`.
+ */
+class HotMeshConnectionError extends Error {
+  readonly code = 'HMSH_PG_UNAVAILABLE';
+  readonly connectionId?: string;
+  readonly cause?: unknown;
+  constructor(message: string, connectionId?: string, cause?: unknown) {
+    super(message);
+    this.name = 'HotMeshConnectionError';
+    this.connectionId = connectionId;
+    this.cause = cause;
+  }
+}
+
+/** pg and Node messages that mean the connection, not the statement, failed. */
+const CONNECTION_ERROR_MESSAGES = [
+  'connection terminated',
+  'not queryable',
+  'timeout expired',
+  'connection timeout',
+  'server closed the connection',
+  'terminating connection',
+  'the database system is starting up',
+  'the database system is shutting down',
+  'the database system is in recovery mode',
+];
+
+/** Node socket and DNS codes that mean the host could not be reached. */
+const CONNECTION_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ETIMEDOUT',
+  'EPIPE',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'HMSH_PG_UNAVAILABLE',
+]);
+
+/** SQLSTATEs outside class 08 that mean the server ended or refused the session. */
+const CONNECTION_ERROR_SQLSTATES = new Set(['57P01', '57P02', '57P03']);
+
+/**
+ * True when an error means the database connection is unavailable (lost,
+ * refused, timed out, shutting down), not that the statement failed.
+ * Walks `cause` so a wrapped native error is recognized.
+ */
+function isConnectionError(error: unknown, depth = 0): boolean {
+  if (!error || typeof error !== 'object' || depth > 4) {
+    return false;
+  }
+  if (error instanceof HotMeshConnectionError) {
+    return true;
+  }
+  const { code, message, cause } = error as {
+    code?: unknown;
+    message?: unknown;
+    cause?: unknown;
+  };
+  if (typeof code === 'string') {
+    if (
+      CONNECTION_ERROR_CODES.has(code) ||
+      CONNECTION_ERROR_SQLSTATES.has(code)
+    ) {
+      return true;
+    }
+    if (/^08[0-9A-Z]{3}$/.test(code)) {
+      return true;
+    }
+  }
+  if (typeof message === 'string') {
+    const lower = message.toLowerCase();
+    if (
+      CONNECTION_ERROR_MESSAGES.some((fragment) => lower.includes(fragment))
+    ) {
+      return true;
+    }
+  }
+  return cause ? isConnectionError(cause, depth + 1) : false;
+}
+
 class CollationError extends Error {
   status: number; //15-digit activity collation integer (889000001000001)
   leg: ActivityDuplex;
@@ -388,6 +482,8 @@ class CollationError extends Error {
   }
 }
 
+export { isConnectionError };
+
 export {
   CollationError,
   DurableChildError,
@@ -404,6 +500,7 @@ export {
   ExecActivityError,
   GenerationalError,
   GetStateError,
+  HotMeshConnectionError,
   InactiveJobError,
   LeaseExpiredError,
   MapDataError,

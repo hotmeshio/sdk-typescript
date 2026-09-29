@@ -12,7 +12,7 @@ import {
   HMSH_CODE_PENDING,
   HMSH_EXPIRE_JOB_SECONDS,
 } from '../../modules/enums';
-import { guid, restoreHierarchy } from '../../modules/utils';
+import { detach, guid, restoreHierarchy } from '../../modules/utils';
 import { KeyType } from '../../modules/key';
 import { Router } from '../router';
 import { StoreService } from '../store';
@@ -209,8 +209,16 @@ export async function runJobCompletionTasks(
       await publishOneTimeSubscribers(instance, context, jobOutput, options.emit, transaction);
       await publishPermanentSubscribers(instance, context, jobOutput, options.emit, transaction);
     } else {
-      publishOneTimeSubscribers(instance, context, jobOutput, options.emit);
-      publishPermanentSubscribers(instance, context, jobOutput, options.emit);
+      detach(
+        publishOneTimeSubscribers(instance, context, jobOutput, options.emit),
+        instance.logger,
+        'engine-publish-onetime-subscribers-error',
+      );
+      detach(
+        publishPermanentSubscribers(instance, context, jobOutput, options.emit),
+        instance.logger,
+        'engine-publish-permanent-subscribers-error',
+      );
     }
   }
 
@@ -223,10 +231,14 @@ export async function runJobCompletionTasks(
         transaction,
       );
     } else {
-      instance.taskService.registerJobForCleanup(
-        context.metadata.jid,
-        resolveExpires(context, options),
-        options,
+      detach(
+        instance.taskService.registerJobForCleanup(
+          context.metadata.jid,
+          resolveExpires(context, options),
+          options,
+        ),
+        instance.logger,
+        'engine-register-cleanup-error',
       );
     }
   }

@@ -9,6 +9,14 @@ export interface PostgresClientOptions {
   max?: number;
   idleTimeoutMillis?: number;
   ssl?: boolean | Record<string, unknown>;
+  /** Milliseconds to wait for a connection before failing (pg default: forever). */
+  connectionTimeoutMillis?: number;
+  /** Enable TCP keepalive on the socket. */
+  keepAlive?: boolean;
+  /** Idle time before the first TCP keepalive probe. */
+  keepAliveInitialDelayMillis?: number;
+  /** Reported in `pg_stat_activity.application_name`. */
+  application_name?: string;
 }
 
 export type PostgresJobEnumType =
@@ -51,6 +59,19 @@ export interface PostgresClientType {
   ) => void;
   removeAllListeners?: (event?: string) => void;
   // Include other methods if necessary
+}
+
+/**
+ * Payload of the `'reconnected'` event a resilient client emits after it
+ * replaces a lost session. Session state (LISTEN channels, open
+ * transactions) does not survive; owners re-arm it on this event.
+ */
+export interface PostgresReconnectedEvent {
+  connectionId: string;
+  generation: number;
+  at: number;
+  downtimeMs: number;
+  attempts: number;
 }
 
 export interface PostgresPoolClientType {
