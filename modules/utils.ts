@@ -65,6 +65,30 @@ export function uuid(): string {
   return randomUUID();
 }
 
+/**
+ * Let a best-effort async call run without awaiting it. A rejection is
+ * logged at `warn` under `label` and never becomes an unhandled
+ * rejection (which ends a Node process). Non-promise values are ignored.
+ */
+export function detach(
+  result: unknown,
+  logger:
+    | { warn: (message: string, context?: StringAnyType) => void }
+    | undefined,
+  label: string,
+  context?: StringAnyType,
+): void {
+  if (result && typeof (result as Promise<unknown>).then === 'function') {
+    (result as Promise<unknown>).then(undefined, (error) => {
+      try {
+        logger?.warn(label, { ...context, error });
+      } catch {
+        //a logger fault must not become the unhandled rejection
+      }
+    });
+  }
+}
+
 export async function sleepFor(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -162,6 +162,10 @@ export {
   TransactionResultList,
   ProviderNativeClient,
   ProviderOptions,
+  ConnectionHealthEvent,
+  ConnectionHealthSnapshot,
+  ConnectionLostEvent,
+  ConnectionRestoredEvent,
 } from './provider';
 export {
   VirtualConnectParams,
@@ -183,6 +187,7 @@ export {
   PostgresPoolClientType,
   PostgresQueryConfigType,
   PostgresQueryResultType,
+  PostgresReconnectedEvent,
   PostgresStreamMessage,
   PostgresStreamOptions,
   PostgresTransaction,

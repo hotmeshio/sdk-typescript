@@ -224,6 +224,49 @@ Defaults: 3 attempts, coefficient 10, 120s cap. Delay formula: `min(coefficient 
 
 If all retries are exhausted, the activity fails and the error propagates to the workflow function — handle it with a standard `try/catch`.
 
+## Connection resilience
+
+Every connection HotMesh opens from a `pg.Client` class survives database restarts, failovers, and dropped sockets. A process running HotMesh never exits because the database went away: the connection reconnects in place and work resumes when the database returns.
+
+- **Reconnect in place.** A lost session is replaced with jittered exponential backoff (250 ms base, 10 s cap), without limit, until the connection is ended. Store, stream, and sub keep the same client object, so nothing above the connector sees the swap.
+- **Fail fast while away.** A query issued while reconnecting rejects at once with `HotMeshConnectionError` (`code: 'HMSH_PG_UNAVAILABLE'`, the native error on `cause`).
+- **LISTEN re-armed.** Pub/sub and stream channels are re-subscribed on the new session, and stream consumers fetch at once, so messages sent while the session was down are still delivered.
+- **No lost work, no spent retries.** A message whose processing or response write fails because the connection is unavailable is neither acked nor failed. Its reservation is released when the connection returns and it is redelivered, without spending its retry budget.
+- **Transactions never straddle sessions.** Statements of a transaction that was open when its session died are refused on the new session until the owner rolls back.
+- **Silent hosts detected.** An idle session is probed every 15 s; a probe that does not answer within 5 s drops the socket and reconnects.
+- **Waits survive.** `handle.result()` keeps waiting through an outage and re-checks as soon as the connection is restored.
+
+Observe availability and classify errors:
+
+```typescript
+import { ConnectionHealth, Errors } from '@hotmeshio/hotmesh';
+
+ConnectionHealth.on('lost', (e) => log.warn('database lost', e));        // { connectionId, at, error }
+ConnectionHealth.on('restored', (e) => log.info('database back', e));    // { connectionId, at, downtimeMs, attempts }
+ConnectionHealth.snapshot();                                             // { state: 'up' | 'down', total, down, downSince? }
+
+try {
+  await client.workflow.start({ /* ... */ });
+} catch (err) {
+  if (Errors.isConnectionError(err)) {
+    // the database is unavailable: retry later or park the request
+  }
+}
+```
+
+| Setting | Default | Effect |
+|---|---|---|
+| `HMSH_PG_RESILIENT` | `true` | `false` restores the plain `pg.Client` |
+| `HMSH_PG_RECONNECT_BASE_MS` | `250` | first reconnect delay ceiling |
+| `HMSH_PG_RECONNECT_MAX_MS` | `10000` | largest reconnect delay |
+| `HMSH_PG_HEARTBEAT_MS` | `15000` | idle probe interval (`0` disables) |
+| `HMSH_PG_HEARTBEAT_TIMEOUT_MS` | `5000` | probe answer deadline |
+| `HMSH_PG_CONNECT_TIMEOUT_MS` | `10000` | `connectionTimeoutMillis` when you set none (`0` keeps pg's default) |
+| `HMSH_PG_KEEPALIVE_DELAY_MS` | `10000` | `keepAliveInitialDelayMillis` when you set none |
+| `HMSH_PG_TX_LOST_WINDOW_MS` | `30000` | longest refusal of a lost transaction's statements |
+
+HotMesh fills `connectionTimeoutMillis`, `keepAlive`, `keepAliveInitialDelayMillis`, and `application_name` (`hotmesh`) only when your connection options leave them unset. When you pass a `pg.Pool` instead of a client class, HotMesh adds a logging `'error'` listener only if the pool has none; reconnect and re-LISTEN apply to the client-class form.
+
 ## Workflow state is queryable data
 
 Workflow state lives in your database as ordinary rows — `jobs` and `jobs_attributes`. Query it directly, back it up with pg_dump, replicate it, join it against your application tables.

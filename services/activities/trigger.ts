@@ -1,5 +1,6 @@
 import { DuplicateJobError } from '../../modules/errors';
 import {
+  detach,
   formatISODate,
   getTimeSeries,
   guid,
@@ -170,7 +171,14 @@ class Trigger extends Activity {
       }
 
       //best-effort parent notification
-      this.execAdjacentParent();
+      detach(
+        this.execAdjacentParent(),
+        this.logger,
+        'trigger-exec-adjacent-parent-error',
+        {
+          jid: this.context.metadata.jid,
+        },
+      );
 
       //═══ Step 3: Completion (if job immediately complete) ═══
       //NOTE: runJobCompletionTasks is non-transactional here because

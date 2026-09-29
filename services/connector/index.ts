@@ -64,8 +64,9 @@ abstract class AbstractConnection<PClass, POptions> {
     const instance = new this();
     const opts = options ? { ...options } : { ...instance.defaultOptions };
 
-    instance.connection = await instance.createConnection(client, opts, config);
+    //the id is known to createConnection so connection logs and health events carry it
     instance.id = id;
+    instance.connection = await instance.createConnection(client, opts, config);
     AbstractConnection.instances.set(id, instance);
     return instance;
   }

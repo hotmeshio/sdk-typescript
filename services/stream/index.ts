@@ -178,6 +178,16 @@ export abstract class StreamService<
     consumerName: string,
   ): Promise<number>;
 
+  // Optional early release of reservations a consumer still holds but will
+  // not complete (it deferred them while the connection was unavailable),
+  // so they are redelivered at once instead of after the reservation
+  // window. Returns the number of messages released.
+  releaseReservations?(
+    streamName: string,
+    messageIds: string[],
+    consumerName: string,
+  ): Promise<number>;
+
   // Optional notification management methods (implemented by providers that support them)
   stopNotificationConsumer?(
     streamName: string,

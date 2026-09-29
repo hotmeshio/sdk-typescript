@@ -20,7 +20,11 @@ import * as Stats from './stats';
 import * as Messages from './messages';
 import * as Secured from './secured';
 import { ScoutManager } from './scout';
-import { NotificationManager, getFallbackInterval } from './notifications';
+import {
+  NotificationManager,
+  deliver,
+  getFallbackInterval,
+} from './notifications';
 import * as Lifecycle from './lifecycle';
 
 /**
@@ -168,7 +172,7 @@ class PostgresStreamService extends StreamService<
         );
 
         if (messages.length > 0) {
-          consumer.callback(messages);
+          deliver(consumer, messages, this.logger);
         }
         // Boolean() rather than === true: fetchPending is mutated by the
         // notification handler across the await, which TS narrowing misses
@@ -333,7 +337,7 @@ class PostgresStreamService extends StreamService<
       stream_name: target.streamName,
       table_type: target.isEngine ? 'engine' : 'worker',
     });
-    setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
         await this.streamClient.query(
           `SELECT pg_notify($1, $2)`,
@@ -343,6 +347,8 @@ class PostgresStreamService extends StreamService<
         // Best-effort; the scout fallback will pick it up
       }
     }, delayMs);
+    //a pending wake never holds a finished process open
+    timer.unref?.();
   }
 
   _publishMessages(
@@ -440,7 +446,11 @@ class PostgresStreamService extends StreamService<
           });
 
           if (initialMessages.length > 0) {
-            callback(initialMessages);
+            deliver(
+              { streamName, groupName, callback } as NotificationConsumer,
+              initialMessages,
+              this.logger,
+            );
           }
         } catch (error) {
           this.logger.error('postgres-stream-initial-fetch-error', {
@@ -530,6 +540,35 @@ class PostgresStreamService extends StreamService<
       consumerName,
       this.logger,
     );
+  }
+
+  /**
+   * Release reservations this consumer holds but deferred (the connection
+   * was unavailable), then wake the stream's consumers so the messages are
+   * redelivered at once. Secured workers cannot update the stream table;
+   * their messages are redelivered when the reservation lapses.
+   */
+  async releaseReservations(
+    streamName: string,
+    messageIds: string[],
+    consumerName: string,
+  ): Promise<number> {
+    if (this.securedMode) {
+      return 0;
+    }
+    const target = this.resolveStreamTarget(streamName);
+    const released = await Messages.releaseReservations(
+      this.streamClient,
+      target.tableName,
+      target.streamName,
+      messageIds,
+      consumerName,
+      this.logger,
+    );
+    if (released > 0) {
+      this.scheduleStreamNotify(streamName, 0);
+    }
+    return released;
   }
 
   /**

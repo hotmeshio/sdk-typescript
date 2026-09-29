@@ -2,6 +2,7 @@ import { KeyType } from '../../modules/key';
 import { StreamConsumerRegistry } from '../stream/registry';
 import {
   XSleepFor,
+  detach,
   formatISODate,
   getSystemHealth,
   identifyProvider,
@@ -256,19 +257,31 @@ class WorkerService {
       if (message.type === 'throttle') {
         if (message.topic !== null) {
           //undefined allows passthrough
-          self.throttle(message.throttle);
+          detach(
+            self.throttle(message.throttle),
+            self.logger,
+            'worker-throttle-error',
+          );
         }
       } else if (message.type === 'ping') {
-        self.sayPong(
-          self.appId,
-          self.guid,
-          message.originator,
-          message.details,
+        detach(
+          self.sayPong(
+            self.appId,
+            self.guid,
+            message.originator,
+            message.details,
+          ),
+          self.logger,
+          'worker-pong-error',
         );
       } else if (message.type === 'rollcall') {
         if (message.topic !== null) {
           //undefined allows passthrough
-          self.doRollCall(message);
+          detach(
+            self.doRollCall(message),
+            self.logger,
+            'worker-rollcall-error',
+          );
         }
       }
     };
@@ -342,15 +355,19 @@ class WorkerService {
         signature: signature ? this.callback.toString() : undefined,
       };
     }
-    this.subscribe.publish(
-      KeyType.QUORUM,
-      {
-        type: 'pong',
-        guid,
-        originator,
-        profile,
-      },
-      appId,
+    detach(
+      this.subscribe.publish(
+        KeyType.QUORUM,
+        {
+          type: 'pong',
+          guid,
+          originator,
+          profile,
+        },
+        appId,
+      ),
+      this.logger,
+      'worker-pong-publish-error',
     );
   }
 

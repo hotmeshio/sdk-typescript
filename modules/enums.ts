@@ -393,3 +393,71 @@ export const HMSH_NOTIFY_PAYLOAD_LIMIT =
  */
 export const HMSH_ROUTER_POLL_FALLBACK_INTERVAL =
   parseInt(process.env.HOTMESH_POSTGRES_FALLBACK_INTERVAL, 10) || 30000;
+
+// ************* POSTGRES CONNECTION RESILIENCE *************
+
+const intFromEnv = (name: string, fallback: number): number => {
+  const value = parseInt(process.env[name], 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+};
+
+/**
+ * When `true` (default), every connection HotMesh opens from a
+ * `pg.Client` class is a resilient client: it survives server restarts,
+ * failovers and dropped sockets by reconnecting in place and re-arming
+ * LISTEN. Set `HMSH_PG_RESILIENT=false` to use the plain native client.
+ */
+export const HMSH_PG_RESILIENT = process.env.HMSH_PG_RESILIENT !== 'false';
+
+/** Base delay for the first reconnect attempt (full-jitter exponential backoff). */
+export const HMSH_PG_RECONNECT_BASE_MS = intFromEnv(
+  'HMSH_PG_RECONNECT_BASE_MS',
+  250,
+);
+
+/** Ceiling for any single reconnect delay. Reconnect never gives up until the client is ended. */
+export const HMSH_PG_RECONNECT_MAX_MS = intFromEnv(
+  'HMSH_PG_RECONNECT_MAX_MS',
+  10_000,
+);
+
+/**
+ * Interval at which an idle resilient connection is probed with
+ * `SELECT 1`. A probe that fails or exceeds the timeout below drops the
+ * socket, which detects a blackholed host. `0` disables the heartbeat.
+ */
+export const HMSH_PG_HEARTBEAT_MS = intFromEnv('HMSH_PG_HEARTBEAT_MS', 15_000);
+
+/** Time a heartbeat probe may take before the session is considered lost. */
+export const HMSH_PG_HEARTBEAT_TIMEOUT_MS = intFromEnv(
+  'HMSH_PG_HEARTBEAT_TIMEOUT_MS',
+  5_000,
+);
+
+/**
+ * Default `connectionTimeoutMillis` applied to HotMesh-created clients
+ * when the caller does not set one, so a connect against a restarting
+ * or unreachable host fails instead of hanging. `0` leaves pg's default
+ * (no timeout).
+ */
+export const HMSH_PG_CONNECT_TIMEOUT_MS = intFromEnv(
+  'HMSH_PG_CONNECT_TIMEOUT_MS',
+  10_000,
+);
+
+/** Default TCP keepalive idle delay applied when the caller does not set one. */
+export const HMSH_PG_KEEPALIVE_DELAY_MS = intFromEnv(
+  'HMSH_PG_KEEPALIVE_DELAY_MS',
+  10_000,
+);
+
+/**
+ * How long statements are refused after a reconnect when a transaction
+ * was open on the lost session, unless the owner closes it first. Bounds
+ * the refusal so an owner that never issues ROLLBACK cannot wedge the
+ * client.
+ */
+export const HMSH_PG_TX_LOST_WINDOW_MS = intFromEnv(
+  'HMSH_PG_TX_LOST_WINDOW_MS',
+  30_000,
+);

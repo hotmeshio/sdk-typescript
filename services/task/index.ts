@@ -3,7 +3,7 @@ import {
   HMSH_FIDELITY_SECONDS,
   HMSH_PENDING_SIGNAL_EXPIRE,
 } from '../../modules/enums';
-import { s } from '../../modules/utils';
+import { detach, s } from '../../modules/utils';
 import { ILogger } from '../logger';
 import { Pipe } from '../pipe';
 import { StoreService } from '../store';
@@ -46,7 +46,13 @@ class TaskService {
           scrub === 'true',
         );
       }
-      setImmediate(() => this.processWebHooks(hookEventCallback));
+      setImmediate(() =>
+        detach(
+          this.processWebHooks(hookEventCallback),
+          this.logger,
+          'task-process-webhooks-error',
+        ),
+      );
     }
   }
 

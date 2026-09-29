@@ -178,3 +178,32 @@ export interface KVSQLProviderTransaction extends ProviderTransaction {
   rename(oldKey: string, newKey: string): ProviderTransaction;
   // Add other methods as needed
 }
+
+export type ConnectionHealthEvent = 'lost' | 'restored';
+
+/** A HotMesh database connection lost its session and began reconnecting. */
+export interface ConnectionLostEvent {
+  connectionId: string;
+  /** Epoch milliseconds when the loss was observed. */
+  at: number;
+  error: { message: string; code?: string };
+}
+
+/** A HotMesh database connection replaced its lost session. */
+export interface ConnectionRestoredEvent {
+  connectionId: string;
+  /** Epoch milliseconds when the new session was established. */
+  at: number;
+  downtimeMs: number;
+  attempts: number;
+}
+
+/** Process-wide availability of HotMesh's resilient database connections. */
+export interface ConnectionHealthSnapshot {
+  /** `down` while any registered connection is reconnecting. */
+  state: 'up' | 'down';
+  total: number;
+  down: number;
+  /** Epoch milliseconds of the earliest loss still unrecovered. */
+  downSince?: number;
+}

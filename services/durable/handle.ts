@@ -1,5 +1,6 @@
 import { HotMesh } from '../hotmesh';
-import { sleepFor } from '../../modules/utils';
+import { ConnectionHealth } from '../connector/health';
+import { detach, sleepFor } from '../../modules/utils';
 import {
   DurableJobExport,
   ExportOptions,
@@ -304,7 +305,30 @@ export class WorkflowHandleService {
     const topic = `${this.hotMesh.appId}.executed.${this.workflowId}`;
     let isResolved = false;
 
-    return new Promise(async (resolve, reject) => {
+    return new Promise(async (rawResolve, rawReject) => {
+      //escalating re-checks: the executed event commits before the status
+      //decrement, so a job caught mid-close needs a few quick reads
+      const RECHECK_DELAYS_MS = [250, 1_000, 5_000];
+
+      //a restored database connection re-runs the quick re-checks: a
+      //completion NOTIFY sent while the subscription's session was being
+      //replaced is gone, and waiting out the steady poll is not needed
+      const onRestored = () => {
+        if (!isResolved) {
+          scheduleRechecks();
+        }
+      };
+      ConnectionHealth.on('restored', onRestored);
+      const release = () => ConnectionHealth.off('restored', onRestored);
+      const resolve = (value: T | StreamError) => {
+        release();
+        rawResolve(value);
+      };
+      const reject = (error: unknown) => {
+        release();
+        rawReject(error);
+      };
+
       /**
        * rejects/resolves the promise based on the `throwOnError`
        * default behavior is to throw if error
@@ -326,10 +350,18 @@ export class WorkflowHandleService {
         if (err) {
           return safeReject(err as StreamError);
         } else if (!response) {
-          const state = await this.hotMesh.getState(
-            `${this.hotMesh.appId}.execute`,
-            this.workflowId,
-          );
+          let state: JobOutput;
+          try {
+            state = await this.hotMesh.getState(
+              `${this.hotMesh.appId}.execute`,
+              this.workflowId,
+            );
+          } catch (readError) {
+            //the read failed (database unavailable): stay pending so the
+            //next check settles the result instead of leaving it hanging
+            isResolved = false;
+            throw readError;
+          }
           if (state.data?.done && !state.data?.$error) {
             return resolve(state.data.response as T);
           } else if (state.data?.$error) {
@@ -342,38 +374,15 @@ export class WorkflowHandleService {
         resolve(response as T);
       };
 
-      //more expensive; fetches the entire job, not just the `status`
-      if (config?.state) {
-        const state = await this.hotMesh.getState(
-          `${this.hotMesh.appId}.execute`,
-          this.workflowId,
+      const unsubscribe = () =>
+        detach(
+          this.hotMesh.unsub(topic),
+          this.hotMesh.engine?.logger,
+          'durable-result-unsub-error',
+          {
+            workflowId: this.workflowId,
+          },
         );
-        if (state?.data?.done && !state.data?.$error) {
-          return complete(state.data.response as T);
-        } else if (state.data?.$error) {
-          return complete(null, state.data.$error as StreamError);
-        } else if (state.metadata.err) {
-          return complete(null, JSON.parse(state.metadata.err) as StreamError);
-        }
-      }
-
-      //subscribe to 'done' topic. Await the registration: the getStatus
-      //fallback below only covers completions that land BEFORE it reads.
-      //Unawaited, a job that completes after the status read but before
-      //the subscription goes active is seen by neither arm and result()
-      //never settles — hit reliably when a bulk resolve completes many
-      //workflows in the same instant.
-      await this.hotMesh.sub(topic, async (_topic: string, state: JobOutput) => {
-        this.hotMesh.unsub(topic);
-        if (state.data.done && !state.data?.$error) {
-          await complete(state.data?.response as T);
-        } else if (state.data?.$error) {
-          return complete(null, state.data.$error as StreamError);
-        } else if (state.metadata.err) {
-          const error = JSON.parse(state.metadata.err) as StreamError;
-          return await complete(null, error);
-        }
-      });
 
       //check state in case completed during wiring. One read is not
       //enough: the executed event commits before the status decrement,
@@ -389,25 +398,90 @@ export class WorkflowHandleService {
         if (isResolved) return true;
         if (status <= 0) {
           await complete();
-          this.hotMesh.unsub(topic);
+          unsubscribe();
           return true;
         }
         return false;
       };
-      if (!(await settleIfComplete())) {
+
+      //a failed check (database unavailable) is a miss, never the end of
+      //the wait: the next scheduled check tries again
+      const settle = async (): Promise<boolean> => {
+        try {
+          return await settleIfComplete();
+        } catch {
+          return isResolved;
+        }
+      };
+
+      function scheduleRechecks(): void {
         void (async () => {
-          const RECHECK_DELAYS_MS = [250, 1_000, 5_000];
           for (const delay of RECHECK_DELAYS_MS) {
             await sleepFor(delay);
-            if (await settleIfComplete()) return;
+            if (await settle()) return;
+          }
+        })();
+      }
+
+      try {
+        //more expensive; fetches the entire job, not just the `status`
+        if (config?.state) {
+          const state = await this.hotMesh.getState(
+            `${this.hotMesh.appId}.execute`,
+            this.workflowId,
+          );
+          if (state?.data?.done && !state.data?.$error) {
+            return complete(state.data.response as T);
+          } else if (state.data?.$error) {
+            return complete(null, state.data.$error as StreamError);
+          } else if (state.metadata.err) {
+            return complete(
+              null,
+              JSON.parse(state.metadata.err) as StreamError,
+            );
+          }
+        }
+
+        //subscribe to 'done' topic. Await the registration: the getStatus
+        //fallback below only covers completions that land BEFORE it reads.
+        //Unawaited, a job that completes after the status read but before
+        //the subscription goes active is seen by neither arm and result()
+        //never settles — hit reliably when a bulk resolve completes many
+        //workflows in the same instant.
+        await this.hotMesh.sub(
+          topic,
+          async (_topic: string, state: JobOutput) => {
+            unsubscribe();
+            if (state.data.done && !state.data?.$error) {
+              await complete(state.data?.response as T);
+            } else if (state.data?.$error) {
+              return complete(null, state.data.$error as StreamError);
+            } else if (state.metadata.err) {
+              const error = JSON.parse(state.metadata.err) as StreamError;
+              return await complete(null, error);
+            }
+          },
+        );
+      } catch (setupError) {
+        //the wait could not be established; the caller sees the error
+        if (!isResolved) {
+          isResolved = true;
+          reject(setupError);
+        }
+        return;
+      }
+
+      if (!(await settle())) {
+        void (async () => {
+          for (const delay of RECHECK_DELAYS_MS) {
+            await sleepFor(delay);
+            if (await settle()) return;
           }
           while (!isResolved) {
             await sleepFor(30_000);
-            if (await settleIfComplete()) return;
+            if (await settle()) return;
           }
-        })().catch(() => {
-          //the subscription remains the primary completion arm
-        });
+        })();
       }
     });
   }

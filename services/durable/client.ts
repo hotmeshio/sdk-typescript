@@ -143,6 +143,13 @@ export class ClientService {
 
     //synchronously cache the promise (before awaiting)
     ClientService.instances.set(connectionNS, hotMeshClient);
+    //an init that rejects (database unavailable) is not cached for the
+    //life of the process; the next call initializes again
+    hotMeshClient.catch(() => {
+      if (ClientService.instances.get(connectionNS) === hotMeshClient) {
+        ClientService.instances.delete(connectionNS);
+      }
+    });
 
     //resolve, activate, and return the client
     const resolvedClient = await hotMeshClient;
@@ -539,8 +546,11 @@ export class ClientService {
    * @private
    */
   static async shutdown(): Promise<void> {
-    for (const [_, hotMeshInstance] of ClientService.instances) {
-      (await hotMeshInstance).stop();
-    }
+    //a cached init that rejected must not stop the others from stopping
+    const instances = Array.from(ClientService.instances.values());
+    ClientService.instances.clear();
+    await Promise.allSettled(
+      instances.map(async (hotMeshInstance) => (await hotMeshInstance).stop()),
+    );
   }
 }

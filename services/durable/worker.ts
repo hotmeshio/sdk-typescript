@@ -23,7 +23,13 @@ import {
   DurableWaitForError,
 } from '../../modules/errors';
 import { asyncLocalStorage, activityAsyncLocalStorage } from '../../modules/storage';
-import { formatISODate, guid, hashOptions, s } from '../../modules/utils';
+import {
+  detach,
+  formatISODate,
+  guid,
+  hashOptions,
+  s,
+} from '../../modules/utils';
 import { HotMesh } from '../hotmesh';
 import {
   ActivityWorkflowDataType,
@@ -181,6 +187,13 @@ export class WorkerService {
       },
     });
     WorkerService.instances.set(targetTopic, hotMeshClient);
+    //an init that rejects (database unavailable) is not cached for the
+    //life of the process; the next call initializes again
+    hotMeshClient.catch(() => {
+      if (WorkerService.instances.get(targetTopic) === hotMeshClient) {
+        WorkerService.instances.delete(targetTopic);
+      }
+    });
     await WorkerService.activateWorkflow(await hotMeshClient);
     return hotMeshClient;
   };
@@ -621,7 +634,11 @@ export class WorkerService {
       workflowTopic,
       workflowFunction,
     );
-    Search.configureSearchIndex(worker.workflowRunner, config.search);
+    detach(
+      Search.configureSearchIndex(worker.workflowRunner, config.search),
+      worker.workflowRunner?.engine?.logger,
+      'durable-worker-search-index-error',
+    );
     await WorkerService.activateWorkflow(worker.workflowRunner);
 
     // Fire system.worker.{taskQueue}.started post-init (best-effort).
@@ -1331,8 +1348,11 @@ export class WorkerService {
    * @private
    */
   static async shutdown(): Promise<void> {
-    for (const [_, hotMeshInstance] of WorkerService.instances) {
-      (await hotMeshInstance).stop();
-    }
+    //a cached init that rejected must not stop the others from stopping
+    const instances = Array.from(WorkerService.instances.values());
+    WorkerService.instances.clear();
+    await Promise.allSettled(
+      instances.map(async (hotMeshInstance) => (await hotMeshInstance).stop()),
+    );
   }
 }

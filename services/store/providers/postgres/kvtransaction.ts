@@ -385,7 +385,13 @@ export class KVTransaction implements KVSQLProviderTransaction {
         commandTypes: this.commands.map(c => c.returnType),
         commandSqlPreviews: this.commands.map(c => c.sql.substring(0, 80)),
       });
-      await client.query('ROLLBACK');
+      //a ROLLBACK on a lost session fails too; the original error is the one
+      //the caller needs (the server already rolled the session back)
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        //nothing to roll back
+      }
       throw err;
     }
   }

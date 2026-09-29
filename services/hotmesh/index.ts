@@ -1,10 +1,11 @@
-import { formatISODate, guid } from '../../modules/utils';
+import { detach, formatISODate, guid } from '../../modules/utils';
 import { SystemEvent } from '../../types/system_events';
 import { ConnectorService } from '../connector/factory';
 import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
 import { QuorumService } from '../quorum';
 import { Router } from '../router';
+import { StreamConsumerRegistry } from '../stream/registry';
 import { WorkerService } from '../worker';
 import {
   JobState,
@@ -226,13 +227,17 @@ class HotMesh {
       const quorum = instance.quorum;
       const engineGuid = instance.guid;
       instance.engine.router.setDuressCallback((snapshot) => {
-        quorum.pub({
-          type: 'duress',
-          originator: engineGuid,
-          duress_score_ms: snapshot.score_ms,
-          throttle_ms: snapshot.throttle_ms,
-          level: snapshot.level,
-        });
+        detach(
+          quorum.pub({
+            type: 'duress',
+            originator: engineGuid,
+            duress_score_ms: snapshot.score_ms,
+            throttle_ms: snapshot.throttle_ms,
+            level: snapshot.level,
+          }),
+          instance.logger,
+          'hotmesh-duress-publish-error',
+        );
       });
     }
 
@@ -603,8 +608,15 @@ class HotMesh {
   static async stop() {
     if (!this.disconnecting) {
       this.disconnecting = true;
-      await Router.stopConsuming();
-      await ConnectorService.disconnectAll();
+      try {
+        await Router.stopConsuming();
+        //the stopped consumers are forgotten so a later init in this
+        //process starts live ones instead of reusing stopped routers
+        StreamConsumerRegistry.clear();
+        await ConnectorService.disconnectAll();
+      } finally {
+        this.disconnecting = false;
+      }
     }
   }
 
