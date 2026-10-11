@@ -20,6 +20,39 @@ export abstract class StreamService<
   protected appId: string;
   protected config: StreamConfig;
 
+  /**
+   * Services running background work (pollers, scouts) in this process.
+   * `HotMesh.stop()` drains them through {@link StreamService.stopAll}, so
+   * no loop outlives the connections it queries.
+   */
+  private static running: Set<
+    StreamService<ProviderClient, ProviderTransaction>
+  > = new Set();
+
+  /** Registers this service's background work for process shutdown. */
+  protected trackBackgroundWork(): void {
+    StreamService.running.add(this);
+  }
+
+  /** Forgets this service once its own `cleanup()` has run. */
+  protected untrackBackgroundWork(): void {
+    StreamService.running.delete(this);
+  }
+
+  /**
+   * Runs `cleanup()` on every service still running background work.
+   * Each cleanup logs its own faults; one failure never blocks the rest.
+   */
+  static async stopAll(): Promise<void> {
+    const services = [...StreamService.running];
+    StreamService.running.clear();
+    await Promise.all(
+      services.map((service) =>
+        Promise.resolve(service.cleanup?.()).catch(() => undefined),
+      ),
+    );
+  }
+
   constructor(
     streamClient: ClientProvider,
     storeClient: ProviderClient,

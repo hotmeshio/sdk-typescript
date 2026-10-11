@@ -738,8 +738,10 @@ export class EscalationClientService {
    * from multiple principals. Pass `assertClaim` to opt into the same
    * claim-lock assertion as `resolve()`. Pass `metadata` to merge an outcome
    * patch into the row's GIN-indexed metadata in the same UPDATE (reserved
-   * batch keys cannot be overridden). Pass `resolvedBy` on submissions to
-   * deliver `$resolution` provenance with the completing item's signal.
+   * batch keys cannot be overridden). Pass `actor` to record who filled
+   * the item under `envelope.batch_filled_by[itemKey]` in the same UPDATE.
+   * Pass `resolvedBy` on submissions to deliver `$resolution` provenance
+   * with the completing item's signal.
    *
    * A duplicate submission of an already-filled key returns
    * `outcome: 'duplicate-item'` without touching the row — safe under

@@ -1,6 +1,6 @@
 import { ILogger } from '../../../logger';
 import { KeyType } from '../../../../modules/key';
-import { sleepFor, formatISODate } from '../../../../modules/utils';
+import { formatISODate } from '../../../../modules/utils';
 import { KeyStoreParams, ScoutType } from '../../../../types';
 import { PostgresClientType } from '../../../../types/postgres';
 import { ProviderClient } from '../../../../types/provider';
@@ -16,6 +16,8 @@ import {
 export class ScoutManager {
   private isScout = false;
   private shouldStopScout = false;
+  private roleResetTimer: NodeJS.Timeout | null = null;
+  private pause: { timer: NodeJS.Timeout; resolve: () => void } | null = null;
   
   // Polling metrics
   private pollCount = 0;
@@ -52,7 +54,12 @@ export class ScoutManager {
    */
   async stopRouterScoutPoller(): Promise<void> {
     this.shouldStopScout = true;
-    
+    if (this.roleResetTimer) {
+      clearTimeout(this.roleResetTimer);
+      this.roleResetTimer = null;
+    }
+    this.endPause();
+
     if (this.isScout) {
       await this.releaseScoutRole('router');
       this.isScout = false;
@@ -77,7 +84,8 @@ export class ScoutManager {
         this.logger.debug('postgres-stream-router-scout-role-acquired', {
           appId: this.appId,
         });
-        setTimeout(() => {
+        this.roleResetTimer = setTimeout(() => {
+          this.roleResetTimer = null;
           this.isScout = false;
           this.scoutStartTime = null;
         }, HMSH_ROUTER_SCOUT_INTERVAL_SECONDS * 1_000);
@@ -98,16 +106,43 @@ export class ScoutManager {
           await this.pollForVisibleMessages();
           
           // Sleep for the short polling interval
-          await sleepFor(this.getRouterScoutInterval());
+          await this.pauseFor(this.getRouterScoutInterval());
         } else {
           // Not the scout - sleep longer before trying to acquire role again
-          await sleepFor(HMSH_ROUTER_SCOUT_INTERVAL_SECONDS * 1_000);
+          await this.pauseFor(HMSH_ROUTER_SCOUT_INTERVAL_SECONDS * 1_000);
         }
       } catch (error) {
         this.logger.error('postgres-stream-router-scout-loop-error', { error });
-        await sleepFor(1000); // Brief pause on error
+        await this.pauseFor(1000); // Brief pause on error
       }
     }
+  }
+
+  /**
+   * A loop pause that `stopRouterScoutPoller()` ends early, so a stopped
+   * scout leaves no timer behind.
+   */
+  private pauseFor(ms: number): Promise<void> {
+    if (this.shouldStopScout) return Promise.resolve();
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.pause = null;
+        resolve();
+      }, ms);
+      this.pause = { timer, resolve };
+    });
+  }
+
+  private endPause(): void {
+    if (!this.pause) return;
+    clearTimeout(this.pause.timer);
+    this.pause.resolve();
+    this.pause = null;
+  }
+
+  /** True once `stopRouterScoutPoller()` has run. */
+  isStopped(): boolean {
+    return this.shouldStopScout;
   }
 
   /**

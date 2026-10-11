@@ -37,6 +37,18 @@ export interface ConditionQueueConfig {
    */
   partialOnTimeout?: boolean;
   /**
+   * With `batch`, entries already satisfied when the row is created (for
+   * example, received before the wait began). Each key must be declared in
+   * `batch`; at least one key must remain open. The entries are folded into
+   * the same creation INSERT: `batch_pending` / `batch_count` start without
+   * them, and `batch_items` / `batch_filled_at` / `batch_filled_by` hold
+   * their payload, time, and actor, so progress and completion count them
+   * and the completing signal delivers them with the rest. Pure input:
+   * `at` comes from the source of record, never a fresh clock in the
+   * workflow, so the replayed `condition()` folds the same row.
+   */
+  filled?: Record<string, BatchFilledEntry>;
+  /**
    * Declares the wait as an open accumulator: items arrive over time via
    * `accumulateItem()` and the collection is delivered on every terminal
    * path except cancel. Resolves with `{ $accumulated, $trigger }` when
@@ -351,6 +363,8 @@ export interface CreateEscalationParams {
   batch?: string[];
   /** See {@link ConditionQueueConfig.partialOnTimeout}. */
   partialOnTimeout?: boolean;
+  /** See {@link ConditionQueueConfig.filled}. */
+  filled?: Record<string, BatchFilledEntry>;
   /**
    * Declares the row as an open accumulator. See
    * {@link ConditionQueueConfig.accumulate}. Standalone rows (no
@@ -489,6 +503,20 @@ export const ESCALATION_BATCH_ITEMS_KEY = 'batch_items';
  * stamped by the DATABASE clock inside the same guarded fill statement —
  * row truth, not caller clocks. The attempt timeline for free. */
 export const ESCALATION_BATCH_FILLED_AT_KEY = 'batch_filled_at';
+/** Envelope key: per-item actors (`Record<itemKey, string>`), written by a
+ * fill that names an `actor` and by `filled` entries that carry one. Absent
+ * until the first attributed fill. */
+export const ESCALATION_BATCH_FILLED_BY_KEY = 'batch_filled_by';
+
+/** One batch entry satisfied at creation. See {@link ConditionQueueConfig.filled}. */
+export interface BatchFilledEntry<P = Record<string, unknown>> {
+  /** Stored under `envelope.batch_items[itemKey]`, delivered with the collection. */
+  payload: P;
+  /** ISO-8601: when the entry was satisfied, from the source of record. */
+  at: string;
+  /** Stored under `envelope.batch_filled_by[itemKey]`. */
+  actor?: string;
+}
 
 /** Item keys are non-empty strings up to this length. Any characters are
  * accepted (keys are always parameterized and stored as jsonb text); prefer
@@ -784,6 +812,9 @@ export interface ResolveBatchItemParams {
    * claim-agnostic without it (multiple contributors are the norm). See
    * {@link ResolveEscalationParams.assertClaim}. */
   assertClaim?: string;
+  /** Recorded under `envelope.batch_filled_by[itemKey]` in the same
+   * statement as the fill. */
+  actor?: string;
   /** Resolver identity. Delivered under `$resolution` ONLY on the completing
    * item's signal. See {@link ResolveEscalationParams.resolvedBy}. */
   resolvedBy?: ResolvedByIdentity;
@@ -800,6 +831,8 @@ export interface ResolveBatchItemByMetadataParams {
   /** Merge patch for the matched row's `metadata` — distinct from the
    * `key`/`value` selector. */
   metadata?: Record<string, unknown>;
+  /** See {@link ResolveBatchItemParams.actor}. */
+  actor?: string;
   resolvedBy?: ResolvedByIdentity;
 }
 

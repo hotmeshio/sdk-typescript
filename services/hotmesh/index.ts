@@ -5,6 +5,7 @@ import { EngineService } from '../engine';
 import { LoggerService, ILogger } from '../logger';
 import { QuorumService } from '../quorum';
 import { Router } from '../router';
+import { StreamService } from '../stream';
 import { StreamConsumerRegistry } from '../stream/registry';
 import { WorkerService } from '../worker';
 import {
@@ -610,6 +611,9 @@ class HotMesh {
       this.disconnecting = true;
       try {
         await Router.stopConsuming();
+        //streams outside a consuming router (extra engines, clients,
+        //readonly routers) stop their pollers before the disconnect
+        await StreamService.stopAll();
         //the stopped consumers are forgotten so a later init in this
         //process starts live ones instead of reusing stopped routers
         StreamConsumerRegistry.clear();
