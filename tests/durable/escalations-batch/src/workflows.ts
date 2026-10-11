@@ -65,3 +65,23 @@ export async function batchRaceWorkflow(orderId: string): Promise<BatchCollectio
     batch: ['cut', 'weld', 'paint'],
   });
 }
+
+// Batch wait that starts with `cut` already satisfied: the row parks at
+// one of three filled, and the collection delivered at completion carries
+// the seeded entry with the two filled later.
+export async function batchFilledWorkflow(
+  orderId: string,
+  cutAt: string,
+): Promise<BatchCollection | false | null> {
+  const signalId = `batch-filled-${Durable.guid()}`;
+  return Durable.workflow.condition<BatchCollection>(signalId, {
+    role: 'assembly-filled',
+    type: 'batch-filled',
+    priority: 2,
+    metadata: { orderId },
+    batch: ['cut', 'weld', 'paint'],
+    filled: {
+      cut: { payload: { station: 'cut-0', ok: true }, at: cutAt, actor: 'user-cut' },
+    },
+  });
+}

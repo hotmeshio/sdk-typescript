@@ -2706,14 +2706,24 @@ class PostgresStoreService extends StoreService<
   /**
    * The shared body of both batch-item store ops: guarded fill of one item
    * into `envelope.batch_items` (with its `batch_filled_at` stamp — the
-   * database clock, row truth), `batch_pending`/`batch_count` recompute,
+   * database clock, row truth — and, when an actor is named, its
+   * `batch_filled_by` entry), `batch_pending`/`batch_count` recompute,
    * resolve-on-last-item with the assembled collection as
    * `resolver_payload`, wake enqueue, and outcome classification — one
    * atomic statement. `targetCTE` supplies the row selector; it must expose
    * id, signal_key, topic, status, assigned_to, assigned_until, batch_keys,
    * batch_pending.
    */
-  private _batchItemStatement(targetCTE: string, itemKeyIdx: number, payloadIdx: number, metaIdx: number, claimIdx: number, wakeCTE: string, wakeCount: string): string {
+  private _batchItemStatement(
+    targetCTE: string,
+    itemKeyIdx: number,
+    payloadIdx: number,
+    metaIdx: number,
+    claimIdx: number,
+    actorIdx: number,
+    wakeCTE: string,
+    wakeCount: string,
+  ): string {
     const remaining = `jsonb_array_length((e.metadata->'batch_pending') - $${itemKeyIdx}::text)`;
     return `
       WITH target AS MATERIALIZED (${targetCTE}),
@@ -2726,7 +2736,13 @@ class PostgresStoreService extends StoreService<
                    || jsonb_build_object($${itemKeyIdx}::text, $${payloadIdx}::jsonb),
                    'batch_filled_at',
                    COALESCE(e.envelope->'batch_filled_at', '{}'::jsonb)
-                   || jsonb_build_object($${itemKeyIdx}::text, to_jsonb(NOW()))),
+                   || jsonb_build_object($${itemKeyIdx}::text, to_jsonb(NOW())))
+              || CASE WHEN $${actorIdx}::text IS NULL THEN '{}'::jsonb
+                      ELSE jsonb_build_object(
+                             'batch_filled_by',
+                             COALESCE(e.envelope->'batch_filled_by', '{}'::jsonb)
+                             || jsonb_build_object($${itemKeyIdx}::text, $${actorIdx}::text))
+                 END,
             metadata = COALESCE(e.metadata, '{}'::jsonb)
               || COALESCE($${metaIdx}::jsonb, '{}'::jsonb)
               || jsonb_build_object(
@@ -2817,7 +2833,7 @@ class PostgresStoreService extends StoreService<
     wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
     resolutionJson?: string | null,
   ): Promise<import('../../../../types/hmsh_escalations').ResolveBatchItemResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
-    const { id, signalKey, namespace, itemKey, payload, metadata, assertClaim } = params;
+    const { id, signalKey, namespace, itemKey, payload, metadata, assertClaim, actor } = params;
     if ((id ? 1 : 0) + (signalKey ? 1 : 0) !== 1) {
       throw new Error('resolveBatchItem requires exactly one of `id` or `signalKey`');
     }
@@ -2827,6 +2843,7 @@ class PostgresStoreService extends StoreService<
       JSON.stringify(payload ?? {}),
       metadata ? JSON.stringify(metadata) : null,
       assertClaim ?? null,
+      actor ?? null,
     ];
     let nsClause = '';
     if (namespace) {
@@ -2847,7 +2864,7 @@ class PostgresStoreService extends StoreService<
         WHERE ${id ? 'id' : 'signal_key'} = $1${nsClause}
         LIMIT 1 FOR UPDATE`;
     const result = await this.pgClient.query(
-      this._batchItemStatement(targetCTE, 2, 3, 4, 5, wakeCTE, wakeCount),
+      this._batchItemStatement(targetCTE, 2, 3, 4, 5, 6, wakeCTE, wakeCount),
       sqlParams,
     );
     return this._mapBatchItemRow(result.rows[0], assertClaim ?? undefined);
@@ -2864,7 +2881,7 @@ class PostgresStoreService extends StoreService<
     wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
     resolutionJson?: string | null,
   ): Promise<import('../../../../types/hmsh_escalations').ResolveBatchItemResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean }> {
-    const { key, value, roles, namespace, itemKey, payload, metadata } = params;
+    const { key, value, roles, namespace, itemKey, payload, metadata, actor } = params;
     const filter = JSON.stringify({ [key]: value });
     const sqlParams: any[] = [
       filter,
@@ -2873,6 +2890,7 @@ class PostgresStoreService extends StoreService<
       metadata ? JSON.stringify(metadata) : null,
       null, // no claim assertion on the by-metadata form
       roles ?? null,
+      actor ?? null,
     ];
     let nsClause = '';
     if (namespace) {
@@ -2897,7 +2915,7 @@ class PostgresStoreService extends StoreService<
         ORDER BY priority ASC, created_at ASC
         LIMIT 1 FOR UPDATE`;
     const result = await this.pgClient.query(
-      this._batchItemStatement(targetCTE, 2, 3, 4, 5, wakeCTE, wakeCount),
+      this._batchItemStatement(targetCTE, 2, 3, 4, 5, 7, wakeCTE, wakeCount),
       sqlParams,
     );
     return this._mapBatchItemRow(result.rows[0]);

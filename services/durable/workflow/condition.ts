@@ -124,6 +124,20 @@ import { didRun } from './didRun';
  * `resolve()` on a batch row remains an admin override that resolves the
  * whole row with the payload given.
  *
+ * Entries already satisfied before the wait begins go in `filled`, keyed
+ * by item key with their `payload`, `at` (from the source of record), and
+ * optional `actor`. They start the row with that progress and are
+ * delivered with the collection. A `filled` that covers every key throws,
+ * so the caller skips the wait.
+ *
+ * ```typescript
+ * await Durable.workflow.condition(signalId, {
+ *   role: 'assembly',
+ *   batch: ['cut', 'weld', 'paint'],
+ *   filled: { cut: { payload: { station: 'cut-1' }, at: cutAt, actor: 'user-7' } },
+ * });
+ * ```
+ *
  * ## Placement: call escalation-bearing waits from main workflow code
  *
  * The resolve/signal delivery pipeline routes to the main flow's waiter.

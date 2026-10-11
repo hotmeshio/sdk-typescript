@@ -124,6 +124,7 @@ class PostgresStreamService extends StreamService<
         this.checkForMissedMessages.bind(this),
       );
       this.scoutManager?.startRouterScoutPoller();
+      this.trackBackgroundWork();
     }
   }
 
@@ -774,6 +775,7 @@ class PostgresStreamService extends StreamService<
   }
 
   async cleanup(): Promise<void> {
+    this.untrackBackgroundWork();
     if (this.scoutManager) {
       await this.scoutManager.stopRouterScoutPoller();
     }
