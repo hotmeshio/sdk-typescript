@@ -10,7 +10,37 @@ import {
   getCreateWorkerCredentialsTableSQL,
 } from './procedures';
 
+// Deploys already run (or running) per client and appId. Every engine and
+// worker init calls deploySchema, so a process booting many workers would
+// otherwise repeat the full DDL pass once per worker.
+const deployments = new WeakMap<object, Map<string, Promise<void>>>();
+
 export async function deploySchema(
+  streamClient: any,
+  appId: string,
+  logger: ILogger,
+): Promise<void> {
+  let byApp = deployments.get(streamClient);
+  if (!byApp) {
+    byApp = new Map();
+    deployments.set(streamClient, byApp);
+  }
+  const existing = byApp.get(appId);
+  if (existing) {
+    return existing;
+  }
+  const deployment = runDeploySchema(streamClient, appId, logger);
+  byApp.set(appId, deployment);
+  //a failed deploy is retried by the next caller
+  deployment.catch(() => {
+    if (byApp.get(appId) === deployment) {
+      byApp.delete(appId);
+    }
+  });
+  return deployment;
+}
+
+async function runDeploySchema(
   streamClient: any,
   appId: string,
   logger: ILogger,
@@ -176,8 +206,8 @@ async function waitForTablesCreation(
 }
 
 /**
- * Ensure correct indexes exist on existing databases. Drops stale
- * PR #169 split indexes that can't serve the single-pass OR query,
+ * Ensure correct indexes exist on existing databases. Drops legacy
+ * indexes, rebuilds a live index only when its definition is stale,
  * then creates the correct indexes via IF NOT EXISTS.
  */
 async function ensureIndexes(
@@ -187,27 +217,45 @@ async function ensureIndexes(
   const engineTable = `${schemaName}.engine_streams`;
   const workerTable = `${schemaName}.worker_streams`;
 
-  // Drop legacy indexes that don't include the priority column, plus
-  // redundant ones: idx_*_expired_at duplicates the partial
-  // idx_*_processed_volume for the retention purge, and
-  // idx_*_stream_name_expired_at duplicates the leading column and
-  // predicate of idx_*_message_fetch. Every index here is maintained on
-  // each message's INSERT plus two non-HOT UPDATEs (reserve, ack).
+  // Drop legacy indexes: the PR #169 split indexes, plus redundant ones:
+  // idx_*_expired_at duplicates the partial idx_*_processed_volume for
+  // the retention purge, and idx_*_stream_name_expired_at duplicates the
+  // leading column and predicate of idx_*_message_fetch. Every index here
+  // is maintained on each message's INSERT plus two non-HOT UPDATEs
+  // (reserve, ack).
   for (const idx of [
     'idx_engine_streams_dequeue',
     'idx_engine_streams_stale_reservations',
     'idx_worker_streams_dequeue',
     'idx_worker_streams_stale_reservations',
-    'idx_engine_streams_active_messages',
-    'idx_engine_streams_message_fetch',
-    'idx_worker_streams_active_messages',
-    'idx_worker_streams_message_fetch',
     'idx_engine_streams_expired_at',
     'idx_engine_stream_name_expired_at',
     'idx_worker_streams_expired_at',
     'idx_worker_stream_name_expired_at',
   ]) {
     await client.query(`DROP INDEX IF EXISTS ${schemaName}.${idx}`);
+  }
+
+  // Drop a live index only when its columns predate the current shape.
+  // Dropping a current index locks the stream tables and rebuilds from a
+  // full heap scan while every consumer is blocked.
+  const activeColumns = '(stream_name, priority DESC, visible_at, id)';
+  const fetchColumns = '(stream_name, priority DESC, id)';
+  const liveIndexColumns: Record<string, string> = {
+    idx_engine_streams_active_messages: activeColumns,
+    idx_engine_streams_message_fetch: fetchColumns,
+    idx_worker_streams_active_messages: activeColumns,
+    idx_worker_streams_message_fetch: fetchColumns,
+  };
+  const { rows: liveIndexes } = await client.query(
+    `SELECT indexname, indexdef FROM pg_indexes
+     WHERE schemaname = lower($1) AND indexname = ANY($2::text[])`,
+    [schemaName, Object.keys(liveIndexColumns)],
+  );
+  for (const { indexname, indexdef } of liveIndexes) {
+    if (!indexdef.includes(liveIndexColumns[indexname])) {
+      await client.query(`DROP INDEX IF EXISTS ${schemaName}.${indexname}`);
+    }
   }
 
   // Recreate with priority-aware ordering for priority DESC, id ASC dequeue
