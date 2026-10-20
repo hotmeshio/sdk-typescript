@@ -1022,7 +1022,8 @@ export class EscalationClientService {
    * Adds are claim-agnostic by default; pass `assertClaim` for the same
    * claim-lock assertion as `resolve()` on the container row. Pass
    * `metadata` to merge an outcome patch into the container's GIN-indexed
-   * metadata in the same UPDATE (reserved accumulate keys are rejected).
+   * metadata in the same UPDATE, and `reciprocal.metadata` to merge one
+   * into the reciprocal's (reserved accumulate keys are rejected).
    * A repeated key answers `duplicate-item` without touching the row
    * unless the accumulator was declared `unique: false`, which replaces
    * the entry in place.
@@ -1038,6 +1039,7 @@ export class EscalationClientService {
     }
     assertAccumulateItemKey(params.itemKey);
     this._assertAccumulatePatch(params.metadata);
+    this._assertAccumulatePatch(params.reciprocal?.metadata);
     const ns = params.namespace ?? namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;
@@ -1065,6 +1067,7 @@ export class EscalationClientService {
   ): Promise<AccumulateItemResult> {
     assertAccumulateItemKey(params.itemKey);
     this._assertAccumulatePatch(params.metadata);
+    this._assertAccumulatePatch(params.reciprocal?.metadata);
     const ns = params.namespace ?? namespace ?? APP_ID;
     const hm = await this._engine(null, ns);
     const store = hm.engine.store as any;

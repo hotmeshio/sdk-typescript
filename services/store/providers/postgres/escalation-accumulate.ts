@@ -247,6 +247,8 @@ export interface AccumulateStatementInput {
   payload: Record<string, unknown> | null;
   reciprocalPayload: Record<string, unknown> | null;
   metadata: Record<string, unknown> | null;
+  /** Merged into the reciprocal row's metadata, as `metadata` is into the container's. */
+  reciprocalMetadata?: Record<string, unknown> | null;
   actor: string | null;
   assertClaim: string | null;
   wakes: AccumulateWake[];
@@ -293,6 +295,9 @@ export function buildAccumulateStatement(input: AccumulateStatementInput): {
     input.schemaName,
     p,
   );
+  const rMeta = p.add(
+    input.reciprocalMetadata ? JSON.stringify(input.reciprocalMetadata) : null,
+  );
 
   const newKeys = `CASE WHEN s.keys ? s.item_key THEN s.keys ELSE s.keys || to_jsonb(s.item_key) END`;
   const newCount = `jsonb_array_length(${newKeys})`;
@@ -321,7 +326,7 @@ export function buildAccumulateStatement(input: AccumulateStatementInput): {
         SET envelope = COALESCE(e.envelope, '{}'::jsonb)
               || jsonb_build_object('${ITEMS}', ${newItems}),
             metadata = COALESCE(e.metadata, '{}'::jsonb)
-              || CASE WHEN s.is_primary THEN COALESCE(${meta}::jsonb, '{}'::jsonb) ELSE '{}'::jsonb END
+              || COALESCE(CASE WHEN s.is_primary THEN ${meta}::jsonb ELSE ${rMeta}::jsonb END, '{}'::jsonb)
               || jsonb_build_object('${KEYS}', ${newKeys}, '${COUNT}', ${newCount}),
             status           = CASE WHEN ${complete} THEN 'resolved' ELSE e.status END,
             resolved_at      = CASE WHEN ${complete} THEN NOW() ELSE e.resolved_at END,

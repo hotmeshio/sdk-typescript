@@ -609,6 +609,12 @@ export interface AccumulateReciprocalSelector {
   roles?: string[];
   /** Stored as the reciprocal entry's payload. */
   payload?: Record<string, unknown>;
+  /**
+   * Merged into the reciprocal row's GIN-indexed metadata in the same
+   * UPDATE, as `metadata` is into the container's. Reserved accumulate
+   * keys are rejected.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 /**
