@@ -3046,6 +3046,7 @@ class PostgresStoreService extends StoreService<
       payload: params.payload ?? null,
       reciprocalPayload: params.reciprocal?.payload ?? null,
       metadata: params.metadata ?? null,
+      reciprocalMetadata: params.reciprocal?.metadata ?? null,
       actor: params.actor ?? null,
       assertClaim: params.assertClaim ?? null,
       wakes,

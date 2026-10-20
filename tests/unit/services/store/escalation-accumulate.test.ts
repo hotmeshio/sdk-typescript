@@ -56,6 +56,29 @@ describe('UNIT | store | accumulate SQL builders', () => {
     expect(sql).toContain('reciprocal_pick AS MATERIALIZED (SELECT NULL::uuid AS id WHERE FALSE)');
   });
 
+  it('merges the container patch on the container and the reciprocal patch on the reciprocal', () => {
+    const { sql, values } = buildAccumulateStatement({
+      ...base,
+      metadata: { lastPackedBy: 'u-1' },
+      reciprocalMetadata: { resolved_by: 'u-1' },
+      primary: { kind: 'id', id: 'c-1' },
+      reciprocal: { kind: 'id', id: 'm-1' },
+    });
+    const meta = `$${values.indexOf(JSON.stringify({ lastPackedBy: 'u-1' })) + 1}`;
+    const rMeta = `$${values.indexOf(JSON.stringify({ resolved_by: 'u-1' })) + 1}`;
+    expect(sql).toContain(`COALESCE(CASE WHEN s.is_primary THEN ${meta}::jsonb ELSE ${rMeta}::jsonb END, '{}'::jsonb)`);
+  });
+
+  it('keeps every existing parameter position when no reciprocal patch is given', () => {
+    const { values } = buildAccumulateStatement({
+      ...base,
+      primary: { kind: 'id', id: 'c-1' },
+      reciprocal: { kind: 'id', id: 'm-1' },
+    });
+    expect(values[6]).toBe(2);
+    expect(values[values.length - 1]).toBeNull();
+  });
+
   it('selects a metadata target by containment, role, and priority order', () => {
     const { sql, values } = buildAccumulateStatement({
       ...base,

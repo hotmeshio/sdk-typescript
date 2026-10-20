@@ -83,6 +83,42 @@ describe('DURABLE | escalations-accumulate | reciprocal | Postgres', () => {
     expect(memberBOut.$accumulated[0].itemKey).toBe(bin.id);
   }, 40_000);
 
+  it('merges each side its own metadata patch, and neither when a side blocks', async () => {
+    const binKey = guid();
+    await startBin(binKey, { max: 5 });
+    const bin = await findPending(client, 'bin', { binKey });
+    const orderId = guid();
+    await startMember(orderId);
+    const member = await findPending(client, 'member', { orderId });
+
+    const added = await client.escalations.accumulateItem({
+      id: bin.id, itemKey: orderId, metadata: { lastPackedBy: 'u-1' },
+      reciprocal: { id: member.id, metadata: { resolved_by: 'u-1' } },
+    });
+    expect(added.ok && added.reciprocal?.outcome === 'completed').toBe(true);
+    const binMeta = (await client.escalations.get(bin.id))!.metadata as any;
+    const memberMeta = (await client.escalations.get(member.id))!.metadata as any;
+    expect(binMeta.lastPackedBy).toBe('u-1');
+    expect(binMeta.resolved_by).toBeUndefined();
+    expect(memberMeta.resolved_by).toBe('u-1');
+    expect(memberMeta.lastPackedBy).toBeUndefined();
+    expect(memberMeta.orderId).toBe(orderId);
+
+    // the member is now terminal: the add is refused and the container keeps its metadata
+    const refused = await client.escalations.accumulateItem({
+      id: bin.id, itemKey: orderId, metadata: { lastPackedBy: 'u-2' },
+      reciprocal: { id: member.id, metadata: { resolved_by: 'u-2' } },
+    });
+    expect(refused.ok).toBe(false);
+    expect(((await client.escalations.get(bin.id))!.metadata as any).lastPackedBy).toBe('u-1');
+    expect(((await client.escalations.get(member.id))!.metadata as any).resolved_by).toBe('u-1');
+
+    await expect(client.escalations.accumulateItem({
+      id: bin.id, itemKey: guid(), reciprocal: { id: member.id, metadata: { accumulate_count: 9 } },
+    })).rejects.toThrow("metadata key 'accumulate_count' is reserved");
+    await client.escalations.cancel(bin.id);
+  }, 40_000);
+
   it('leaves the container untouched when the reciprocal blocks', async () => {
     const binKey = guid();
     await startBin(binKey, { max: 5 });
