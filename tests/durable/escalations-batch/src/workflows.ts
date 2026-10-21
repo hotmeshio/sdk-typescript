@@ -85,3 +85,30 @@ export async function batchFilledWorkflow(
     },
   });
 }
+
+// Batch wait whose flags are recorded while the wait continues: the
+// collection is delivered at completion as on any batch.
+export async function batchFlagWorkflow(orderId: string): Promise<BatchCollection | false | null> {
+  const signalId = `batch-flag-${Durable.guid()}`;
+  return Durable.workflow.condition<BatchCollection>(signalId, {
+    role: 'assembly-flag',
+    type: 'batch-flag',
+    priority: 2,
+    metadata: { orderId },
+    batch: ['cut', 'weld', 'paint'],
+  });
+}
+
+// Batch wait that a flag ends: the wait resumes with the items filled so
+// far, `$flags`, and `$trigger: 'flag'`.
+export async function batchWakeOnFlagWorkflow(orderId: string): Promise<Record<string, unknown> | false | null> {
+  const signalId = `batch-wake-flag-${Durable.guid()}`;
+  return Durable.workflow.condition<Record<string, unknown>>(signalId, {
+    role: 'assembly-wake-flag',
+    type: 'batch-wake-flag',
+    priority: 2,
+    metadata: { orderId },
+    batch: ['cut', 'weld', 'paint'],
+    wakeOnFlag: true,
+  });
+}

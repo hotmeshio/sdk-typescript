@@ -9,6 +9,7 @@ import { foldBatchConfig } from './batch';
 type Foldable = {
   batch?: string[];
   partialOnTimeout?: boolean;
+  wakeOnFlag?: boolean;
   filled?: Record<string, BatchFilledEntry>;
   accumulate?: AccumulateConfig;
   metadata?: Record<string, unknown>;
@@ -23,8 +24,12 @@ type Foldable = {
  */
 export function foldEscalationConfig<T extends Foldable>(
   config: T,
-): Omit<T, 'batch' | 'partialOnTimeout' | 'filled' | 'accumulate'> {
-  const { batch, partialOnTimeout, filled, accumulate, ...rest } = config;
+): Omit<
+  T,
+  'batch' | 'partialOnTimeout' | 'wakeOnFlag' | 'filled' | 'accumulate'
+> {
+  const { batch, partialOnTimeout, wakeOnFlag, filled, accumulate, ...rest } =
+    config;
   if (batch) {
     if (accumulate) {
       throw new Error('accumulate and batch are mutually exclusive');
@@ -33,16 +38,23 @@ export function foldEscalationConfig<T extends Foldable>(
       ...rest,
       batch,
       partialOnTimeout,
+      wakeOnFlag,
       filled,
-    }) as Omit<T, 'batch' | 'partialOnTimeout' | 'filled' | 'accumulate'>;
+    }) as Omit<
+      T,
+      'batch' | 'partialOnTimeout' | 'wakeOnFlag' | 'filled' | 'accumulate'
+    >;
   }
   if (accumulate) {
     if (filled !== undefined) {
       throw new Error('filled applies to batch only');
     }
+    if (wakeOnFlag !== undefined) {
+      throw new Error('wakeOnFlag applies to batch only');
+    }
     return foldAccumulateConfig({ ...rest, accumulate }) as Omit<
       T,
-      'batch' | 'partialOnTimeout' | 'filled' | 'accumulate'
+      'batch' | 'partialOnTimeout' | 'wakeOnFlag' | 'filled' | 'accumulate'
     >;
   }
   if (partialOnTimeout !== undefined) {
@@ -50,6 +62,9 @@ export function foldEscalationConfig<T extends Foldable>(
   }
   if (filled !== undefined) {
     throw new Error('filled requires a batch declaration');
+  }
+  if (wakeOnFlag !== undefined) {
+    throw new Error('wakeOnFlag requires a batch declaration');
   }
   return rest;
 }

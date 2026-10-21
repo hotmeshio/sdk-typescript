@@ -125,6 +125,8 @@ export type EscalationVerb =
   | 'cancelled'
   | 'expired'
   | 'batch-item'
+  | 'flagged'
+  | 'unflagged'
   | 'accumulated'
   | 'removed';
 

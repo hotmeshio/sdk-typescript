@@ -50,6 +50,11 @@ import {
   RemoveAccumulatedItemParams,
   RemoveAccumulatedItemByMetadataParams,
   RemoveAccumulatedItemResult,
+  FlagBatchItemParams,
+  FlagBatchItemResult,
+  UnflagBatchItemParams,
+  UnflagBatchItemResult,
+  ESCALATION_BATCH_WAKE_ON_FLAG_KEY,
 } from '../../types/hmsh_escalations';
 import { APP_ID } from '../durable/schemas/factory';
 
@@ -57,6 +62,7 @@ import {
   ACCUMULATE_RESERVED_METADATA_KEYS,
   assertAccumulateItemKey,
 } from './accumulate';
+import { assertBatchFlagParams } from './batch';
 
 /**
  * Reserved signal-payload key carrying resolution provenance
@@ -821,6 +827,94 @@ export class EscalationClientService {
       preview ? this._batchResolutionJson(preview.id, params.resolvedBy) : null,
     );
     return this._settleBatchItemResult(ns, dbResult, params.resolvedBy);
+  }
+
+  /**
+   * Flags ONE pending key of a batch escalation (for example, `Missing`).
+   * One atomic statement writes `envelope.batch_flags[itemKey]` with the
+   * label, optional payload and actor, and the database clock, only while
+   * the row and the key are pending. The key stays pending: a later fill
+   * still lands and still counts toward completion.
+   *
+   * On a row whose wait declared `wakeOnFlag`, the same statement resolves
+   * the row and the waiter wakes with the items filled so far, `$flags`,
+   * and `$trigger: 'flag'` (outcome `completed`); the wake commits with the
+   * resolve, as on a completing fill. Otherwise the outcome is `flagged`
+   * and the wait continues. Flagging a flagged key replaces its flag.
+   */
+  async flagBatchItem(
+    params: FlagBatchItemParams,
+    namespace?: string,
+  ): Promise<FlagBatchItemResult> {
+    assertBatchFlagParams(params);
+    const ns = params.namespace ?? namespace ?? APP_ID;
+    const hm = await this._engine(null, ns);
+    const store = hm.engine.store as any;
+
+    //the wake is built only for a row that declared wakeOnFlag at creation;
+    //the declaration never changes, so the preview decides it safely
+    const preview = params.id
+      ? await store.getEscalation(params.id, params.namespace)
+      : await store.getEscalationBySignalKey(
+          params.signalKey,
+          params.namespace,
+        );
+    let wakeCommand: EscalationWakeCommand | null = null;
+    if (
+      preview?.signal_key &&
+      preview.envelope?.[ESCALATION_BATCH_WAKE_ON_FLAG_KEY] === true
+    ) {
+      wakeCommand = await this._buildWakeCommand(
+        ns,
+        preview.topic,
+        preview.signal_key,
+        {},
+      );
+    }
+
+    const dbResult = await store.flagEscalationBatchItem(
+      params,
+      wakeCommand ?? undefined,
+      preview ? this._batchResolutionJson(preview.id, params.resolvedBy) : null,
+    );
+    if (!dbResult.ok) return dbResult;
+    if (dbResult.outcome === 'completed') {
+      if (dbResult.signalKey && !dbResult.wakeEnqueued) {
+        await this._deliverEscalationSignal(ns, dbResult.topic, {
+          id: dbResult.signalKey,
+          data: this._signalData(
+            dbResult.entry.resolver_payload ?? {},
+            dbResult.entry.id,
+            params.resolvedBy,
+          ),
+        });
+      }
+      this._emit('resolved', dbResult.entry);
+    } else {
+      this._emit('flagged', dbResult.entry);
+    }
+    return { ok: true, outcome: dbResult.outcome, entry: dbResult.entry };
+  }
+
+  /**
+   * Clears ONE key's flag while the row is pending ("found it"). Only that
+   * key's entry is removed; items, pending keys and status are untouched.
+   * A key without a flag answers `not-flagged`.
+   */
+  async unflagBatchItem(
+    params: UnflagBatchItemParams,
+    namespace?: string,
+  ): Promise<UnflagBatchItemResult> {
+    if (typeof params.itemKey !== 'string' || params.itemKey.length === 0) {
+      throw new Error('itemKey must be a non-empty string');
+    }
+    const ns = params.namespace ?? namespace ?? APP_ID;
+    const hm = await this._engine(null, ns);
+    const result = await (hm.engine.store as any).unflagEscalationBatchItem(
+      params,
+    );
+    if (result.ok) this._emit('unflagged', result.entry);
+    return result;
   }
 
   // ─── Open accumulation ──────────────────────────────────────────────────────
