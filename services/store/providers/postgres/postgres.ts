@@ -63,6 +63,14 @@ import {
   resolveWakeMessageSql,
   timeoutPayloadSql,
 } from './escalation-accumulate';
+import {
+  BatchRowSelector,
+  FlagRowResult,
+  buildFlagStatement,
+  buildUnflagStatement,
+  mapFlagRow,
+  mapUnflagRow,
+} from './escalation-batch-flag';
 import { PostgresClientType } from '../../../../types';
 
 import { KVSQL } from './kvsql';
@@ -2919,6 +2927,65 @@ class PostgresStoreService extends StoreService<
       sqlParams,
     );
     return this._mapBatchItemRow(result.rows[0]);
+  }
+
+  /**
+   * Flags one pending batch key in one statement. See `buildFlagStatement`.
+   * `wakeCommand` is passed only for a row that declared `wakeOnFlag`; the
+   * wake commits with the resolve. `resolutionJson` rides the wake only.
+   */
+  async flagEscalationBatchItem(
+    params: import('../../../../types/hmsh_escalations').FlagBatchItemParams,
+    wakeCommand?: import('../../../../types/hmsh_escalations').EscalationWakeCommand,
+    resolutionJson?: string | null,
+  ): Promise<FlagRowResult> {
+    const { sql, values } = buildFlagStatement({
+      selector: this._batchSelector(params, 'flagBatchItem'),
+      namespace: params.namespace,
+      itemKey: params.itemKey,
+      flag: {
+        label: params.label,
+        ...(params.payload ? { payload: params.payload } : {}),
+        ...(params.actor ? { actor: params.actor } : {}),
+      },
+      metadata: params.metadata ?? null,
+      wake: wakeCommand
+        ? { command: wakeCommand, resolutionJson: resolutionJson ?? null }
+        : null,
+      appId: this.appId,
+      schemaName: this.kvsql().safeName(this.appId),
+    });
+    const result = await this.pgClient.query(sql, values);
+    return mapFlagRow(result.rows[0]);
+  }
+
+  /** Clears one key's flag while the row is pending. See `buildUnflagStatement`. */
+  async unflagEscalationBatchItem(
+    params: import('../../../../types/hmsh_escalations').UnflagBatchItemParams,
+  ): Promise<
+    import('../../../../types/hmsh_escalations').UnflagBatchItemResult
+  > {
+    const { sql, values } = buildUnflagStatement({
+      selector: this._batchSelector(params, 'unflagBatchItem'),
+      namespace: params.namespace,
+      itemKey: params.itemKey,
+    });
+    const result = await this.pgClient.query(sql, values);
+    return mapUnflagRow(result.rows[0]);
+  }
+
+  private _batchSelector(
+    sel: { id?: string; signalKey?: string },
+    label: string,
+  ): BatchRowSelector {
+    if ((sel.id ? 1 : 0) + (sel.signalKey ? 1 : 0) !== 1) {
+      throw new Error(
+        `${label} requires exactly one of \`id\` or \`signalKey\``,
+      );
+    }
+    return sel.id
+      ? { kind: 'id', id: sel.id }
+      : { kind: 'signalKey', signalKey: sel.signalKey as string };
   }
 
   private _accumulateSelector(

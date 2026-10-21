@@ -4,11 +4,15 @@ import {
   ESCALATION_BATCH_COUNT_KEY,
   ESCALATION_BATCH_FILLED_AT_KEY,
   ESCALATION_BATCH_FILLED_BY_KEY,
+  ESCALATION_BATCH_FLAG_LABEL_MAX_LENGTH,
+  ESCALATION_BATCH_FLAGS_KEY,
   ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH,
   ESCALATION_BATCH_ITEMS_KEY,
   ESCALATION_BATCH_KEYS_KEY,
   ESCALATION_BATCH_PARTIAL_ON_TIMEOUT_KEY,
   ESCALATION_BATCH_PENDING_KEY,
+  ESCALATION_BATCH_WAKE_ON_FLAG_KEY,
+  FlagBatchItemParams,
 } from '../../types/hmsh_escalations';
 
 const RESERVED_METADATA_KEYS = new Set([
@@ -22,6 +26,8 @@ const RESERVED_ENVELOPE_KEYS = new Set([
   ESCALATION_BATCH_FILLED_AT_KEY,
   ESCALATION_BATCH_FILLED_BY_KEY,
   ESCALATION_BATCH_PARTIAL_ON_TIMEOUT_KEY,
+  ESCALATION_BATCH_FLAGS_KEY,
+  ESCALATION_BATCH_WAKE_ON_FLAG_KEY,
 ]);
 
 interface FoldedFills {
@@ -89,7 +95,8 @@ function foldFilledEntries(
  * queryable facets in `metadata` (`batch_pending`, `batch_count`,
  * `batch_keys`) and the payload accumulator in `envelope`
  * (`batch_items: {}`). `partialOnTimeout` is stored beside the items so
- * the expiry statement delivers the filled items instead of `false`.
+ * the expiry statement delivers the filled items instead of `false`;
+ * `wakeOnFlag` is stored the same way so a flag ends the wait.
  * `filled` entries start satisfied: they are left out of `batch_pending`
  * and written into `batch_items`, `batch_filled_at`, and (when an entry
  * names an actor) `batch_filled_by`. Pure
@@ -101,16 +108,20 @@ export function foldBatchConfig<
   T extends {
     batch?: string[];
     partialOnTimeout?: boolean;
+    wakeOnFlag?: boolean;
     filled?: Record<string, BatchFilledEntry>;
     accumulate?: AccumulateConfig;
     metadata?: Record<string, unknown>;
     envelope?: Record<string, unknown>;
   },
->(config: T): Omit<T, 'batch' | 'partialOnTimeout' | 'filled'> {
-  const { batch, partialOnTimeout, filled, ...rest } = config;
+>(config: T): Omit<T, 'batch' | 'partialOnTimeout' | 'wakeOnFlag' | 'filled'> {
+  const { batch, partialOnTimeout, wakeOnFlag, filled, ...rest } = config;
   if (!batch) {
     if (partialOnTimeout !== undefined) {
       throw new Error('partialOnTimeout requires a batch declaration');
+    }
+    if (wakeOnFlag !== undefined) {
+      throw new Error('wakeOnFlag requires a batch declaration');
     }
     if (filled !== undefined) {
       throw new Error('filled requires a batch declaration');
@@ -122,6 +133,9 @@ export function foldBatchConfig<
   }
   if (partialOnTimeout !== undefined && typeof partialOnTimeout !== 'boolean') {
     throw new Error('partialOnTimeout must be a boolean');
+  }
+  if (wakeOnFlag !== undefined && typeof wakeOnFlag !== 'boolean') {
+    throw new Error('wakeOnFlag must be a boolean');
   }
   if (!Array.isArray(batch) || batch.length === 0) {
     throw new Error('batch must be a non-empty array of item keys');
@@ -170,6 +184,61 @@ export function foldBatchConfig<
       ...(partialOnTimeout
         ? { [ESCALATION_BATCH_PARTIAL_ON_TIMEOUT_KEY]: true }
         : {}),
+      ...(wakeOnFlag ? { [ESCALATION_BATCH_WAKE_ON_FLAG_KEY]: true } : {}),
     },
   };
+}
+
+/**
+ * Validates a `flagBatchItem()` request before any read or write: exactly
+ * one row selector, a non-empty key and label within their limits, object
+ * `payload` and `metadata`, a non-empty `actor`, and no reserved batch key
+ * in the metadata patch. Throws on the first violation.
+ */
+export function assertBatchFlagParams(params: FlagBatchItemParams): void {
+  const { id, signalKey, itemKey, label, payload, actor, metadata } = params;
+  if ((id ? 1 : 0) + (signalKey ? 1 : 0) !== 1) {
+    throw new Error(
+      'flagBatchItem requires exactly one of `id` or `signalKey`',
+    );
+  }
+  if (typeof itemKey !== 'string' || itemKey.length === 0) {
+    throw new Error('itemKey must be a non-empty string');
+  }
+  if (itemKey.length > ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH) {
+    throw new Error(
+      `itemKey must be at most ${ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH} characters`,
+    );
+  }
+  if (typeof label !== 'string' || label.length === 0) {
+    throw new Error('label must be a non-empty string');
+  }
+  if (label.length > ESCALATION_BATCH_FLAG_LABEL_MAX_LENGTH) {
+    throw new Error(
+      `label must be at most ${ESCALATION_BATCH_FLAG_LABEL_MAX_LENGTH} characters`,
+    );
+  }
+  if (payload !== undefined && !isPlainObject(payload)) {
+    throw new Error('payload must be an object');
+  }
+  if (
+    actor !== undefined &&
+    (typeof actor !== 'string' || actor.length === 0)
+  ) {
+    throw new Error('actor must be a non-empty string');
+  }
+  if (metadata !== undefined) {
+    if (!isPlainObject(metadata)) throw new Error('metadata must be an object');
+    for (const reserved of RESERVED_METADATA_KEYS) {
+      if (reserved in metadata) {
+        throw new Error(
+          `metadata key '${reserved}' is reserved for batch state`,
+        );
+      }
+    }
+  }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }

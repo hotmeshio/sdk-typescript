@@ -37,6 +37,13 @@ export interface ConditionQueueConfig {
    */
   partialOnTimeout?: boolean;
   /**
+   * With `batch`, a `flagBatchItem()` call ends the wait: the row resolves
+   * and the wait resumes with the items filled so far, the flags
+   * (`$flags`), and `$trigger: 'flag'`. Off by default: a flag is then
+   * recorded on the row and the wait continues.
+   */
+  wakeOnFlag?: boolean;
+  /**
    * With `batch`, entries already satisfied when the row is created (for
    * example, received before the wait began). Each key must be declared in
    * `batch`; at least one key must remain open. The entries are folded into
@@ -363,6 +370,8 @@ export interface CreateEscalationParams {
   batch?: string[];
   /** See {@link ConditionQueueConfig.partialOnTimeout}. */
   partialOnTimeout?: boolean;
+  /** See {@link ConditionQueueConfig.wakeOnFlag}. */
+  wakeOnFlag?: boolean;
   /** See {@link ConditionQueueConfig.filled}. */
   filled?: Record<string, BatchFilledEntry>;
   /**
@@ -528,6 +537,22 @@ export const ESCALATION_BATCH_ITEM_KEY_MAX_LENGTH = 128;
 export const ESCALATION_BATCH_PARTIAL_ON_TIMEOUT_KEY =
   'batch_partial_on_timeout';
 
+/** Envelope key: per-item flags (`Record<itemKey, BatchItemFlag>`), written
+ * by `flagBatchItem()` while the key is pending and cleared by
+ * `unflagBatchItem()`. A flagged key stays pending and can still be filled. */
+export const ESCALATION_BATCH_FLAGS_KEY = 'batch_flags';
+
+/** Envelope key: set by `wakeOnFlag` on a batch row so the flag statement
+ * resolves the row and wakes the waiter. */
+export const ESCALATION_BATCH_WAKE_ON_FLAG_KEY = 'batch_wake_on_flag';
+
+/** Reserved signal-payload key: the flags delivered when a flag ends the
+ * wait (`wakeOnFlag`). */
+export const ESCALATION_FLAGS_KEY = '$flags';
+
+/** Flag labels are non-empty strings up to this length. */
+export const ESCALATION_BATCH_FLAG_LABEL_MAX_LENGTH = 128;
+
 // ─── Open accumulation ────────────────────────────────────────────────────────
 
 /** Metadata facet: number of items currently held. Recomputed from
@@ -551,7 +576,7 @@ export const ESCALATION_ACCUMULATE_CONFIG_KEY = 'accumulate_config';
  * waiter of an accumulator row. */
 export const ESCALATION_ACCUMULATED_KEY = '$accumulated';
 /** Reserved signal-payload key: which terminal path delivered the
- * collection (`count` | `timeout` | `resolve`). */
+ * collection (`count` | `timeout` | `resolve`; `flag` on a batch row). */
 export const ESCALATION_TRIGGER_KEY = '$trigger';
 
 export interface AccumulateConfig {
@@ -855,6 +880,80 @@ export type ResolveBatchItemResult =
       entry: EscalationEntry;
     }
   | { ok: false; outcome: Exclude<BatchItemOutcome, 'completed' | 'accepted'> };
+
+/** One flag on a batch item, stored under `envelope.batch_flags[itemKey]`. */
+export interface BatchItemFlag {
+  label: string;
+  payload?: Record<string, unknown>;
+  actor?: string;
+  /** Database clock, stamped by the flag statement. */
+  at: string;
+}
+
+export interface FlagBatchItemParams {
+  /** Row selector — exactly one of `id` | `signalKey`. */
+  id?: string;
+  signalKey?: string;
+  namespace?: string;
+  /** A declared batch key that is still pending. */
+  itemKey: string;
+  /** What the flag says, e.g. `Missing`. */
+  label: string;
+  /** Detail stored with the flag and delivered with `$flags`. */
+  payload?: Record<string, unknown>;
+  /** Recorded on the flag. */
+  actor?: string;
+  /** Merge patch for the row's `metadata`, in the same UPDATE. Reserved
+   * batch keys are rejected. */
+  metadata?: Record<string, unknown>;
+  /** Delivered under `$resolution` when the flag ends the wait. */
+  resolvedBy?: ResolvedByIdentity;
+}
+
+export interface UnflagBatchItemParams {
+  /** Row selector — exactly one of `id` | `signalKey`. */
+  id?: string;
+  signalKey?: string;
+  namespace?: string;
+  itemKey: string;
+}
+
+/**
+ * `flagged`: the flag is stored and the row stays pending. `completed`: the
+ * row declared `wakeOnFlag`, so it resolved and the waiter woke.
+ * `already-filled`: the key is declared but no longer pending.
+ */
+export type FlagBatchItemOutcome =
+  | 'flagged'
+  | 'completed'
+  | 'already-filled'
+  | 'unknown-item'
+  | 'not-batch'
+  | 'not-found'
+  | 'already-resolved'
+  | 'already-cancelled'
+  | 'already-expired';
+
+export type FlagBatchItemResult =
+  | { ok: true; outcome: 'flagged' | 'completed'; entry: EscalationEntry }
+  | {
+      ok: false;
+      outcome: Exclude<FlagBatchItemOutcome, 'flagged' | 'completed'>;
+    };
+
+export type UnflagBatchItemOutcome =
+  | 'unflagged'
+  | 'not-flagged'
+  | 'unknown-item'
+  | 'not-batch'
+  | 'not-found'
+  | 'already-resolved'
+  | 'already-cancelled'
+  | 'already-expired';
+
+export type UnflagBatchItemResult =
+  | { ok: true; outcome: 'unflagged'; entry: EscalationEntry }
+  | { ok: false; outcome: Exclude<UnflagBatchItemOutcome, 'unflagged'> };
 
 /**
  * Query selector for `claimManyByQuery()` — the filterable subset of
