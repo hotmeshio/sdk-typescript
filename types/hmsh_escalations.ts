@@ -44,6 +44,19 @@ export interface ConditionQueueConfig {
    */
   wakeOnFlag?: boolean;
   /**
+   * With `batch`, a `resolveBatchItem()` fill ends the wait: the row
+   * resolves and the wait resumes with the items filled so far, the key
+   * that woke it (`$filled: [itemKey]`), `$trigger: 'fill'`, each filled
+   * key's fill time (`$filledAt`) and recorded actor (`$filledBy`). `true`
+   * wakes on every fill; a list of declared keys wakes only when one of
+   * those keys fills. The last fill completes the wait as on any batch.
+   * Pair with `filled` to park the next round with the items carried
+   * forward: `$filledAt` and `$filledBy` supply each entry's `at` and
+   * `actor`. Off by default: a fill is then recorded on the row and the
+   * wait continues until the last key.
+   */
+  wakeOnFill?: boolean | string[];
+  /**
    * With `batch`, entries already satisfied when the row is created (for
    * example, received before the wait began). Each key must be declared in
    * `batch`; at least one key must remain open. The entries are folded into
@@ -372,6 +385,8 @@ export interface CreateEscalationParams {
   partialOnTimeout?: boolean;
   /** See {@link ConditionQueueConfig.wakeOnFlag}. */
   wakeOnFlag?: boolean;
+  /** See {@link ConditionQueueConfig.wakeOnFill}. */
+  wakeOnFill?: boolean | string[];
   /** See {@link ConditionQueueConfig.filled}. */
   filled?: Record<string, BatchFilledEntry>;
   /**
@@ -550,6 +565,26 @@ export const ESCALATION_BATCH_WAKE_ON_FLAG_KEY = 'batch_wake_on_flag';
  * wait (`wakeOnFlag`). */
 export const ESCALATION_FLAGS_KEY = '$flags';
 
+/** Envelope key: set by `wakeOnFill` on a batch row (`true`, or the list of
+ * keys that wake) so the fill statement resolves the row and wakes the
+ * waiter. */
+export const ESCALATION_BATCH_WAKE_ON_FILL_KEY = 'batch_wake_on_fill';
+
+/** Reserved signal-payload key: the item key whose fill ended the wait
+ * (`wakeOnFill`), as a one-element array. */
+export const ESCALATION_FILLED_KEY = '$filled';
+
+/** Reserved signal-payload key: when a fill ends the wait (`wakeOnFill`),
+ * the database-clock fill time of every filled key
+ * (`Record<itemKey, ISO-8601>`), the source of record for `filled[key].at`
+ * when the workflow parks its next round. */
+export const ESCALATION_FILLED_AT_KEY = '$filledAt';
+
+/** Reserved signal-payload key: when a fill ends the wait (`wakeOnFill`),
+ * the recorded actor of every filled key that has one
+ * (`Record<itemKey, actor>`). Present when at least one fill named an actor. */
+export const ESCALATION_FILLED_BY_KEY = '$filledBy';
+
 /** Flag labels are non-empty strings up to this length. */
 export const ESCALATION_BATCH_FLAG_LABEL_MAX_LENGTH = 128;
 
@@ -576,7 +611,8 @@ export const ESCALATION_ACCUMULATE_CONFIG_KEY = 'accumulate_config';
  * waiter of an accumulator row. */
 export const ESCALATION_ACCUMULATED_KEY = '$accumulated';
 /** Reserved signal-payload key: which terminal path delivered the
- * collection (`count` | `timeout` | `resolve`; `flag` on a batch row). */
+ * collection (`count` | `timeout` | `resolve`; `flag` or `fill` on a batch
+ * row). */
 export const ESCALATION_TRIGGER_KEY = '$trigger';
 
 export interface AccumulateConfig {
@@ -807,6 +843,9 @@ export interface ExpireEscalationResult {
  * - `completed` — this was the LAST item: the row resolved and the waiting
  *   workflow was woken with the full collection, in the same statement.
  * - `accepted` — interim fill: the item landed, the row stays `pending`.
+ * - `woke` — the item landed and the row resolved before every key was
+ *   filled, because its wait declared `wakeOnFill` for this key: the waiter
+ *   woke with the items filled so far, `$filled`, and `$trigger: 'fill'`.
  * - `duplicate-item` — the key was declared but already filled.
  * - `unknown-item` — the key was never declared in `batch_keys`.
  * - `not-batch` — the row carries no batch declaration.
@@ -815,6 +854,7 @@ export interface ExpireEscalationResult {
 export type BatchItemOutcome =
   | 'completed'
   | 'accepted'
+  | 'woke'
   | 'duplicate-item'
   | 'unknown-item'
   | 'not-batch'
@@ -846,8 +886,9 @@ export interface ResolveBatchItemParams {
   /** Recorded under `envelope.batch_filled_by[itemKey]` in the same
    * statement as the fill. */
   actor?: string;
-  /** Resolver identity. Delivered under `$resolution` ONLY on the completing
-   * item's signal. See {@link ResolveEscalationParams.resolvedBy}. */
+  /** Resolver identity. Delivered under `$resolution` on the signal that
+   * ends the wait: the completing item's, or a `wakeOnFill` fill's. See
+   * {@link ResolveEscalationParams.resolvedBy}. */
   resolvedBy?: ResolvedByIdentity;
 }
 
@@ -875,11 +916,14 @@ export interface ResolveBatchItemByMetadataParams {
 export type ResolveBatchItemResult =
   | {
       ok: true;
-      outcome: 'completed' | 'accepted';
+      outcome: 'completed' | 'accepted' | 'woke';
       remaining: number;
       entry: EscalationEntry;
     }
-  | { ok: false; outcome: Exclude<BatchItemOutcome, 'completed' | 'accepted'> };
+  | {
+      ok: false;
+      outcome: Exclude<BatchItemOutcome, 'completed' | 'accepted' | 'woke'>;
+    };
 
 /** One flag on a batch item, stored under `envelope.batch_flags[itemKey]`. */
 export interface BatchItemFlag {

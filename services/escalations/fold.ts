@@ -10,6 +10,7 @@ type Foldable = {
   batch?: string[];
   partialOnTimeout?: boolean;
   wakeOnFlag?: boolean;
+  wakeOnFill?: boolean | string[];
   filled?: Record<string, BatchFilledEntry>;
   accumulate?: AccumulateConfig;
   metadata?: Record<string, unknown>;
@@ -26,10 +27,22 @@ export function foldEscalationConfig<T extends Foldable>(
   config: T,
 ): Omit<
   T,
-  'batch' | 'partialOnTimeout' | 'wakeOnFlag' | 'filled' | 'accumulate'
+  | 'batch'
+  | 'partialOnTimeout'
+  | 'wakeOnFlag'
+  | 'wakeOnFill'
+  | 'filled'
+  | 'accumulate'
 > {
-  const { batch, partialOnTimeout, wakeOnFlag, filled, accumulate, ...rest } =
-    config;
+  const {
+    batch,
+    partialOnTimeout,
+    wakeOnFlag,
+    wakeOnFill,
+    filled,
+    accumulate,
+    ...rest
+  } = config;
   if (batch) {
     if (accumulate) {
       throw new Error('accumulate and batch are mutually exclusive');
@@ -39,10 +52,16 @@ export function foldEscalationConfig<T extends Foldable>(
       batch,
       partialOnTimeout,
       wakeOnFlag,
+      wakeOnFill,
       filled,
     }) as Omit<
       T,
-      'batch' | 'partialOnTimeout' | 'wakeOnFlag' | 'filled' | 'accumulate'
+      | 'batch'
+      | 'partialOnTimeout'
+      | 'wakeOnFlag'
+      | 'wakeOnFill'
+      | 'filled'
+      | 'accumulate'
     >;
   }
   if (accumulate) {
@@ -52,9 +71,17 @@ export function foldEscalationConfig<T extends Foldable>(
     if (wakeOnFlag !== undefined) {
       throw new Error('wakeOnFlag applies to batch only');
     }
+    if (wakeOnFill !== undefined) {
+      throw new Error('wakeOnFill applies to batch only');
+    }
     return foldAccumulateConfig({ ...rest, accumulate }) as Omit<
       T,
-      'batch' | 'partialOnTimeout' | 'wakeOnFlag' | 'filled' | 'accumulate'
+      | 'batch'
+      | 'partialOnTimeout'
+      | 'wakeOnFlag'
+      | 'wakeOnFill'
+      | 'filled'
+      | 'accumulate'
     >;
   }
   if (partialOnTimeout !== undefined) {
@@ -65,6 +92,9 @@ export function foldEscalationConfig<T extends Foldable>(
   }
   if (wakeOnFlag !== undefined) {
     throw new Error('wakeOnFlag requires a batch declaration');
+  }
+  if (wakeOnFill !== undefined) {
+    throw new Error('wakeOnFill requires a batch declaration');
   }
   return rest;
 }

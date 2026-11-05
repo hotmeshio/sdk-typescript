@@ -694,7 +694,8 @@ export class EscalationClientService {
    * Shared post-statement handling for both batch-item forms: post-commit
    * wake fallback (the committed `resolver_payload` — the full assembled
    * collection — is the recovery record) and lifecycle events
-   * (`batch-item` on interim fills, `resolved` on completion).
+   * (`batch-item` on interim fills, `resolved` on completion and on a
+   * `wakeOnFill` wake).
    */
   private async _settleBatchItemResult(
     ns: string,
@@ -706,7 +707,7 @@ export class EscalationClientService {
     resolvedBy?: ResolvedByIdentity,
   ): Promise<ResolveBatchItemResult> {
     if (!dbResult.ok) return dbResult;
-    if (dbResult.outcome === 'completed') {
+    if (dbResult.outcome === 'completed' || dbResult.outcome === 'woke') {
       if (dbResult.signalKey && !dbResult.wakeEnqueued) {
         await this._deliverEscalationSignal(ns, dbResult.topic, {
           id: dbResult.signalKey,
@@ -738,7 +739,11 @@ export class EscalationClientService {
    * item — the row resolves with the assembled collection as its
    * `resolver_payload` and the waiting workflow's wake commits WITH the
    * fill (same durability contract as `resolve()`). The caller that lands
-   * the last item learns it from `outcome: 'completed'`.
+   * the last item learns it from `outcome: 'completed'`. On a row whose wait
+   * declared `wakeOnFill` for this key, the same statement resolves the row
+   * early and the waiter wakes with the items filled so far, `$filled`,
+   * `$filledAt`, `$filledBy`, and `$trigger: 'fill'` (outcome `woke`,
+   * `remaining` > 0).
    *
    * Fills are claim-agnostic by default — a batch accumulates contributions
    * from multiple principals. Pass `assertClaim` to opt into the same

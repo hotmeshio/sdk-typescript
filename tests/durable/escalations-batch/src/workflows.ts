@@ -112,3 +112,58 @@ export async function batchWakeOnFlagWorkflow(orderId: string): Promise<Record<s
     wakeOnFlag: true,
   });
 }
+
+// Batch wait that a fill ends: the wait resumes with the items filled so
+// far, `$filled`, `$filledAt`, `$filledBy`, and `$trigger: 'fill'`. `keys`
+// limits the wake to those keys; omitted, every fill wakes it.
+export async function batchWakeOnFillWorkflow(
+  orderId: string,
+  keys?: string[],
+): Promise<Record<string, unknown> | false | null> {
+  const signalId = `batch-wake-fill-${Durable.guid()}`;
+  return Durable.workflow.condition<Record<string, unknown>>(signalId, {
+    role: 'assembly-wake-fill',
+    type: 'batch-wake-fill',
+    priority: 2,
+    metadata: { orderId },
+    batch: ['cut', 'weld', 'paint'],
+    wakeOnFill: keys ?? true,
+  });
+}
+
+// One wait per round: each fill wakes the workflow, which records the key
+// and parks the next round with every fill so far carried forward through
+// `filled`, until the last key completes the batch.
+export async function batchFillRoundsWorkflow(
+  orderId: string,
+): Promise<{ woken: string[]; rounds: number; collection: Record<string, unknown> }> {
+  const keys = ['cut', 'weld', 'paint'];
+  const woken: string[] = [];
+  let filled: Record<string, { payload: Record<string, unknown>; at: string; actor?: string }> | undefined;
+  let rounds = 0;
+  for (;;) {
+    rounds++;
+    const out = await Durable.workflow.condition<Record<string, any>>(`batch-rounds-${Durable.guid()}`, {
+      role: 'assembly-rounds',
+      type: 'batch-rounds',
+      priority: 2,
+      metadata: { orderId, round: rounds },
+      batch: keys,
+      wakeOnFill: true,
+      ...(filled ? { filled } : {}),
+    });
+    if (!out || out.$trigger !== 'fill') {
+      return { woken, rounds, collection: (out || {}) as Record<string, unknown> };
+    }
+    woken.push(...out.$filled);
+    filled = {};
+    for (const key of keys) {
+      if (!(key in out)) continue;
+      filled[key] = {
+        payload: out[key],
+        at: out.$filledAt[key],
+        ...(out.$filledBy?.[key] ? { actor: out.$filledBy[key] } : {}),
+      };
+    }
+  }
+}
