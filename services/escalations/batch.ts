@@ -11,6 +11,7 @@ import {
   ESCALATION_BATCH_KEYS_KEY,
   ESCALATION_BATCH_PARTIAL_ON_TIMEOUT_KEY,
   ESCALATION_BATCH_PENDING_KEY,
+  ESCALATION_BATCH_WAKE_ON_FILL_KEY,
   ESCALATION_BATCH_WAKE_ON_FLAG_KEY,
   FlagBatchItemParams,
 } from '../../types/hmsh_escalations';
@@ -28,7 +29,33 @@ const RESERVED_ENVELOPE_KEYS = new Set([
   ESCALATION_BATCH_PARTIAL_ON_TIMEOUT_KEY,
   ESCALATION_BATCH_FLAGS_KEY,
   ESCALATION_BATCH_WAKE_ON_FLAG_KEY,
+  ESCALATION_BATCH_WAKE_ON_FILL_KEY,
 ]);
+
+/**
+ * Validates `wakeOnFill` against the declared keys and returns its stored
+ * form: `true`, the de-duplicated key list, or `null` when the opt-in is
+ * absent, `false`, or an empty list.
+ */
+function foldWakeOnFill(
+  batch: string[],
+  wakeOnFill: boolean | string[] | undefined,
+): true | string[] | null {
+  if (wakeOnFill === undefined || wakeOnFill === false) return null;
+  if (wakeOnFill === true) return true;
+  if (!Array.isArray(wakeOnFill)) {
+    throw new Error('wakeOnFill must be a boolean or a list of batch keys');
+  }
+  for (const key of wakeOnFill) {
+    if (typeof key !== 'string' || !batch.includes(key)) {
+      throw new Error(
+        `wakeOnFill key '${String(key)}' is not declared in batch`,
+      );
+    }
+  }
+  const keys = [...new Set(wakeOnFill)];
+  return keys.length ? keys : null;
+}
 
 interface FoldedFills {
   pending: string[];
@@ -96,7 +123,8 @@ function foldFilledEntries(
  * `batch_keys`) and the payload accumulator in `envelope`
  * (`batch_items: {}`). `partialOnTimeout` is stored beside the items so
  * the expiry statement delivers the filled items instead of `false`;
- * `wakeOnFlag` is stored the same way so a flag ends the wait.
+ * `wakeOnFlag` is stored the same way so a flag ends the wait, and
+ * `wakeOnFill` (`true` or its list of keys) so a fill ends it.
  * `filled` entries start satisfied: they are left out of `batch_pending`
  * and written into `batch_items`, `batch_filled_at`, and (when an entry
  * names an actor) `batch_filled_by`. Pure
@@ -109,19 +137,29 @@ export function foldBatchConfig<
     batch?: string[];
     partialOnTimeout?: boolean;
     wakeOnFlag?: boolean;
+    wakeOnFill?: boolean | string[];
     filled?: Record<string, BatchFilledEntry>;
     accumulate?: AccumulateConfig;
     metadata?: Record<string, unknown>;
     envelope?: Record<string, unknown>;
   },
->(config: T): Omit<T, 'batch' | 'partialOnTimeout' | 'wakeOnFlag' | 'filled'> {
-  const { batch, partialOnTimeout, wakeOnFlag, filled, ...rest } = config;
+>(
+  config: T,
+): Omit<
+  T,
+  'batch' | 'partialOnTimeout' | 'wakeOnFlag' | 'wakeOnFill' | 'filled'
+> {
+  const { batch, partialOnTimeout, wakeOnFlag, wakeOnFill, filled, ...rest } =
+    config;
   if (!batch) {
     if (partialOnTimeout !== undefined) {
       throw new Error('partialOnTimeout requires a batch declaration');
     }
     if (wakeOnFlag !== undefined) {
       throw new Error('wakeOnFlag requires a batch declaration');
+    }
+    if (wakeOnFill !== undefined) {
+      throw new Error('wakeOnFill requires a batch declaration');
     }
     if (filled !== undefined) {
       throw new Error('filled requires a batch declaration');
@@ -165,6 +203,7 @@ export function foldBatchConfig<
       throw new Error(`envelope key '${reserved}' is reserved for batch state`);
     }
   }
+  const wakeKeys = foldWakeOnFill(batch, wakeOnFill);
   const fills = foldFilledEntries(batch, filled);
   return {
     ...rest,
@@ -185,6 +224,9 @@ export function foldBatchConfig<
         ? { [ESCALATION_BATCH_PARTIAL_ON_TIMEOUT_KEY]: true }
         : {}),
       ...(wakeOnFlag ? { [ESCALATION_BATCH_WAKE_ON_FLAG_KEY]: true } : {}),
+      ...(wakeKeys !== null
+        ? { [ESCALATION_BATCH_WAKE_ON_FILL_KEY]: wakeKeys }
+        : {}),
     },
   };
 }

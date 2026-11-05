@@ -2733,6 +2733,13 @@ class PostgresStoreService extends StoreService<
     wakeCount: string,
   ): string {
     const remaining = `jsonb_array_length((e.metadata->'batch_pending') - $${itemKeyIdx}::text)`;
+    // a wakeOnFill row resolves on this fill: every key (true) or a listed key
+    const wakes = `(target.wake_on_fill = 'true'::jsonb
+                    OR (jsonb_typeof(target.wake_on_fill) = 'array'
+                        AND target.wake_on_fill ? $${itemKeyIdx}::text))`;
+    const resolves = `(${remaining} = 0 OR ${wakes})`;
+    const collected = `COALESCE(e.envelope->'batch_items', '{}'::jsonb)
+                                         || jsonb_build_object($${itemKeyIdx}::text, $${payloadIdx}::jsonb)`;
     return `
       WITH target AS MATERIALIZED (${targetCTE}),
       filled AS (
@@ -2756,11 +2763,28 @@ class PostgresStoreService extends StoreService<
               || jsonb_build_object(
                    'batch_pending', (e.metadata->'batch_pending') - $${itemKeyIdx}::text,
                    'batch_count',   ${remaining}),
-            status           = CASE WHEN ${remaining} = 0 THEN 'resolved' ELSE e.status END,
-            resolved_at      = CASE WHEN ${remaining} = 0 THEN NOW() ELSE e.resolved_at END,
+            status           = CASE WHEN ${resolves} THEN 'resolved' ELSE e.status END,
+            resolved_at      = CASE WHEN ${resolves} THEN NOW() ELSE e.resolved_at END,
             resolver_payload = CASE WHEN ${remaining} = 0
-                                    THEN COALESCE(e.envelope->'batch_items', '{}'::jsonb)
-                                         || jsonb_build_object($${itemKeyIdx}::text, $${payloadIdx}::jsonb)
+                                    THEN ${collected}
+                                    WHEN ${wakes}
+                                    THEN ${collected}
+                                         || jsonb_build_object(
+                                              '$filled', jsonb_build_array($${itemKeyIdx}::text),
+                                              '$trigger', 'fill',
+                                              '$filledAt',
+                                              COALESCE(e.envelope->'batch_filled_at', '{}'::jsonb)
+                                              || jsonb_build_object($${itemKeyIdx}::text, to_jsonb(NOW())))
+                                         || CASE WHEN $${actorIdx}::text IS NULL
+                                                      AND e.envelope->'batch_filled_by' IS NULL
+                                                 THEN '{}'::jsonb
+                                                 ELSE jsonb_build_object(
+                                                        '$filledBy',
+                                                        COALESCE(e.envelope->'batch_filled_by', '{}'::jsonb)
+                                                        || CASE WHEN $${actorIdx}::text IS NULL THEN '{}'::jsonb
+                                                                ELSE jsonb_build_object($${itemKeyIdx}::text, $${actorIdx}::text)
+                                                           END)
+                                            END
                                     ELSE e.resolver_payload END,
             updated_at = NOW()
         FROM target
@@ -2777,6 +2801,8 @@ class PostgresStoreService extends StoreService<
       )${wakeCTE}
       SELECT t.id, t.status AS prior_status, t.signal_key, t.topic, t.assigned_to,
         CASE
+          WHEN f.id IS NOT NULL AND f.status = 'resolved'
+               AND jsonb_array_length(f.metadata->'batch_pending') > 0 THEN 'woke'
           WHEN f.id IS NOT NULL AND f.status = 'resolved' THEN 'completed'
           WHEN f.id IS NOT NULL                           THEN 'accepted'
           WHEN t.id IS NULL                               THEN 'not-found'
@@ -2804,7 +2830,11 @@ class PostgresStoreService extends StoreService<
     assertClaim?: string,
   ): import('../../../../types/hmsh_escalations').ResolveBatchItemResult & { signalKey?: string | null; topic?: string | null; wakeEnqueued?: boolean } {
     if (!row || row.outcome === 'not-found') return { ok: false, outcome: 'not-found' };
-    if (row.outcome === 'completed' || row.outcome === 'accepted') {
+    if (
+      row.outcome === 'completed' ||
+      row.outcome === 'accepted' ||
+      row.outcome === 'woke'
+    ) {
       return {
         ok: true,
         outcome: row.outcome,
@@ -2867,7 +2897,8 @@ class PostgresStoreService extends StoreService<
     const targetCTE = `
         SELECT id, signal_key, topic, status, assigned_to, assigned_until,
                metadata->'batch_keys'    AS batch_keys,
-               metadata->'batch_pending' AS batch_pending
+               metadata->'batch_pending' AS batch_pending,
+               envelope->'batch_wake_on_fill' AS wake_on_fill
         FROM public.hmsh_escalations
         WHERE ${id ? 'id' : 'signal_key'} = $1${nsClause}
         LIMIT 1 FOR UPDATE`;
@@ -2914,7 +2945,8 @@ class PostgresStoreService extends StoreService<
     const targetCTE = `
         SELECT id, signal_key, topic, status, assigned_to, assigned_until,
                metadata->'batch_keys'    AS batch_keys,
-               metadata->'batch_pending' AS batch_pending
+               metadata->'batch_pending' AS batch_pending,
+               envelope->'batch_wake_on_fill' AS wake_on_fill
         FROM public.hmsh_escalations
         WHERE ${nsClause}
               metadata @> $1::jsonb

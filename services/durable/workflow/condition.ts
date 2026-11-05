@@ -138,6 +138,26 @@ import { didRun } from './didRun';
  * });
  * ```
  *
+ * `wakeOnFill` resumes the wait on a fill, so the workflow acts on each
+ * item as it lands: `true` for every key, or a list of keys. The fill
+ * resolves the row and the wait returns the items so far with
+ * `$filled: [itemKey]`, `$filledAt`, `$filledBy`, and `$trigger: 'fill'`.
+ * The next round parks with every fill carried forward; the last key
+ * completes as on any batch.
+ *
+ * ```typescript
+ * let filled;
+ * for (;;) {
+ *   const out = await Durable.workflow.condition(`receive-${Durable.guid()}`, {
+ *     role: 'receiving', batch: boxes, wakeOnFill: true, ...(filled ? { filled } : {}),
+ *   });
+ *   if (!out || out.$trigger !== 'fill') return out;   // complete, expired, or cancelled
+ *   await recordReceipt(out.$filled[0]);                // a proxied activity
+ *   filled = Object.fromEntries(Object.keys(out.$filledAt).map((key) =>
+ *     [key, { payload: out[key], at: out.$filledAt[key], actor: out.$filledBy?.[key] }]));
+ * }
+ * ```
+ *
  * ## Placement: call escalation-bearing waits from main workflow code
  *
  * The resolve/signal delivery pipeline routes to the main flow's waiter.
